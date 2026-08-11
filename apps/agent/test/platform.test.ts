@@ -22,6 +22,7 @@ describe("agent platform contract", () => {
     const deployment = await readFile(`${kubernetesBase}/deployment.yaml`, "utf8")
     expect(policy).toContain("policyTypes: [Ingress, Egress]")
     expect(policy).not.toContain("kubernetes.io/metadata.name: kube-system")
+    expect(policy).not.toContain("port: 53")
     expect(policy).toContain("kubernetes.io/metadata.name: openbao")
     expect(policy).toContain("port: 7844")
     expect(ciliumPolicy).toContain('"k8s:k8s-app": kube-dns')
