@@ -16,6 +16,8 @@ spec:
         app.kubernetes.io/name: bob-agent
     spec:
       serviceAccountName: bob-agent
+      imagePullSecrets:
+        - name: bob-ghcr-pull
       containers:
         - name: agent
           image: "${BOB_AGENT_IMAGE_REPOSITORY}@${BOB_AGENT_IMAGE_DIGEST}"

@@ -129,9 +129,11 @@ export function assertDeploymentReadiness(input) {
     !renderedDeployment.includes("configMapRef:") ||
     !renderedDeployment.includes("name: bob-agent-bootstrap") ||
     !renderedDeployment.includes("name: bob-agent-tunnel") ||
+    !renderedDeployment.includes("imagePullSecrets:") ||
+    !renderedDeployment.includes("name: bob-ghcr-pull") ||
     !/secretRef:\s*\n\s*name: bob-agent-bootstrap\s*\n\s*optional: false/u.test(renderedDeployment)
   ) {
-    throw new Error("The agent bootstrap or Tunnel Secret binding is missing")
+    throw new Error("The agent bootstrap, Tunnel, or registry pull binding is missing")
   }
 
   const secretDeliveryMarkers = [
@@ -142,7 +144,12 @@ export function assertDeploymentReadiness(input) {
     "name: bob-agent-secret-delivery",
     "kind: ExternalSecret",
     "name: bob-agent-tunnel",
-    "property: TUNNEL_TOKEN"
+    "property: TUNNEL_TOKEN",
+    "name: bob-ghcr-pull",
+    "type: kubernetes.io/dockerconfigjson",
+    'key: "apps/prod/bob/registry/ghcr"',
+    "property: USERNAME",
+    "property: TOKEN"
   ]
   if (secretDeliveryMarkers.some((marker) => !renderedDelivery.includes(marker))) {
     throw new Error("The reviewed OpenBao secret delivery contract is missing")
@@ -188,7 +195,8 @@ export function assertDeploymentReadiness(input) {
     "apps/prod/bob/access/core-to-agent",
     "apps/prod/bob/access/core-to-agent-admin",
     "apps/prod/bob/access/agent-to-core",
-    "apps/prod/bob/tunnel/agent-host"
+    "apps/prod/bob/tunnel/agent-host",
+    "apps/prod/bob/registry/ghcr"
   ]
   if (
     deliveryPaths.some((path) => !secretDeliveryPolicy.includes(`path "ops/data/${path}"`)) ||

@@ -103,6 +103,32 @@ describe("Kubernetes deployment readiness", () => {
     ).toThrow(/Access runtime secret delivery/u)
   })
 
+  it("rejects an incomplete private registry pull contract", async () => {
+    const input = await validInput()
+
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        deployment: input.deployment.replace("name: bob-ghcr-pull", "name: omitted-pull-secret")
+      })
+    ).toThrow(/registry pull/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        delivery: input.delivery.replace("property: TOKEN", "property: OMITTED")
+      })
+    ).toThrow(/secret delivery/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        secretDeliveryPolicy: input.secretDeliveryPolicy.replace(
+          'path "ops/data/apps/prod/bob/registry/ghcr"',
+          'path "ops/data/apps/prod/bob/registry/omitted"'
+        )
+      })
+    ).toThrow(/secret-delivery OpenBao policy/u)
+  })
+
   it("rejects a secret-delivery identity without an exact scoped policy", async () => {
     const input = await validInput()
 

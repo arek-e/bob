@@ -76,6 +76,25 @@ describe("agent platform contract", () => {
     expect(deployment).toContain("optional: false")
   })
 
+  it("delivers a private GHCR pull secret only to the kubelet", async () => {
+    const delivery = await readFile("infra/kubernetes/secret-delivery.yaml", "utf8")
+    const deployment = await readFile("infra/kubernetes/deployment.yaml", "utf8")
+    const deliveryPolicy = await readFile(
+      "infra/openbao/agent-secret-delivery-production-policy.hcl",
+      "utf8"
+    )
+
+    expect(delivery).toContain("name: bob-ghcr-pull")
+    expect(delivery).toContain("type: kubernetes.io/dockerconfigjson")
+    expect(delivery).toContain('key: "apps/prod/bob/registry/ghcr"')
+    expect(delivery).toContain("property: USERNAME")
+    expect(delivery).toContain("property: TOKEN")
+    expect(deployment).toContain("imagePullSecrets:")
+    expect(deployment).toContain("name: bob-ghcr-pull")
+    expect(deliveryPolicy).toContain('path "ops/data/apps/prod/bob/registry/ghcr"')
+    expect(deployment).not.toContain("GHCR")
+  })
+
   it("separates runtime secret delivery from the Pi OAuth identity", async () => {
     const accounts = await readFile("infra/kubernetes/service-account.yaml", "utf8")
     const delivery = await readFile("infra/kubernetes/secret-delivery.yaml", "utf8")
