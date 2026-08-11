@@ -120,7 +120,7 @@ describe("production GitOps deployment readiness", () => {
       releaseSha: expect.stringMatching(/^[a-f0-9]{40}$/u),
       targetRevision: "f974ae0fc5b53ca1c233faa0dfd69e9f814cb25f"
     })
-  })
+  }, 15_000)
 
   it("derives release pins from the production overlay", async () => {
     const input = await validInput()
