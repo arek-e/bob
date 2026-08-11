@@ -1,0 +1,386 @@
+import { Link } from "@tanstack/solid-router"
+import { createSignal, onMount, Show, type JSX } from "solid-js"
+
+import { Button } from "~/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader } from "~/components/ui/card"
+import { Input } from "~/components/ui/input"
+import { Label } from "~/components/ui/label"
+import { apiBase, loadOwnerSession, safeReturnPath } from "~/lib/api"
+import { styles } from "~/lib/styles"
+
+export function SignInPage() {
+  const [email, setEmail] = createSignal("")
+  const [password, setPassword] = createSignal("")
+  const [error, setError] = createSignal("")
+  const [status, setStatus] = createSignal("")
+  const [submitting, setSubmitting] = createSignal(false)
+
+  onMount(async () => {
+    try {
+      if ((await loadOwnerSession()) !== null) window.location.assign(safeReturnPath())
+    } catch {
+      setStatus("Unable to check your session. Check your connection and try again.")
+    }
+  })
+
+  async function submit(event: SubmitEvent) {
+    event.preventDefault()
+    setError("")
+    setStatus("")
+    if (email().trim().length === 0) {
+      setError("Enter the owner email address.")
+      document.getElementById("sign-in-email")?.focus()
+      return
+    }
+    if (password().length === 0) {
+      setError("Enter the owner password.")
+      document.getElementById("sign-in-password")?.focus()
+      return
+    }
+    setSubmitting(true)
+    try {
+      const response = await fetch(`${apiBase}/api/auth/sign-in/email`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: email().trim(), password: password(), rememberMe: true })
+      })
+      if (!response.ok) {
+        setError("Email or password is incorrect. Check both fields and try again.")
+        return
+      }
+      window.location.assign(safeReturnPath())
+    } catch {
+      setStatus("Unable to sign in. Check your connection and try again.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <AuthFrame
+      title="Welcome to Bob"
+      subtitle="Your private continuity assistant"
+      description="Use the owner account for this workspace."
+    >
+      <div class={styles.authStatus} role="status" aria-live="polite">
+        {status()}
+      </div>
+      <form class={styles.authForm} novalidate onSubmit={(event) => void submit(event)}>
+        <div class={styles.fieldGroup}>
+          <Label for="sign-in-email">Email</Label>
+          <Input
+            id="sign-in-email"
+            name="email"
+            type="email"
+            autocomplete="username"
+            spellcheck="false"
+            required
+            value={email()}
+            aria-describedby={error().length > 0 ? "sign-in-error" : undefined}
+            aria-invalid={error().length > 0}
+            onInput={(event) => {
+              setEmail(event.currentTarget.value)
+              setError("")
+            }}
+          />
+        </div>
+        <div class={styles.fieldGroup}>
+          <Label for="sign-in-password">Password</Label>
+          <Input
+            id="sign-in-password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            value={password()}
+            aria-describedby={error().length > 0 ? "sign-in-error" : undefined}
+            aria-invalid={error().length > 0}
+            onInput={(event) => {
+              setPassword(event.currentTarget.value)
+              setError("")
+            }}
+          />
+        </div>
+        <Show when={error().length > 0}>
+          <p id="sign-in-error" class={styles.fieldError} role="alert">
+            {error()}
+          </p>
+        </Show>
+        <Button size="lg" type="submit" disabled={submitting()}>
+          {submitting() ? "Signing in…" : "Continue with email"}
+        </Button>
+      </form>
+      <p class={styles.authHelp}>
+        First visit? <a href="/setup">Set up the owner login</a> through the protected setup route.
+      </p>
+      <p class={styles.authTerms}>
+        This is a private workspace. Only the owner account can open it.
+      </p>
+    </AuthFrame>
+  )
+}
+
+export function SetupPage() {
+  const [password, setPassword] = createSignal("")
+  const [confirmation, setConfirmation] = createSignal("")
+  const [passwordError, setPasswordError] = createSignal("")
+  const [confirmationError, setConfirmationError] = createSignal("")
+  const [status, setStatus] = createSignal("")
+  const [setupState, setSetupState] = createSignal<
+    "loading" | "required" | "complete" | "unavailable"
+  >("loading")
+  const [submitting, setSubmitting] = createSignal(false)
+
+  onMount(async () => {
+    try {
+      const response = await fetch(`${apiBase}/setup/api`, {
+        headers: { accept: "application/json" }
+      })
+      if (!response.ok) throw new Error("setup_unavailable")
+      const value = (await response.json()) as { setupRequired?: unknown }
+      setSetupState(value.setupRequired === false ? "complete" : "required")
+      if (value.setupRequired === false) setStatus("The owner login already exists.")
+    } catch {
+      setSetupState("unavailable")
+      setStatus("Unable to check owner setup. Refresh this page and try again.")
+    }
+  })
+
+  async function submit(event: SubmitEvent) {
+    event.preventDefault()
+    setPasswordError("")
+    setConfirmationError("")
+    if (password().length < 12) {
+      setPasswordError("Use at least 12 characters.")
+      document.getElementById("setup-password")?.focus()
+      return
+    }
+    if (password() !== confirmation()) {
+      setConfirmationError("Enter the same password in both fields.")
+      document.getElementById("setup-password-confirmation")?.focus()
+      return
+    }
+    setSubmitting(true)
+    try {
+      const response = await fetch(`${apiBase}/setup/api`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password: password() })
+      })
+      if (response.status === 409) {
+        setSetupState("complete")
+        setStatus("The owner login already exists.")
+        return
+      }
+      if (!response.ok) {
+        setStatus("Unable to create the owner login. Refresh this page and try again.")
+        return
+      }
+      setStatus("Owner login created. Opening settings…")
+      window.location.assign("/settings")
+    } catch {
+      setStatus("Unable to create the owner login. Check your connection and try again.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <AuthFrame
+      eyebrow="Protected owner setup"
+      title="Create the owner login"
+      subtitle="Keep your workspace private"
+      description="Choose the password that you will use to open Bob. This setup works once."
+    >
+      <div class={styles.authStatus} role="status" aria-live="polite">
+        {status()}
+      </div>
+      <Show
+        when={setupState() === "required"}
+        fallback={
+          <Show
+            when={setupState() === "complete"}
+            fallback={<p class={styles.authHelp}>{status()}</p>}
+          >
+            <p class={styles.authHelp}>
+              The owner login already exists. <a href="/sign-in">Continue to sign in</a>.
+            </p>
+          </Show>
+        }
+      >
+        <form class={styles.authForm} novalidate onSubmit={(event) => void submit(event)}>
+          <div class={styles.fieldGroup}>
+            <Label for="setup-password">Password</Label>
+            <Input
+              id="setup-password"
+              name="password"
+              type="password"
+              minlength="12"
+              maxlength="128"
+              autocomplete="new-password"
+              required
+              value={password()}
+              aria-describedby="setup-password-hint setup-password-error"
+              aria-invalid={passwordError().length > 0}
+              onInput={(event) => {
+                setPassword(event.currentTarget.value)
+                setPasswordError("")
+              }}
+            />
+            <p id="setup-password-hint" class={styles.hint}>
+              Use at least 12 characters.
+            </p>
+            <Show when={passwordError().length > 0}>
+              <p id="setup-password-error" class={styles.fieldError} role="alert">
+                {passwordError()}
+              </p>
+            </Show>
+          </div>
+          <div class={styles.fieldGroup}>
+            <Label for="setup-password-confirmation">Confirm password</Label>
+            <Input
+              id="setup-password-confirmation"
+              name="passwordConfirmation"
+              type="password"
+              minlength="12"
+              maxlength="128"
+              autocomplete="new-password"
+              required
+              value={confirmation()}
+              aria-describedby="setup-password-confirmation-error"
+              aria-invalid={confirmationError().length > 0}
+              onInput={(event) => {
+                setConfirmation(event.currentTarget.value)
+                setConfirmationError("")
+              }}
+            />
+            <Show when={confirmationError().length > 0}>
+              <p id="setup-password-confirmation-error" class={styles.fieldError} role="alert">
+                {confirmationError()}
+              </p>
+            </Show>
+          </div>
+          <Button size="lg" type="submit" disabled={submitting()}>
+            {submitting() ? "Creating owner login…" : "Create owner login"}
+          </Button>
+        </form>
+      </Show>
+      <p class={styles.authFooter}>
+        <Link to="/sign-in">Back to sign in</Link>
+      </p>
+    </AuthFrame>
+  )
+}
+
+function AuthFrame(props: {
+  eyebrow?: string
+  title: string
+  subtitle?: string
+  description: string
+  children: JSX.Element
+}) {
+  return (
+    <main class={styles.authLayout}>
+      <header class={styles.authHeader}>
+        <a class={styles.authLogo} href="/" aria-label="Bob home">
+          <span class={styles.authLogoMark} aria-hidden="true">
+            <span class={styles.authLogoDot} />
+            <span class={styles.authLogoDot} />
+            <span class={styles.authLogoDot} />
+            <span class={styles.authLogoDot} />
+          </span>
+          <span class={styles.authLogoName}>Bob</span>
+        </a>
+      </header>
+      <div class={styles.authHero}>
+        <Card
+          class={styles.authCard}
+          aria-labelledby="auth-title"
+          aria-describedby="auth-description"
+        >
+          <CardHeader>
+            <Show when={props.eyebrow}>
+              <p class={styles.authKicker}>{props.eyebrow}</p>
+            </Show>
+            <h1 class={styles.authTitle} id="auth-title">
+              {props.title}
+              <Show when={props.subtitle}>
+                <span class={styles.authTitleMuted}>{props.subtitle}</span>
+              </Show>
+            </h1>
+            <CardDescription id="auth-description">{props.description}</CardDescription>
+          </CardHeader>
+          <CardContent>{props.children}</CardContent>
+        </Card>
+        <AuthPreview />
+      </div>
+    </main>
+  )
+}
+
+function AuthPreview() {
+  return (
+    <div class={styles.authPreview} aria-hidden="true">
+      <div class={styles.authPreviewTopbar}>
+        <div class={styles.authPreviewBrand}>
+          <span class={styles.authPreviewBrandMark}>B</span>
+          <span>Bob workspace</span>
+        </div>
+        <span>Private preview</span>
+      </div>
+      <div class={styles.authPreviewBody}>
+        <aside class={styles.authPreviewRail}>
+          <div class={styles.authPreviewRailHeader}>
+            <span class={styles.authPreviewRailAvatar}>A</span>
+            <span>Alex's workspace</span>
+          </div>
+          <span class={styles.authPreviewRailLabel}>Workspace</span>
+          <span class={`${styles.authPreviewRailItem} ${styles.authPreviewRailItemActive}`}>
+            Overview
+          </span>
+          <span class={styles.authPreviewRailItem}>Journal</span>
+          <span class={styles.authPreviewRailItem}>Reminders</span>
+          <span class={styles.authPreviewRailLabel}>Collections</span>
+          <span class={styles.authPreviewRailItem}>Memory</span>
+          <span class={styles.authPreviewRailItem}>Training</span>
+          <span class={styles.authPreviewRailSpacer} />
+          <span class={styles.authPreviewRailItem}>Settings</span>
+        </aside>
+        <div class={styles.authPreviewMain}>
+          <div class={styles.authPreviewIntro}>
+            <span class={styles.authPreviewKicker}>Overview</span>
+            <span class={styles.authPreviewTitle}>Good to see you.</span>
+            <span class={styles.authPreviewSubtitle}>
+              A quiet place for the things worth keeping.
+            </span>
+          </div>
+          <div class={styles.authPreviewCards}>
+            <article class={`${styles.authPreviewCard} ${styles.authPreviewCardWarm}`}>
+              <span class={styles.authPreviewCardLabel}>Today</span>
+              <h2 class={styles.authPreviewCardTitle}>Review your reminders</h2>
+              <p class={styles.authPreviewCardText}>One small step is ready for you.</p>
+              <div class={styles.authPreviewCardMedia} />
+            </article>
+            <article class={`${styles.authPreviewCard} ${styles.authPreviewCardGreen}`}>
+              <span class={styles.authPreviewCardLabel}>Memory</span>
+              <h2 class={styles.authPreviewCardTitle}>A new signal to review</h2>
+              <p class={styles.authPreviewCardText}>Nothing is saved without your approval.</p>
+              <div class={styles.authPreviewCardMedia} />
+            </article>
+            <article class={`${styles.authPreviewCard} ${styles.authPreviewCardDark}`}>
+              <span class={styles.authPreviewCardLabel}>Journal</span>
+              <h2 class={styles.authPreviewCardTitle}>Keep the thread</h2>
+              <p class={styles.authPreviewCardText}>Private notes stay inside Bob.</p>
+              <div class={styles.authPreviewCardMedia} />
+            </article>
+          </div>
+          <div class={styles.authPreviewNote}>
+            <span>Workspace ready</span>
+            <span class={styles.authPreviewNoteLine} />
+            <span>100%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

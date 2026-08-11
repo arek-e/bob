@@ -4,15 +4,25 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "varlock run --inject vars --skip-cache -- node scripts/build.mjs",
+    "build": "varlock run --inject vars --skip-cache -- vite build && node scripts/build.mjs",
+    "dev": "vite dev",
     "env:check": "varlock load --agent --path . --skip-cache",
+    "preview": "node scripts/preview.mjs",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "@bob/contracts": "workspace:*",
-    "effect": "4.0.0-beta.107"
+    "@tanstack/solid-router": "1.170.24",
+    "@tanstack/solid-start": "1.168.41",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "effect": "4.0.0-beta.107",
+    "solid-js": "1.9.14"
   },
   "devDependencies": {
-    "esbuild": "0.25.9"
+    "@tailwindcss/vite": "4.3.3",
+    "tailwindcss": "4.3.3",
+    "vite": "7.3.6",
+    "vite-plugin-solid": "2.11.14"
   }
 }

@@ -1,33 +1,29 @@
-import { copyFile, mkdir, rm } from "node:fs/promises"
-
-import { build } from "esbuild"
+import { cp, mkdir, readFile, rm as removeEntry, unlink, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
 
 const outputDirectory = new URL("../dist/", import.meta.url)
-await rm(outputDirectory, { recursive: true, force: true })
+const clientDirectory = new URL("../dist/client/", import.meta.url)
+const serverDirectory = new URL("../dist/server/", import.meta.url)
 await mkdir(outputDirectory, { recursive: true })
-
-const configuredBase = process.env.PUBLIC_API_BASE_URL
-if (configuredBase !== "same-origin") {
-  throw new Error("PUBLIC_API_BASE_URL must be same-origin")
+await removeEntry(new URL("assets/", outputDirectory), { recursive: true, force: true })
+await cp(clientDirectory, outputDirectory, { recursive: true, force: true })
+await removeEntry(clientDirectory, { recursive: true, force: true })
+await removeEntry(serverDirectory, { recursive: true, force: true })
+for (const legacyAsset of ["app.js", "app.css"]) {
+  await unlink(new URL(legacyAsset, outputDirectory)).catch(() => undefined)
 }
+const staticShell = await readFile(new URL("index.html", outputDirectory), "utf8")
+const inlineScriptHashes = [...staticShell.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
+  .map((match) => match[1])
+  .filter((script) => script.trim().length > 0)
+  .map((script) => `sha256-${createHash("sha256").update(script).digest("base64")}`)
 
-await Promise.all([
-  build({
-    entryPoints: [new URL("../src/main.ts", import.meta.url).pathname],
-    outfile: new URL("app.js", outputDirectory).pathname,
-    bundle: true,
-    format: "esm",
-    minify: true,
-    sourcemap: false,
-    target: "es2023",
-    define: { __BOB_API_BASE_URL__: JSON.stringify("") }
-  }),
-  build({
-    entryPoints: [new URL("../src/styles.css", import.meta.url).pathname],
-    outfile: new URL("app.css", outputDirectory).pathname,
-    bundle: true,
-    minify: true
-  }),
-  copyFile(new URL("../index.html", import.meta.url), new URL("index.html", outputDirectory)),
-  copyFile(new URL("../_headers", import.meta.url), new URL("_headers", outputDirectory))
-])
+const headers = await readFile(new URL("../_headers", import.meta.url), "utf8")
+const contentSecurityPolicy = inlineScriptHashes.length
+  ? headers.replace(
+      "script-src 'self';",
+      `script-src 'self' ${inlineScriptHashes.map((hash) => `'${hash}'`).join(" ")};`
+    )
+  : headers
+
+await writeFile(new URL("_headers", outputDirectory), contentSecurityPolicy)
