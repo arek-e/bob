@@ -33,4 +33,12 @@ describe("Alchemy compatibility stack", () => {
     expect(stack).toContain("domain: coreHost")
     expect(stack).toContain("coreUrl: `https://${coreHost}`")
   })
+
+  it("gives Sendblue egress a stable reconciliation domain", async () => {
+    const stack = await readFile(new URL("../src/bob-stack.ts", import.meta.url), "utf8")
+
+    expect(stack).toContain("const egressHost = `bob-sendblue-egress.${domain}`")
+    expect(stack).toContain("SENDBLUE_EGRESS_URL: `https://${egressHost}`")
+    expect(stack).toContain("domain: egressHost")
+  })
 })

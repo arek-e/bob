@@ -1,4 +1,4 @@
-import type { OutboxClaim } from "@bob/contracts/delivery"
+import type { DeliveryReconciliationResult, OutboxClaim } from "@bob/contracts/delivery"
 
 import { Schema } from "effect"
 
@@ -6,6 +6,35 @@ const SendResponse = Schema.Struct({
   message_handle: Schema.String,
   status: Schema.optionalKey(Schema.String)
 })
+
+const StatusResponse = Schema.Struct({
+  message_handle: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  status: Schema.Literals([
+    "REGISTERED",
+    "PENDING",
+    "DECLINED",
+    "QUEUED",
+    "ACCEPTED",
+    "SENT",
+    "DELIVERED",
+    "ERROR",
+    "SUCCESS"
+  ]),
+  date_updated: Schema.optionalKey(Schema.String),
+  date_sent: Schema.optionalKey(Schema.String)
+})
+
+const normalizedStatus = {
+  REGISTERED: "registered",
+  PENDING: "pending",
+  DECLINED: "declined",
+  QUEUED: "queued",
+  ACCEPTED: "accepted",
+  SENT: "sent",
+  DELIVERED: "delivered",
+  ERROR: "error",
+  SUCCESS: "accepted"
+} as const
 
 export interface SendblueCredentials {
   readonly apiKeyId: string
@@ -69,15 +98,37 @@ export function createSendblueClient(options: SendblueClientOptions) {
       }
     },
 
-    async getStatus(handle: string): Promise<unknown> {
-      const response = await request(`${baseUrl}/api/status?handle=${encodeURIComponent(handle)}`, {
-        headers: {
-          "sb-api-key-id": options.apiKeyId,
-          "sb-api-secret-key": options.apiSecretKey
+    async getStatus(handle: string): Promise<DeliveryReconciliationResult> {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort("sendblue_timeout"), timeoutMs)
+      try {
+        const response = await request(
+          `${baseUrl}/api/status?handle=${encodeURIComponent(handle)}`,
+          {
+            headers: {
+              "sb-api-key-id": options.apiKeyId,
+              "sb-api-secret-key": options.apiSecretKey
+            },
+            signal: controller.signal
+          }
+        )
+        if (!response.ok) throw new Error(`Sendblue status request failed: ${response.status}`)
+        const body = Schema.decodeUnknownSync(StatusResponse)(await response.json())
+        if (body.message_handle !== handle) {
+          throw new Error("Sendblue returned a different message handle")
         }
-      })
-      if (!response.ok) throw new Error(`Sendblue status request failed: ${response.status}`)
-      return response.json()
+        const occurredAt = body.date_updated ?? body.date_sent
+        if (occurredAt === undefined || !Number.isFinite(Date.parse(occurredAt))) {
+          throw new Error("Sendblue returned an invalid status date")
+        }
+        return {
+          messageHandle: body.message_handle,
+          status: normalizedStatus[body.status],
+          occurredAt: new Date(occurredAt).toISOString()
+        }
+      } finally {
+        clearTimeout(timeout)
+      }
     }
   }
 }

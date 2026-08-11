@@ -7,6 +7,7 @@ import { Context, Layer } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { DeliveryReconciler } from "./reconciliation.ts"
 
 import { operationalAlerts } from "../alerts/schema.ts"
 import { recordOperationalAlert } from "../alerts/store.ts"
@@ -41,7 +42,11 @@ export const DeliveryStore = Context.Service<DeliveryStore>("bob/DeliveryStore")
 export function makeDeliveryStore(
   database: CoreDatabase,
   protection: DataProtection,
-  options: { readonly now?: () => Date; readonly randomUuid?: () => string }
+  options: {
+    readonly now?: () => Date
+    readonly randomUuid?: () => string
+    readonly reconciler?: DeliveryReconciler
+  }
 ): DeliveryStore {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
@@ -164,6 +169,24 @@ export function makeDeliveryStore(
       )
     }
     await database.batch(statements)
+  }
+
+  async function storeProviderEvent(event: ApplicableStatusEvent): Promise<void> {
+    const eventKey = `${event.messageHandle}:${event.status}:${event.occurredAt}`
+    await database
+      .insert(providerEvents)
+      .values({
+        id: event.id,
+        provider: "sendblue",
+        providerMessageHandle: event.messageHandle,
+        providerStatus: event.status,
+        providerEventKey: eventKey,
+        correlationId: event.correlationId,
+        occurredAt: event.occurredAt,
+        createdAt: now().toISOString()
+      })
+      .onConflictDoNothing()
+    await applyProviderEvent(event)
   }
 
   return {
@@ -510,20 +533,7 @@ export function makeDeliveryStore(
             )
           )
       }
-      const eventKey = `${event.messageHandle}:${event.status}:${event.occurredAt}`
-      await database
-        .insert(providerEvents)
-        .values({
-          id: event.id,
-          provider: "sendblue",
-          providerMessageHandle: event.messageHandle,
-          providerStatus: event.status,
-          providerEventKey: eventKey,
-          correlationId: event.correlationId,
-          occurredAt: event.occurredAt,
-          createdAt: now().toISOString()
-        })
-        .onConflictDoNothing()
+      await storeProviderEvent(event)
 
       if (event.outboxId !== undefined && event.attemptId !== undefined) {
         const state =
@@ -543,8 +553,6 @@ export function makeDeliveryStore(
           occurredAt: event.occurredAt
         })
       }
-
-      await applyProviderEvent(event)
     },
 
     async reconcileExpiredClaims(at) {
@@ -591,7 +599,7 @@ export function makeDeliveryStore(
 
     async reconcileOutbox(outboxId) {
       const [outbox] = await database
-        .select({ state: outboxMessages.state })
+        .select()
         .from(outboxMessages)
         .where(eq(outboxMessages.id, outboxId))
         .limit(1)
@@ -621,7 +629,39 @@ export function makeDeliveryStore(
           })
         }
       }
-      const [updated] = await database
+      let [updated] = await database
+        .select({ state: outboxMessages.state })
+        .from(outboxMessages)
+        .where(eq(outboxMessages.id, outboxId))
+        .limit(1)
+      if (updated !== undefined && ["accepted", "failed", "cancelled"].includes(updated.state)) {
+        return "resolved"
+      }
+      if (
+        attempt?.providerMessageHandle === null ||
+        attempt?.providerMessageHandle === undefined ||
+        options.reconciler === undefined
+      ) {
+        return "pending"
+      }
+
+      let providerStatus: Awaited<ReturnType<DeliveryReconciler["readProviderStatus"]>>
+      try {
+        providerStatus = await options.reconciler.readProviderStatus(attempt.providerMessageHandle)
+      } catch {
+        return "pending"
+      }
+      if (providerStatus.messageHandle !== attempt.providerMessageHandle) return "pending"
+      await storeProviderEvent({
+        id: randomUuid(),
+        accountId: "reconciled",
+        lineId: "reconciled",
+        messageHandle: providerStatus.messageHandle,
+        status: providerStatus.status,
+        occurredAt: providerStatus.occurredAt,
+        correlationId: outbox.correlationId
+      })
+      ;[updated] = await database
         .select({ state: outboxMessages.state })
         .from(outboxMessages)
         .where(eq(outboxMessages.id, outboxId))

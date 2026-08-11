@@ -33,4 +33,42 @@ describe("Sendblue client", () => {
       providerMessageHandle: "provider-1"
     })
   })
+
+  it("validates and normalizes provider history", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        message_handle: "provider-1",
+        status: "DELIVERED",
+        date_updated: "2026-08-11T10:02:00.000Z"
+      })
+    )
+    const client = createSendblueClient({ apiKeyId: "id", apiSecretKey: "secret", fetch: request })
+
+    await expect(client.getStatus("provider-1")).resolves.toEqual({
+      messageHandle: "provider-1",
+      status: "delivered",
+      occurredAt: "2026-08-11T10:02:00.000Z"
+    })
+    expect(String(request.mock.calls[0]?.[0])).toBe(
+      "https://api.sendblue.com/api/status?handle=provider-1"
+    )
+  })
+
+  it("rejects provider history for another handle", async () => {
+    const client = createSendblueClient({
+      apiKeyId: "id",
+      apiSecretKey: "secret",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({
+          message_handle: "provider-2",
+          status: "SENT",
+          date_updated: "2026-08-11T10:02:00.000Z"
+        })
+      )
+    })
+
+    await expect(client.getStatus("provider-1")).rejects.toThrow(
+      "Sendblue returned a different message handle"
+    )
+  })
 })

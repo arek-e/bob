@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 
+import { ProviderDeliveryStatus } from "./channel.ts"
 import { E164, IsoDateTime, ShortText, Uuid } from "./shared.ts"
 
 export const DeliveryAttemptState = Schema.Literals([
@@ -31,6 +32,18 @@ export const DeliveryResult = Schema.Struct({
   occurredAt: IsoDateTime
 })
 
+export const DeliveryReconciliationRequest = Schema.Struct({
+  messageHandle: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))
+})
+
+export const DeliveryReconciliationResult = Schema.Struct({
+  messageHandle: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  status: ProviderDeliveryStatus,
+  occurredAt: IsoDateTime
+})
+
 export type DeliveryAttemptState = typeof DeliveryAttemptState.Type
 export type OutboxClaim = typeof OutboxClaim.Type
 export type DeliveryResult = typeof DeliveryResult.Type
+export type DeliveryReconciliationRequest = typeof DeliveryReconciliationRequest.Type
+export type DeliveryReconciliationResult = typeof DeliveryReconciliationResult.Type

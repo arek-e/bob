@@ -44,6 +44,7 @@ const safeValidationEnvironment = {
   SENDBLUE_ENABLED: "false",
   INGRESS_CALLER_SECRET: "fixture-ingress-caller",
   EGRESS_CALLER_SECRET: "fixture-egress-caller",
+  SENDBLUE_EGRESS_URL: "https://sendblue-egress.example.invalid",
   CORE_CALLER_SECRET: "fixture-core-caller",
   CORE_ACCESS_AUDIENCE: "fixture-core-audience",
   SETUP_ACCESS_AUDIENCE: "fixture-setup-audience",

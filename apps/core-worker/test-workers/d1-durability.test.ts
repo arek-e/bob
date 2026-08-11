@@ -565,6 +565,96 @@ describe("D1 migrations and durability", () => {
     expect(attempt?.state).toBe("uncertain")
   })
 
+  it("resolves an uncertain delivery from the Sendblue status API", async () => {
+    const { database, protection } = await seedRunData()
+    let next = 210
+    const delivery = makeDeliveryStore(database, protection, {
+      now: () => new Date("2026-08-11T10:00:00.000Z"),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`,
+      reconciler: {
+        readProviderStatus: async (messageHandle) => ({
+          messageHandle,
+          status: "delivered",
+          occurredAt: "2026-08-11T10:02:00.000Z"
+        })
+      }
+    })
+    const outboxId = await delivery.createOutbox({
+      ownerId,
+      channelId,
+      text: "Test reconciliation",
+      reasonCode: "test",
+      correlationId,
+      idempotencyKey: "test:reconciliation"
+    })
+    const claim = await delivery.claimOutbox(outboxId, 60_000)
+    expect(claim).toBeDefined()
+    await delivery.recordResult({
+      outboxId,
+      attemptId: claim!.attemptId,
+      state: "uncertain",
+      providerMessageHandle: "reconcile-handle",
+      occurredAt: "2026-08-11T10:01:00.000Z"
+    })
+
+    await expect(delivery.reconcileOutbox(outboxId)).resolves.toBe("resolved")
+    const [attempt] = await database
+      .select()
+      .from(deliveryAttempts)
+      .where(eq(deliveryAttempts.id, claim!.attemptId))
+    const [outbox] = await database
+      .select()
+      .from(outboxMessages)
+      .where(eq(outboxMessages.id, outboxId))
+    expect(attempt?.state).toBe("delivered")
+    expect(outbox?.state).toBe("accepted")
+  })
+
+  it("keeps an uncertain delivery pending for a nonterminal provider status", async () => {
+    const { database, protection } = await seedRunData()
+    let next = 220
+    const delivery = makeDeliveryStore(database, protection, {
+      now: () => new Date("2026-08-11T10:00:00.000Z"),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`,
+      reconciler: {
+        readProviderStatus: async (messageHandle) => ({
+          messageHandle,
+          status: "sent",
+          occurredAt: "2026-08-11T10:02:00.000Z"
+        })
+      }
+    })
+    const outboxId = await delivery.createOutbox({
+      ownerId,
+      channelId,
+      text: "Test pending reconciliation",
+      reasonCode: "test",
+      correlationId,
+      idempotencyKey: "test:pending-reconciliation"
+    })
+    const claim = await delivery.claimOutbox(outboxId, 60_000)
+    expect(claim).toBeDefined()
+    await delivery.recordResult({
+      outboxId,
+      attemptId: claim!.attemptId,
+      state: "uncertain",
+      providerMessageHandle: "pending-reconcile-handle",
+      occurredAt: "2026-08-11T10:01:00.000Z"
+    })
+
+    await expect(delivery.reconcileOutbox(outboxId)).resolves.toBe("pending")
+    const [attempt] = await database
+      .select()
+      .from(deliveryAttempts)
+      .where(eq(deliveryAttempts.id, claim!.attemptId))
+    const [outbox] = await database
+      .select()
+      .from(outboxMessages)
+      .where(eq(outboxMessages.id, outboxId))
+    expect(attempt?.state).toBe("uncertain")
+    expect(outbox?.state).toBe("uncertain")
+  })
+
   it("records delivery result queue messages idempotently", async () => {
     const { database, protection } = await seedRunData()
     let next = 225

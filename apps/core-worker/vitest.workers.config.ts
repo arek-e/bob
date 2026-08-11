@@ -59,6 +59,7 @@ export default defineConfig({
           DATA_LOOKUP_KEY: testKey(2),
           INGRESS_CALLER_SECRET: "ingress-caller-secret-at-least-32-bytes",
           EGRESS_CALLER_SECRET: "egress-caller-secret-at-least-32-bytes",
+          SENDBLUE_EGRESS_URL: "https://sendblue-egress.example.invalid",
           BETTER_AUTH_SECRET: "test-better-auth-secret-at-least-32-bytes",
           ACCESS_TEAM_DOMAIN: "example.cloudflareaccess.com",
           CORE_ACCESS_AUDIENCE: "core-test-audience",

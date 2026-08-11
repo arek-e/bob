@@ -29,6 +29,7 @@ import {
   makeToolExecutor,
   toolExecutorLayer
 } from "./modules/conversations/tool-executor.ts"
+import { makeDeliveryReconciler } from "./modules/delivery/reconciliation.ts"
 import { DeliveryStore, makeDeliveryStore, deliveryStoreLayer } from "./modules/delivery/store.ts"
 import { JournalStore, makeJournalStore, journalStoreLayer } from "./modules/journal/store.ts"
 import { MemoryStore, makeMemoryStore, memoryStoreLayer } from "./modules/memory/store.ts"
@@ -61,6 +62,7 @@ const Configuration = Schema.Struct({
   DATA_LOOKUP_KEY: Schema.String.check(Schema.isMinLength(40)),
   INGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   EGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  SENDBLUE_EGRESS_URL: Schema.String,
   BETTER_AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
   ACCESS_TEAM_DOMAIN: Schema.String.check(Schema.isPattern(/^[a-z0-9-]+\.cloudflareaccess\.com$/)),
   CORE_ACCESS_AUDIENCE: Schema.String.check(Schema.isMinLength(1)),
@@ -132,7 +134,12 @@ export function composeCore(bindings: CoreBindings) {
     dataKeyVersion: activeKekVersion
   })
   const alerts = makeAlertStore(database, {})
-  const delivery = makeDeliveryStore(database, protection, {})
+  const delivery = makeDeliveryStore(database, protection, {
+    reconciler: makeDeliveryReconciler({
+      url: config.SENDBLUE_EGRESS_URL,
+      callerSecret: config.EGRESS_CALLER_SECRET
+    })
+  })
   const reminders = makeReminderStore(database, protection, {
     quietHours: {
       start: config.REMINDER_QUIET_HOURS_START,
