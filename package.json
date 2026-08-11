@@ -2,20 +2,20 @@
   "name": "bob",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.19.0",
-  "engines": {
-    "node": ">=22.19.0"
-  },
   "scripts": {
     "build": "pnpm -r --if-present build",
-    "check": "pnpm format:check && pnpm boundaries && pnpm deps:check && pnpm env:schema && pnpm env:audit && pnpm infra:load && pnpm typecheck && pnpm test && pnpm build && pnpm ui:safety",
+    "check": "pnpm format:check && pnpm lint && pnpm boundaries && pnpm deps:check && pnpm env:schema && pnpm env:audit && pnpm infra:load && pnpm typecheck && pnpm test && pnpm build && pnpm ui:safety",
     "boundaries": "node scripts/verify-boundaries.mjs",
     "deps:check": "node scripts/verify-dependency-versions.mjs",
     "env:check": "pnpm -r --if-present env:check",
     "env:audit": "node scripts/audit-env-schemas.mjs",
     "env:schema": "node scripts/validate-env-schemas.mjs",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "hooks:install": "lefthook install",
+    "hooks:run": "lefthook run pre-commit",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
     "test": "vitest run && pnpm --filter @bob/core-worker test:workers",
     "test:watch": "vitest",
     "typecheck": "pnpm -r --if-present typecheck",
@@ -32,12 +32,18 @@
     "@cloudflare/vitest-pool-workers": "0.21.0",
     "@cloudflare/workers-types": "5.20260810.1",
     "@effect/vitest": "4.0.0-beta.107",
-    "@varlock/hashicorp-vault-plugin": "2.1.0",
     "@types/node": "22.18.0",
-    "prettier": "3.9.6",
+    "@varlock/hashicorp-vault-plugin": "2.1.0",
+    "lefthook": "2.1.10",
+    "oxfmt": "0.63.0",
+    "oxlint": "1.78.0",
     "tsx": "4.23.12",
     "typescript": "5.9.3",
     "varlock": "1.16.1",
     "vitest": "4.1.10"
-  }
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "packageManager": "pnpm@10.19.0"
 }

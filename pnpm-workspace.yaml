@@ -21,4 +21,5 @@ overrides:
 
 onlyBuiltDependencies:
   - esbuild
+  - lefthook
   - workerd

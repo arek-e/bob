@@ -1,8 +1,0 @@
-node_modules
-dist
-.alchemy
-.wrangler
-pnpm-lock.yaml
-apps/core-worker/migrations/*.sql
-**/environment.generated.ts
-**/routeTree.gen.ts

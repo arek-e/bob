@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "semi": false,
+  "singleQuote": false,
+  "trailingComma": "none",
+  "sortPackageJson": true,
+  "sortImports": {
+    "groups": [
+      "type-import",
+      ["value-builtin", "value-external"],
+      "type-internal",
+      "value-internal",
+      ["type-parent", "type-sibling", "type-index"],
+      ["value-parent", "value-sibling", "value-index"],
+      "unknown"
+    ]
+  },
+  "sortTailwindcss": {
+    "stylesheet": "./apps/ui/src/styles/app.css",
+    "functions": ["cn", "clsx", "cva"]
+  },
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    ".alchemy",
+    ".wrangler",
+    "pnpm-lock.yaml",
+    "apps/core-worker/migrations/*.sql",
+    "**/environment.generated.ts",
+    "**/routeTree.gen.ts"
+  ]
+}
