@@ -6,7 +6,7 @@ const COMMANDS = new Set(["plan", "deploy"])
 
 export function alchemyCommandArguments(command) {
   if (!COMMANDS.has(command)) throw new Error("Alchemy command must be plan or deploy")
-  return ["exec", "alchemy", command, "--stage", "prod"]
+  return ["exec", "alchemy", command, "--stage", "prod", ...(command === "deploy" ? ["--yes"] : [])]
 }
 
 function run(command) {

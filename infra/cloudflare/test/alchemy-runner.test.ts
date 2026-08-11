@@ -7,6 +7,14 @@ import { alchemyCommandArguments } from "../src/run-alchemy.mjs"
 describe("Alchemy stage runner", () => {
   it("uses only the production Alchemy stage", async () => {
     expect(alchemyCommandArguments("plan")).toEqual(["exec", "alchemy", "plan", "--stage", "prod"])
+    expect(alchemyCommandArguments("deploy")).toEqual([
+      "exec",
+      "alchemy",
+      "deploy",
+      "--stage",
+      "prod",
+      "--yes"
+    ])
     const packageJson = JSON.parse(
       await readFile(new URL("../package.json", import.meta.url), "utf8")
     ) as { scripts: Record<string, string> }
