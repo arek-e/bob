@@ -189,4 +189,12 @@ describe("agent platform contract", () => {
     expect(deployment).toContain("runAsUser: 1000")
     expect(deployment).toContain("runAsGroup: 1000")
   })
+
+  it("does not regenerate TypeScript files during read-only startup", async () => {
+    const schema = await readFile("apps/agent/.env.schema", "utf8")
+
+    expect(schema).toContain(
+      "@generateTsTypes(path=./src/environment.generated.ts, exposeEnv=local, auto=false)"
+    )
+  })
 })
