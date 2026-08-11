@@ -5,7 +5,7 @@ resources:
 images:
   - name: bob-agent.invalid/repository
     newName: ghcr.io/arek-e/bob-agent
-    digest: sha256:798169376b882c33bbf1dac6e39d69b15a107bf4e1933bd7e9fedc0be5911ffb
+    digest: sha256:5cc91f03c170b2ffb086f520777dd125fd747fec45569063f958e3c83695fbc2
   - name: cloudflared.invalid/repository
     newName: docker.io/cloudflare/cloudflared
     digest: sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
@@ -31,7 +31,7 @@ patches:
         value: http://openbao.openbao.svc.cluster.local:8200
       - op: replace
         path: /data/BOB_RELEASE_SHA
-        value: 943122f3d2e539567b066b3d6412f1bcb0d4fdbc
+        value: c650327ee38b802c400abaa3af27247c4e7e2679
       - op: replace
         path: /data/OTEL_EXPORTER_OTLP_ENDPOINT
         value: http://prod-otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4318
