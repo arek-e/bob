@@ -255,7 +255,7 @@ describe("production GitOps deployment readiness", () => {
       assertDeploymentReadiness({
         ...input,
         argocdApplication: input.argocdApplication.replace(
-      "targetRevision: 2605f87c64cc9da41a9492c75f9ebf7c3e060fc5",
+          "targetRevision: 2605f87c64cc9da41a9492c75f9ebf7c3e060fc5",
           "targetRevision: v1"
         )
       })
