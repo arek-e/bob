@@ -22,6 +22,13 @@ const integrations = {
   google_calendar: "bob-google-calendar",
   microsoft_calendar: "bob-microsoft-calendar"
 } as const
+function testAgentAccount() {
+  return {
+    getStatus: async () => ({ configured: false, provider: "openai-codex" as const }),
+    getDeviceLoginStatus: async () => ({ type: "idle" as const }),
+    startDeviceLogin: async () => ({ type: "failed" as const, code: "not_tested" })
+  }
+}
 
 beforeEach(async () => {
   await applyD1Migrations(env.DB, decodeTestMigrations(env.TEST_MIGRATIONS))
@@ -50,6 +57,7 @@ describe("account connections", () => {
       },
       {
         integrations,
+        agentAccount: testAgentAccount(),
         sendblueStatus: async () => ({ provider: "sendblue", status: "connected" }),
         now: () => new Date("2026-08-11T10:05:00.000Z"),
         randomUuid: () => "00000000-0000-4000-8000-000000000002"
@@ -58,6 +66,7 @@ describe("account connections", () => {
 
     await expect(connections.list(ownerId)).resolves.toEqual([
       { provider: "sendblue", status: "connected" },
+      { provider: "openai_codex", status: "not_connected" },
       { provider: "google_calendar", status: "not_connected" },
       { provider: "microsoft_calendar", status: "not_connected" }
     ])
@@ -65,6 +74,7 @@ describe("account connections", () => {
 
     await expect(connections.refresh(ownerId)).resolves.toEqual([
       { provider: "sendblue", status: "connected" },
+      { provider: "openai_codex", status: "not_connected" },
       { provider: "google_calendar", status: "connected" },
       { provider: "microsoft_calendar", status: "not_connected" }
     ])
@@ -88,6 +98,7 @@ describe("account connections", () => {
       },
       {
         integrations,
+        agentAccount: testAgentAccount(),
         sendblueStatus: async () => ({ provider: "sendblue", status: "connected" }),
         randomUuid: () => "00000000-0000-4000-8000-000000000002"
       }
@@ -104,17 +115,20 @@ describe("account connections", () => {
       },
       {
         integrations,
+        agentAccount: testAgentAccount(),
         sendblueStatus: async () => ({ provider: "sendblue", status: "paused" })
       }
     )
 
     await expect(unavailable.refresh(ownerId)).resolves.toEqual([
       { provider: "sendblue", status: "paused" },
+      { provider: "openai_codex", status: "not_connected" },
       { provider: "google_calendar", status: "stale" },
       { provider: "microsoft_calendar", status: "unavailable" }
     ])
     await expect(unavailable.list(ownerId)).resolves.toEqual([
       { provider: "sendblue", status: "paused" },
+      { provider: "openai_codex", status: "not_connected" },
       { provider: "google_calendar", status: "connected" },
       { provider: "microsoft_calendar", status: "not_connected" }
     ])

@@ -67,13 +67,6 @@ export const ReminderList = Schema.Struct({
 
 export const ReminderSnoozeRequest = Schema.Struct({ dueAt: IsoDateTime })
 
-export const AdminStatus = Schema.Struct({
-  configured: Schema.Boolean,
-  provider: Schema.String,
-  expiresAt: Schema.optionalKey(IsoDateTime),
-  accountIdRedacted: Schema.optionalKey(Schema.String)
-})
-
 export const OperationalAlert = Schema.Struct({
   id: Uuid,
   code: Schema.Literals([
@@ -239,7 +232,6 @@ export type JournalList = typeof JournalList.Type
 export type ReminderSummary = typeof ReminderSummary.Type
 export type ReminderList = typeof ReminderList.Type
 export type ReminderSnoozeRequest = typeof ReminderSnoozeRequest.Type
-export type AdminStatus = typeof AdminStatus.Type
 export type OperationalAlert = typeof OperationalAlert.Type
 export type AlertList = typeof AlertList.Type
 export type MemoryCandidateReview = typeof MemoryCandidateReview.Type

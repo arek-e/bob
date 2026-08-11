@@ -56,6 +56,7 @@ function composition(
           configured: false,
           provider: "openai-codex" as const
         })),
+        getDeviceLoginStatus: vi.fn(async () => ({ type: "idle" as const })),
         startDeviceLogin: vi.fn(async (): Promise<DeviceLoginEvent> => ({
           type: "device_code",
           verificationUri: "https://example.invalid/device",
@@ -125,6 +126,17 @@ describe("agent HTTP boundary", () => {
     )
     expect(response.status).toBe(202)
     expect(await response.json()).toMatchObject({ type: "device_code", userCode: "ABC-12345" })
+    expect(target.services.access.verify).toHaveBeenCalledWith(expect.any(Request), "admin")
+  })
+
+  it("returns the retained device-login state through the private admin route", async () => {
+    const target = composition(true)
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/admin/auth/device-login"),
+      target
+    )
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ type: "idle" })
     expect(target.services.access.verify).toHaveBeenCalledWith(expect.any(Request), "admin")
   })
 

@@ -75,7 +75,7 @@ export const DeviceLoginEvent = Schema.Union([
   }),
   Schema.Struct({
     type: Schema.Literal("completed"),
-    accountIdRedacted: Schema.String,
+    accountIdRedacted: Schema.optionalKey(Schema.String),
     expiresAt: IsoDateTime
   }),
   Schema.Struct({
@@ -84,8 +84,22 @@ export const DeviceLoginEvent = Schema.Union([
   })
 ])
 
+export const DeviceLoginState = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("idle") }),
+  DeviceLoginEvent
+])
+
+export const AgentAuthStatus = Schema.Struct({
+  configured: Schema.Boolean,
+  provider: Schema.Literal("openai-codex"),
+  expiresAt: Schema.optionalKey(IsoDateTime),
+  accountIdRedacted: Schema.optionalKey(Schema.String)
+})
+
 export type ContextSource = typeof ContextSource.Type
 export type ContextItem = typeof ContextItem.Type
 export type AgentRunRequest = typeof AgentRunRequest.Type
 export type AgentRunResult = typeof AgentRunResult.Type
 export type DeviceLoginEvent = typeof DeviceLoginEvent.Type
+export type DeviceLoginState = typeof DeviceLoginState.Type
+export type AgentAuthStatus = typeof AgentAuthStatus.Type

@@ -581,28 +581,13 @@ export async function handleHttp(
       return json({ ok: true })
     }
 
-    if (request.method === "GET" && url.pathname === "/api/agent/status") {
-      const response = await fetch(`${composition.config.AGENT_ADMIN_URL}/v1/admin/auth/status`, {
-        headers: {
-          "CF-Access-Client-Id": composition.config.AGENT_ADMIN_ACCESS_CLIENT_ID,
-          "CF-Access-Client-Secret": composition.config.AGENT_ADMIN_ACCESS_CLIENT_SECRET
-        }
-      })
-      return json(await response.json(), response.status)
+    if (request.method === "GET" && url.pathname === "/api/connections/codex/device-login") {
+      return json(await composition.services.connections.getDeviceLoginStatus())
     }
 
-    if (request.method === "POST" && url.pathname === "/api/agent/device-login") {
-      const response = await fetch(
-        `${composition.config.AGENT_ADMIN_URL}/v1/admin/auth/device-login`,
-        {
-          method: "POST",
-          headers: {
-            "CF-Access-Client-Id": composition.config.AGENT_ADMIN_ACCESS_CLIENT_ID,
-            "CF-Access-Client-Secret": composition.config.AGENT_ADMIN_ACCESS_CLIENT_SECRET
-          }
-        }
-      )
-      return json(await response.json(), response.status)
+    if (request.method === "POST" && url.pathname === "/api/connections/codex/device-login") {
+      const event = await composition.services.connections.startDeviceLogin()
+      return json(event, event.type === "failed" ? 409 : 202)
     }
 
     if (request.method === "POST" && url.pathname === "/internal/agent/result") {

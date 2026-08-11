@@ -1,4 +1,10 @@
-import { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/contracts/agent"
+import {
+  AgentAuthStatus,
+  AgentRunRequest,
+  AgentRunResult,
+  DeviceLoginEvent,
+  DeviceLoginState
+} from "@bob/contracts/agent"
 import { agentRunSpanCode, featureForTools } from "@bob/observability/attribution"
 import { observeNodeSpan, runWithNodeTelemetryContext } from "@bob/observability/node"
 import {
@@ -148,7 +154,16 @@ export async function handleAgentHttp(
       )
     }
     if (request.method === "GET" && url.pathname === "/v1/admin/auth/status") {
-      return json(await composition.services.agent.getAuthStatus())
+      return json(
+        Schema.decodeUnknownSync(AgentAuthStatus)(await composition.services.agent.getAuthStatus())
+      )
+    }
+    if (request.method === "GET" && url.pathname === "/v1/admin/auth/device-login") {
+      return json(
+        Schema.decodeUnknownSync(DeviceLoginState)(
+          await composition.services.agent.getDeviceLoginStatus()
+        )
+      )
     }
     if (request.method === "POST" && url.pathname === "/v1/admin/auth/device-login") {
       const event = Schema.decodeUnknownSync(DeviceLoginEvent)(

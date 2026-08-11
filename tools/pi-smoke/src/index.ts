@@ -1,5 +1,4 @@
-import { AgentRunResult } from "@bob/contracts/agent"
-import { AdminStatus } from "@bob/contracts/ui"
+import { AgentAuthStatus, AgentRunResult } from "@bob/contracts/agent"
 import { Schema } from "effect"
 
 import { ENV } from "./environment.generated.ts"
@@ -19,7 +18,7 @@ const statusResponse = await fetch(`${ENV.AGENT_ADMIN_URL}/v1/admin/auth/status`
   headers: adminHeaders
 })
 if (!statusResponse.ok) throw new Error(`Agent status failed: ${statusResponse.status}`)
-const status = Schema.decodeUnknownSync(AdminStatus)(await statusResponse.json())
+const status = Schema.decodeUnknownSync(AgentAuthStatus)(await statusResponse.json())
 if (!status.configured) throw new Error("Pi openai-codex credential is not configured")
 
 const report: Record<string, unknown> = {

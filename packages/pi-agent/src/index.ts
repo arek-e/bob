@@ -1,4 +1,10 @@
-import type { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/contracts/agent"
+import type {
+  AgentAuthStatus,
+  AgentRunRequest,
+  AgentRunResult,
+  DeviceLoginEvent,
+  DeviceLoginState
+} from "@bob/contracts/agent"
 import type { ToolCommand, ToolResult } from "@bob/contracts/tools"
 
 import {
@@ -44,16 +50,10 @@ export interface BobPiAgentOptions {
   readonly deviceLoginStartTimeoutMs?: number
 }
 
-export interface AuthStatus {
-  readonly configured: boolean
-  readonly provider: "openai-codex"
-  readonly accountIdRedacted?: string
-  readonly expiresAt?: string
-}
-
 export interface BobPiAgent {
   runTurn(request: AgentRunRequest): Promise<AgentRunResult>
-  getAuthStatus(): Promise<AuthStatus>
+  getAuthStatus(): Promise<AgentAuthStatus>
+  getDeviceLoginStatus(): Promise<DeviceLoginState>
   startDeviceLogin(): Promise<DeviceLoginEvent>
 }
 
@@ -131,6 +131,22 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
 
   const now = options.now ?? Date.now
   let activeLogin: Promise<unknown> | undefined
+  let deviceLoginState: DeviceLoginState = { type: "idle" }
+
+  async function readAuthStatus(): Promise<AgentAuthStatus> {
+    const credential = await options.credentials.read("openai-codex")
+    if (credential?.type !== "oauth") return { configured: false, provider: "openai-codex" }
+    const accountId = typeof credential.accountId === "string" ? credential.accountId : undefined
+    const expiresAt = new Date(credential.expires).toISOString()
+    return {
+      configured: credential.expires > now(),
+      provider: "openai-codex",
+      ...(accountId === undefined
+        ? {}
+        : { accountIdRedacted: `…${accountId.slice(Math.max(0, accountId.length - 4))}` }),
+      expiresAt
+    }
+  }
 
   return {
     async runTurn(request) {
@@ -446,23 +462,17 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
       }
     },
 
-    async getAuthStatus() {
-      const credential = await options.credentials.read("openai-codex")
-      if (credential?.type !== "oauth") return { configured: false, provider: "openai-codex" }
-      const accountId = typeof credential.accountId === "string" ? credential.accountId : undefined
-      return {
-        configured: true,
-        provider: "openai-codex",
-        ...(accountId === undefined
-          ? {}
-          : { accountIdRedacted: `…${accountId.slice(Math.max(0, accountId.length - 4))}` }),
-        expiresAt: new Date(credential.expires).toISOString()
-      }
+    getAuthStatus: readAuthStatus,
+
+    async getDeviceLoginStatus() {
+      return deviceLoginState
     },
 
     async startDeviceLogin() {
       if (activeLogin !== undefined) {
-        return { type: "failed", code: "login_already_active" }
+        return deviceLoginState.type === "device_code"
+          ? deviceLoginState
+          : { type: "failed", code: "login_already_active" }
       }
       let resolveEvent!: (event: DeviceLoginEvent) => void
       const firstEvent = new Promise<DeviceLoginEvent>((resolve) => {
@@ -481,24 +491,44 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         notify(event: AuthEvent) {
           if (event.type === "device_code" && !eventSent) {
             eventSent = true
-            resolveEvent({
+            deviceLoginState = {
               type: "device_code",
               verificationUri: event.verificationUri,
               userCode: event.userCode,
               expiresAt: new Date(now() + (event.expiresInSeconds ?? 900) * 1_000).toISOString()
-            })
+            }
+            resolveEvent(deviceLoginState)
           }
         }
       }
       activeLogin = models
         .login("openai-codex", "oauth", interaction)
+        .then(async () => {
+          const status = await readAuthStatus()
+          deviceLoginState =
+            status.configured && status.expiresAt !== undefined
+              ? {
+                  type: "completed",
+                  ...(status.accountIdRedacted === undefined
+                    ? {}
+                    : { accountIdRedacted: status.accountIdRedacted }),
+                  expiresAt: status.expiresAt
+                }
+              : { type: "failed", code: "credential_not_saved" }
+        })
         .catch(() => {
-          if (!eventSent) resolveEvent({ type: "failed", code: "device_login_failed" })
+          deviceLoginState = { type: "failed", code: "device_login_failed" }
+          if (!eventSent) resolveEvent(deviceLoginState)
         })
         .finally(() => {
           activeLogin = undefined
         })
-      return waitForDeviceLoginStart(firstEvent, options.deviceLoginStartTimeoutMs ?? 15_000)
+      const started = await waitForDeviceLoginStart(
+        firstEvent,
+        options.deviceLoginStartTimeoutMs ?? 15_000
+      )
+      if (started.type === "failed" && !eventSent) deviceLoginState = started
+      return started
     }
   }
 }
@@ -507,8 +537,12 @@ export function runTurn(agent: BobPiAgent, request: AgentRunRequest): Promise<Ag
   return agent.runTurn(request)
 }
 
-export function getAuthStatus(agent: BobPiAgent): Promise<AuthStatus> {
+export function getAuthStatus(agent: BobPiAgent): Promise<AgentAuthStatus> {
   return agent.getAuthStatus()
+}
+
+export function getDeviceLoginStatus(agent: BobPiAgent): Promise<DeviceLoginState> {
+  return agent.getDeviceLoginStatus()
 }
 
 export function startDeviceLogin(agent: BobPiAgent): Promise<DeviceLoginEvent> {

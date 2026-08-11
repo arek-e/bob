@@ -18,8 +18,10 @@ export const OwnerSettingsUpdate = Schema.Struct({
 })
 
 export const SettingsConnection = Schema.Struct({
-  provider: Schema.Literals(["sendblue", "google_calendar", "microsoft_calendar"]),
-  status: Schema.Literals(["connected", "not_connected", "paused", "stale", "unavailable"])
+  provider: Schema.Literals(["sendblue", "openai_codex", "google_calendar", "microsoft_calendar"]),
+  status: Schema.Literals(["connected", "not_connected", "paused", "stale", "unavailable"]),
+  accountIdRedacted: Schema.optionalKey(Schema.String),
+  expiresAt: Schema.optionalKey(IsoDateTime)
 })
 
 export const ConnectionProvider = Schema.Literals(["google_calendar", "microsoft_calendar"])

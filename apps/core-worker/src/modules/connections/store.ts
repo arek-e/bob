@@ -1,3 +1,4 @@
+import type { DeviceLoginEvent, DeviceLoginState } from "@bob/contracts/agent"
 import type {
   ConnectionProvider,
   ConnectionSession,
@@ -8,6 +9,7 @@ import { and, eq } from "drizzle-orm"
 import { Context, Layer } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
+import type { AgentAccountClient } from "./agent-account.ts"
 import type { NangoClient, NangoConnection } from "./nango.ts"
 
 import { externalConnections } from "./schema.ts"
@@ -16,12 +18,15 @@ export interface AccountConnections {
   list(ownerId: string): Promise<readonly SettingsConnection[]>
   refresh(ownerId: string): Promise<readonly SettingsConnection[]>
   createSession(ownerId: string, provider: ConnectionProvider): Promise<ConnectionSession>
+  getDeviceLoginStatus(): Promise<DeviceLoginState>
+  startDeviceLogin(): Promise<DeviceLoginEvent>
 }
 
 export const AccountConnections = Context.Service<AccountConnections>("bob/AccountConnections")
 
 export interface AccountConnectionsOptions {
   readonly integrations: Readonly<Record<ConnectionProvider, string>>
+  readonly agentAccount: AgentAccountClient
   readonly sendblueStatus: (ownerId: string) => Promise<SettingsConnection>
   readonly now?: () => Date
   readonly randomUuid?: () => string
@@ -57,9 +62,23 @@ export function makeAccountConnections(
   }
 
   async function list(ownerId: string): Promise<readonly SettingsConnection[]> {
-    const [sendblue, rows] = await Promise.all([options.sendblueStatus(ownerId), saved(ownerId)])
+    const [sendblue, rows, agentStatus] = await Promise.all([
+      options.sendblueStatus(ownerId),
+      saved(ownerId),
+      options.agentAccount.getStatus().catch(() => undefined)
+    ])
     return [
       sendblue,
+      agentStatus === undefined
+        ? { provider: "openai_codex", status: "unavailable" }
+        : {
+            provider: "openai_codex",
+            status: agentStatus.configured ? "connected" : "not_connected",
+            ...(agentStatus.accountIdRedacted === undefined
+              ? {}
+              : { accountIdRedacted: agentStatus.accountIdRedacted }),
+            ...(agentStatus.expiresAt === undefined ? {} : { expiresAt: agentStatus.expiresAt })
+          },
       ...providers.map((provider): SettingsConnection => ({
         provider,
         status: rows.find((row) => row.provider === provider)?.status ?? "not_connected"
@@ -76,7 +95,7 @@ export function makeAccountConnections(
         live = await nango.listConnections(ownerId)
       } catch {
         return (await list(ownerId)).map((connection) =>
-          connection.provider === "sendblue"
+          connection.provider === "sendblue" || connection.provider === "openai_codex"
             ? connection
             : {
                 ...connection,
@@ -135,7 +154,10 @@ export function makeAccountConnections(
         connectUrl: session.connectUrl,
         expiresAt: session.expiresAt
       }
-    }
+    },
+
+    getDeviceLoginStatus: () => options.agentAccount.getDeviceLoginStatus(),
+    startDeviceLogin: () => options.agentAccount.startDeviceLogin()
   }
 }
 

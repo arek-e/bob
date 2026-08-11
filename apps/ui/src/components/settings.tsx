@@ -1,3 +1,4 @@
+import { DeviceLoginState } from "@bob/contracts/agent"
 import {
   AccountConnectionsView,
   OwnerSettingsUpdate,
@@ -40,33 +41,6 @@ const settingsSections = [
 ] as const
 
 type SettingsSectionId = (typeof settingsSections)[number]["id"]
-
-const DeviceLoginEvent = Schema.Union([
-  Schema.Struct({
-    type: Schema.Literal("device_code"),
-    verificationUri: Schema.String,
-    userCode: Schema.String,
-    expiresAt: Schema.String
-  }),
-  Schema.Struct({
-    type: Schema.Literal("completed"),
-    accountIdRedacted: Schema.String,
-    expiresAt: Schema.String
-  }),
-  Schema.Struct({
-    type: Schema.Literal("failed"),
-    code: Schema.String
-  })
-])
-
-type DeviceLoginEventType = typeof DeviceLoginEvent.Type
-
-const AdminStatus = Schema.Struct({
-  configured: Schema.Boolean,
-  provider: Schema.String,
-  expiresAt: Schema.optionalKey(Schema.String),
-  accountIdRedacted: Schema.optionalKey(Schema.String)
-})
 
 function SectionHeader(props: {
   title: string
@@ -386,41 +360,57 @@ function LocalitySection(props: ClientProps) {
 function ConnectionsSection(props: ClientProps) {
   const status = useStatus()
   const owner = useOwnerSession()
-  const [connectionsView, { mutate: setConnectionsView }] = createResource(
+  const [connectionsView, { mutate: setConnectionsView, refetch: refetchConnections }] =
+    createResource(
+      () => (props.enabled() ? "ready" : undefined),
+      async () => parseJson(AccountConnectionsView, await api("/api/connections"))
+    )
+  const [login, { mutate: setLogin, refetch: refetchLogin }] = createResource(
     () => (props.enabled() ? "ready" : undefined),
-    async () => parseJson(AccountConnectionsView, await api("/api/connections"))
+    async () => parseJson(DeviceLoginState, await api("/api/connections/codex/device-login"))
   )
-  const [authStatus, { refetch: refetchAuth }] = createResource(
-    () => (props.enabled() ? "ready" : undefined),
-    async () => parseJson(AdminStatus, await api("/api/agent/status"))
-  )
-  const [login, setLogin] = createSignal<DeviceLoginEventType>()
   const [startingLogin, setStartingLogin] = createSignal(false)
   const [refreshing, setRefreshing] = createSignal(false)
   const [linking, setLinking] = createSignal<ConnectionProvider>()
+  let loginPoll: number | undefined
 
   const deviceLogin = () => {
     const value = login()
     return value?.type === "device_code" ? value : undefined
   }
 
-  function connection(provider: SettingsConnection["provider"]): SettingsConnection["status"] {
+  function connection(provider: SettingsConnection["provider"]): SettingsConnection {
     return (
-      connectionsView()?.connections.find((item) => item.provider === provider)?.status ??
-      "not_connected"
+      connectionsView()?.connections.find((item) => item.provider === provider) ?? {
+        provider,
+        status: "not_connected"
+      }
     )
   }
+
+  createEffect(() => {
+    if (loginPoll !== undefined) window.clearInterval(loginPoll)
+    if (login()?.type !== "device_code") return
+    loginPoll = window.setInterval(() => {
+      void Promise.resolve(refetchLogin()).then((state) => {
+        if (state?.type === "completed") void refetchConnections()
+      })
+    }, 2_000)
+  })
+
+  onCleanup(() => {
+    if (loginPoll !== undefined) window.clearInterval(loginPoll)
+  })
 
   async function refresh() {
     setRefreshing(true)
     try {
-      const [connections] = await Promise.all([
-        api("/api/connections/refresh", { method: "POST", body: "{}" }).then((response) =>
-          parseJson(AccountConnectionsView, response)
-        ),
-        refetchAuth()
-      ])
+      const connections = await api("/api/connections/refresh", {
+        method: "POST",
+        body: "{}"
+      }).then((response) => parseJson(AccountConnectionsView, response))
       setConnectionsView(connections)
+      await refetchLogin()
     } catch {
       status.announce("Unable to refresh connections. Check the service and try again.", true)
     } finally {
@@ -432,13 +422,13 @@ function ConnectionsSection(props: ClientProps) {
     setStartingLogin(true)
     try {
       const event = parseJson(
-        DeviceLoginEvent,
-        await api("/api/agent/device-login", { method: "POST", body: "{}" })
+        DeviceLoginState,
+        await api("/api/connections/codex/device-login", { method: "POST", body: "{}" })
       )
       setLogin(event)
       if (event.type === "device_code")
         status.announce("Finish sign-in to link your Codex account.")
-      if (event.type === "completed") await refetchAuth()
+      if (event.type === "completed") await refetchConnections()
     } catch {
       status.announce(
         "Unable to start Codex login. Check the private agent service and try again.",
@@ -495,12 +485,12 @@ function ConnectionsSection(props: ClientProps) {
         <ConnectionCard
           title="Sendblue"
           description="Use your verified phone number to talk with Bob."
-          status={connection("sendblue")}
+          status={connection("sendblue").status}
         >
           <p class={styles.hint}>
-            {connection("sendblue") === "connected"
+            {connection("sendblue").status === "connected"
               ? "Messages from the verified owner are linked to Bob."
-              : connection("sendblue") === "paused"
+              : connection("sendblue").status === "paused"
                 ? "Send START to the Bob number to resume messages."
                 : "To link this connection, send any message to Bob from your verified number."}
           </p>
@@ -508,24 +498,24 @@ function ConnectionsSection(props: ClientProps) {
         <ConnectionCard
           title="Codex"
           description="Let Bob use your Codex account for agent tasks."
-          status={authStatus()?.configured ? "connected" : "not_connected"}
+          status={connection("openai_codex").status}
         >
           <p class={styles.hint}>
-            {authStatus.loading
+            {connectionsView.loading
               ? "Checking the Codex account…"
-              : authStatus()?.configured
-                ? `Linked${authStatus()?.accountIdRedacted === undefined ? "" : ` to account ${authStatus()!.accountIdRedacted}`}.${authStatus()?.expiresAt === undefined ? "" : ` Credential expires ${formatDate(authStatus()!.expiresAt!)}`}`
+              : connection("openai_codex").status === "connected"
+                ? `Linked${connection("openai_codex").accountIdRedacted === undefined ? "" : ` to account ${connection("openai_codex").accountIdRedacted}`}.${connection("openai_codex").expiresAt === undefined ? "" : ` Credential expires ${formatDate(connection("openai_codex").expiresAt!)}`}`
                 : "Link your Codex account before Bob can run agent tasks."}
           </p>
           <div class={styles.actionRow}>
             <Button disabled={startingLogin()} onClick={() => void startLogin()}>
               {startingLogin()
                 ? "Starting login…"
-                : authStatus()?.configured
+                : connection("openai_codex").status === "connected"
                   ? "Relink Codex account"
                   : "Link Codex account"}
             </Button>
-            <Button variant="secondary" disabled={refreshing()} onClick={() => void refetchAuth()}>
+            <Button variant="secondary" disabled={refreshing()} onClick={() => void refresh()}>
               Check account
             </Button>
           </div>
@@ -553,14 +543,14 @@ function ConnectionsSection(props: ClientProps) {
         <CalendarConnectionCard
           provider="google_calendar"
           label="Google Calendar"
-          status={connection("google_calendar")}
+          status={connection("google_calendar").status}
           linking={linking()}
           onLink={() => void linkCalendar("google_calendar", "Google Calendar")}
         />
         <CalendarConnectionCard
           provider="microsoft_calendar"
           label="Outlook Calendar"
-          status={connection("microsoft_calendar")}
+          status={connection("microsoft_calendar").status}
           linking={linking()}
           onLink={() => void linkCalendar("microsoft_calendar", "Outlook Calendar")}
         />

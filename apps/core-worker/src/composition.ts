@@ -5,6 +5,7 @@ import type { CoreBindings } from "./bindings.ts"
 
 import { createCoreDatabase } from "./database.ts"
 import { AlertStore, makeAlertStore, alertStoreLayer } from "./modules/alerts/store.ts"
+import { makeAgentAccountClient } from "./modules/connections/agent-account.ts"
 import { makeNangoClient } from "./modules/connections/nango.ts"
 import {
   AccountConnections,
@@ -117,6 +118,11 @@ export function composeCore(bindings: CoreBindings) {
         google_calendar: config.NANGO_GOOGLE_CALENDAR_INTEGRATION_ID,
         microsoft_calendar: config.NANGO_MICROSOFT_CALENDAR_INTEGRATION_ID
       },
+      agentAccount: makeAgentAccountClient({
+        url: config.AGENT_ADMIN_URL,
+        accessClientId: config.AGENT_ADMIN_ACCESS_CLIENT_ID,
+        accessClientSecret: config.AGENT_ADMIN_ACCESS_CLIENT_SECRET
+      }),
       sendblueStatus: (ownerId) => readSendblueConnectionStatus(database, ownerId)
     }
   )
