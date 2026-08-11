@@ -49,7 +49,7 @@ async function validInput() {
     readFile(new URL("infra/kubernetes/base/agent-config.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/kubernetes/base/secret-delivery.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/kubernetes/base/network-policy.yaml", repositoryRoot), "utf8"),
-    readFile(new URL("infra/kubernetes/base/cilium-fqdn-policy.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/kubernetes/base/cilium-egress-policy.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/kubernetes/base/service-account.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/argocd/namespace.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/openbao/agent-production-policy.hcl", repositoryRoot), "utf8"),
@@ -254,6 +254,12 @@ describe("production GitOps deployment readiness", () => {
     expect(() =>
       assertDeploymentReadiness({
         ...input,
+        argocdApplication: input.argocdApplication.replace("PruneLast=true", "PruneLast=false")
+      })
+    ).toThrow(/automated Bob/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
         argocdApplication: input.argocdApplication.replace(
           "targetRevision: 2605f87c64cc9da41a9492c75f9ebf7c3e060fc5",
           "targetRevision: v1"
@@ -285,6 +291,18 @@ describe("production GitOps deployment readiness", () => {
         )
       })
     ).toThrow(/missing NetworkPolicy/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        renderedKubernetes: input.renderedKubernetes.replace("toCIDRSet:", "toFQDNs:")
+      })
+    ).toThrow(/Cilium egress/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        renderedKubernetes: input.renderedKubernetes.replace("- 192.88.99.0/24", "- 192.88.99.0/25")
+      })
+    ).toThrow(/Cilium egress/u)
     expect(() =>
       assertDeploymentReadiness({
         ...input,

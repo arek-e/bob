@@ -21,6 +21,7 @@ spec:
       allowEmpty: false
     syncOptions:
       - ServerSideApply=true
+      - PruneLast=true
     retry:
       limit: 3
       backoff:

@@ -16,9 +16,9 @@ describe("agent platform contract", () => {
     expect(deployment).toContain("path: /health")
   })
 
-  it("denies default egress and permits only named platform paths", async () => {
+  it("denies default egress and permits only reviewed platform paths", async () => {
     const policy = await readFile(`${kubernetesBase}/network-policy.yaml`, "utf8")
-    const ciliumPolicy = await readFile(`${kubernetesBase}/cilium-fqdn-policy.yaml`, "utf8")
+    const ciliumPolicy = await readFile(`${kubernetesBase}/cilium-egress-policy.yaml`, "utf8")
     const deployment = await readFile(`${kubernetesBase}/deployment.yaml`, "utf8")
     expect(policy).toContain("policyTypes: [Ingress, Egress]")
     expect(policy).not.toContain("kubernetes.io/metadata.name: kube-system")
@@ -26,9 +26,12 @@ describe("agent platform contract", () => {
     expect(policy).toContain("kubernetes.io/metadata.name: openbao")
     expect(policy).toContain("port: 7844")
     expect(ciliumPolicy).toContain('"k8s:k8s-app": kube-dns')
-    expect(ciliumPolicy).toContain("rules:")
-    expect(ciliumPolicy).toContain("dns:")
-    expect(ciliumPolicy).toContain('matchPattern: "*"')
+    expect(ciliumPolicy).toContain("toCIDRSet:")
+    expect(ciliumPolicy).toContain("cidr: 0.0.0.0/0")
+    expect(ciliumPolicy).toContain('port: "53"')
+    expect(ciliumPolicy).toContain('port: "443"')
+    expect(ciliumPolicy).not.toContain("rules:")
+    expect(ciliumPolicy).not.toContain("toFQDNs:")
     expect(deployment).toContain("--protocol, http2")
   })
 

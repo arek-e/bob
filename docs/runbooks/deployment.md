@@ -16,9 +16,15 @@ Update the two immutable images in `infra/kubernetes/overlays/prod`.
 
 Do not replace either digest with a mutable tag.
 
-Install Cilium with FQDN policy support. Review the two permitted external hosts.
+Use Cilium for Bob egress enforcement.
 
-Keep external hosts only in the reviewed Cilium policy.
+Allow direct CoreDNS queries and public IPv4 HTTPS only.
+
+Exclude private and reserved IPv4 ranges.
+
+Do not use Cilium DNS proxy rules for Bob. The current transparent proxy drops Bob DNS requests.
+
+Repair the proxy through cluster GitOps before you restore FQDN rules.
 
 Use the in-cluster OpenBao service for runtime secret access.
 

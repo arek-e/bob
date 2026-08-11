@@ -42,7 +42,7 @@ const [
   readFile("infra/kubernetes/base/agent-config.yaml", "utf8"),
   readFile("infra/kubernetes/base/secret-delivery.yaml", "utf8"),
   readFile("infra/kubernetes/base/network-policy.yaml", "utf8"),
-  readFile("infra/kubernetes/base/cilium-fqdn-policy.yaml", "utf8"),
+  readFile("infra/kubernetes/base/cilium-egress-policy.yaml", "utf8"),
   readFile("infra/kubernetes/base/service-account.yaml", "utf8"),
   readFile("infra/argocd/namespace.yaml", "utf8"),
   readFile("infra/openbao/agent-production-policy.hcl", "utf8"),

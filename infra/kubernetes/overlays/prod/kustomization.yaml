@@ -17,18 +17,6 @@ patches:
       - op: replace
         path: /data/BAO_ADDR
         value: http://openbao.openbao.svc.cluster.local:8200
-  - target:
-      group: cilium.io
-      version: v2
-      kind: CiliumNetworkPolicy
-      name: bob-agent-reviewed-fqdn-egress
-    patch: |-
-      - op: replace
-        path: /spec/egress/1/toFQDNs/7/matchName
-        value: bob.tpops.dev
-      - op: replace
-        path: /spec/egress/1/toFQDNs/8/matchName
-        value: vault.lamb-bicolor.ts.net
 replacements:
   - source:
       kind: ConfigMap

@@ -10,8 +10,6 @@ const production = Object.freeze({
     "docker.io/cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf",
   tunnelImagePlaceholder: "cloudflared.invalid/repository",
   openBaoAddress: "http://openbao.openbao.svc.cluster.local:8200",
-  coreFqdn: "bob.tpops.dev",
-  openBaoFqdn: "vault.lamb-bicolor.ts.net",
   repository: "git@github.com:arek-e/bob.git",
   repositoryPath: "infra/kubernetes/overlays/prod",
   repositorySecretPath: "apps/prod/bob/argocd/repository"
@@ -95,7 +93,7 @@ export function assertDeploymentReadiness(input) {
   const config = requiredText(input.config, "Kubernetes bootstrap ConfigMap")
   const delivery = requiredText(input.delivery, "Kubernetes secret delivery contract")
   const networkPolicy = requiredText(input.networkPolicy, "Kubernetes NetworkPolicy")
-  const ciliumPolicy = requiredText(input.ciliumPolicy, "Cilium FQDN policy")
+  const ciliumPolicy = requiredText(input.ciliumPolicy, "Cilium egress policy")
   const serviceAccounts = requiredText(
     input.serviceAccounts,
     "The secret-delivery ServiceAccount manifest"
@@ -150,9 +148,7 @@ export function assertDeploymentReadiness(input) {
     deployment.includes(production.agentImage) ||
     deployment.includes(production.tunnelImage) ||
     config.includes(production.openBaoAddress) ||
-    delivery.includes(production.openBaoAddress) ||
-    ciliumPolicy.includes(production.coreFqdn) ||
-    ciliumPolicy.includes(production.openBaoFqdn)
+    delivery.includes(production.openBaoAddress)
   ) {
     throw new Error("A production value escaped the production overlay")
   }
@@ -184,9 +180,6 @@ export function assertDeploymentReadiness(input) {
       "name: bob-agent-bootstrap",
       "path: /data/BAO_ADDR",
       `value: ${production.openBaoAddress}`,
-      "kind: CiliumNetworkPolicy",
-      `value: ${production.coreFqdn}`,
-      `value: ${production.openBaoFqdn}`,
       "replacements:",
       "fieldPath: data.BAO_ADDR",
       "kind: SecretStore",
@@ -230,7 +223,7 @@ export function assertDeploymentReadiness(input) {
     { kind: "NetworkPolicy", name: "bob-agent-restricted-network", namespace: "bob" },
     {
       kind: "CiliumNetworkPolicy",
-      name: "bob-agent-reviewed-fqdn-egress",
+      name: "bob-agent-reviewed-egress",
       namespace: "bob"
     }
   ]
@@ -272,7 +265,7 @@ export function assertDeploymentReadiness(input) {
     renderedKubernetes,
     {
       kind: "CiliumNetworkPolicy",
-      name: "bob-agent-reviewed-fqdn-egress",
+      name: "bob-agent-reviewed-egress",
       namespace: "bob"
     },
     "The production Kubernetes render"
@@ -294,18 +287,6 @@ export function assertDeploymentReadiness(input) {
   ) {
     throw new Error("The in-cluster OpenBao address is missing")
   }
-  const nonCiliumSource = manifestDocuments(renderedKubernetes)
-    .filter((document) => manifestIdentity(document).kind !== "CiliumNetworkPolicy")
-    .join("\n")
-  if (
-    nonCiliumSource.includes(production.coreFqdn) ||
-    nonCiliumSource.includes(production.openBaoFqdn) ||
-    !renderedCiliumPolicy.includes(`matchName: ${production.coreFqdn}`) ||
-    !renderedCiliumPolicy.includes(`matchName: ${production.openBaoFqdn}`)
-  ) {
-    throw new Error("The reviewed external hosts must occur only in the Cilium policy")
-  }
-
   const projectedTokenMarkers = [
     "serviceAccountToken:",
     "audience: openbao",
@@ -433,9 +414,36 @@ export function assertDeploymentReadiness(input) {
   }
   requireMarkers(
     renderedCiliumPolicy,
-    ["requires-cilium-fqdn-enforcement", production.coreFqdn, production.openBaoFqdn],
-    "The reviewed Cilium FQDN enforcement contract is missing"
+    [
+      "requires-cilium-egress-enforcement",
+      "k8s:io.kubernetes.pod.namespace: kube-system",
+      "k8s:k8s-app: kube-dns",
+      "toCIDRSet:",
+      "cidr: 0.0.0.0/0",
+      "except:",
+      "- 0.0.0.0/8",
+      "- 10.0.0.0/8",
+      "- 100.64.0.0/10",
+      "- 127.0.0.0/8",
+      "- 169.254.0.0/16",
+      "- 172.16.0.0/12",
+      "- 192.0.0.0/24",
+      "- 192.0.2.0/24",
+      "- 192.88.99.0/24",
+      "- 192.168.0.0/16",
+      "- 198.18.0.0/15",
+      "- 198.51.100.0/24",
+      "- 203.0.113.0/24",
+      "- 224.0.0.0/4",
+      "- 240.0.0.0/4",
+      '- port: "53"',
+      '- port: "443"'
+    ],
+    "The reviewed Cilium egress contract is missing"
   )
+  if (renderedCiliumPolicy.includes("rules:") || renderedCiliumPolicy.includes("toFQDNs:")) {
+    throw new Error("The production policy must not depend on the Cilium DNS proxy")
+  }
 
   requireMarkers(
     argocdRepository,
@@ -547,7 +555,8 @@ export function assertDeploymentReadiness(input) {
       "prune: true",
       "selfHeal: true",
       "allowEmpty: false",
-      "ServerSideApply=true"
+      "ServerSideApply=true",
+      "PruneLast=true"
     ],
     "The automated Bob Argo CD Application is incomplete"
   )

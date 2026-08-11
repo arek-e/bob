@@ -7,4 +7,4 @@ resources:
   - deployment.yaml
   - service.yaml
   - network-policy.yaml
-  - cilium-fqdn-policy.yaml
+  - cilium-egress-policy.yaml
