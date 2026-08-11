@@ -5,8 +5,9 @@ import Settings from "lucide-solid/icons/settings"
 import X from "lucide-solid/icons/x"
 import { createContext, createSignal, onCleanup, onMount, useContext, type JSX } from "solid-js"
 
-import type { OwnerSession } from "~/lib/api"
+import type { OwnerSession } from "~/lib/auth-client"
 
+import { signOutOwner } from "~/lib/auth-client"
 import { styles } from "~/lib/styles"
 
 interface StatusState {
@@ -213,11 +214,7 @@ function OwnerIdentity(props: { name: string; email: string; initial: string; mo
 
 async function signOut(): Promise<void> {
   try {
-    await fetch("/api/auth/sign-out", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: "{}"
-    })
+    await signOutOwner()
   } finally {
     window.location.assign("/sign-in")
   }

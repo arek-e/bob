@@ -1,13 +1,6 @@
 import { ConnectionSession } from "@bob/contracts/settings"
 import { Schema } from "effect"
 
-export interface OwnerSession {
-  readonly user: {
-    readonly email: string
-    readonly name: string
-  }
-}
-
 export const apiBase = __BOB_API_BASE_URL__
 
 export async function api(path: string, init?: RequestInit): Promise<unknown> {
@@ -38,24 +31,6 @@ export function safeReturnPath(): string {
   if (typeof window === "undefined") return "/settings"
   const value = new URLSearchParams(window.location.search).get("returnTo")
   return value !== null && value.startsWith("/") && !value.startsWith("//") ? value : "/settings"
-}
-
-function decodeOwnerSession(value: unknown): OwnerSession | null {
-  if (typeof value !== "object" || value === null || !("user" in value)) return null
-  const user = (value as { user?: unknown }).user
-  if (typeof user !== "object" || user === null) return null
-  const email = "email" in user ? (user as { email?: unknown }).email : undefined
-  const name = "name" in user ? (user as { name?: unknown }).name : undefined
-  if (typeof email !== "string" || typeof name !== "string") return null
-  return { user: { email, name } }
-}
-
-export async function loadOwnerSession(): Promise<OwnerSession | null> {
-  const response = await fetch(`${apiBase}/api/auth/get-session`, {
-    headers: { accept: "application/json" }
-  })
-  if (!response.ok) return null
-  return decodeOwnerSession((await response.json()) as unknown)
 }
 
 export function parseJson<S extends Schema.ConstraintDecoder<unknown>>(

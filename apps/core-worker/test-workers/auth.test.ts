@@ -51,6 +51,35 @@ describe("owner authentication", () => {
     await expect(response.json()).resolves.toEqual({ code: "unauthorized" })
   })
 
+  it("keeps password policy inside the owner auth service", async () => {
+    const response = await handleHttp(
+      request("/setup/api", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password: "too-short" })
+      }),
+      bindings,
+      ownerAccess
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ code: "invalid_password" })
+  })
+
+  it("fails closed when Better Auth contains another account", async () => {
+    const at = Date.now()
+    await env.DB.prepare(
+      "INSERT INTO `auth_user` (`id`, `name`, `email`, `email_verified`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?, ?, ?)"
+    )
+      .bind("unexpected-user", "Unexpected", "unexpected@example.invalid", 1, at, at)
+      .run()
+
+    const response = await handleHttp(request("/setup/api"), bindings, ownerAccess)
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({ code: "setup_unavailable" })
+  })
+
   it("bootstraps one owner login and uses its session for owner APIs", async () => {
     const initial = await handleHttp(request("/setup/api"), bindings, ownerAccess)
     await expect(initial.json()).resolves.toEqual({ setupRequired: true })

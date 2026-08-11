@@ -123,10 +123,67 @@ export function createOwnerAuth(bindings: CoreBindings, options: OwnerAuthOption
 
 export type OwnerAuth = ReturnType<typeof createOwnerAuth>
 
-export async function ownerSession(request: Request, bindings: CoreBindings) {
-  const session = await createOwnerAuth(bindings).api.getSession({ headers: request.headers })
-  if (session?.user.email.trim().toLowerCase() !== bindings.OWNER_ACCESS_EMAIL.toLowerCase()) {
-    return null
-  }
-  return session
+export type OwnerSetupResult =
+  | { readonly state: "created"; readonly response: Response }
+  | { readonly state: "complete" }
+  | { readonly state: "invalid_password" }
+  | { readonly state: "failed"; readonly response: Response }
+
+function passwordFrom(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null || !("password" in input)) return undefined
+  const password = (input as { password?: unknown }).password
+  return typeof password === "string" && password.length >= 12 && password.length <= 128
+    ? password
+    : undefined
 }
+
+export function createOwnerAuthService(bindings: CoreBindings) {
+  const auth = createOwnerAuth(bindings)
+  const ownerEmail = bindings.OWNER_ACCESS_EMAIL.trim().toLowerCase()
+
+  async function ownerLoginExists(): Promise<boolean> {
+    const row = await bindings.DB.prepare("SELECT `id`, `email` FROM `auth_user` LIMIT 1").first<{
+      id: string
+      email: string
+    }>()
+    if (row === null) return false
+    if (row.id !== bindings.OWNER_ID || row.email.trim().toLowerCase() !== ownerEmail) {
+      throw new Error("Better Auth contains an unexpected owner account")
+    }
+    return true
+  }
+
+  return {
+    handle(request: Request): Promise<Response> {
+      return auth.handler(request)
+    },
+
+    ownerLoginExists,
+
+    async session(request: Request) {
+      const session = await auth.api.getSession({ headers: request.headers })
+      return session?.user.email.trim().toLowerCase() === ownerEmail ? session : null
+    },
+
+    async setup(request: Request, input: unknown): Promise<OwnerSetupResult> {
+      const password = passwordFrom(input)
+      if (password === undefined) return { state: "invalid_password" }
+      if (await ownerLoginExists()) return { state: "complete" }
+
+      const headers = new Headers(request.headers)
+      headers.delete("content-length")
+      headers.set("content-type", "application/json")
+      const signupRequest = new Request(new URL("/api/auth/sign-up/email", request.url), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ name: "Owner", email: ownerEmail, password })
+      })
+      const response = await createOwnerAuth(bindings, { allowSignUp: true }).handler(signupRequest)
+      if (response.ok) return { state: "created", response }
+      if (await ownerLoginExists()) return { state: "complete" }
+      return { state: "failed", response }
+    }
+  }
+}
+
+export type OwnerAuthService = ReturnType<typeof createOwnerAuthService>

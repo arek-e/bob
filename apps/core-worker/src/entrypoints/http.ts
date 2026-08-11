@@ -21,7 +21,7 @@ import { Schema } from "effect"
 import type { CoreBindings } from "../bindings.ts"
 
 import { composeCore } from "../composition.ts"
-import { createOwnerAuth, ownerSession } from "../modules/auth/service.ts"
+import { createOwnerAuthService, type OwnerAuthService } from "../modules/auth/service.ts"
 import {
   authorizeCoreRequest,
   authorizeSetupRequest,
@@ -66,14 +66,10 @@ function idempotencyKey(request: Request): string {
   return value
 }
 
-async function authUserExists(bindings: CoreBindings): Promise<boolean> {
-  const row = await bindings.DB.prepare("SELECT `id` FROM `auth_user` LIMIT 1").first()
-  return row !== null
-}
-
 async function handleSetup(
   request: Request,
   bindings: CoreBindings,
+  auth: OwnerAuthService,
   verifyAccess?: AccessTokenVerifier
 ): Promise<Response> {
   try {
@@ -91,10 +87,13 @@ async function handleSetup(
   }
 
   if (request.method === "GET") {
-    return json({ setupRequired: !(await authUserExists(bindings)) })
+    try {
+      return json({ setupRequired: !(await auth.ownerLoginExists()) })
+    } catch {
+      return json({ code: "setup_unavailable" }, 503)
+    }
   }
   if (request.method !== "POST") return json({ code: "method_not_allowed" }, 405)
-  if (await authUserExists(bindings)) return json({ code: "setup_complete" }, 409)
 
   let value: unknown
   try {
@@ -102,27 +101,14 @@ async function handleSetup(
   } catch {
     return json({ code: "invalid_request" }, 400)
   }
-  const password =
-    typeof value === "object" && value !== null && "password" in value
-      ? (value as { password?: unknown }).password
-      : undefined
-  if (typeof password !== "string" || password.length < 12 || password.length > 128) {
-    return json({ code: "invalid_password" }, 400)
+  try {
+    const result = await auth.setup(request, value)
+    if (result.state === "invalid_password") return json({ code: "invalid_password" }, 400)
+    if (result.state === "complete") return json({ code: "setup_complete" }, 409)
+    return secure(result.response)
+  } catch {
+    return json({ code: "setup_unavailable" }, 503)
   }
-
-  const headers = new Headers(request.headers)
-  headers.delete("content-length")
-  headers.set("content-type", "application/json")
-  const signupRequest = new Request(new URL("/api/auth/sign-up/email", request.url), {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      name: "Owner",
-      email: bindings.OWNER_ACCESS_EMAIL,
-      password
-    })
-  })
-  return secure(await createOwnerAuth(bindings, { allowSignUp: true }).handler(signupRequest))
 }
 
 export async function handleHttp(
@@ -136,16 +122,16 @@ export async function handleHttp(
   }
 
   if (url.pathname === "/api/auth" || url.pathname.startsWith("/api/auth/")) {
-    return secure(await createOwnerAuth(bindings).handler(request))
+    return secure(await createOwnerAuthService(bindings).handle(request))
   }
 
   if (url.pathname === "/setup/api") {
-    return handleSetup(request, bindings, verifyAccess)
+    return handleSetup(request, bindings, createOwnerAuthService(bindings), verifyAccess)
   }
 
   if (url.pathname.startsWith("/api/")) {
     try {
-      if ((await ownerSession(request, bindings)) === null) {
+      if ((await createOwnerAuthService(bindings).session(request)) === null) {
         return json({ code: "unauthorized" }, 401)
       }
     } catch {

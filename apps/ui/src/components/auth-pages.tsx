@@ -5,7 +5,8 @@ import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader } from "~/components/ui/card"
 import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
-import { apiBase, loadOwnerSession, safeReturnPath } from "~/lib/api"
+import { apiBase, safeReturnPath } from "~/lib/api"
+import { loadOwnerSession, signInOwner } from "~/lib/auth-client"
 import { styles } from "~/lib/styles"
 
 export function SignInPage() {
@@ -39,12 +40,7 @@ export function SignInPage() {
     }
     setSubmitting(true)
     try {
-      const response = await fetch(`${apiBase}/api/auth/sign-in/email`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: email().trim(), password: password(), rememberMe: true })
-      })
-      if (!response.ok) {
+      if (!(await signInOwner(email().trim(), password()))) {
         setError("Email or password is incorrect. Check both fields and try again.")
         return
       }

@@ -1,7 +1,7 @@
 import { createContext, createSignal, onMount, Show, useContext, type JSX } from "solid-js"
 
 import { AppShell } from "~/components/app-shell"
-import { loadOwnerSession, type OwnerSession } from "~/lib/api"
+import { loadOwnerSession, type OwnerSession } from "~/lib/auth-client"
 import { styles } from "~/lib/styles"
 
 const OwnerSessionContext = createContext<OwnerSession>()
