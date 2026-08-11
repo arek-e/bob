@@ -102,7 +102,7 @@ describe("production GitOps deployment readiness", () => {
       agentImage,
       tunnelImage,
       openBaoAddress: "http://openbao.openbao.svc.cluster.local:8200",
-      targetRevision: "main"
+      targetRevision: "49dcece2d9699a3c682dcff376be18ba2372d1c6"
     })
   })
 
@@ -255,7 +255,7 @@ describe("production GitOps deployment readiness", () => {
       assertDeploymentReadiness({
         ...input,
         argocdApplication: input.argocdApplication.replace(
-          "targetRevision: main",
+          "targetRevision: 49dcece2d9699a3c682dcff376be18ba2372d1c6",
           "targetRevision: v1"
         )
       })

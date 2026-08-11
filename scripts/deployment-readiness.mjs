@@ -545,8 +545,8 @@ export function assertDeploymentReadiness(input) {
     "The automated Bob Argo CD Application is incomplete"
   )
   const revision = argocdApplication.match(/^\s*targetRevision:\s*([^\s]+)\s*$/mu)?.[1]
-  if (revision === undefined || (revision !== "main" && !COMMIT_PATTERN.test(revision))) {
-    throw new Error("The Argo CD target revision must be main or a reviewed commit")
+  if (revision === undefined || !COMMIT_PATTERN.test(revision)) {
+    throw new Error("The Argo CD target revision must be a reviewed commit")
   }
   requireMarkers(
     argocdKustomization,
