@@ -67,7 +67,7 @@ spec:
         - name: tunnel
           image: cloudflared.invalid/repository
           imagePullPolicy: IfNotPresent
-          args: [tunnel, --no-autoupdate, run, --token, $(TUNNEL_TOKEN)]
+          args: [tunnel, --no-autoupdate, --protocol, http2, run, --token, $(TUNNEL_TOKEN)]
           env:
             - name: TUNNEL_TOKEN
               valueFrom:
