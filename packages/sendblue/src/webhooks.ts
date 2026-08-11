@@ -1,5 +1,9 @@
-import type { NormalizedInboundEvent, NormalizedStatusEvent } from "@bob/contracts/channel"
-
+import {
+  NormalizedInboundEvent as NormalizedInboundEventSchema,
+  NormalizedStatusEvent as NormalizedStatusEventSchema,
+  type NormalizedInboundEvent,
+  type NormalizedStatusEvent
+} from "@bob/contracts/channel"
 import { Schema } from "effect"
 
 const E164 = Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/))
@@ -58,6 +62,23 @@ export class WebhookValidationError extends Error {
   }
 }
 
+export type WebhookRejectionCode =
+  | "unauthorized"
+  | "not_found"
+  | "not_allowed"
+  | "unknown_line"
+  | "invalid_webhook"
+
+export class WebhookRejection extends Error {
+  constructor(
+    readonly code: WebhookRejectionCode,
+    readonly status: 400 | 401 | 403 | 404
+  ) {
+    super(`Sendblue webhook rejected: ${code}`)
+    this.name = "WebhookRejection"
+  }
+}
+
 export async function timingSafeEqual(
   left: string,
   right: string,
@@ -94,6 +115,31 @@ export interface NormalizationContext {
   readonly randomUuid?: () => string
 }
 
+export interface WebhookIntakePolicy {
+  readonly signingSecret: string
+  readonly accountId: string
+  readonly lineId: string
+  readonly fromNumber: string
+  readonly allowedUserNumber: string
+}
+
+export interface WebhookStatusMetadata {
+  readonly outboxId?: string
+  readonly attemptId?: string
+}
+
+export interface WebhookIntakeInput {
+  readonly pathname: string
+  readonly suppliedSecret: string | null
+  readonly readPayload: () => Promise<unknown>
+  readonly policy: WebhookIntakePolicy
+  readonly statusMetadata?: WebhookStatusMetadata
+}
+
+export type AcceptedWebhook =
+  | { readonly kind: "inbound"; readonly event: NormalizedInboundEvent }
+  | { readonly kind: "status"; readonly event: NormalizedStatusEvent }
+
 export function normalizeInbound(
   payload: SendblueWebhookPayload,
   context: NormalizationContext
@@ -105,7 +151,7 @@ export function normalizeInbound(
     throw new WebhookValidationError("Inbound content is empty")
   }
   const randomUuid = context.randomUuid ?? (() => crypto.randomUUID())
-  return {
+  return Schema.decodeUnknownSync(NormalizedInboundEventSchema)({
     id: randomUuid(),
     accountId: context.accountId,
     lineId: context.lineId,
@@ -116,7 +162,7 @@ export function normalizeInbound(
     providerOptedOut: payload.opted_out,
     receivedAt: new Date(payload.date_sent).toISOString(),
     correlationId: randomUuid()
-  } as NormalizedInboundEvent
+  })
 }
 
 const deliveryStatus = {
@@ -146,7 +192,7 @@ export function normalizeStatus(
     throw new WebhookValidationError("Webhook has an unsupported outbound status")
   }
   const randomUuid = context.randomUuid ?? (() => crypto.randomUUID())
-  return {
+  return Schema.decodeUnknownSync(NormalizedStatusEventSchema)({
     id: randomUuid(),
     accountId: context.accountId,
     lineId: context.lineId,
@@ -158,5 +204,60 @@ export function normalizeStatus(
     ...(context.attemptId === undefined ? {} : { attemptId: context.attemptId }),
     occurredAt: new Date(payload.date_updated).toISOString(),
     correlationId: randomUuid()
-  } as NormalizedStatusEvent
+  })
+}
+
+export async function acceptSendblueWebhook(input: WebhookIntakeInput): Promise<AcceptedWebhook> {
+  if (
+    input.suppliedSecret === null ||
+    !(await timingSafeEqual(input.suppliedSecret, input.policy.signingSecret))
+  ) {
+    throw new WebhookRejection("unauthorized", 401)
+  }
+  if (input.pathname !== "/webhooks/receive" && input.pathname !== "/webhooks/outbound") {
+    throw new WebhookRejection("not_found", 404)
+  }
+
+  let payload: SendblueWebhookPayload
+  try {
+    payload = decodeWebhookPayload(await input.readPayload())
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof WebhookValidationError) {
+      throw new WebhookRejection("invalid_webhook", 400)
+    }
+    throw error
+  }
+
+  const context = {
+    accountId: input.policy.accountId,
+    lineId: input.policy.lineId
+  }
+  try {
+    if (input.pathname === "/webhooks/receive") {
+      if (
+        payload.to_number !== input.policy.fromNumber ||
+        payload.from_number !== input.policy.allowedUserNumber
+      ) {
+        throw new WebhookRejection("not_allowed", 403)
+      }
+      return { kind: "inbound", event: normalizeInbound(payload, context) }
+    }
+
+    if (
+      payload.from_number !== input.policy.fromNumber ||
+      payload.to_number !== input.policy.allowedUserNumber
+    ) {
+      throw new WebhookRejection("unknown_line", 403)
+    }
+    return {
+      kind: "status",
+      event: normalizeStatus(payload, { ...context, ...input.statusMetadata })
+    }
+  } catch (error) {
+    if (error instanceof WebhookRejection) throw error
+    if (error instanceof WebhookValidationError || error instanceof Error) {
+      throw new WebhookRejection("invalid_webhook", 400)
+    }
+    throw error
+  }
 }

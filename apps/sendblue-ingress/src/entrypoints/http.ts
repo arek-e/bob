@@ -6,12 +6,7 @@ import {
   traceContextFromCorrelationId,
   traceHeaders
 } from "@bob/observability/trace"
-import {
-  decodeWebhookPayload,
-  normalizeInbound,
-  normalizeStatus,
-  timingSafeEqual
-} from "@bob/sendblue/webhooks"
+import { acceptSendblueWebhook, WebhookRejection } from "@bob/sendblue/webhooks"
 import { Schema } from "effect"
 
 import type { IngressBindings } from "../bindings.ts"
@@ -84,27 +79,29 @@ export async function handleIngressHttp(
   if (request.method !== "POST") return response("not_found", 404)
 
   const composition = composeIngress(bindings)
-  const suppliedSecret = request.headers.get("sb-signing-secret")
-  if (
-    suppliedSecret === null ||
-    !(await timingSafeEqual(suppliedSecret, composition.config.SENDBLUE_WEBHOOK_SIGNING_SECRET))
-  ) {
-    return response("unauthorized", 401)
-  }
-
   try {
-    const payload = decodeWebhookPayload(await readJson(request))
-    if (url.pathname === "/webhooks/receive") {
-      if (
-        payload.to_number !== composition.config.SENDBLUE_FROM_NUMBER ||
-        payload.from_number !== composition.config.SENDBLUE_ALLOWED_USER_NUMBER
-      ) {
-        return response("not_allowed", 403)
-      }
-      const event = normalizeInbound(payload, {
+    const accepted = await acceptSendblueWebhook({
+      pathname: url.pathname,
+      suppliedSecret: request.headers.get("sb-signing-secret"),
+      readPayload: () => readJson(request),
+      policy: {
+        signingSecret: composition.config.SENDBLUE_WEBHOOK_SIGNING_SECRET,
         accountId: composition.config.SENDBLUE_ACCOUNT_ID,
-        lineId: composition.config.SENDBLUE_LINE_ID
-      })
+        lineId: composition.config.SENDBLUE_LINE_ID,
+        fromNumber: composition.config.SENDBLUE_FROM_NUMBER,
+        allowedUserNumber: composition.config.SENDBLUE_ALLOWED_USER_NUMBER
+      },
+      statusMetadata: {
+        ...(url.searchParams.get("outbox_id") === null
+          ? {}
+          : { outboxId: url.searchParams.get("outbox_id")! }),
+        ...(url.searchParams.get("attempt_id") === null
+          ? {}
+          : { attemptId: url.searchParams.get("attempt_id")! })
+      }
+    })
+    if (accepted.kind === "inbound") {
+      const event = accepted.event
       const startedAt = Date.now()
       const result = await observeSpan(
         {
@@ -138,23 +135,8 @@ export async function handleIngressHttp(
       }
       return result
     }
-    if (url.pathname === "/webhooks/outbound") {
-      if (
-        payload.from_number !== composition.config.SENDBLUE_FROM_NUMBER ||
-        payload.to_number !== composition.config.SENDBLUE_ALLOWED_USER_NUMBER
-      ) {
-        return response("unknown_line", 403)
-      }
-      const event = normalizeStatus(payload, {
-        accountId: composition.config.SENDBLUE_ACCOUNT_ID,
-        lineId: composition.config.SENDBLUE_LINE_ID,
-        ...(url.searchParams.get("outbox_id") === null
-          ? {}
-          : { outboxId: url.searchParams.get("outbox_id")! }),
-        ...(url.searchParams.get("attempt_id") === null
-          ? {}
-          : { attemptId: url.searchParams.get("attempt_id")! })
-      })
+    if (accepted.kind === "status") {
+      const event = accepted.event
       const stored = await observeSpan(
         {
           sink: composition.events,
@@ -182,8 +164,9 @@ export async function handleIngressHttp(
       )
       return stored.ok ? response("accepted", 202) : response("durable_store_failed", 503)
     }
-    return response("not_found", 404)
+    return response("invalid_webhook", 400)
   } catch (error) {
+    if (error instanceof WebhookRejection) return response(error.code, error.status)
     return response(
       error instanceof Error && error.message === "body_too_large"
         ? "body_too_large"
