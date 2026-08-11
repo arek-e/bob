@@ -1,9 +1,11 @@
 .git
 .github
 .alchemy
-.varlock
+.varlock/*
+!.varlock/config.json
 **/.env
 **/.env.*
+!**/.env.schema
 **/dist
 **/node_modules
 coverage

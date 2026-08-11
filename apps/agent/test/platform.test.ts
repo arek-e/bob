@@ -120,4 +120,28 @@ describe("agent platform contract", () => {
     expect(bootstrap).not.toContain("BOB_SECRET_STAGE")
     expect(bootstrap).not.toContain("BOB_STAGE")
   })
+
+  it("builds a bounded production image from the bundled agent", async () => {
+    const dockerfile = await readFile("apps/agent/Dockerfile", "utf8")
+    const dockerignore = await readFile(".dockerignore", "utf8")
+    const packageManifest = await readFile("apps/agent/package.json", "utf8")
+    const piAgentSource = await readFile("packages/pi-agent/src/index.ts", "utf8")
+
+    expect(dockerfile).not.toContain("COPY --from=build --chown=node:node /app /app")
+    expect(dockerfile).toContain("COPY --from=build --chown=node:node /runtime /app")
+    expect(dockerfile).toContain("dist/index.cjs")
+    expect(dockerfile).not.toContain("dist/index.js")
+    expect(dockerfile).toContain("apps/agent/src/environment.generated.ts")
+    expect(packageManifest).toContain(
+      '"start": "varlock run --inject vars --skip-cache -- node dist/index.cjs"'
+    )
+    expect(packageManifest).toMatch(/"varlock": "1\.16\.1"/u)
+    expect(packageManifest).not.toContain("tsx src/index.ts")
+    expect(packageManifest).toContain("--format=cjs")
+    expect(dockerignore).toContain(".varlock/*")
+    expect(dockerignore).toContain("!.varlock/config.json")
+    expect(dockerignore).toContain("!**/.env.schema")
+    expect(piAgentSource).toContain("registerBunOAuthFlows()")
+    expect(packageManifest).toContain("verify-agent-bundle.mjs")
+  })
 })

@@ -7,12 +7,15 @@ import {
   type AssistantMessage,
   type CredentialStore
 } from "@earendil-works/pi-ai"
+import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth"
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex"
 import type { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/contracts/agent"
 import type { ToolCommand, ToolResult } from "@bob/contracts/tools"
 
 import { classifyProviderError } from "./errors.ts"
 import { createTools } from "./tools.ts"
+
+registerBunOAuthFlows()
 
 export interface BobPiAgentOptions {
   readonly credentials: CredentialStore
