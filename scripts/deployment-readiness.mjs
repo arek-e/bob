@@ -321,6 +321,13 @@ export function assertDeploymentReadiness(input) {
     throw new Error("The bounded projected OpenBao token contract is missing")
   }
   if (
+    !renderedDeployment.includes("runAsNonRoot: true") ||
+    !renderedDeployment.includes("runAsUser: 1000") ||
+    !renderedDeployment.includes("runAsGroup: 1000")
+  ) {
+    throw new Error("The agent container needs an exact non-root identity")
+  }
+  if (
     !renderedDeployment.includes("configMapRef:") ||
     !renderedDeployment.includes("name: bob-agent-bootstrap") ||
     !renderedDeployment.includes("name: bob-agent-tunnel") ||

@@ -288,6 +288,12 @@ describe("production GitOps deployment readiness", () => {
     expect(() =>
       assertDeploymentReadiness({
         ...input,
+        renderedKubernetes: input.renderedKubernetes.replace("runAsUser: 1000", "runAsUser: 0")
+      })
+    ).toThrow(/exact non-root identity/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
         renderedArgocd: input.renderedArgocd.replace("name: bob-argocd-repository", "name: omitted")
       })
     ).toThrow(/missing ServiceAccount/u)

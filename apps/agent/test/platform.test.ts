@@ -182,4 +182,11 @@ describe("agent platform contract", () => {
     expect(piAgentSource).toContain("registerBunOAuthFlows()")
     expect(packageManifest).toContain("verify-agent-bundle.mjs")
   })
+
+  it("runs the named image user with an exact non-root identity", async () => {
+    const deployment = await readFile(`${kubernetesBase}/deployment.yaml`, "utf8")
+
+    expect(deployment).toContain("runAsUser: 1000")
+    expect(deployment).toContain("runAsGroup: 1000")
+  })
 })
