@@ -25,7 +25,7 @@ async function readNestedMigrations() {
 }
 
 function testKey(byte: number): string {
-  return Buffer.from(new Uint8Array(32).fill(byte)).toString("base64")
+  return Buffer.from(new Uint8Array(32).fill(byte)).toString("hex")
 }
 
 export default defineConfig({

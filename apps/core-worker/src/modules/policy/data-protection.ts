@@ -16,6 +16,16 @@ function fromBase64(value: string): Uint8Array<ArrayBuffer> {
   return bytes
 }
 
+function fromKeyMaterial(value: string): Uint8Array<ArrayBuffer> {
+  const bytes = /^[0-9a-f]{64}$/u.test(value)
+    ? Uint8Array.from({ length: 32 }, (_, index) =>
+        Number.parseInt(value.slice(index * 2, index * 2 + 2), 16)
+      )
+    : fromBase64(value)
+  if (bytes.byteLength !== 32) throw new Error("Key material must encode 32 bytes")
+  return bytes
+}
+
 function toBase64(value: ArrayBuffer | Uint8Array): string {
   const bytes = value instanceof Uint8Array ? value : new Uint8Array(value)
   let binary = ""
@@ -38,7 +48,7 @@ export function createDataProtection(
     if (existing !== undefined) return existing
     const imported = crypto.subtle.importKey(
       "raw",
-      fromBase64(encoded),
+      fromKeyMaterial(encoded),
       { name: "AES-GCM" },
       false,
       ["encrypt", "decrypt"]
@@ -96,7 +106,7 @@ export function createDataProtection(
   async function hashLookup(value: string): Promise<string> {
     lookupKeyPromise ??= crypto.subtle.importKey(
       "raw",
-      fromBase64(lookupKeyBase64),
+      fromKeyMaterial(lookupKeyBase64),
       { name: "HMAC", hash: "SHA-256" },
       false,
       ["sign"]

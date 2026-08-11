@@ -14,6 +14,7 @@ import type { CoreBindings } from "../src/bindings.ts"
 import { operationalAlerts } from "../src/modules/alerts/schema.ts"
 import { composeCore } from "../src/composition.ts"
 import { createCoreDatabase } from "../src/database.ts"
+import { handleHttp } from "../src/entrypoints/http.ts"
 import { handleInboundQueue } from "../src/entrypoints/queue.ts"
 import { processInbound } from "../src/process-inbound.ts"
 import { makeAgentRunStore } from "../src/modules/conversations/run-store.ts"
@@ -169,6 +170,53 @@ describe("D1 migrations and durability", () => {
       count: number
     }>()
     expect(row?.count).toBe(0)
+  })
+
+  it("accepts the first encrypted inbound with production hex keys", async () => {
+    const bindings = {
+      ...(env as unknown as CoreBindings),
+      DATA_KEK_KEYRING_JSON: JSON.stringify({ 1: "07".repeat(32) }),
+      DATA_LOOKUP_KEY: "09".repeat(32)
+    } satisfies CoreBindings
+    const event = {
+      id: "00000000-0000-4000-8000-000000000101",
+      accountId: "account",
+      lineId: "line",
+      messageHandle: "first-production-inbound",
+      senderE164: "+46700000000",
+      destinationE164: "+46711111111",
+      text: "HELP",
+      providerOptedOut: false,
+      receivedAt: "2026-08-11T10:00:00.000Z",
+      correlationId: "00000000-0000-4000-8000-000000000102"
+    }
+
+    const response = await handleHttp(
+      new Request("https://core.internal/internal/inbound", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-bob-caller-token": bindings.INGRESS_CALLER_SECRET
+        },
+        body: JSON.stringify(event)
+      }),
+      bindings
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      eventId: event.id,
+      duplicate: false,
+      shouldEnqueue: true
+    })
+    const counts = await env.DB.prepare(
+      `SELECT
+        (SELECT COUNT(*) FROM users) AS users,
+        (SELECT COUNT(*) FROM channels) AS channels,
+        (SELECT COUNT(*) FROM messages) AS messages,
+        (SELECT COUNT(*) FROM inbound_events) AS inbound_events`
+    ).first<Record<string, number>>()
+    expect(counts).toEqual({ users: 1, channels: 1, messages: 1, inbound_events: 1 })
   })
 
   it("recovers an exhausted inbound Queue message through the durable event", async () => {
