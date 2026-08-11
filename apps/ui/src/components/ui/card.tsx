@@ -50,3 +50,12 @@ export function CardContent(props: SurfaceProps) {
     </div>
   )
 }
+
+export function CardFooter(props: SurfaceProps) {
+  const [local, rest] = splitProps(props, ["class", "children"])
+  return (
+    <div {...rest} class={cn(styles.uiCardFooter, local.class)}>
+      {local.children}
+    </div>
+  )
+}

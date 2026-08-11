@@ -24,13 +24,21 @@ import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card"
 import { Input } from "~/components/ui/input"
-import { Notice } from "~/components/ui/notice"
 import { Select } from "~/components/ui/select"
 import { api, parseJson, schemas } from "~/lib/api"
 import { styles } from "~/lib/styles"
-import { formatDate, supportedTimeZones } from "~/lib/utils"
+import { cn, formatDate, supportedTimeZones } from "~/lib/utils"
 
 type ClientProps = { enabled: Accessor<boolean> }
+
+const settingsSections = [
+  { id: "locality", label: "General" },
+  { id: "connections", label: "Connections" },
+  { id: "message-settings", label: "Messaging" },
+  { id: "access-help", label: "Delivery" }
+] as const
+
+type SettingsSectionId = (typeof settingsSections)[number]["id"]
 
 const DeviceLoginEvent = Schema.Union([
   Schema.Struct({
@@ -60,18 +68,18 @@ const AdminStatus = Schema.Struct({
 })
 
 function SectionHeader(props: {
-  eyebrow: string
   title: string
+  description: string
   id: string
   action?: JSX.Element
 }) {
   return (
     <div class={styles.sectionHeading}>
-      <div>
-        <p class={styles.eyebrow}>{props.eyebrow}</p>
-        <h2 class={styles.heading2} id={props.id}>
+      <div class={styles.sectionHeadingCopy}>
+        <h2 class={styles.sectionTitle} id={props.id}>
           {props.title}
         </h2>
+        <p class={styles.sectionIntro}>{props.description}</p>
       </div>
       {props.action}
     </div>
@@ -93,27 +101,63 @@ function statusLabel(status: SettingsConnection["status"]): string {
 
 export function SettingsPage() {
   const [enabled, setEnabled] = createSignal(false)
-  onMount(() => setEnabled(true))
+  const [activeSection, setActiveSection] = createSignal<SettingsSectionId>(sectionFromHash())
+
+  onMount(() => {
+    setEnabled(true)
+    const syncSection = () => setActiveSection(sectionFromHash())
+    window.addEventListener("hashchange", syncSection)
+    onCleanup(() => window.removeEventListener("hashchange", syncSection))
+  })
 
   return (
     <>
-      <header class={styles.pageIntro}>
-        <div class={styles.introCopy}>
-          <p class={styles.eyebrow}>Owner administration</p>
-          <h1 class={styles.heading1}>Settings</h1>
-          <p class={styles.introText}>
-            Set how Bob handles local time and link the accounts that Bob uses.
-          </p>
+      <nav class={styles.settingsNav} aria-label="Settings sections">
+        <ul class={styles.settingsNavList}>
+          <For each={settingsSections}>
+            {(section) => (
+              <li>
+                <a
+                  class={cn(
+                    styles.settingsNavLink,
+                    activeSection() === section.id && styles.settingsNavLinkActive
+                  )}
+                  href={`#${section.id}`}
+                  aria-current={activeSection() === section.id ? "location" : undefined}
+                >
+                  {section.label}
+                </a>
+              </li>
+            )}
+          </For>
+        </ul>
+      </nav>
+      <div class={styles.settingsContent}>
+        <div class={styles.settingsStack}>
+          <div hidden={activeSection() !== "locality"}>
+            <LocalitySection enabled={enabled} />
+          </div>
+          <div hidden={activeSection() !== "connections"}>
+            <ConnectionsSection enabled={enabled} />
+          </div>
+          <div hidden={activeSection() !== "message-settings"}>
+            <MessageSettingsSection />
+          </div>
+          <div hidden={activeSection() !== "access-help"}>
+            <SendblueHelpSection />
+          </div>
         </div>
-      </header>
-      <div class={styles.settingsStack}>
-        <LocalitySection enabled={enabled} />
-        <ConnectionsSection enabled={enabled} />
-        <MessageSettingsSection />
-        <SendblueHelpSection />
       </div>
     </>
   )
+}
+
+function sectionFromHash(): SettingsSectionId {
+  if (typeof window === "undefined") return "locality"
+  const hash = window.location.hash.slice(1)
+  return settingsSections.some((section) => section.id === hash)
+    ? (hash as SettingsSectionId)
+    : "locality"
 }
 
 function LocalitySection(props: ClientProps) {
@@ -133,6 +177,8 @@ function LocalitySection(props: ClientProps) {
   const [localeError, setLocaleError] = createSignal("")
   const [saving, setSaving] = createSignal(false)
   const [dirty, setDirty] = createSignal(false)
+  let timeZoneField: HTMLSelectElement | undefined
+  let localeField: HTMLInputElement | undefined
 
   createEffect(() => {
     const view = settingsView()
@@ -165,12 +211,14 @@ function LocalitySection(props: ClientProps) {
     setLocaleError("")
     if (timeZone().length === 0) {
       setTimeZoneError("Choose a time zone.")
+      timeZoneField?.focus()
       return
     }
     try {
       new Intl.DateTimeFormat("en", { timeZone: timeZone() }).format()
     } catch {
       setTimeZoneError("Choose a valid time zone.")
+      timeZoneField?.focus()
       return
     }
 
@@ -181,6 +229,7 @@ function LocalitySection(props: ClientProps) {
       canonicalLocale = canonical
     } catch {
       setLocaleError("Use a valid language and region code, such as en-SE.")
+      localeField?.focus()
       return
     }
 
@@ -205,110 +254,129 @@ function LocalitySection(props: ClientProps) {
 
   return (
     <section id="locality" class={styles.contentSection} aria-labelledby="locality-title">
-      <SectionHeader eyebrow="Dates and times" title="Locality" id="locality-title" />
-      <div class={styles.settingsGrid}>
-        <form
-          class={styles.formCard}
-          aria-describedby="locality-description"
-          novalidate
-          onSubmit={(event) => void save(event)}
-        >
+      <form
+        class={styles.formCard}
+        aria-labelledby="locality-title"
+        aria-describedby="locality-description"
+        novalidate
+        onSubmit={(event) => void save(event)}
+      >
+        <div class={styles.formCardHeader}>
+          <h2 id="locality-title" class={styles.sectionTitle}>
+            Local time and language
+          </h2>
           <p id="locality-description" class={styles.formIntro}>
             Bob uses these settings for new reminders, replies, and calendar dates.
           </p>
-          <div class={styles.fieldGroup}>
-            <label class={styles.fieldLabel} for="settings-time-zone">
-              Time zone
-            </label>
-            <Select
-              id="settings-time-zone"
-              name="timeZone"
-              required
-              value={timeZone()}
-              aria-describedby="settings-time-zone-hint settings-time-zone-error"
-              aria-invalid={timeZoneError().length > 0}
-              onChange={(event) => {
-                setTimeZone(event.currentTarget.value)
-                setDirty(true)
-              }}
-            >
-              <For each={supportedTimeZones(timeZone())}>
-                {(zone) => <option value={zone}>{zone}</option>}
-              </For>
-            </Select>
-            <p id="settings-time-zone-hint" class={styles.hint}>
-              Choose the place whose local clock Bob should use.
-            </p>
-            <Show when={timeZoneError().length > 0}>
-              <p id="settings-time-zone-error" class={styles.fieldError}>
-                {timeZoneError()}
+        </div>
+        <div class={styles.formCardContent}>
+          <div class={styles.formFields}>
+            <div class={styles.fieldGroup}>
+              <label class={styles.fieldLabel} for="settings-time-zone">
+                Time zone
+              </label>
+              <Select
+                ref={(element) => (timeZoneField = element)}
+                id="settings-time-zone"
+                name="timeZone"
+                required
+                value={timeZone()}
+                aria-describedby={
+                  timeZoneError().length > 0
+                    ? "settings-time-zone-hint settings-time-zone-error"
+                    : "settings-time-zone-hint"
+                }
+                aria-invalid={timeZoneError().length > 0}
+                onChange={(event) => {
+                  setTimeZone(event.currentTarget.value)
+                  setDirty(true)
+                }}
+              >
+                <For each={supportedTimeZones(timeZone())}>
+                  {(zone) => <option value={zone}>{zone}</option>}
+                </For>
+              </Select>
+              <p id="settings-time-zone-hint" class={styles.hint}>
+                Choose the place whose local clock Bob should use.
               </p>
-            </Show>
-          </div>
-          <div class={styles.fieldGroup}>
-            <label class={styles.fieldLabel} for="settings-locale">
-              Language and region
-            </label>
-            <Input
-              id="settings-locale"
-              name="locale"
-              list="settings-locale-options"
-              placeholder="en-SE"
-              spellcheck="false"
-              required
-              value={locale()}
-              aria-describedby="settings-locale-hint settings-locale-error"
-              aria-invalid={localeError().length > 0}
-              onInput={(event) => {
-                setLocale(event.currentTarget.value)
-                setDirty(true)
-              }}
-            />
-            <datalist id="settings-locale-options">
-              <option value="en-SE">English (Sweden)</option>
-              <option value="sv-SE">Swedish (Sweden)</option>
-              <option value="en-GB">English (United Kingdom)</option>
-              <option value="en-US">English (United States)</option>
-            </datalist>
-            <p id="settings-locale-hint" class={styles.hint}>
-              Use a language and region code, such as en-SE or sv-SE.
-            </p>
-            <Show when={localeError().length > 0}>
-              <p id="settings-locale-error" class={styles.fieldError}>
-                {localeError()}
+              <Show when={timeZoneError().length > 0}>
+                <p id="settings-time-zone-error" class={styles.fieldError}>
+                  {timeZoneError()}
+                </p>
+              </Show>
+            </div>
+            <div class={styles.fieldGroup}>
+              <label class={styles.fieldLabel} for="settings-locale">
+                Language and region
+              </label>
+              <Input
+                ref={(element) => (localeField = element)}
+                id="settings-locale"
+                name="locale"
+                list="settings-locale-options"
+                placeholder="en-SE"
+                spellcheck="false"
+                required
+                value={locale()}
+                aria-describedby={
+                  localeError().length > 0
+                    ? "settings-locale-hint settings-locale-error"
+                    : "settings-locale-hint"
+                }
+                aria-invalid={localeError().length > 0}
+                onInput={(event) => {
+                  setLocale(event.currentTarget.value)
+                  setDirty(true)
+                }}
+              />
+              <datalist id="settings-locale-options">
+                <option value="en-SE">English (Sweden)</option>
+                <option value="sv-SE">Swedish (Sweden)</option>
+                <option value="en-GB">English (United Kingdom)</option>
+                <option value="en-US">English (United States)</option>
+              </datalist>
+              <p id="settings-locale-hint" class={styles.hint}>
+                Use a language and region code, such as en-SE or sv-SE.
               </p>
-            </Show>
+              <Show when={localeError().length > 0}>
+                <p id="settings-locale-error" class={styles.fieldError}>
+                  {localeError()}
+                </p>
+              </Show>
+            </div>
+            <div class={styles.fieldGroup}>
+              <label class={styles.fieldLabel} for="settings-hour-cycle">
+                Time format
+              </label>
+              <Select
+                id="settings-hour-cycle"
+                name="hourCycle"
+                value={hourCycle()}
+                onChange={(event) => {
+                  setHourCycle(event.currentTarget.value as HourCycle)
+                  setDirty(true)
+                }}
+              >
+                <option value="auto">Follow language and region</option>
+                <option value="h23">24-hour time</option>
+                <option value="h12">12-hour time</option>
+              </Select>
+            </div>
           </div>
-          <div class={styles.fieldGroup}>
-            <label class={styles.fieldLabel} for="settings-hour-cycle">
-              Time format
-            </label>
-            <Select
-              id="settings-hour-cycle"
-              name="hourCycle"
-              value={hourCycle()}
-              onChange={(event) => {
-                setHourCycle(event.currentTarget.value as HourCycle)
-                setDirty(true)
-              }}
-            >
-              <option value="auto">Follow language and region</option>
-              <option value="h23">24-hour time</option>
-              <option value="h12">12-hour time</option>
-            </Select>
+        </div>
+        <div class={styles.formCardFooter}>
+          <div class={styles.footerCopy}>
+            <p class={styles.footerTitle}>Existing reminders stay unchanged</p>
+            <p class={styles.footerText}>
+              A new time zone applies to future requests. Existing reminders keep their saved date,
+              time, and time zone.
+            </p>
           </div>
-          <Button type="submit" disabled={saving()}>
-            {saving() ? "Saving…" : "Save locality settings"}
+          <Button class="w-full sm:w-auto" type="submit" disabled={saving()}>
+            {saving() ? "Saving…" : "Save changes"}
           </Button>
-        </form>
-        <Notice tone="warning">
-          <h3 class={styles.noticeHeading}>Existing reminders stay unchanged</h3>
-          <p class={styles.noticeParagraph}>
-            A new time zone applies to future requests. Existing reminders keep their saved date,
-            time, and time zone.
-          </p>
-        </Notice>
-      </div>
+        </div>
+      </form>
     </section>
   )
 }
@@ -396,8 +464,8 @@ function ConnectionsSection(props: ClientProps) {
   return (
     <section id="connections" class={styles.contentSection} aria-labelledby="connections-title">
       <SectionHeader
-        eyebrow="Linked services"
         title="Accounts and connections"
+        description="Link each service once. Bob will use the linked account when a task needs it."
         id="connections-title"
         action={
           <Button variant="secondary" disabled={refreshing()} onClick={() => void refresh()}>
@@ -405,9 +473,6 @@ function ConnectionsSection(props: ClientProps) {
           </Button>
         }
       />
-      <p class={styles.sectionIntro}>
-        Link each service once. Bob will use the linked account when a task needs it.
-      </p>
       <div class={styles.connectionGrid}>
         <ConnectionCard
           title="Bob owner account"
@@ -513,7 +578,7 @@ function ConnectionCard(props: {
           <Badge variant={statusVariant(props.status)}>{statusLabel(props.status)}</Badge>
         </div>
       </CardHeader>
-      <CardContent>{props.children}</CardContent>
+      <CardContent class={styles.connectionCardContent}>{props.children}</CardContent>
     </Card>
   )
 }
@@ -538,7 +603,11 @@ function CalendarConnectionCard(props: {
             ? "Bob could not reach the connection service. Try again."
             : `Link ${props.label} when you want Bob to use this calendar.`}
       </p>
-      <Button disabled={props.linking !== undefined} onClick={props.onLink}>
+      <Button
+        class="justify-self-start"
+        disabled={props.linking !== undefined}
+        onClick={props.onLink}
+      >
         {props.linking === props.provider
           ? "Creating private link…"
           : props.status === "connected"
@@ -557,8 +626,8 @@ function MessageSettingsSection() {
       aria-labelledby="message-settings-title"
     >
       <SectionHeader
-        eyebrow="Sendblue controls"
         title="Change settings by message"
+        description="Use the same direct language in iMessage that you use on this page."
         id="message-settings-title"
       />
       <Card>
@@ -579,7 +648,11 @@ function MessageSettingsSection() {
 function SendblueHelpSection() {
   return (
     <section id="access-help" class={styles.contentSection} aria-labelledby="access-help-title">
-      <SectionHeader eyebrow="Message delivery" title="Sendblue help" id="access-help-title" />
+      <SectionHeader
+        title="Sendblue help"
+        description="Recover message delivery without changing Bob's reminder records."
+        id="access-help-title"
+      />
       <Card>
         <CardHeader>
           <CardTitle>Restart messages</CardTitle>
