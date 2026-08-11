@@ -29,4 +29,21 @@ describe("trusted infrastructure plan", () => {
     expect(smoke).toContain("RUNTIME_CREDENTIAL_HANDOFF_ENABLED: true")
     expect(packageManifest).toContain("--stage prod")
   })
+
+  it("installs exact pnpm before setup-node enables its cache", async () => {
+    const workflows = await Promise.all([
+      readFile(new URL("../../../.github/workflows/release-gate.yml", import.meta.url), "utf8"),
+      readFile(new URL("../../../.github/workflows/ci.yml", import.meta.url), "utf8")
+    ])
+
+    for (const workflow of workflows) {
+      const nodeSetups = workflow.match(/uses: actions\/setup-node@v4/gu) ?? []
+      const pnpmBeforeNode =
+        workflow.match(
+          /uses: pnpm\/action-setup@v4\s+with:\s+version: 10\.19\.0\s+- uses: actions\/setup-node@v4/gu
+        ) ?? []
+      expect(pnpmBeforeNode).toHaveLength(nodeSetups.length)
+      expect(workflow).not.toContain("corepack prepare pnpm")
+    }
+  })
 })
