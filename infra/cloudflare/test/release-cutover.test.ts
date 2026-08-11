@@ -17,7 +17,7 @@ function expectInOrder(document: string, markers: ReadonlyArray<string>): void {
 }
 
 describe("production release cutover contract", () => {
-  it("publishes and attests the exact main-branch release SHA", async () => {
+  it("publishes and verifies OCI metadata for the exact main-branch release SHA", async () => {
     const workflow = await repositoryFile(".github/workflows/release-images.yml")
 
     expect(workflow).toContain("release_sha:")
@@ -26,7 +26,16 @@ describe("production release cutover contract", () => {
     expect(workflow).toContain('test "$(git rev-parse HEAD)" = "$RELEASE_SHA"')
     expect(workflow).toContain('git merge-base --is-ancestor "$RELEASE_SHA" origin/main')
     expect(workflow.match(/sha-\$\{\{ inputs\.release_sha \}\}/gu)).toHaveLength(2)
-    expect(workflow.match(/actions\/attest-build-provenance@v2/gu)).toHaveLength(2)
+    expect(workflow.match(/provenance: mode=max/gu)).toHaveLength(2)
+    expect(workflow.match(/sbom: true/gu)).toHaveLength(2)
+    expect(workflow).toContain("docker buildx imagetools inspect --raw")
+    expect(workflow).toContain('"https://spdx.dev/Document"')
+    expect(workflow).toContain('"https://slsa.dev/provenance/v1"')
+    expect(workflow).toContain('["vcs:revision"] == $release_sha')
+    expect(workflow).toContain('["vcs:source"] == "https://github.com/arek-e/bob"')
+    expect(workflow).not.toContain("actions/attest-build-provenance")
+    expect(workflow).not.toContain("attestations: write")
+    expect(workflow).not.toContain("id-token: write")
     expect(workflow).toContain("AGENT_DIGEST: ${{ steps.agent.outputs.digest }}")
     expect(workflow).toContain("BACKUP_DIGEST: ${{ steps.backup.outputs.digest }}")
     expect(workflow).not.toContain("sha-${{ github.sha }}")
@@ -76,7 +85,10 @@ describe("production release cutover contract", () => {
   })
 
   it("defines distinct rollback paths without reversing additive migrations", async () => {
-    const runbook = await repositoryFile("docs/runbooks/incident-recovery.md")
+    const [runbook, deployment] = await Promise.all([
+      repositoryFile("docs/runbooks/incident-recovery.md"),
+      repositoryFile("docs/runbooks/deployment.md")
+    ])
 
     expect(runbook).toContain("## Roll back before the Core deployment")
     expect(runbook).toContain("## Roll back after the Core deployment")
@@ -84,5 +96,34 @@ describe("production release cutover contract", () => {
     expect(runbook.match(/\$PRIOR_AGENT_IMAGE/gu)).toHaveLength(2)
     expect(runbook).toContain("Never roll back additive D1 migrations.")
     expect(runbook).toContain("Keep the stable `bob.<domain>` host")
+    expect(runbook).toContain('"$PRIOR_CORE_VERSION_ID@100" --name "$CORE_WORKER_NAME" --yes')
+    expect(runbook).toContain('"$PRIOR_INGRESS_VERSION_ID@100" --name "$INGRESS_WORKER_NAME" --yes')
+    expect(runbook).toContain('"$PRIOR_EGRESS_VERSION_ID@100" --name "$EGRESS_WORKER_NAME" --yes')
+    expect(runbook).not.toContain("wrangler deployments rollback")
+    expect(deployment.match(/--yes --dry-run/gu)).toHaveLength(3)
+    expect(deployment).toContain("wrangler deployments list")
+    expect(deployment).toContain("BOB_OPERATOR_RECORD_DIR")
+    expect(deployment).toContain('> "$2"')
+    expect(deployment).toContain(".[-1].versions")
+    expect(deployment).toContain("varlock run --inject all --skip-cache --")
+    expect(runbook).toContain("varlock run --inject all --skip-cache --")
+    expect(deployment.match(/\bwrangler\b/gu)).toHaveLength(
+      deployment.match(/varlock run --inject all --skip-cache --/gu)?.length
+    )
+    expect(runbook.match(/\bwrangler\b/gu)).toHaveLength(
+      runbook.match(/varlock run --inject all --skip-cache --/gu)?.length
+    )
+    expect(deployment).toContain('export BOB_RELEASE_SHA="$RELEASE_SHA"')
+    expect(runbook).toContain("export BOB_RELEASE_SHA")
+    expect(deployment).not.toContain('DEPLOYMENTS_JSON="$(')
+    expect(deployment).not.toContain('DRAIN_JSON="$(')
+  })
+
+  it("installs the exact Wrangler release tool in the infrastructure workspace", async () => {
+    const manifest = JSON.parse(await repositoryFile("infra/cloudflare/package.json")) as {
+      devDependencies?: Record<string, string>
+    }
+
+    expect(manifest.devDependencies?.wrangler).toBe("4.120.1")
   })
 })

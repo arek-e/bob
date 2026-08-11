@@ -183,6 +183,73 @@ PRIOR_AGENT_IMAGE="$(kubectl --context=teampitch-prod -n bob \
 
 Keep these values in the operator record. They do not contain credentials.
 
+Require the reviewed source commit in the operator shell.
+
+```sh
+: "${BOB_RELEASE_SHA:?Set BOB_RELEASE_SHA to the reviewed source commit}"
+[[ "$BOB_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+RELEASE_SHA="$BOB_RELEASE_SHA"
+export BOB_RELEASE_SHA="$RELEASE_SHA"
+test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+```
+
+Set the exact live Worker names in the operator shell.
+
+```sh
+: "${CORE_WORKER_NAME:?Set the exact Core Worker name}"
+: "${INGRESS_WORKER_NAME:?Set the exact ingress Worker name}"
+: "${EGRESS_WORKER_NAME:?Set the exact egress Worker name}"
+: "${BOB_OPERATOR_RECORD_DIR:?Set the private operator-record directory}"
+test -d "$BOB_OPERATOR_RECORD_DIR"
+```
+
+Record the active version for each Worker. These commands read metadata only.
+
+```sh
+CORE_DEPLOYMENTS_FILE="$BOB_OPERATOR_RECORD_DIR/core-deployments.json"
+INGRESS_DEPLOYMENTS_FILE="$BOB_OPERATOR_RECORD_DIR/ingress-deployments.json"
+EGRESS_DEPLOYMENTS_FILE="$BOB_OPERATOR_RECORD_DIR/egress-deployments.json"
+
+pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
+  sh -c 'wrangler deployments list --name "$1" --json > "$2"' \
+  operator-record "$CORE_WORKER_NAME" "$CORE_DEPLOYMENTS_FILE"
+pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
+  sh -c 'wrangler deployments list --name "$1" --json > "$2"' \
+  operator-record "$INGRESS_WORKER_NAME" "$INGRESS_DEPLOYMENTS_FILE"
+pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
+  sh -c 'wrangler deployments list --name "$1" --json > "$2"' \
+  operator-record "$EGRESS_WORKER_NAME" "$EGRESS_DEPLOYMENTS_FILE"
+
+PRIOR_CORE_VERSION_ID="$(jq -er \
+  '.[-1].versions | if length == 1 and .[0].percentage == 100 then .[0].version_id else error("Core does not have one active version") end' \
+  "$CORE_DEPLOYMENTS_FILE")"
+PRIOR_INGRESS_VERSION_ID="$(jq -er \
+  '.[-1].versions | if length == 1 and .[0].percentage == 100 then .[0].version_id else error("Ingress does not have one active version") end' \
+  "$INGRESS_DEPLOYMENTS_FILE")"
+PRIOR_EGRESS_VERSION_ID="$(jq -er \
+  '.[-1].versions | if length == 1 and .[0].percentage == 100 then .[0].version_id else error("Egress does not have one active version") end' \
+  "$EGRESS_DEPLOYMENTS_FILE")"
+```
+
+Store the three names and version identifiers in the operator record.
+
+Validate the rollback syntax without changing traffic.
+
+```sh
+pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
+  wrangler versions deploy \
+  "$PRIOR_CORE_VERSION_ID@100" --name "$CORE_WORKER_NAME" --yes --dry-run
+pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
+  wrangler versions deploy \
+  "$PRIOR_INGRESS_VERSION_ID@100" --name "$INGRESS_WORKER_NAME" --yes --dry-run
+pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
+  wrangler versions deploy \
+  "$PRIOR_EGRESS_VERSION_ID@100" --name "$EGRESS_WORKER_NAME" --yes --dry-run
+```
+
+Stop if a command rejects its Worker name or version identifier.
+
 Use a quiet owner window. Pause Sendblue traffic before the Core drain gate.
 
 ## Production cutover
@@ -194,21 +261,65 @@ Follow these steps in order. Do not combine the agent and Core deployments.
 The release SHA must be a full commit on `main`.
 
 ```sh
-RELEASE_SHA="$(git rev-parse HEAD)"
+test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
 git merge-base --is-ancestor "$RELEASE_SHA" origin/main
 gh workflow run release-images.yml --ref main -f release_sha="$RELEASE_SHA"
 ```
 
 The workflow checks out that exact SHA. It publishes the agent and backup images.
 
-The workflow also creates provenance attestations and software bills of materials.
+BuildKit adds OCI provenance and software bills of materials for both platforms.
 
-Copy both digests from the workflow summary. Verify both attestations.
+Copy both digests from the workflow summary. Inspect both OCI indexes.
 
 ```sh
-gh attestation verify "oci://ghcr.io/arek-e/bob-agent@${AGENT_DIGEST}" --repo arek-e/bob
-gh attestation verify "oci://ghcr.io/arek-e/bob-data-backup@${BACKUP_DIGEST}" --repo arek-e/bob
+set -euo pipefail
+
+for IMAGE_REF in \
+  "ghcr.io/arek-e/bob-agent@${AGENT_DIGEST}" \
+  "ghcr.io/arek-e/bob-data-backup@${BACKUP_DIGEST}"
+do
+  INDEX_JSON="$(docker buildx imagetools inspect --raw "$IMAGE_REF")"
+  printf '%s' "$INDEX_JSON" | jq -e '
+    .mediaType == "application/vnd.oci.image.index.v1+json" and
+    ([
+      .manifests[] |
+      select(.annotations["vnd.docker.reference.type"] != "attestation-manifest") |
+      [.platform.os, .platform.architecture]
+    ] | sort) == [["linux", "amd64"], ["linux", "arm64"]] and
+    ([
+      .manifests[] |
+      select(.annotations["vnd.docker.reference.type"] == "attestation-manifest")
+    ] | length) == 2
+  ' >/dev/null
+
+  printf '%s' "$INDEX_JSON" | jq -r '
+    .manifests[] |
+    select(.annotations["vnd.docker.reference.type"] == "attestation-manifest") |
+    .digest
+  ' | while IFS= read -r ATTESTATION_DIGEST; do
+    docker buildx imagetools inspect --raw \
+      "${IMAGE_REF%@*}@${ATTESTATION_DIGEST}" | jq -e '
+        ([
+          .layers[] |
+          select(
+            .mediaType == "application/vnd.in-toto+json" and
+            .annotations["in-toto.io/predicate-type"] == "https://spdx.dev/Document"
+          )
+        ] | length) == 1 and
+        ([
+          .layers[] |
+          select(
+            .mediaType == "application/vnd.in-toto+json" and
+            .annotations["in-toto.io/predicate-type"] == "https://slsa.dev/provenance/v1"
+          )
+        ] | length) == 1
+      ' >/dev/null
+  done
+done
 ```
+
+The image workflow also verifies each attestation subject against its platform manifest.
 
 Pin both digests in `infra/kubernetes/overlays/prod/kustomization.yaml`.
 
@@ -216,12 +327,18 @@ Create and push a reviewed GitOps commit with those pins. Do not change runtime 
 
 ```sh
 GITOPS_SHA="$(git rev-parse HEAD)"
-git diff --exit-code "$RELEASE_SHA" "$GITOPS_SHA" -- apps packages tools
+git merge-base --is-ancestor "$RELEASE_SHA" "$GITOPS_SHA"
 node scripts/verify-deployment-readiness.mjs
-gh workflow run release-gate.yml --ref main -f release_sha="$GITOPS_SHA"
+gh workflow run release-gate.yml --ref main \
+  -f source_sha="$RELEASE_SHA" \
+  -f gitops_sha="$GITOPS_SHA"
 ```
 
 Wait for the release gate to pass. It checks out `GITOPS_SHA` and plans that exact commit.
+
+The gate accepts only the production Kustomization between both commits.
+
+The gate resolves both `sha-$RELEASE_SHA` image tags. Their index digests must match both pins.
 
 ### 2. Deploy the compatible agent while the old Core stays live
 
@@ -301,10 +418,13 @@ Query production D1 immediately before the Cloudflare deployment.
 DRAIN_SQL="SELECT \
   (SELECT COUNT(*) FROM agent_runs WHERE status IN ('pending','claimed','executing')) AS active_runs, \
   (SELECT COUNT(*) FROM tool_calls WHERE status IN ('pending','claimed','executing')) AS active_tool_calls"
-DRAIN_JSON="$(pnpm --filter @bob/cloudflare-infra exec wrangler d1 execute bob-prod \
-  --remote --json --command "$DRAIN_SQL")"
-printf '%s' "$DRAIN_JSON" | jq -e \
-  '.[0].results[0] | .active_runs == 0 and .active_tool_calls == 0' >/dev/null
+DRAIN_FILE="$BOB_OPERATOR_RECORD_DIR/d1-drain.json"
+pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
+  sh -c 'wrangler d1 execute bob-prod --remote --json --command "$1" > "$2"' \
+  operator-record "$DRAIN_SQL" "$DRAIN_FILE"
+jq -e \
+  '.[0].results[0] | .active_runs == 0 and .active_tool_calls == 0' \
+  "$DRAIN_FILE" >/dev/null
 ```
 
 Stop when either count is not zero. Reconcile the active action before another check.
@@ -316,7 +436,7 @@ Apply only the reviewed production plan. Use the same GitOps commit that produce
 ```sh
 test "$(git rev-parse HEAD)" = "$GITOPS_SHA"
 git diff --quiet
-export BOB_RELEASE_SHA="$GITOPS_SHA"
+export BOB_RELEASE_SHA="$RELEASE_SHA"
 pnpm infra:plan
 pnpm --filter @bob/cloudflare-infra deploy
 ```

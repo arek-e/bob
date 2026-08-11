@@ -60,18 +60,33 @@ Use this path when the reviewed Cloudflare deployment has started or completed.
 
 Pause Sendblue traffic. Reconcile each active or unknown action before rollback.
 
-Do not deploy an old infrastructure tree without review. It can remove required Access resources.
+Use the Worker names and version identifiers from the preflight operator record.
 
-Create a rollback commit from the current release. Restore only the prior Core Worker code.
-
-Keep the stable `bob.<domain>` host, current Access resources, retained data, and current migrations.
-
-Run a new production plan. Reject any D1, R2, Queue, or retained-resource deletion.
+Restore the failed release source SHA from the operator record.
 
 ```sh
-pnpm infra:plan
-pnpm --filter @bob/cloudflare-infra deploy
+: "${BOB_RELEASE_SHA:?Restore the failed release source SHA}"
+[[ "$BOB_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+export BOB_RELEASE_SHA
 ```
+
+Restore each prior Worker version at 100 percent traffic.
+
+```sh
+pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
+  wrangler versions deploy \
+  "$PRIOR_CORE_VERSION_ID@100" --name "$CORE_WORKER_NAME" --yes
+pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
+  wrangler versions deploy \
+  "$PRIOR_INGRESS_VERSION_ID@100" --name "$INGRESS_WORKER_NAME" --yes
+pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
+  wrangler versions deploy \
+  "$PRIOR_EGRESS_VERSION_ID@100" --name "$EGRESS_WORKER_NAME" --yes
+```
+
+These commands create new deployments. They do not delete retained resources.
+
+Keep the stable `bob.<domain>` host, current Access resources, retained data, and current migrations.
 
 Never roll back additive D1 migrations. The prior Core must tolerate the expanded schema.
 

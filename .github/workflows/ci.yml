@@ -4,7 +4,6 @@ on:
   pull_request:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -42,7 +41,7 @@ jobs:
         run: pnpm infra:load
 
   trusted-infra-plan:
-    if: github.event_name != 'pull_request' && vars.BAO_JWT_ROLE != ''
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production-readonly
@@ -51,15 +50,20 @@ jobs:
       id-token: write
     env:
       BAO_ADDR: ${{ vars.BAO_ADDR }}
-      BAO_JWT_ROLE: ${{ vars.BAO_JWT_ROLE }}
-      SENDBLUE_ACCOUNT_ID: ${{ secrets.SENDBLUE_ACCOUNT_ID }}
-      SENDBLUE_LINE_ID: ${{ secrets.SENDBLUE_LINE_ID }}
+      BAO_JWT_ROLE: ${{ vars.BAO_JWT_ROLE_READONLY }}
       BOB_RELEASE_SHA: ${{ github.sha }}
       ALCHEMY_TELEMETRY_DISABLED: "true"
       # This trusted production job declares the handoff action. A plan does not apply it.
       RUNTIME_CREDENTIAL_HANDOFF_ENABLED: "true"
     steps:
       - uses: actions/checkout@v4
+      - name: Connect to the production Tailnet
+        uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888
+        with:
+          oauth-client-id: ${{ vars.TS_OAUTH_CLIENT_ID_READONLY }}
+          audience: ${{ vars.TS_AUDIENCE_READONLY }}
+          tags: tag:ci
+          ping: vault.lamb-bicolor.ts.net
       - uses: pnpm/action-setup@v4
         with:
           version: 10.19.0

@@ -11,8 +11,6 @@ on:
 permissions:
   contents: read
   packages: write
-  id-token: write
-  attestations: write
 
 concurrency:
   group: release-images-${{ inputs.release_sha }}
@@ -62,13 +60,6 @@ jobs:
           provenance: mode=max
           sbom: true
 
-      - name: Attest agent image
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: ghcr.io/arek-e/bob-agent
-          subject-digest: ${{ steps.agent.outputs.digest }}
-          push-to-registry: true
-
       - name: Build and publish backup
         id: backup
         uses: docker/build-push-action@v6
@@ -83,12 +74,105 @@ jobs:
           provenance: mode=max
           sbom: true
 
-      - name: Attest backup image
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: ghcr.io/arek-e/bob-data-backup
-          subject-digest: ${{ steps.backup.outputs.digest }}
-          push-to-registry: true
+      - name: Verify OCI platform and attestation manifests
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+          AGENT_DIGEST: ${{ steps.agent.outputs.digest }}
+          BACKUP_DIGEST: ${{ steps.backup.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          verify_image() {
+            local repository="$1"
+            local digest="$2"
+            local reference="${repository}@${digest}"
+            local index_json
+            local subject_digest
+            local attestation_digest
+            local attestation_json
+            local provenance_json
+
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            index_json="$(docker buildx imagetools inspect --raw "$reference")"
+            provenance_json="$(
+              docker buildx imagetools inspect --format '{{json .Provenance}}' "$reference"
+            )"
+
+            jq -e '
+              .mediaType == "application/vnd.oci.image.index.v1+json" and
+              ([
+                .manifests[] |
+                select(.annotations["vnd.docker.reference.type"] != "attestation-manifest") |
+                [.platform.os, .platform.architecture]
+              ] | sort) == [["linux", "amd64"], ["linux", "arm64"]] and
+              ([
+                .manifests[] |
+                select(.annotations["vnd.docker.reference.type"] == "attestation-manifest")
+              ] | length) == 2 and
+              all(
+                .manifests[];
+                .mediaType == "application/vnd.oci.image.manifest.v1+json"
+              )
+            ' <<<"$index_json" >/dev/null
+            jq -e --arg release_sha "$RELEASE_SHA" '
+              (keys | sort) == ["linux/amd64", "linux/arm64"] and
+              all(
+                .[];
+                .SLSA.buildDefinition.externalParameters.request.root.request.args["vcs:revision"] == $release_sha and
+                .SLSA.buildDefinition.externalParameters.request.root.request.args["vcs:source"] == "https://github.com/arek-e/bob"
+              )
+            ' <<<"$provenance_json" >/dev/null
+
+            while IFS= read -r subject_digest; do
+              attestation_digest="$(
+                jq -er --arg subject "$subject_digest" '
+                  [
+                    .manifests[] |
+                    select(
+                      .annotations["vnd.docker.reference.type"] == "attestation-manifest" and
+                      .annotations["vnd.docker.reference.digest"] == $subject
+                    ) |
+                    .digest
+                  ] |
+                  if length == 1 then .[0] else error("invalid attestation subject") end
+                ' <<<"$index_json"
+              )"
+              attestation_json="$(
+                docker buildx imagetools inspect --raw "${repository}@${attestation_digest}"
+              )"
+              jq -e '
+                .mediaType == "application/vnd.oci.image.manifest.v1+json" and
+                (.layers | length) == 2 and
+                ([
+                  .layers[] |
+                  select(
+                    .mediaType == "application/vnd.in-toto+json" and
+                    .annotations["in-toto.io/predicate-type"] == "https://spdx.dev/Document"
+                  )
+                ] | length) == 1 and
+                ([
+                  .layers[] |
+                  select(
+                    .mediaType == "application/vnd.in-toto+json" and
+                    .annotations["in-toto.io/predicate-type"] == "https://slsa.dev/provenance/v1"
+                  )
+                ] | length) == 1
+              ' <<<"$attestation_json" >/dev/null
+            done < <(
+              jq -r '
+                .manifests[] |
+                select(
+                  .platform.os == "linux" and
+                  (.platform.architecture == "amd64" or .platform.architecture == "arm64")
+                ) |
+                .digest
+              ' <<<"$index_json"
+            )
+          }
+
+          verify_image ghcr.io/arek-e/bob-agent "$AGENT_DIGEST"
+          verify_image ghcr.io/arek-e/bob-data-backup "$BACKUP_DIGEST"
 
       - name: Record immutable release references
         shell: bash

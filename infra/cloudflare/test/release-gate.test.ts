@@ -16,8 +16,25 @@ describe("trusted infrastructure plan", () => {
       expect(workflow).not.toContain("BAO_DEPLOY_TOKEN")
       expect(workflow).not.toContain("BOB_STAGE")
       expect(workflow).not.toContain("staging")
+      expect(workflow).not.toContain("secrets.SENDBLUE_ACCOUNT_ID")
+      expect(workflow).not.toContain("secrets.SENDBLUE_LINE_ID")
+      expect(workflow).toContain("tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888")
+      expect(workflow).toContain("ping: vault.lamb-bicolor.ts.net")
+      expect(workflow.indexOf("tailscale/github-action@")).toBeLessThan(
+        workflow.indexOf("pnpm secrets:scan:trusted")
+      )
     }
     expect(workflows[0]).toContain("environment: production")
+    expect(workflows[0]).toContain("BAO_JWT_ROLE_PRODUCTION")
+    expect(workflows[0]).toContain("TS_OAUTH_CLIENT_ID_PRODUCTION")
+    expect(workflows[0]).toContain("TS_AUDIENCE_PRODUCTION")
+    expect(workflows[1]).toContain("environment: production-readonly")
+    expect(workflows[1]).toContain("BAO_JWT_ROLE_READONLY")
+    expect(workflows[1]).toContain("TS_OAUTH_CLIENT_ID_READONLY")
+    expect(workflows[1]).toContain("TS_AUDIENCE_READONLY")
+    expect(workflows[1]).toContain("if: github.event_name == 'push'")
+    expect(workflows[1]).not.toContain("workflow_dispatch:")
+    expect(workflows[1]).not.toContain("vars.BAO_JWT_ROLE != ''")
   })
 
   it("exercises the production contract with offline Alchemy fixtures", async () => {
@@ -52,14 +69,47 @@ describe("trusted infrastructure plan", () => {
       readFile(new URL("../../../.github/workflows/ci.yml", import.meta.url), "utf8")
     ])
 
-    expect(releaseGate).toContain("release_sha:")
-    expect(releaseGate).toContain("BOB_RELEASE_SHA: ${{ inputs.release_sha }}")
-    expect(releaseGate).toContain("ref: ${{ inputs.release_sha }}")
+    expect(releaseGate).toContain("source_sha:")
+    expect(releaseGate).toContain("gitops_sha:")
+    expect(releaseGate).toContain("BOB_RELEASE_SHA: ${{ inputs.source_sha }}")
+    expect(releaseGate).toContain("ref: ${{ inputs.gitops_sha }}")
     expect(releaseGate).toContain("fetch-depth: 0")
-    expect(releaseGate).toContain("RELEASE_SHA: ${{ inputs.release_sha }}")
-    expect(releaseGate).toContain('[[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]')
-    expect(releaseGate).toContain('test "$(git rev-parse HEAD)" = "$RELEASE_SHA"')
-    expect(releaseGate).toContain('git merge-base --is-ancestor "$RELEASE_SHA" origin/main')
+    expect(releaseGate).toContain("SOURCE_SHA: ${{ inputs.source_sha }}")
+    expect(releaseGate).toContain("GITOPS_SHA: ${{ inputs.gitops_sha }}")
+    expect(releaseGate).toContain('[[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]')
+    expect(releaseGate).toContain('[[ "$GITOPS_SHA" =~ ^[0-9a-f]{40}$ ]]')
+    expect(releaseGate).toContain('test "$(git rev-parse HEAD)" = "$GITOPS_SHA"')
+    expect(releaseGate).toContain('git merge-base --is-ancestor "$SOURCE_SHA" origin/main')
+    expect(releaseGate).toContain('git merge-base --is-ancestor "$GITOPS_SHA" origin/main')
+    expect(releaseGate).toContain('git merge-base --is-ancestor "$SOURCE_SHA" "$GITOPS_SHA"')
+    expect(releaseGate).toContain('git diff --name-only "$SOURCE_SHA" "$GITOPS_SHA"')
+    expect(releaseGate).toContain('test "${#changed_paths[@]}" -eq 1')
+    expect(releaseGate).toContain(
+      'test "${changed_paths[0]}" = "infra/kubernetes/overlays/prod/kustomization.yaml"'
+    )
+    expect(releaseGate).toContain("infra/kubernetes/overlays/prod/kustomization.yaml")
+    expect(releaseGate).toContain("scripts/verify-release-gitops-delta.mjs")
+    expect(releaseGate).not.toContain("infra/kubernetes/test/agent-observability.test.ts")
+    expect(releaseGate).not.toContain("infra/cloudflare/test/deployment-readiness.test.ts")
+    expect(releaseGate).not.toContain("scripts/deployment-readiness.mjs)")
+    expect(releaseGate).toContain("packages: read")
+    expect(releaseGate).toContain("docker/login-action@v3")
+    expect(releaseGate).toContain("--format '{{.Manifest.Digest}}'")
+    expect(releaseGate).toContain('"ghcr.io/arek-e/bob-agent:sha-$SOURCE_SHA"')
+    expect(releaseGate).toContain('"ghcr.io/arek-e/bob-data-backup:sha-$SOURCE_SHA"')
+    expect(releaseGate).toContain('test "$agent_digest" = "$OVERLAY_AGENT_DIGEST"')
+    expect(releaseGate).toContain('test "$backup_digest" = "$OVERLAY_BACKUP_DIGEST"')
+    for (const legacyVariable of [
+      "CILIUM_FQDN_POLICY_APPROVED",
+      "BOB_CORE_FQDN",
+      "OPENBAO_FQDN",
+      "BOB_AGENT_IMAGE_REPOSITORY",
+      "BOB_AGENT_IMAGE_DIGEST",
+      "CLOUDFLARED_IMAGE_REPOSITORY",
+      "CLOUDFLARED_IMAGE_DIGEST"
+    ]) {
+      expect(releaseGate).not.toContain(legacyVariable)
+    }
     expect(ci).toContain("BOB_RELEASE_SHA: ${{ github.sha }}")
   })
 
@@ -69,11 +119,11 @@ describe("trusted infrastructure plan", () => {
       readFile(new URL("../../../docs/runbooks/operations.md", import.meta.url), "utf8")
     ])
 
-    expect(deployment).toContain(
-      'gh workflow run release-gate.yml --ref main -f release_sha="$GITOPS_SHA"'
-    )
+    expect(deployment).toContain("gh workflow run release-gate.yml --ref main")
+    expect(deployment).toContain('-f source_sha="$RELEASE_SHA"')
+    expect(deployment).toContain('-f gitops_sha="$GITOPS_SHA"')
     expect(deployment).toContain('OTLP_URL="https://bob-otel.${BOB_DOMAIN}"')
-    expect(deployment).toContain('export BOB_RELEASE_SHA="$GITOPS_SHA"')
+    expect(deployment).toContain('export BOB_RELEASE_SHA="$RELEASE_SHA"')
     expect(deployment).toContain("Do not copy the Worker OTLP token to OpenBao")
     expect(operations).toContain("`https://bob-otel.<BOB_DOMAIN>/v1/traces`")
     expect(operations).toContain("The Node agent does not use this Access token")

@@ -3,11 +3,9 @@ const IMAGE_PATTERN = /^[a-z0-9][a-z0-9._/-]*(?::[0-9]+)?(?:\/[a-z0-9._/-]+)*@sh
 const COMMIT_PATTERN = /^[a-f0-9]{40}$/u
 
 const production = Object.freeze({
-  agentImage:
-    "ghcr.io/arek-e/bob-agent@sha256:5cc91f03c170b2ffb086f520777dd125fd747fec45569063f958e3c83695fbc2",
+  agentImageRepository: "ghcr.io/arek-e/bob-agent",
   agentImagePlaceholder: "bob-agent.invalid/repository",
-  backupImage:
-    "ghcr.io/arek-e/bob-data-backup@sha256:ec1cd724701105d46748b9fce580b8bd31f06c86a810df77498016318a0aeb37",
+  backupImageRepository: "ghcr.io/arek-e/bob-data-backup",
   backupImagePlaceholder: "bob-backup.invalid/repository",
   nangoImage:
     "docker.io/nangohq/nango-server@sha256:a52964a41b5ff5d113e45d8ae76a6ffeb2b76ed6e147bc5078288d0f0c79f0c6",
@@ -38,6 +36,40 @@ function requireMarkers(source, markers, message) {
   if (markers.some((marker) => !source.includes(marker))) {
     throw new Error(message)
   }
+}
+
+function pinnedOverlayImage(source, placeholder, repository) {
+  const lines = source.split("\n")
+  const indexes = lines.flatMap((line, index) =>
+    line.trim() === `- name: ${placeholder}` ? [index] : []
+  )
+  const index = indexes[0]
+  const name = index === undefined ? undefined : lines[index + 1]?.trim()
+  const digest = index === undefined ? undefined : lines[index + 2]?.trim()
+  if (
+    indexes.length !== 1 ||
+    name !== `newName: ${repository}` ||
+    digest === undefined ||
+    !DIGEST_PATTERN.test(digest.replace(/^digest:\s*/u, ""))
+  ) {
+    throw new Error("The production Kustomize overlay has an invalid image pin")
+  }
+  const digestValue = digest.replace(/^digest:\s*/u, "")
+  return { digest: digestValue, image: `${repository}@${digestValue}`, repository }
+}
+
+function productionReleaseSha(source) {
+  const lines = source.split("\n")
+  const indexes = lines.flatMap((line, index) =>
+    line.trim() === "path: /data/BOB_RELEASE_SHA" ? [index] : []
+  )
+  const index = indexes[0]
+  const value =
+    index === undefined ? undefined : lines[index + 1]?.trim().replace(/^value:\s*/u, "")
+  if (indexes.length !== 1 || value === undefined || !COMMIT_PATTERN.test(value)) {
+    throw new Error("The production Kustomize overlay needs a full release SHA")
+  }
+  return value
 }
 
 function manifestDocuments(source) {
@@ -157,6 +189,18 @@ export function assertDeploymentReadiness(input) {
   )
   const renderedArgocd = requiredText(input.renderedArgocd, "Rendered Argo CD bootstrap manifests")
 
+  const agent = pinnedOverlayImage(
+    productionOverlay,
+    production.agentImagePlaceholder,
+    production.agentImageRepository
+  )
+  const backup = pinnedOverlayImage(
+    productionOverlay,
+    production.backupImagePlaceholder,
+    production.backupImageRepository
+  )
+  const releaseSha = productionReleaseSha(productionOverlay)
+
   const baseSource = [
     deployment,
     config,
@@ -184,36 +228,30 @@ export function assertDeploymentReadiness(input) {
     "The generic backup image placeholder is missing"
   )
   if (
-    deployment.includes(production.agentImage) ||
+    deployment.includes(agent.image) ||
     deployment.includes(production.tunnelImage) ||
-    backupJob.includes(production.backupImage) ||
+    backupJob.includes(backup.image) ||
     config.includes(production.openBaoAddress) ||
     delivery.includes(production.openBaoAddress)
   ) {
     throw new Error("A production value escaped the production overlay")
   }
 
-  const [agentRepository, agentDigest] = production.agentImage.split("@")
-  const [backupRepository, backupDigest] = production.backupImage.split("@")
+  const { repository: agentRepository, digest: agentDigest } = agent
+  const { repository: backupRepository, digest: backupDigest } = backup
   const [nangoRepository, nangoDigest] = production.nangoImage.split("@")
   const [nangoPostgresRepository, nangoPostgresDigest] = production.nangoPostgresImage.split("@")
   const [nangoRedisRepository, nangoRedisDigest] = production.nangoRedisImage.split("@")
   const [tunnelRepository, tunnelDigest] = production.tunnelImage.split("@")
   if (
-    agentRepository === undefined ||
-    backupRepository === undefined ||
     nangoRepository === undefined ||
     nangoPostgresRepository === undefined ||
     nangoRedisRepository === undefined ||
     tunnelRepository === undefined ||
-    agentDigest === undefined ||
-    backupDigest === undefined ||
     nangoDigest === undefined ||
     nangoPostgresDigest === undefined ||
     nangoRedisDigest === undefined ||
     tunnelDigest === undefined ||
-    !DIGEST_PATTERN.test(agentDigest) ||
-    !DIGEST_PATTERN.test(backupDigest) ||
     !DIGEST_PATTERN.test(nangoDigest) ||
     !DIGEST_PATTERN.test(nangoPostgresDigest) ||
     !DIGEST_PATTERN.test(nangoRedisDigest) ||
@@ -378,8 +416,8 @@ export function assertDeploymentReadiness(input) {
   if (
     images.length !== 6 ||
     images.some((image) => image === undefined || !IMAGE_PATTERN.test(image)) ||
-    !images.includes(production.agentImage) ||
-    !images.includes(production.backupImage) ||
+    !images.includes(agent.image) ||
+    !images.includes(backup.image) ||
     !images.includes(production.nangoImage) ||
     !images.includes(production.nangoPostgresImage) ||
     !images.includes(production.nangoRedisImage) ||
@@ -389,6 +427,7 @@ export function assertDeploymentReadiness(input) {
   }
   if (
     !renderedConfig.includes(`BAO_ADDR: ${production.openBaoAddress}`) ||
+    !renderedConfig.includes(`BOB_RELEASE_SHA: ${releaseSha}`) ||
     !renderedSecretStore.includes(`server: ${production.openBaoAddress}`)
   ) {
     throw new Error("The in-cluster OpenBao address is missing")
@@ -799,8 +838,9 @@ export function assertDeploymentReadiness(input) {
   )
 
   return {
-    agentImage: production.agentImage,
-    backupImage: production.backupImage,
+    agentImage: agent.image,
+    backupImage: backup.image,
+    releaseSha,
     tunnelImage: production.tunnelImage,
     openBaoAddress: production.openBaoAddress,
     targetRevision: revision

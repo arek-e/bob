@@ -6,12 +6,8 @@ import { describe, expect, it } from "vitest"
 import { assertDeploymentReadiness } from "../../../scripts/deployment-readiness.mjs"
 
 const repositoryRoot = new URL("../../../", import.meta.url)
-const agentImage =
-  "ghcr.io/arek-e/bob-agent@sha256:5cc91f03c170b2ffb086f520777dd125fd747fec45569063f958e3c83695fbc2"
 const tunnelImage =
   "docker.io/cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf"
-const backupImage =
-  "ghcr.io/arek-e/bob-data-backup@sha256:ec1cd724701105d46748b9fce580b8bd31f06c86a810df77498016318a0aeb37"
 
 function renderKustomization(directory: string): string {
   const result = spawnSync("kubectl", ["kustomize", directory], {
@@ -115,11 +111,50 @@ async function validInput() {
 describe("production GitOps deployment readiness", () => {
   it("accepts the literal production overlay and scoped Argo CD contract", async () => {
     expect(assertDeploymentReadiness(await validInput())).toEqual({
-      agentImage,
-      backupImage,
+      agentImage: expect.stringMatching(/^ghcr\.io\/arek-e\/bob-agent@sha256:[a-f0-9]{64}$/u),
+      backupImage: expect.stringMatching(
+        /^ghcr\.io\/arek-e\/bob-data-backup@sha256:[a-f0-9]{64}$/u
+      ),
       tunnelImage,
       openBaoAddress: "http://openbao.openbao.svc.cluster.local:8200",
+      releaseSha: expect.stringMatching(/^[a-f0-9]{40}$/u),
       targetRevision: "f974ae0fc5b53ca1c233faa0dfd69e9f814cb25f"
+    })
+  })
+
+  it("derives release pins from the production overlay", async () => {
+    const input = await validInput()
+    const current = assertDeploymentReadiness(input)
+    const nextAgentImage = `ghcr.io/arek-e/bob-agent@sha256:${"d".repeat(64)}`
+    const nextBackupImage = `ghcr.io/arek-e/bob-data-backup@sha256:${"e".repeat(64)}`
+    const nextReleaseSha = "2222222222222222222222222222222222222222"
+    const currentAgentDigest = current.agentImage.split("@")[1]
+    const currentBackupDigest = current.backupImage.split("@")[1]
+    const nextAgentDigest = nextAgentImage.split("@")[1]
+    const nextBackupDigest = nextBackupImage.split("@")[1]
+    if (
+      currentAgentDigest === undefined ||
+      currentBackupDigest === undefined ||
+      nextAgentDigest === undefined ||
+      nextBackupDigest === undefined
+    ) {
+      throw new Error("Missing test image digest")
+    }
+    const productionOverlay = input.productionOverlay
+      .replace(currentAgentDigest, nextAgentDigest)
+      .replace(currentBackupDigest, nextBackupDigest)
+      .replace(current.releaseSha, nextReleaseSha)
+    const renderedKubernetes = input.renderedKubernetes
+      .replaceAll(current.agentImage, nextAgentImage)
+      .replaceAll(current.backupImage, nextBackupImage)
+      .replaceAll(current.releaseSha, nextReleaseSha)
+
+    expect(
+      assertDeploymentReadiness({ ...input, productionOverlay, renderedKubernetes })
+    ).toMatchObject({
+      agentImage: nextAgentImage,
+      backupImage: nextBackupImage,
+      releaseSha: nextReleaseSha
     })
   })
 
@@ -141,13 +176,13 @@ describe("production GitOps deployment readiness", () => {
 
   it("rejects a mutable image or an external OpenBao runtime address", async () => {
     const input = await validInput()
+    const { agentImage } = assertDeploymentReadiness(input)
+    const agentDigest = agentImage.split("@")[1]
+    if (agentDigest === undefined) throw new Error("Missing agent digest")
     expect(() =>
       assertDeploymentReadiness({
         ...input,
-        productionOverlay: input.productionOverlay.replace(
-          "sha256:5cc91f03c170b2ffb086f520777dd125fd747fec45569063f958e3c83695fbc2",
-          "latest"
-        )
+        productionOverlay: input.productionOverlay.replace(agentDigest, "latest")
       })
     ).toThrow(/production Kustomize overlay/u)
     expect(() =>
@@ -216,6 +251,7 @@ describe("production GitOps deployment readiness", () => {
 
   it("rejects an incomplete backup schedule or broad backup policy", async () => {
     const input = await validInput()
+    const { backupImage } = assertDeploymentReadiness(input)
     expect(() =>
       assertDeploymentReadiness({
         ...input,
@@ -312,6 +348,7 @@ describe("production GitOps deployment readiness", () => {
 
   it("rejects unsafe or incomplete real Kustomize renders", async () => {
     const input = await validInput()
+    const { agentImage } = assertDeploymentReadiness(input)
     expect(() =>
       assertDeploymentReadiness({
         ...input,
