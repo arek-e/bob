@@ -4,7 +4,7 @@ const COMMIT_PATTERN = /^[a-f0-9]{40}$/u
 
 const production = Object.freeze({
   agentImage:
-    "ghcr.io/arek-e/bob-agent@sha256:4fc98a670349b9c717180ed7773c81ac1c3200c4b7ca7f25b2374df7be197dec",
+    "ghcr.io/arek-e/bob-agent@sha256:5cc91f03c170b2ffb086f520777dd125fd747fec45569063f958e3c83695fbc2",
   agentImagePlaceholder: "bob-agent.invalid/repository",
   tunnelImage:
     "docker.io/cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf",
