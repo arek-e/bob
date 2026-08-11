@@ -4,26 +4,45 @@ import { describe, expect, it } from "vitest"
 
 import { AGENT_LISTEN_HOST } from "../src/listener.ts"
 
+const kubernetesBase = "infra/kubernetes/base"
+
 describe("agent platform contract", () => {
   it("listens on the pod network for Service and probe traffic", async () => {
     expect(AGENT_LISTEN_HOST).toBe("0.0.0.0")
-    const service = await readFile("infra/kubernetes/service.yaml", "utf8")
-    const deployment = await readFile("infra/kubernetes/deployment.yaml", "utf8")
+    const service = await readFile(`${kubernetesBase}/service.yaml`, "utf8")
+    const deployment = await readFile(`${kubernetesBase}/deployment.yaml`, "utf8")
     expect(service).toContain("targetPort: http")
     expect(deployment).toContain("containerPort: 8787")
     expect(deployment).toContain("path: /health")
   })
 
   it("denies default egress and permits only named platform paths", async () => {
-    const policy = await readFile("infra/kubernetes/network-policy.yaml", "utf8")
+    const policy = await readFile(`${kubernetesBase}/network-policy.yaml`, "utf8")
     expect(policy).toContain("policyTypes: [Ingress, Egress]")
     expect(policy).toContain("kubernetes.io/metadata.name: kube-system")
     expect(policy).toContain("kubernetes.io/metadata.name: openbao")
     expect(policy).toContain("port: 7844")
   })
 
+  it("bootstraps the restricted Bob namespace outside the Argo-managed workload", async () => {
+    const [base, bootstrap, namespace, project] = await Promise.all([
+      readFile(`${kubernetesBase}/kustomization.yaml`, "utf8"),
+      readFile("infra/argocd/kustomization.yaml", "utf8"),
+      readFile("infra/argocd/namespace.yaml", "utf8"),
+      readFile("infra/argocd/project.yaml", "utf8")
+    ])
+
+    expect(base).not.toContain("namespace.yaml")
+    expect(bootstrap).toContain("namespace.yaml")
+    expect(namespace).toContain("pod-security.kubernetes.io/enforce: restricted")
+    expect(namespace).toContain("pod-security.kubernetes.io/audit: restricted")
+    expect(namespace).toContain("pod-security.kubernetes.io/warn: restricted")
+    expect(project).not.toContain("clusterResourceWhitelist")
+    expect(project).not.toContain("kind: Namespace")
+  })
+
   it("mounts one bounded OpenBao audience token at the configured client path", async () => {
-    const deployment = await readFile("infra/kubernetes/deployment.yaml", "utf8")
+    const deployment = await readFile(`${kubernetesBase}/deployment.yaml`, "utf8")
     expect(deployment).toContain("serviceAccountToken:")
     expect(deployment).toContain("audience: openbao")
     expect(deployment).toContain("expirationSeconds: 600")
@@ -34,8 +53,8 @@ describe("agent platform contract", () => {
   })
 
   it("declares reviewed OpenBao-to-Kubernetes secret delivery", async () => {
-    const delivery = await readFile("infra/kubernetes/secret-delivery.yaml", "utf8")
-    const deployment = await readFile("infra/kubernetes/deployment.yaml", "utf8")
+    const delivery = await readFile(`${kubernetesBase}/secret-delivery.yaml`, "utf8")
+    const deployment = await readFile(`${kubernetesBase}/deployment.yaml`, "utf8")
     expect(delivery).toContain("apiVersion: external-secrets.io/v1")
     expect(delivery).toContain("kind: SecretStore")
     expect(delivery).toContain("path: ops")
@@ -48,8 +67,8 @@ describe("agent platform contract", () => {
   })
 
   it("delivers all Access runtime records before the agent container starts", async () => {
-    const delivery = await readFile("infra/kubernetes/secret-delivery.yaml", "utf8")
-    const deployment = await readFile("infra/kubernetes/deployment.yaml", "utf8")
+    const delivery = await readFile(`${kubernetesBase}/secret-delivery.yaml`, "utf8")
+    const deployment = await readFile(`${kubernetesBase}/deployment.yaml`, "utf8")
     const schema = await readFile("apps/agent/.env.schema", "utf8")
 
     expect(delivery).toContain("name: bob-agent-bootstrap")
@@ -77,8 +96,8 @@ describe("agent platform contract", () => {
   })
 
   it("delivers a private GHCR pull secret only to the kubelet", async () => {
-    const delivery = await readFile("infra/kubernetes/secret-delivery.yaml", "utf8")
-    const deployment = await readFile("infra/kubernetes/deployment.yaml", "utf8")
+    const delivery = await readFile(`${kubernetesBase}/secret-delivery.yaml`, "utf8")
+    const deployment = await readFile(`${kubernetesBase}/deployment.yaml`, "utf8")
     const deliveryPolicy = await readFile(
       "infra/openbao/agent-secret-delivery-production-policy.hcl",
       "utf8"
@@ -96,8 +115,8 @@ describe("agent platform contract", () => {
   })
 
   it("separates runtime secret delivery from the Pi OAuth identity", async () => {
-    const accounts = await readFile("infra/kubernetes/service-account.yaml", "utf8")
-    const delivery = await readFile("infra/kubernetes/secret-delivery.yaml", "utf8")
+    const accounts = await readFile(`${kubernetesBase}/service-account.yaml`, "utf8")
+    const delivery = await readFile(`${kubernetesBase}/secret-delivery.yaml`, "utf8")
     const agentPolicy = await readFile("infra/openbao/agent-production-policy.hcl", "utf8")
     const deliveryPolicy = await readFile(
       "infra/openbao/agent-secret-delivery-production-policy.hcl",
@@ -131,7 +150,7 @@ describe("agent platform contract", () => {
   it("does not inject deployment stage values into the agent", async () => {
     const packageManifest = await readFile("apps/agent/package.json", "utf8")
     const schema = await readFile("apps/agent/.env.schema", "utf8")
-    const bootstrap = await readFile("infra/kubernetes/agent-config.yaml", "utf8")
+    const bootstrap = await readFile(`${kubernetesBase}/agent-config.yaml`, "utf8")
 
     expect(packageManifest).not.toContain("--include-internal")
     expect(schema).not.toContain("BOB_SECRET_STAGE")

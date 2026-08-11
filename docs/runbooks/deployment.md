@@ -12,17 +12,17 @@ Build and publish the agent image by digest.
 
 Use a reviewed cloudflared digest.
 
-Set both image repositories and both `sha256` digest inputs.
+Update the two immutable images in `infra/kubernetes/overlays/prod`.
 
-Do not replace the digest inputs with mutable tags.
+Do not replace either digest with a mutable tag.
 
 Install Cilium with FQDN policy support. Review the two permitted external hosts.
 
-Set `BOB_CORE_FQDN` and `OPENBAO_FQDN` to those reviewed hosts.
+Keep external hosts only in the reviewed Cilium policy.
 
-Set `CILIUM_FQDN_POLICY_APPROVED=true` only after the cluster enforces the policy.
+Use the in-cluster OpenBao service for runtime secret access.
 
-Render both FQDN tokens before you apply the Kubernetes manifests.
+Confirm `kubectl kustomize infra/kubernetes` contains no unresolved input.
 
 Create `ops/apps/prod/bob/config` before planning.
 
@@ -42,6 +42,18 @@ Attach the production secret-delivery policy to that role.
 
 Confirm it accepts only the matching secret-delivery ServiceAccount.
 
+Create one read-only GitHub deploy key for the Bob repository.
+
+Store its private key at `ops/apps/prod/bob/argocd/repository`.
+
+Never apply a raw repository Secret with `kubectl`.
+
+Apply `argocd-repository-production-policy.hcl` to OpenBao.
+
+Create the `bob-argocd-repository` Kubernetes role in OpenBao.
+
+Bind it only to `argocd/bob-argocd-repository` with audience `openbao`.
+
 ## Validate
 
 Run these commands from the repository root.
@@ -57,6 +69,8 @@ Run the complete secret scan only with the trusted OpenBao identity.
 ```sh
 pnpm secrets:scan:trusted
 node scripts/verify-deployment-readiness.mjs
+kubectl kustomize infra/kubernetes >/dev/null
+kubectl kustomize infra/argocd >/dev/null
 ```
 
 Do not continue when the trusted scan or deployment check fails.
@@ -108,6 +122,46 @@ Sync generated Access and Tunnel credentials through the approved handoff.
 Write the three Access records and Tunnel token directly to OpenBao.
 Do not store them in workflow artifacts or command output.
 
+Pin `infra/argocd/application.yaml` to the reviewed commit SHA.
+
+Bootstrap the namespace and isolated repository identity first.
+
+```sh
+kubectl --context=teampitch-prod apply --server-side \
+  -f infra/argocd/namespace.yaml \
+  -f infra/argocd/repository-service-account.yaml \
+  -f infra/argocd/repository-secret-store.yaml
+
+kubectl --context=teampitch-prod -n argocd wait \
+  --for=condition=Ready secretstore/bob-argocd-repository \
+  --timeout=2m
+
+kubectl --context=teampitch-prod apply --server-side \
+  -f infra/argocd/repository-external-secret.yaml
+
+kubectl --context=teampitch-prod -n argocd wait \
+  --for=condition=Ready externalsecret/bob-repository \
+  --timeout=2m
+```
+
+Apply the scoped project and application.
+
+```sh
+kubectl --context=teampitch-prod apply --server-side \
+  -f infra/argocd/project.yaml
+
+kubectl --context=teampitch-prod apply --server-side \
+  -f infra/argocd/application.yaml
+
+kubectl --context=teampitch-prod -n argocd wait \
+  --for=jsonpath='{.status.sync.status}'=Synced \
+  application/bob --timeout=10m
+
+kubectl --context=teampitch-prod -n argocd wait \
+  --for=jsonpath='{.status.health.status}'=Healthy \
+  application/bob --timeout=10m
+```
+
 Confirm External Secrets creates the required `bob-agent-bootstrap` Secret.
 
 The agent container must not start when that Secret is absent.
@@ -128,11 +182,15 @@ Run the Sendblue reconciler after the ingress URL is stable.
 
 Run one harmless round trip. Then verify duplicate and timeout states in D1.
 
-The checked-in manifest uses unresolved repository and digest inputs.
+The generic base uses invalid image sentinels and unresolved host inputs.
+
+Only the production overlay is deployable.
+
+The root Kustomization renders that overlay.
 
 The readiness check rejects unresolved, mutable, or local-only images.
 
-The repository does not publish images or synchronize live secrets.
+External Secrets synchronizes live credentials from OpenBao.
 
 ## Production safety
 

@@ -20,7 +20,7 @@ describe("production-only deployment contract", () => {
       repositoryFile("tools/sendblue-reconcile/.env.schema"),
       repositoryFile("tools/pi-smoke/.env.schema"),
       repositoryFile("infra/cloudflare/.env.schema"),
-      repositoryFile("infra/kubernetes/agent-config.yaml")
+      repositoryFile("infra/kubernetes/base/agent-config.yaml")
     ])
 
     for (const file of files) {
@@ -32,10 +32,11 @@ describe("production-only deployment contract", () => {
 
   it("uses only exact production OpenBao paths", async () => {
     const files = await Promise.all([
-      repositoryFile("infra/kubernetes/secret-delivery.yaml"),
+      repositoryFile("infra/kubernetes/base/secret-delivery.yaml"),
       repositoryFile("infra/openbao/agent-production-policy.hcl"),
       repositoryFile("infra/openbao/agent-secret-delivery-production-policy.hcl"),
       repositoryFile("infra/openbao/agent-credential-admin-policy.hcl"),
+      repositoryFile("infra/openbao/argocd-repository-production-policy.hcl"),
       repositoryFile("infra/openbao/deployment-credential-handoff-policy.hcl")
     ])
 
@@ -55,7 +56,35 @@ describe("production-only deployment contract", () => {
     expect(files.at(-1)).toContain('path "auth/token/revoke-self"')
   })
 
-  it("has no Kubernetes deployment overlays", async () => {
+  it("uses one production-only identity for Argo repository delivery", async () => {
+    const [externalSecret, secretStore, serviceAccount, policy] = await Promise.all([
+      repositoryFile("infra/argocd/repository-external-secret.yaml"),
+      repositoryFile("infra/argocd/repository-secret-store.yaml"),
+      repositoryFile("infra/argocd/repository-service-account.yaml"),
+      repositoryFile("infra/openbao/argocd-repository-production-policy.hcl")
+    ])
+
+    expect(externalSecret).toContain("kind: SecretStore")
+    expect(externalSecret).not.toContain("ClusterSecretStore")
+    expect(externalSecret).toContain("key: apps/prod/bob/argocd/repository")
+    expect(secretStore).toContain("role: bob-argocd-repository")
+    expect(secretStore).toContain("name: bob-argocd-repository")
+    expect(serviceAccount).toContain("automountServiceAccountToken: false")
+    expect(policy).toContain('path "ops/data/apps/prod/bob/argocd/repository"')
+    expect(policy.match(/^path /gmu)).toHaveLength(1)
+    expect(policy).not.toContain("*")
+    expect(policy).not.toContain("+")
+  })
+
+  it("has one production overlay and no stage variants", async () => {
+    const [root, production] = await Promise.all([
+      repositoryFile("infra/kubernetes/kustomization.yaml"),
+      repositoryFile("infra/kubernetes/overlays/prod/kustomization.yaml")
+    ])
+
+    expect(root).toContain("- overlays/prod")
+    expect(production).toContain("- ../../base")
+    expect(production).not.toContain("staging")
     await expect(
       access(new URL("infra/kubernetes/overlays/staging/kustomization.yaml", repositoryRoot))
     ).rejects.toThrow()

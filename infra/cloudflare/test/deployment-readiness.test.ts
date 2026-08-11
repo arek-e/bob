@@ -7,6 +7,21 @@ import { describe, expect, it } from "vitest"
 import { assertDeploymentReadiness } from "../../../scripts/deployment-readiness.mjs"
 
 const repositoryRoot = new URL("../../../", import.meta.url)
+const agentImage =
+  "ghcr.io/arek-e/bob-agent@sha256:4fc98a670349b9c717180ed7773c81ac1c3200c4b7ca7f25b2374df7be197dec"
+const tunnelImage =
+  "docker.io/cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf"
+
+function renderKustomization(directory: string): string {
+  const result = spawnSync("kubectl", ["kustomize", directory], {
+    cwd: fileURLToPath(repositoryRoot),
+    encoding: "utf8"
+  })
+  if (result.status !== 0) {
+    throw new Error(result.stderr)
+  }
+  return result.stdout
+}
 
 async function validInput() {
   const [
@@ -16,58 +31,87 @@ async function validInput() {
     networkPolicy,
     ciliumPolicy,
     serviceAccounts,
+    argocdNamespace,
     agentPolicy,
-    secretDeliveryPolicy
+    secretDeliveryPolicy,
+    argocdRepositoryPolicy,
+    productionOverlay,
+    kubernetesKustomization,
+    baseKustomization,
+    argocdRepository,
+    argocdRepositoryServiceAccount,
+    argocdRepositorySecretStore,
+    argocdProject,
+    argocdApplication,
+    argocdKustomization
   ] = await Promise.all([
-    readFile(new URL("infra/kubernetes/deployment.yaml", repositoryRoot), "utf8"),
-    readFile(new URL("infra/kubernetes/agent-config.yaml", repositoryRoot), "utf8"),
-    readFile(new URL("infra/kubernetes/secret-delivery.yaml", repositoryRoot), "utf8"),
-    readFile(new URL("infra/kubernetes/network-policy.yaml", repositoryRoot), "utf8"),
-    readFile(new URL("infra/kubernetes/cilium-fqdn-policy.yaml", repositoryRoot), "utf8"),
-    readFile(new URL("infra/kubernetes/service-account.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/kubernetes/base/deployment.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/kubernetes/base/agent-config.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/kubernetes/base/secret-delivery.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/kubernetes/base/network-policy.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/kubernetes/base/cilium-fqdn-policy.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/kubernetes/base/service-account.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/argocd/namespace.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/openbao/agent-production-policy.hcl", repositoryRoot), "utf8"),
     readFile(
       new URL("infra/openbao/agent-secret-delivery-production-policy.hcl", repositoryRoot),
       "utf8"
-    )
+    ),
+    readFile(
+      new URL("infra/openbao/argocd-repository-production-policy.hcl", repositoryRoot),
+      "utf8"
+    ),
+    readFile(new URL("infra/kubernetes/overlays/prod/kustomization.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/kubernetes/kustomization.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/kubernetes/base/kustomization.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/argocd/repository-external-secret.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/argocd/repository-service-account.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/argocd/repository-secret-store.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/argocd/project.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/argocd/application.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/argocd/kustomization.yaml", repositoryRoot), "utf8")
   ])
   return {
-    approved: true,
-    coreFqdn: "bob.example.com",
-    openBaoFqdn: "vault.example.com",
-    openBaoAddress: "https://vault.example.com",
-    agentImageRepository: "registry.example.com/bob-agent",
-    agentImageDigest: `sha256:${"a".repeat(64)}`,
-    tunnelImageRepository: "docker.io/cloudflare/cloudflared",
-    tunnelImageDigest: `sha256:${"b".repeat(64)}`,
     deployment,
     config,
     delivery,
     serviceAccounts,
+    argocdNamespace,
     agentPolicy,
     secretDeliveryPolicy,
+    argocdRepositoryPolicy,
     networkPolicy,
-    ciliumPolicy
+    ciliumPolicy,
+    productionOverlay,
+    kubernetesKustomization,
+    baseKustomization,
+    argocdRepository,
+    argocdRepositoryServiceAccount,
+    argocdRepositorySecretStore,
+    argocdProject,
+    argocdApplication,
+    argocdKustomization,
+    renderedKubernetes: renderKustomization("infra/kubernetes"),
+    renderedArgocd: renderKustomization("infra/argocd")
   } as const
 }
 
-describe("Kubernetes deployment readiness", () => {
-  it("accepts a fully rendered, digest-pinned, reviewed contract", async () => {
+describe("production GitOps deployment readiness", () => {
+  it("accepts the literal production overlay and scoped Argo CD contract", async () => {
     expect(assertDeploymentReadiness(await validInput())).toEqual({
-      agentImage: `registry.example.com/bob-agent@sha256:${"a".repeat(64)}`,
-      tunnelImage: `docker.io/cloudflare/cloudflared@sha256:${"b".repeat(64)}`
+      agentImage,
+      tunnelImage,
+      openBaoAddress: "http://openbao.openbao.svc.cluster.local:8200",
+      targetRevision: "main"
     })
   })
 
-  it("rejects local images and disabled pulls", async () => {
+  it("rejects local images and disabled pulls in the generic base", async () => {
     const input = await validInput()
     expect(() =>
       assertDeploymentReadiness({
         ...input,
-        deployment: input.deployment.replace(
-          "${BOB_AGENT_IMAGE_REPOSITORY}@${BOB_AGENT_IMAGE_DIGEST}",
-          "bob-agent:local-only"
-        )
+        deployment: input.deployment.replace("bob-agent.invalid/repository", "bob-agent:local-only")
       })
     ).toThrow(/local-only/u)
     expect(() =>
@@ -78,46 +122,70 @@ describe("Kubernetes deployment readiness", () => {
     ).toThrow(/Never/u)
   })
 
-  it("rejects non-digest images and missing bootstrap contracts", async () => {
+  it("rejects a mutable image or an external OpenBao runtime address", async () => {
     const input = await validInput()
-    expect(() => assertDeploymentReadiness({ ...input, agentImageDigest: "latest" })).toThrow(
-      /digest/u
-    )
     expect(() =>
       assertDeploymentReadiness({
         ...input,
-        deployment: input.deployment.replace("audience: openbao", "audience: default")
+        productionOverlay: input.productionOverlay.replace(
+          "sha256:4fc98a670349b9c717180ed7773c81ac1c3200c4b7ca7f25b2374df7be197dec",
+          "latest"
+        )
       })
-    ).toThrow(/projected OpenBao token/u)
-    expect(() => assertDeploymentReadiness({ ...input, delivery: "" })).toThrow(/secret delivery/u)
+    ).toThrow(/production Kustomize overlay/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        productionOverlay: input.productionOverlay.replace(
+          "http://openbao.openbao.svc.cluster.local:8200",
+          "https://vault.lamb-bicolor.ts.net"
+        )
+      })
+    ).toThrow(/production Kustomize overlay/u)
   })
 
-  it("rejects incomplete Access bootstrap secret delivery", async () => {
+  it("rejects an unsafe entrypoint or namespace Pod Security policy", async () => {
     const input = await validInput()
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        kubernetesKustomization: input.kubernetesKustomization.replace("- overlays/prod", "- base")
+      })
+    ).toThrow(/only the production overlay/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        argocdNamespace: input.argocdNamespace.replace(
+          "pod-security.kubernetes.io/enforce: restricted",
+          "pod-security.kubernetes.io/enforce: privileged"
+        )
+      })
+    ).toThrow(/restricted Pod Security/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        baseKustomization: `${input.baseKustomization}\n  - namespace.yaml\n`
+      })
+    ).toThrow(/must not own the Bob Namespace/u)
+  })
 
+  it("rejects incomplete runtime and registry secret delivery", async () => {
+    const input = await validInput()
     expect(() =>
       assertDeploymentReadiness({
         ...input,
         delivery: input.delivery.replace("property: CORE_ACCESS_CLIENT_SECRET", "property: OMITTED")
       })
     ).toThrow(/Access runtime secret delivery/u)
-  })
-
-  it("rejects an incomplete private registry pull contract", async () => {
-    const input = await validInput()
-
     expect(() =>
       assertDeploymentReadiness({
         ...input,
-        deployment: input.deployment.replace("name: bob-ghcr-pull", "name: omitted-pull-secret")
+        renderedKubernetes: input.renderedKubernetes.replace(
+          "name: bob-ghcr-pull",
+          "name: omitted-pull"
+        )
       })
     ).toThrow(/registry pull/u)
-    expect(() =>
-      assertDeploymentReadiness({
-        ...input,
-        delivery: input.delivery.replace("property: TOKEN", "property: OMITTED")
-      })
-    ).toThrow(/secret delivery/u)
     expect(() =>
       assertDeploymentReadiness({
         ...input,
@@ -129,53 +197,120 @@ describe("Kubernetes deployment readiness", () => {
     ).toThrow(/secret-delivery OpenBao policy/u)
   })
 
-  it("rejects a secret-delivery identity without an exact scoped policy", async () => {
+  it("rejects an unscoped Argo CD repository or project", async () => {
     const input = await validInput()
-
     expect(() =>
       assertDeploymentReadiness({
         ...input,
-        secretDeliveryPolicy: input.secretDeliveryPolicy.replace(
-          'path "ops/data/apps/prod/bob/access/agent-to-core"',
-          'path "ops/data/apps/prod/bob/access/omitted"'
+        argocdRepository: input.argocdRepository.replace(
+          "kind: SecretStore",
+          "kind: ClusterSecretStore"
         )
       })
-    ).toThrow(/secret-delivery OpenBao policy/u)
+    ).toThrow(/repository credential/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        argocdRepository: input.argocdRepository.replace(
+          "key: apps/prod/bob/argocd/repository",
+          "key: ops/apps/prod/bob/argocd/repository"
+        )
+      })
+    ).toThrow(/repository credential/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        argocdRepositorySecretStore: input.argocdRepositorySecretStore.replace(
+          "role: bob-argocd-repository",
+          "role: shared-reader"
+        )
+      })
+    ).toThrow(/repository SecretStore/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        argocdRepositoryPolicy: input.argocdRepositoryPolicy.replace(
+          "apps/prod/bob/argocd/repository",
+          "apps/prod/bob/argocd/*"
+        )
+      })
+    ).toThrow(/policy is not exact/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        argocdProject: input.argocdProject.replace("kind: Deployment", 'kind: "*"')
+      })
+    ).toThrow(/AppProject resource scope/u)
   })
 
-  it("rejects a missing secret-delivery ServiceAccount", async () => {
+  it("rejects an incomplete or unpinned-shape Argo CD Application", async () => {
     const input = await validInput()
-
-    expect(() => assertDeploymentReadiness({ ...input, serviceAccounts: "" })).toThrow(
-      /secret-delivery ServiceAccount/u
-    )
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        argocdApplication: input.argocdApplication.replace("selfHeal: true", "selfHeal: false")
+      })
+    ).toThrow(/automated Bob/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        argocdApplication: input.argocdApplication.replace(
+          "targetRevision: main",
+          "targetRevision: v1"
+        )
+      })
+    ).toThrow(/target revision/u)
   })
 
-  it("checks only the fixed production manifest set", async () => {
+  it("rejects unsafe or incomplete real Kustomize renders", async () => {
+    const input = await validInput()
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        renderedKubernetes: input.renderedKubernetes.replace(agentImage, "bob-agent:latest")
+      })
+    ).toThrow(/reviewed sha256 digest/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        renderedKubernetes: `${input.renderedKubernetes}\n${"${UNRESOLVED_VALUE}"}\n`
+      })
+    ).toThrow(/unresolved or invalid input/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        renderedKubernetes: input.renderedKubernetes.replace(
+          "name: bob-agent-restricted-network",
+          "name: omitted-network-policy"
+        )
+      })
+    ).toThrow(/missing NetworkPolicy/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        renderedArgocd: input.renderedArgocd.replace("name: bob-argocd-repository", "name: omitted")
+      })
+    ).toThrow(/missing ServiceAccount/u)
+  })
+
+  it("runs the fixed production verifier without render environment inputs", async () => {
     const verifier = await readFile(
       new URL("scripts/verify-deployment-readiness.mjs", repositoryRoot),
       "utf8"
     )
+    expect(verifier).not.toContain("process.env")
     expect(verifier).not.toContain("BOB_STAGE")
-    expect(verifier).not.toContain("overlays/")
+    expect(verifier).toContain('["kustomize", directory]')
+    expect(verifier).toContain('renderKustomization("infra/kubernetes")')
+    expect(verifier).toContain('renderKustomization("infra/argocd")')
 
     const result = spawnSync(process.execPath, ["scripts/verify-deployment-readiness.mjs"], {
       cwd: fileURLToPath(repositoryRoot),
-      env: {
-        ...process.env,
-        CILIUM_FQDN_POLICY_APPROVED: "true",
-        BOB_CORE_FQDN: "bob.example.com",
-        OPENBAO_FQDN: "vault.example.com",
-        BAO_ADDR: "https://vault.example.com",
-        BOB_AGENT_IMAGE_REPOSITORY: "registry.example.com/bob-agent",
-        BOB_AGENT_IMAGE_DIGEST: `sha256:${"a".repeat(64)}`,
-        CLOUDFLARED_IMAGE_REPOSITORY: "docker.io/cloudflare/cloudflared",
-        CLOUDFLARED_IMAGE_DIGEST: `sha256:${"b".repeat(64)}`
-      },
+      env: process.env,
       encoding: "utf8"
     })
 
-    expect(result.status).toBe(0)
-    expect(result.stdout).toContain("production")
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain("production GitOps path")
   })
 })

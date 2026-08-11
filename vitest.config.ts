@@ -9,6 +9,7 @@ export default defineConfig({
       "apps/*/test/**/*.test.ts",
       "infra/*/test/**/*.test.ts",
       "packages/*/test/**/*.test.ts",
+      "tools/*/test/**/*.test.ts",
       "evals/deterministic/**/*.test.ts"
     ],
     passWithNoTests: false

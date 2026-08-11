@@ -1,6 +1,21 @@
-const FQDN_PATTERN = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/u
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u
 const IMAGE_PATTERN = /^[a-z0-9][a-z0-9._/-]*(?::[0-9]+)?(?:\/[a-z0-9._/-]+)*@sha256:[a-f0-9]{64}$/u
+const COMMIT_PATTERN = /^[a-f0-9]{40}$/u
+
+const production = Object.freeze({
+  agentImage:
+    "ghcr.io/arek-e/bob-agent@sha256:4fc98a670349b9c717180ed7773c81ac1c3200c4b7ca7f25b2374df7be197dec",
+  agentImagePlaceholder: "bob-agent.invalid/repository",
+  tunnelImage:
+    "docker.io/cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf",
+  tunnelImagePlaceholder: "cloudflared.invalid/repository",
+  openBaoAddress: "http://openbao.openbao.svc.cluster.local:8200",
+  coreFqdn: "bob.tpops.dev",
+  openBaoFqdn: "vault.lamb-bicolor.ts.net",
+  repository: "git@github.com:arek-e/bob.git",
+  repositoryPath: "infra/kubernetes/overlays/prod",
+  repositorySecretPath: "apps/prod/bob/argocd/repository"
+})
 
 function requiredText(value, name) {
   if (typeof value !== "string" || value.length === 0) {
@@ -9,52 +24,73 @@ function requiredText(value, name) {
   return value
 }
 
-function render(source, replacements) {
-  let value = source
-  for (const [name, replacement] of Object.entries(replacements)) {
-    value = value.replaceAll(`\${${name}}`, replacement)
+function requireMarkers(source, markers, message) {
+  if (markers.some((marker) => !source.includes(marker))) {
+    throw new Error(message)
   }
-  return value
+}
+
+function manifestDocuments(source) {
+  return source.split(/^---\s*$/gmu).filter((document) => document.trim().length > 0)
+}
+
+function manifestIdentity(document) {
+  let kind
+  let name
+  let namespace
+  let inMetadata = false
+  for (const line of document.split("\n")) {
+    if (line.startsWith("kind: ")) {
+      kind = line.slice("kind: ".length)
+      continue
+    }
+    if (line === "metadata:") {
+      inMetadata = true
+      continue
+    }
+    if (inMetadata && /^\S/u.test(line)) {
+      inMetadata = false
+    }
+    if (!inMetadata) {
+      continue
+    }
+    if (line.startsWith("  name: ")) {
+      name = line.slice("  name: ".length)
+    }
+    if (line.startsWith("  namespace: ")) {
+      namespace = line.slice("  namespace: ".length)
+    }
+  }
+  return { kind, name, namespace }
+}
+
+function findManifestObject(source, expected) {
+  return manifestDocuments(source).find((document) => {
+    const identity = manifestIdentity(document)
+    return (
+      identity.kind === expected.kind &&
+      identity.name === expected.name &&
+      (expected.namespace === undefined || identity.namespace === expected.namespace)
+    )
+  })
+}
+
+function requireManifestObject(source, expected, setName) {
+  const document = findManifestObject(source, expected)
+  if (document === undefined) {
+    const namespace = expected.namespace === undefined ? "" : ` in ${expected.namespace}`
+    throw new Error(`${setName} is missing ${expected.kind} ${expected.name}${namespace}`)
+  }
+  return document
 }
 
 /**
- * Check the complete local Kubernetes deployment contract without applying it.
+ * Check the complete production GitOps contract without applying it.
  * The return value contains no credentials.
  *
  * @param {Record<string, unknown>} input
  */
 export function assertDeploymentReadiness(input) {
-  if (input.approved !== true) {
-    throw new Error("Cilium FQDN policy approval is required before deployment")
-  }
-  const coreFqdn = requiredText(input.coreFqdn, "BOB_CORE_FQDN")
-  const openBaoFqdn = requiredText(input.openBaoFqdn, "OPENBAO_FQDN")
-  if (!FQDN_PATTERN.test(coreFqdn)) {
-    throw new Error("BOB_CORE_FQDN must contain the reviewed Core host")
-  }
-  if (!FQDN_PATTERN.test(openBaoFqdn)) {
-    throw new Error("OPENBAO_FQDN must contain the reviewed OpenBao host")
-  }
-
-  const agentImageRepository = requiredText(
-    input.agentImageRepository,
-    "BOB_AGENT_IMAGE_REPOSITORY"
-  )
-  const tunnelImageRepository = requiredText(
-    input.tunnelImageRepository,
-    "CLOUDFLARED_IMAGE_REPOSITORY"
-  )
-  const agentImageDigest = requiredText(input.agentImageDigest, "BOB_AGENT_IMAGE_DIGEST")
-  const tunnelImageDigest = requiredText(input.tunnelImageDigest, "CLOUDFLARED_IMAGE_DIGEST")
-  if (!DIGEST_PATTERN.test(agentImageDigest) || !DIGEST_PATTERN.test(tunnelImageDigest)) {
-    throw new Error("Each deployment image needs a sha256 digest")
-  }
-  const agentImage = `${agentImageRepository}@${agentImageDigest}`
-  const tunnelImage = `${tunnelImageRepository}@${tunnelImageDigest}`
-  if (!IMAGE_PATTERN.test(agentImage) || !IMAGE_PATTERN.test(tunnelImage)) {
-    throw new Error("Each deployment image must use a valid repository and sha256 digest")
-  }
-
   const deployment = requiredText(input.deployment, "Kubernetes Deployment manifest")
   const config = requiredText(input.config, "Kubernetes bootstrap ConfigMap")
   const delivery = requiredText(input.delivery, "Kubernetes secret delivery contract")
@@ -64,51 +100,210 @@ export function assertDeploymentReadiness(input) {
     input.serviceAccounts,
     "The secret-delivery ServiceAccount manifest"
   )
+  const argocdNamespace = requiredText(input.argocdNamespace, "Argo CD Bob Namespace manifest")
   const agentPolicy = requiredText(input.agentPolicy, "Pi OAuth OpenBao policy")
   const secretDeliveryPolicy = requiredText(
     input.secretDeliveryPolicy,
     "Secret-delivery OpenBao policy"
   )
-  const source = [deployment, config, delivery, networkPolicy, ciliumPolicy].join("\n")
-  if (source.includes("local-only")) {
+  const productionOverlay = requiredText(input.productionOverlay, "Production Kustomize overlay")
+  const kubernetesKustomization = requiredText(
+    input.kubernetesKustomization,
+    "Production Kubernetes entrypoint"
+  )
+  const baseKustomization = requiredText(input.baseKustomization, "Generic Kubernetes base")
+  const argocdRepository = requiredText(input.argocdRepository, "Argo CD repository ExternalSecret")
+  const argocdRepositoryServiceAccount = requiredText(
+    input.argocdRepositoryServiceAccount,
+    "Argo CD repository ServiceAccount"
+  )
+  const argocdRepositorySecretStore = requiredText(
+    input.argocdRepositorySecretStore,
+    "Argo CD repository SecretStore"
+  )
+  const argocdRepositoryPolicy = requiredText(
+    input.argocdRepositoryPolicy,
+    "Argo CD repository OpenBao policy"
+  )
+  const argocdProject = requiredText(input.argocdProject, "Argo CD AppProject")
+  const argocdApplication = requiredText(input.argocdApplication, "Argo CD Application")
+  const argocdKustomization = requiredText(input.argocdKustomization, "Argo CD Kustomization")
+  const renderedKubernetes = requiredText(
+    input.renderedKubernetes,
+    "Rendered production Kubernetes manifests"
+  )
+  const renderedArgocd = requiredText(input.renderedArgocd, "Rendered Argo CD bootstrap manifests")
+
+  const baseSource = [deployment, config, delivery, networkPolicy, ciliumPolicy].join("\n")
+  if (baseSource.includes("local-only")) {
     throw new Error("The Kubernetes contract contains a local-only image")
   }
-  if (/imagePullPolicy:\s*Never/u.test(source)) {
+  if (/imagePullPolicy:\s*Never/u.test(baseSource)) {
     throw new Error("The Kubernetes contract contains imagePullPolicy Never")
   }
-
-  const replacements = {
-    OPENBAO_ADDR: requiredText(input.openBaoAddress, "OPENBAO_ADDR"),
-    BOB_CORE_FQDN: coreFqdn,
-    OPENBAO_FQDN: openBaoFqdn,
-    BOB_AGENT_IMAGE_REPOSITORY: agentImageRepository,
-    BOB_AGENT_IMAGE_DIGEST: agentImageDigest,
-    CLOUDFLARED_IMAGE_REPOSITORY: tunnelImageRepository,
-    CLOUDFLARED_IMAGE_DIGEST: tunnelImageDigest
-  }
-  const renderedDeployment = render(deployment, replacements)
-  const renderedConfig = render(config, replacements)
-  const renderedDelivery = render(delivery, replacements)
-  const renderedCiliumPolicy = render(ciliumPolicy, replacements)
-  const rendered = [
-    renderedDeployment,
-    renderedConfig,
-    renderedDelivery,
-    networkPolicy,
-    renderedCiliumPolicy
-  ].join("\n")
-  if (/\$\{[A-Z0-9_]+\}/u.test(rendered)) {
-    throw new Error("The Kubernetes contract contains unresolved render inputs")
+  requireMarkers(
+    deployment,
+    [`image: ${production.agentImagePlaceholder}`, `image: ${production.tunnelImagePlaceholder}`],
+    "The generic image placeholders are missing"
+  )
+  if (
+    deployment.includes(production.agentImage) ||
+    deployment.includes(production.tunnelImage) ||
+    config.includes(production.openBaoAddress) ||
+    delivery.includes(production.openBaoAddress) ||
+    ciliumPolicy.includes(production.coreFqdn) ||
+    ciliumPolicy.includes(production.openBaoFqdn)
+  ) {
+    throw new Error("A production value escaped the production overlay")
   }
 
-  const images = [...renderedDeployment.matchAll(/^\s*image:\s*["']?([^\s"']+)["']?\s*$/gmu)].map(
+  const [agentRepository, agentDigest] = production.agentImage.split("@")
+  const [tunnelRepository, tunnelDigest] = production.tunnelImage.split("@")
+  if (
+    agentRepository === undefined ||
+    tunnelRepository === undefined ||
+    agentDigest === undefined ||
+    tunnelDigest === undefined ||
+    !DIGEST_PATTERN.test(agentDigest) ||
+    !DIGEST_PATTERN.test(tunnelDigest)
+  ) {
+    throw new Error("Each production image needs a sha256 digest")
+  }
+  requireMarkers(
+    productionOverlay,
+    [
+      "kind: Kustomization",
+      "- ../../base",
+      `- name: ${production.agentImagePlaceholder}`,
+      `newName: ${agentRepository}`,
+      `digest: ${agentDigest}`,
+      `- name: ${production.tunnelImagePlaceholder}`,
+      `newName: ${tunnelRepository}`,
+      `digest: ${tunnelDigest}`,
+      "kind: ConfigMap",
+      "name: bob-agent-bootstrap",
+      "path: /data/BAO_ADDR",
+      `value: ${production.openBaoAddress}`,
+      "kind: CiliumNetworkPolicy",
+      `value: ${production.coreFqdn}`,
+      `value: ${production.openBaoFqdn}`,
+      "replacements:",
+      "fieldPath: data.BAO_ADDR",
+      "kind: SecretStore",
+      "name: bob-openbao",
+      "spec.provider.vault.server"
+    ],
+    "The literal production Kustomize overlay is incomplete"
+  )
+  if (productionOverlay.includes("staging") || /\$\{[A-Z0-9_]+\}/u.test(productionOverlay)) {
+    throw new Error("The production overlay contains a stage or unresolved input")
+  }
+  if (
+    !kubernetesKustomization.includes("- overlays/prod") ||
+    kubernetesKustomization.includes("- base")
+  ) {
+    throw new Error("The Kubernetes entrypoint must render only the production overlay")
+  }
+  if (baseKustomization.includes("namespace.yaml")) {
+    throw new Error("The Argo-managed Kubernetes base must not own the Bob Namespace")
+  }
+
+  const renderedSource = [renderedKubernetes, renderedArgocd].join("\n")
+  if (
+    /\$\{[A-Z0-9_]+\}/u.test(renderedSource) ||
+    /(?:bob-agent|cloudflared)\.invalid\/repository/u.test(renderedSource) ||
+    /(?:local-only|REPLACE_WITH|replace-me|changeme)/iu.test(renderedSource)
+  ) {
+    throw new Error("A rendered production manifest contains an unresolved or invalid input")
+  }
+
+  const requiredKubernetesObjects = [
+    { kind: "ConfigMap", name: "bob-agent-bootstrap", namespace: "bob" },
+    { kind: "ServiceAccount", name: "bob-agent", namespace: "bob" },
+    { kind: "ServiceAccount", name: "bob-agent-secret-delivery", namespace: "bob" },
+    { kind: "Deployment", name: "bob-agent", namespace: "bob" },
+    { kind: "Service", name: "bob-agent", namespace: "bob" },
+    { kind: "SecretStore", name: "bob-openbao", namespace: "bob" },
+    { kind: "ExternalSecret", name: "bob-agent-bootstrap", namespace: "bob" },
+    { kind: "ExternalSecret", name: "bob-agent-tunnel", namespace: "bob" },
+    { kind: "ExternalSecret", name: "bob-ghcr-pull", namespace: "bob" },
+    { kind: "NetworkPolicy", name: "bob-agent-restricted-network", namespace: "bob" },
+    {
+      kind: "CiliumNetworkPolicy",
+      name: "bob-agent-reviewed-fqdn-egress",
+      namespace: "bob"
+    }
+  ]
+  for (const expected of requiredKubernetesObjects) {
+    requireManifestObject(renderedKubernetes, expected, "The production Kubernetes render")
+  }
+  if (findManifestObject(renderedKubernetes, { kind: "Namespace", name: "bob" }) !== undefined) {
+    throw new Error("The Argo-managed production render must not own the Bob Namespace")
+  }
+
+  const requiredArgocdObjects = [
+    { kind: "Namespace", name: "bob" },
+    { kind: "ServiceAccount", name: "bob-argocd-repository", namespace: "argocd" },
+    { kind: "SecretStore", name: "bob-argocd-repository", namespace: "argocd" },
+    { kind: "ExternalSecret", name: "bob-repository", namespace: "argocd" },
+    { kind: "AppProject", name: "bob", namespace: "argocd" },
+    { kind: "Application", name: "bob", namespace: "argocd" }
+  ]
+  for (const expected of requiredArgocdObjects) {
+    requireManifestObject(renderedArgocd, expected, "The Argo CD bootstrap render")
+  }
+
+  const renderedDeployment = requireManifestObject(
+    renderedKubernetes,
+    { kind: "Deployment", name: "bob-agent", namespace: "bob" },
+    "The production Kubernetes render"
+  )
+  const renderedConfig = requireManifestObject(
+    renderedKubernetes,
+    { kind: "ConfigMap", name: "bob-agent-bootstrap", namespace: "bob" },
+    "The production Kubernetes render"
+  )
+  const renderedSecretStore = requireManifestObject(
+    renderedKubernetes,
+    { kind: "SecretStore", name: "bob-openbao", namespace: "bob" },
+    "The production Kubernetes render"
+  )
+  const renderedCiliumPolicy = requireManifestObject(
+    renderedKubernetes,
+    {
+      kind: "CiliumNetworkPolicy",
+      name: "bob-agent-reviewed-fqdn-egress",
+      namespace: "bob"
+    },
+    "The production Kubernetes render"
+  )
+  const images = [...renderedKubernetes.matchAll(/^\s*image:\s*["']?([^\s"']+)["']?\s*$/gmu)].map(
     (match) => match[1]
   )
   if (
-    images.length === 0 ||
-    images.some((image) => image === undefined || !IMAGE_PATTERN.test(image))
+    images.length !== 2 ||
+    images.some((image) => image === undefined || !IMAGE_PATTERN.test(image)) ||
+    !images.includes(production.agentImage) ||
+    !images.includes(production.tunnelImage)
   ) {
-    throw new Error("Each Kubernetes container image must use an immutable sha256 digest")
+    throw new Error("Each production container image must use its reviewed sha256 digest")
+  }
+  if (
+    !renderedConfig.includes(`BAO_ADDR: ${production.openBaoAddress}`) ||
+    !renderedSecretStore.includes(`server: ${production.openBaoAddress}`)
+  ) {
+    throw new Error("The in-cluster OpenBao address is missing")
+  }
+  const nonCiliumSource = manifestDocuments(renderedKubernetes)
+    .filter((document) => manifestIdentity(document).kind !== "CiliumNetworkPolicy")
+    .join("\n")
+  if (
+    nonCiliumSource.includes(production.coreFqdn) ||
+    nonCiliumSource.includes(production.openBaoFqdn) ||
+    !renderedCiliumPolicy.includes(`matchName: ${production.coreFqdn}`) ||
+    !renderedCiliumPolicy.includes(`matchName: ${production.openBaoFqdn}`)
+  ) {
+    throw new Error("The reviewed external hosts must occur only in the Cilium policy")
   }
 
   const projectedTokenMarkers = [
@@ -151,9 +346,11 @@ export function assertDeploymentReadiness(input) {
     "property: USERNAME",
     "property: TOKEN"
   ]
-  if (secretDeliveryMarkers.some((marker) => !renderedDelivery.includes(marker))) {
-    throw new Error("The reviewed OpenBao secret delivery contract is missing")
-  }
+  requireMarkers(
+    delivery,
+    secretDeliveryMarkers,
+    "The reviewed OpenBao secret delivery contract is missing"
+  )
   const secretDeliveryAccount = serviceAccounts
     .split(/^---$/gmu)
     .find((document) => document.includes("name: bob-agent-secret-delivery"))
@@ -164,6 +361,20 @@ export function assertDeploymentReadiness(input) {
   ) {
     throw new Error("The isolated secret-delivery ServiceAccount is missing")
   }
+  requireMarkers(
+    argocdNamespace,
+    [
+      "kind: Namespace",
+      "name: bob",
+      "pod-security.kubernetes.io/enforce: restricted",
+      "pod-security.kubernetes.io/enforce-version: v1.32",
+      "pod-security.kubernetes.io/audit: restricted",
+      "pod-security.kubernetes.io/audit-version: v1.32",
+      "pod-security.kubernetes.io/warn: restricted",
+      "pod-security.kubernetes.io/warn-version: v1.32"
+    ],
+    "The Bob namespace restricted Pod Security contract is missing"
+  )
   const accessSecretDeliveryMarkers = [
     "name: bob-agent-bootstrap",
     "path: ops",
@@ -179,9 +390,12 @@ export function assertDeploymentReadiness(input) {
     "property: ADMIN_ACCESS_AUDIENCE",
     "property: ADMIN_ACCESS_SUBJECT"
   ]
-  if (accessSecretDeliveryMarkers.some((marker) => !renderedDelivery.includes(marker))) {
-    throw new Error("The reviewed Access runtime secret delivery contract is missing")
-  }
+  requireMarkers(
+    delivery,
+    accessSecretDeliveryMarkers,
+    "The reviewed Access runtime secret delivery contract is missing"
+  )
+
   const piPath = "apps/prod/bob/pi-auth/openai-codex"
   if (
     !agentPolicy.includes(`path "ops/data/${piPath}"`) ||
@@ -210,12 +424,147 @@ export function assertDeploymentReadiness(input) {
   if (/port:\s*443/u.test(networkPolicy)) {
     throw new Error("The standard NetworkPolicy must not allow broad HTTPS egress")
   }
-  if (
-    !renderedCiliumPolicy.includes("requires-cilium-fqdn-enforcement") ||
-    !renderedCiliumPolicy.includes(coreFqdn) ||
-    !renderedCiliumPolicy.includes(openBaoFqdn)
-  ) {
-    throw new Error("The reviewed Cilium FQDN enforcement contract is missing")
+  requireMarkers(
+    renderedCiliumPolicy,
+    ["requires-cilium-fqdn-enforcement", production.coreFqdn, production.openBaoFqdn],
+    "The reviewed Cilium FQDN enforcement contract is missing"
+  )
+
+  requireMarkers(
+    argocdRepository,
+    [
+      "kind: ExternalSecret",
+      "name: bob-repository",
+      "namespace: argocd",
+      "name: bob-argocd-repository",
+      "kind: SecretStore",
+      "creationPolicy: Owner",
+      "argocd.argoproj.io/secret-type: repository",
+      "type: git",
+      `url: ${production.repository}`,
+      'sshPrivateKey: "{{ .sshPrivateKey }}"',
+      `key: ${production.repositorySecretPath}`,
+      "property: SSH_PRIVATE_KEY"
+    ],
+    "The Argo CD repository credential delivery contract is incomplete"
+  )
+  if (/BEGIN (?:OPENSSH |RSA |EC )?PRIVATE KEY/u.test(argocdRepository)) {
+    throw new Error("The Argo CD repository manifest contains private key material")
   }
-  return { agentImage, tunnelImage }
+  requireMarkers(
+    argocdRepositoryServiceAccount,
+    [
+      "kind: ServiceAccount",
+      "name: bob-argocd-repository",
+      "namespace: argocd",
+      "automountServiceAccountToken: false"
+    ],
+    "The isolated Argo CD repository ServiceAccount is incomplete"
+  )
+  requireMarkers(
+    argocdRepositorySecretStore,
+    [
+      "kind: SecretStore",
+      "name: bob-argocd-repository",
+      "namespace: argocd",
+      `server: ${production.openBaoAddress}`,
+      "path: ops",
+      "version: v2",
+      "mountPath: kubernetes",
+      "role: bob-argocd-repository",
+      "serviceAccountRef:",
+      "audiences: [openbao]"
+    ],
+    "The isolated Argo CD repository SecretStore is incomplete"
+  )
+  if (
+    argocdRepositorySecretStore.includes("ClusterSecretStore") ||
+    argocdRepositorySecretStore.includes("openbao-store")
+  ) {
+    throw new Error("The Argo CD repository delivery must not use a shared SecretStore")
+  }
+  const repositoryPolicyPath = 'path "ops/data/apps/prod/bob/argocd/repository"'
+  if (
+    !argocdRepositoryPolicy.includes(repositoryPolicyPath) ||
+    !argocdRepositoryPolicy.includes('capabilities = ["read"]') ||
+    (argocdRepositoryPolicy.match(/^path\s+"/gmu) ?? []).length !== 1 ||
+    argocdRepositoryPolicy.includes("+") ||
+    argocdRepositoryPolicy.includes("*")
+  ) {
+    throw new Error("The Argo CD repository OpenBao policy is not exact and read-only")
+  }
+  requireMarkers(
+    argocdProject,
+    [
+      "kind: AppProject",
+      "name: bob",
+      `- ${production.repository}`,
+      "server: https://kubernetes.default.svc",
+      "namespace: bob",
+      'group: ""',
+      "kind: ConfigMap",
+      "kind: Service",
+      "kind: ServiceAccount",
+      "group: apps",
+      "kind: Deployment",
+      "group: networking.k8s.io",
+      "kind: NetworkPolicy",
+      "group: external-secrets.io",
+      "kind: ExternalSecret",
+      "kind: SecretStore",
+      "group: cilium.io",
+      "kind: CiliumNetworkPolicy"
+    ],
+    "The Bob AppProject resource scope is incomplete"
+  )
+  if (
+    argocdProject.includes("clusterResourceWhitelist:") ||
+    argocdProject.includes("kind: Namespace") ||
+    /kind:\s*["']?\*["']?/u.test(argocdProject) ||
+    /namespace:\s*["']?\*["']?/u.test(argocdProject)
+  ) {
+    throw new Error("The Bob AppProject contains a wildcard resource scope")
+  }
+
+  requireMarkers(
+    argocdApplication,
+    [
+      "kind: Application",
+      "name: bob",
+      "project: bob",
+      `repoURL: ${production.repository}`,
+      `path: ${production.repositoryPath}`,
+      "server: https://kubernetes.default.svc",
+      "namespace: bob",
+      "automated:",
+      "prune: true",
+      "selfHeal: true",
+      "allowEmpty: false",
+      "ServerSideApply=true"
+    ],
+    "The automated Bob Argo CD Application is incomplete"
+  )
+  const revision = argocdApplication.match(/^\s*targetRevision:\s*([^\s]+)\s*$/mu)?.[1]
+  if (revision === undefined || (revision !== "main" && !COMMIT_PATTERN.test(revision))) {
+    throw new Error("The Argo CD target revision must be main or a reviewed commit")
+  }
+  requireMarkers(
+    argocdKustomization,
+    [
+      "namespace.yaml",
+      "repository-service-account.yaml",
+      "repository-secret-store.yaml",
+      "repository-external-secret.yaml",
+      "project.yaml",
+      "application.yaml"
+    ],
+    "The Argo CD bootstrap Kustomization is incomplete"
+  )
+
+  return {
+    agentImage: production.agentImage,
+    tunnelImage: production.tunnelImage,
+    openBaoAddress: production.openBaoAddress,
+    targetRevision: revision
+  }
 }

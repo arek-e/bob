@@ -20,7 +20,7 @@ spec:
         - name: bob-ghcr-pull
       containers:
         - name: agent
-          image: "${BOB_AGENT_IMAGE_REPOSITORY}@${BOB_AGENT_IMAGE_DIGEST}"
+          image: bob-agent.invalid/repository
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -63,7 +63,7 @@ spec:
               mountPath: /var/run/secrets/kubernetes.io/serviceaccount
               readOnly: true
         - name: tunnel
-          image: "${CLOUDFLARED_IMAGE_REPOSITORY}@${CLOUDFLARED_IMAGE_DIGEST}"
+          image: cloudflared.invalid/repository
           imagePullPolicy: IfNotPresent
           args: [tunnel, --no-autoupdate, run, --token, $(TUNNEL_TOKEN)]
           env:

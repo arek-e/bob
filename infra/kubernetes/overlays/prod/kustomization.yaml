@@ -1,0 +1,44 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+images:
+  - name: bob-agent.invalid/repository
+    newName: ghcr.io/arek-e/bob-agent
+    digest: sha256:4fc98a670349b9c717180ed7773c81ac1c3200c4b7ca7f25b2374df7be197dec
+  - name: cloudflared.invalid/repository
+    newName: docker.io/cloudflare/cloudflared
+    digest: sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
+patches:
+  - target:
+      kind: ConfigMap
+      name: bob-agent-bootstrap
+    patch: |-
+      - op: replace
+        path: /data/BAO_ADDR
+        value: http://openbao.openbao.svc.cluster.local:8200
+  - target:
+      group: cilium.io
+      version: v2
+      kind: CiliumNetworkPolicy
+      name: bob-agent-reviewed-fqdn-egress
+    patch: |-
+      - op: replace
+        path: /spec/egress/0/toFQDNs/7/matchName
+        value: bob.tpops.dev
+      - op: replace
+        path: /spec/egress/0/toFQDNs/8/matchName
+        value: vault.lamb-bicolor.ts.net
+replacements:
+  - source:
+      kind: ConfigMap
+      name: bob-agent-bootstrap
+      fieldPath: data.BAO_ADDR
+    targets:
+      - select:
+          group: external-secrets.io
+          version: v1
+          kind: SecretStore
+          name: bob-openbao
+        fieldPaths:
+          - spec.provider.vault.server
