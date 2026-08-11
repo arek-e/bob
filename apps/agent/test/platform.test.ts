@@ -18,11 +18,16 @@ describe("agent platform contract", () => {
 
   it("denies default egress and permits only named platform paths", async () => {
     const policy = await readFile(`${kubernetesBase}/network-policy.yaml`, "utf8")
+    const ciliumPolicy = await readFile(`${kubernetesBase}/cilium-fqdn-policy.yaml`, "utf8")
     const deployment = await readFile(`${kubernetesBase}/deployment.yaml`, "utf8")
     expect(policy).toContain("policyTypes: [Ingress, Egress]")
     expect(policy).toContain("kubernetes.io/metadata.name: kube-system")
     expect(policy).toContain("kubernetes.io/metadata.name: openbao")
     expect(policy).toContain("port: 7844")
+    expect(ciliumPolicy).toContain('"k8s:k8s-app": kube-dns')
+    expect(ciliumPolicy).toContain("rules:")
+    expect(ciliumPolicy).toContain("dns:")
+    expect(ciliumPolicy).toContain('matchPattern: "*"')
     expect(deployment).toContain("--protocol, http2")
   })
 

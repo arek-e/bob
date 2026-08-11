@@ -24,10 +24,10 @@ patches:
       name: bob-agent-reviewed-fqdn-egress
     patch: |-
       - op: replace
-        path: /spec/egress/0/toFQDNs/7/matchName
+        path: /spec/egress/1/toFQDNs/7/matchName
         value: bob.tpops.dev
       - op: replace
-        path: /spec/egress/0/toFQDNs/8/matchName
+        path: /spec/egress/1/toFQDNs/8/matchName
         value: vault.lamb-bicolor.ts.net
 replacements:
   - source:
