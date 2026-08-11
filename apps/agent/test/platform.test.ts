@@ -21,7 +21,7 @@ describe("agent platform contract", () => {
     const ciliumPolicy = await readFile(`${kubernetesBase}/cilium-fqdn-policy.yaml`, "utf8")
     const deployment = await readFile(`${kubernetesBase}/deployment.yaml`, "utf8")
     expect(policy).toContain("policyTypes: [Ingress, Egress]")
-    expect(policy).toContain("kubernetes.io/metadata.name: kube-system")
+    expect(policy).not.toContain("kubernetes.io/metadata.name: kube-system")
     expect(policy).toContain("kubernetes.io/metadata.name: openbao")
     expect(policy).toContain("port: 7844")
     expect(ciliumPolicy).toContain('"k8s:k8s-app": kube-dns')
