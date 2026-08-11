@@ -3,7 +3,7 @@ import type { ToolCommand, ToolName } from "@bob/contracts/tools"
 
 import { describe, expect, it, vi } from "vitest"
 
-import type { ConnectionStore } from "../src/modules/connections/store.ts"
+import type { AccountConnections } from "../src/modules/connections/store.ts"
 import type {
   ToolCommandAdapterContext,
   ToolRunContext
@@ -145,22 +145,22 @@ describe("domain-owned Tool command Adapters", () => {
         locale: "en",
         hourCycle: "auto",
         updatedAt: "2026-08-11T10:00:00.000Z"
-      }),
-      connections: vi.fn().mockResolvedValue([])
+      })
     } as unknown as OwnerSettingsStore
     const connections = {
       list: vi.fn().mockResolvedValue([]),
+      refresh: vi.fn().mockResolvedValue([]),
       createSession: vi.fn().mockResolvedValue({
         provider: "google_calendar",
         connectUrl: "https://connect.example.invalid",
         expiresAt: "2026-08-11T10:30:00.000Z"
       })
-    } as unknown as ConnectionStore
+    } as unknown as AccountConnections
 
     const settingsResult = await makeSettingsToolAdapter(settings, connections).execute(
       commandContext("settings_get", {})
     )
-    const connectionResult = await makeConnectionsToolAdapter(connections, settings).execute(
+    const connectionResult = await makeConnectionsToolAdapter(connections).execute(
       commandContext("connection_list", {})
     )
 

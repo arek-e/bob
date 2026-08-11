@@ -18,6 +18,7 @@ import { handleHttp } from "../src/entrypoints/http.ts"
 import { handleInboundQueue } from "../src/entrypoints/queue.ts"
 import { operationalAlerts } from "../src/modules/alerts/schema.ts"
 import { makeContextStore } from "../src/modules/context/store.ts"
+import { readSendblueConnectionStatus } from "../src/modules/conversations/connection-status.ts"
 import { makeAgentRunStore } from "../src/modules/conversations/run-store.ts"
 import {
   agentRuns,
@@ -236,16 +237,18 @@ describe("D1 migrations and durability", () => {
       locale: "en",
       hourCycle: "auto"
     })
-    expect(await settings.connections(ownerId)).toEqual([
-      { provider: "sendblue", status: "connected" }
-    ])
+    expect(await readSendblueConnectionStatus(database, ownerId)).toEqual({
+      provider: "sendblue",
+      status: "connected"
+    })
     await database
       .update(channels)
       .set({ optedOutAt: "2026-08-11T10:04:00.000Z" })
       .where(eq(channels.id, channelId))
-    expect(await settings.connections(ownerId)).toEqual([
-      { provider: "sendblue", status: "paused" }
-    ])
+    expect(await readSendblueConnectionStatus(database, ownerId)).toEqual({
+      provider: "sendblue",
+      status: "paused"
+    })
 
     const saved = await settings.update(
       ownerId,

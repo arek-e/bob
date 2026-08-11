@@ -7,11 +7,12 @@ import { createCoreDatabase } from "./database.ts"
 import { AlertStore, makeAlertStore, alertStoreLayer } from "./modules/alerts/store.ts"
 import { makeNangoClient } from "./modules/connections/nango.ts"
 import {
-  ConnectionStore,
-  connectionStoreLayer,
-  makeConnectionStore
+  AccountConnections,
+  accountConnectionsLayer,
+  makeAccountConnections
 } from "./modules/connections/store.ts"
 import { ContextStore, makeContextStore, contextStoreLayer } from "./modules/context/store.ts"
+import { readSendblueConnectionStatus } from "./modules/conversations/connection-status.ts"
 import {
   AgentRunStore,
   makeAgentRunStore,
@@ -108,14 +109,15 @@ export function composeCore(bindings: CoreBindings) {
   const settings = makeOwnerSettingsStore(database, protection, {
     defaultTimeZone: config.OWNER_TIME_ZONE
   })
-  const connections = makeConnectionStore(
+  const connections = makeAccountConnections(
     database,
     makeNangoClient({ apiUrl: config.NANGO_API_URL, secretKey: config.NANGO_SECRET_KEY }),
     {
       integrations: {
         google_calendar: config.NANGO_GOOGLE_CALENDAR_INTEGRATION_ID,
         microsoft_calendar: config.NANGO_MICROSOFT_CALENDAR_INTEGRATION_ID
-      }
+      },
+      sendblueStatus: (ownerId) => readSendblueConnectionStatus(database, ownerId)
     }
   )
   const conversations = makeConversationStore(database, protection, {
@@ -159,7 +161,7 @@ export function composeCore(bindings: CoreBindings) {
     trainingStoreLayer(trainingStore),
     trainingModuleLayer(training),
     ownerSettingsStoreLayer(settings),
-    connectionStoreLayer(connections),
+    accountConnectionsLayer(connections),
     contextStoreLayer(context),
     agentRunStoreLayer(runs),
     toolExecutorLayer(tools)
@@ -176,7 +178,7 @@ export function composeCore(bindings: CoreBindings) {
         journal: yield* JournalStore,
         training: yield* TrainingModule,
         settings: yield* OwnerSettingsStore,
-        connections: yield* ConnectionStore,
+        connections: yield* AccountConnections,
         context: yield* ContextStore,
         runs: yield* AgentRunStore,
         tools: yield* ToolExecutor

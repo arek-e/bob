@@ -1,4 +1,5 @@
 import {
+  AccountConnectionsView,
   OwnerSettingsUpdate,
   OwnerSettingsView,
   type ConnectionProvider,
@@ -88,13 +89,14 @@ function SectionHeader(props: {
 
 function statusVariant(status: SettingsConnection["status"]): "success" | "warning" | "neutral" {
   if (status === "connected") return "success"
-  if (status === "paused" || status === "unavailable") return "warning"
+  if (status === "paused" || status === "stale" || status === "unavailable") return "warning"
   return "neutral"
 }
 
 function statusLabel(status: SettingsConnection["status"]): string {
   if (status === "connected") return "Connected"
   if (status === "paused") return "Paused"
+  if (status === "stale") return "Needs refresh"
   if (status === "unavailable") return "Unable to check"
   return "Not connected"
 }
@@ -384,9 +386,9 @@ function LocalitySection(props: ClientProps) {
 function ConnectionsSection(props: ClientProps) {
   const status = useStatus()
   const owner = useOwnerSession()
-  const [settingsView, { refetch: refetchSettings }] = createResource(
+  const [connectionsView, { mutate: setConnectionsView }] = createResource(
     () => (props.enabled() ? "ready" : undefined),
-    async () => parseJson(OwnerSettingsView, await api("/api/settings"))
+    async () => parseJson(AccountConnectionsView, await api("/api/connections"))
   )
   const [authStatus, { refetch: refetchAuth }] = createResource(
     () => (props.enabled() ? "ready" : undefined),
@@ -404,7 +406,7 @@ function ConnectionsSection(props: ClientProps) {
 
   function connection(provider: SettingsConnection["provider"]): SettingsConnection["status"] {
     return (
-      settingsView()?.connections.find((item) => item.provider === provider)?.status ??
+      connectionsView()?.connections.find((item) => item.provider === provider)?.status ??
       "not_connected"
     )
   }
@@ -412,7 +414,13 @@ function ConnectionsSection(props: ClientProps) {
   async function refresh() {
     setRefreshing(true)
     try {
-      await Promise.all([refetchSettings(), refetchAuth()])
+      const [connections] = await Promise.all([
+        api("/api/connections/refresh", { method: "POST", body: "{}" }).then((response) =>
+          parseJson(AccountConnectionsView, response)
+        ),
+        refetchAuth()
+      ])
+      setConnectionsView(connections)
     } catch {
       status.announce("Unable to refresh connections. Check the service and try again.", true)
     } finally {
@@ -601,7 +609,9 @@ function CalendarConnectionCard(props: {
           ? `${props.label} is linked to Bob.`
           : props.status === "unavailable"
             ? "Bob could not reach the connection service. Try again."
-            : `Link ${props.label} when you want Bob to use this calendar.`}
+            : props.status === "stale"
+              ? "Bob could not verify the saved connection. Refresh before using it."
+              : `Link ${props.label} when you want Bob to use this calendar.`}
       </p>
       <Button
         class="justify-self-start"

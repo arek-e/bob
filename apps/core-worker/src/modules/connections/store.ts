@@ -12,15 +12,17 @@ import type { NangoClient, NangoConnection } from "./nango.ts"
 
 import { externalConnections } from "./schema.ts"
 
-export interface ConnectionStore {
+export interface AccountConnections {
   list(ownerId: string): Promise<readonly SettingsConnection[]>
+  refresh(ownerId: string): Promise<readonly SettingsConnection[]>
   createSession(ownerId: string, provider: ConnectionProvider): Promise<ConnectionSession>
 }
 
-export const ConnectionStore = Context.Service<ConnectionStore>("bob/ConnectionStore")
+export const AccountConnections = Context.Service<AccountConnections>("bob/AccountConnections")
 
-export interface ConnectionStoreOptions {
+export interface AccountConnectionsOptions {
   readonly integrations: Readonly<Record<ConnectionProvider, string>>
+  readonly sendblueStatus: (ownerId: string) => Promise<SettingsConnection>
   readonly now?: () => Date
   readonly randomUuid?: () => string
 }
@@ -38,11 +40,11 @@ function newestConnection(
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0]
 }
 
-export function makeConnectionStore(
+export function makeAccountConnections(
   database: CoreDatabase,
   nango: NangoClient,
-  options: ConnectionStoreOptions
-): ConnectionStore {
+  options: AccountConnectionsOptions
+): AccountConnections {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const providers = Object.keys(options.integrations) as ConnectionProvider[]
@@ -54,16 +56,33 @@ export function makeConnectionStore(
       .where(eq(externalConnections.ownerId, ownerId))
   }
 
+  async function list(ownerId: string): Promise<readonly SettingsConnection[]> {
+    const [sendblue, rows] = await Promise.all([options.sendblueStatus(ownerId), saved(ownerId)])
+    return [
+      sendblue,
+      ...providers.map((provider): SettingsConnection => ({
+        provider,
+        status: rows.find((row) => row.provider === provider)?.status ?? "not_connected"
+      }))
+    ]
+  }
+
   return {
-    async list(ownerId) {
+    list,
+
+    async refresh(ownerId) {
       let live: readonly NangoConnection[]
       try {
         live = await nango.listConnections(ownerId)
       } catch {
-        return providers.map((provider) => ({
-          provider,
-          status: "unavailable"
-        }))
+        return (await list(ownerId)).map((connection) =>
+          connection.provider === "sendblue"
+            ? connection
+            : {
+                ...connection,
+                status: connection.status === "connected" ? "stale" : "unavailable"
+              }
+        )
       }
 
       const at = now().toISOString()
@@ -103,11 +122,7 @@ export function makeConnectionStore(
             }
           })
       }
-      const rows = await saved(ownerId)
-      return providers.map((provider) => ({
-        provider,
-        status: rows.find((row) => row.provider === provider)?.status ?? "not_connected"
-      }))
+      return list(ownerId)
     },
 
     async createSession(ownerId, provider) {
@@ -124,6 +139,6 @@ export function makeConnectionStore(
   }
 }
 
-export function connectionStoreLayer(store: ConnectionStore) {
-  return Layer.succeed(ConnectionStore, store)
+export function accountConnectionsLayer(connections: AccountConnections) {
+  return Layer.succeed(AccountConnections, connections)
 }

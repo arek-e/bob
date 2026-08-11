@@ -289,11 +289,7 @@ export async function handleHttp(
 
     if (request.method === "GET" && url.pathname === "/api/settings") {
       return json({
-        settings: await composition.services.settings.get(composition.config.OWNER_ID),
-        connections: [
-          ...(await composition.services.settings.connections(composition.config.OWNER_ID)),
-          ...(await composition.services.connections.list(composition.config.OWNER_ID))
-        ]
+        settings: await composition.services.settings.get(composition.config.OWNER_ID)
       })
     }
 
@@ -304,12 +300,18 @@ export async function handleHttp(
         input,
         idempotencyKey(request)
       )
+      return json({ settings })
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/connections") {
       return json({
-        settings,
-        connections: [
-          ...(await composition.services.settings.connections(composition.config.OWNER_ID)),
-          ...(await composition.services.connections.list(composition.config.OWNER_ID))
-        ]
+        connections: await composition.services.connections.list(composition.config.OWNER_ID)
+      })
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/connections/refresh") {
+      return json({
+        connections: await composition.services.connections.refresh(composition.config.OWNER_ID)
       })
     }
 

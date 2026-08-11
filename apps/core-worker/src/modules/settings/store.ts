@@ -1,9 +1,4 @@
-import type {
-  HourCycle,
-  OwnerSettings,
-  OwnerSettingsUpdate,
-  SettingsConnection
-} from "@bob/contracts/settings"
+import type { HourCycle, OwnerSettings, OwnerSettingsUpdate } from "@bob/contracts/settings"
 
 import { and, eq, isNull } from "drizzle-orm"
 import { Context, Layer } from "effect"
@@ -11,7 +6,7 @@ import { Context, Layer } from "effect"
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
 
-import { channels, users } from "../conversations/schema.ts"
+import { users } from "../conversations/schema.ts"
 import {
   completeEffect,
   completedEffect,
@@ -26,7 +21,6 @@ export interface OwnerSettingsStore {
     input: OwnerSettingsUpdate,
     idempotencyKey: string
   ): Promise<OwnerSettings>
-  connections(ownerId: string): Promise<readonly SettingsConnection[]>
 }
 
 export const OwnerSettingsStore = Context.Service<OwnerSettingsStore>("bob/OwnerSettingsStore")
@@ -165,25 +159,6 @@ export function makeOwnerSettingsStore(
         await completedEffectAfterConflict(database, effect, error)
       }
       return get(ownerId)
-    },
-
-    async connections(ownerId) {
-      const [channel] = await database
-        .select({ id: channels.id, optedOutAt: channels.optedOutAt })
-        .from(channels)
-        .where(and(eq(channels.userId, ownerId), eq(channels.provider, "sendblue")))
-        .limit(1)
-      return [
-        {
-          provider: "sendblue",
-          status:
-            channel === undefined
-              ? "not_connected"
-              : channel.optedOutAt === null
-                ? "connected"
-                : "paused"
-        }
-      ]
     }
   }
 }

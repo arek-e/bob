@@ -1,7 +1,7 @@
 import { SettingsUpdateArguments } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
-import type { ConnectionStore } from "../connections/store.ts"
+import type { AccountConnections } from "../connections/store.ts"
 import type {
   ToolCommandAdapter,
   ToolCommandAdapterContext
@@ -18,14 +18,11 @@ function jsonObject(value: unknown): { readonly [key: string]: JsonValue } {
 
 export function makeSettingsToolAdapter(
   settings: OwnerSettingsStore | undefined,
-  connections: ConnectionStore | undefined
+  connections: AccountConnections | undefined
 ): ToolCommandAdapter {
   async function connectionStatus(ownerId: string) {
     if (settings === undefined) throw new Error("Owner settings are unavailable")
-    return [
-      ...(await settings.connections(ownerId)),
-      ...(connections === undefined ? [] : await connections.list(ownerId))
-    ]
+    return connections === undefined ? [] : connections.list(ownerId)
   }
 
   return {

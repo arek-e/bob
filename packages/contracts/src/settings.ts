@@ -19,7 +19,7 @@ export const OwnerSettingsUpdate = Schema.Struct({
 
 export const SettingsConnection = Schema.Struct({
   provider: Schema.Literals(["sendblue", "google_calendar", "microsoft_calendar"]),
-  status: Schema.Literals(["connected", "not_connected", "paused", "unavailable"])
+  status: Schema.Literals(["connected", "not_connected", "paused", "stale", "unavailable"])
 })
 
 export const ConnectionProvider = Schema.Literals(["google_calendar", "microsoft_calendar"])
@@ -31,7 +31,10 @@ export const ConnectionSession = Schema.Struct({
 })
 
 export const OwnerSettingsView = Schema.Struct({
-  settings: OwnerSettings,
+  settings: OwnerSettings
+})
+
+export const AccountConnectionsView = Schema.Struct({
   connections: Schema.Array(SettingsConnection)
 })
 
@@ -40,5 +43,6 @@ export type OwnerSettings = typeof OwnerSettings.Type
 export type OwnerSettingsUpdate = typeof OwnerSettingsUpdate.Type
 export type SettingsConnection = typeof SettingsConnection.Type
 export type OwnerSettingsView = typeof OwnerSettingsView.Type
+export type AccountConnectionsView = typeof AccountConnectionsView.Type
 export type ConnectionProvider = typeof ConnectionProvider.Type
 export type ConnectionSession = typeof ConnectionSession.Type

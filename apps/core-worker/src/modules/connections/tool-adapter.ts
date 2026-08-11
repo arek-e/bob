@@ -5,8 +5,7 @@ import type {
   ToolCommandAdapter,
   ToolCommandAdapterContext
 } from "../conversations/tool-adapter.ts"
-import type { OwnerSettingsStore } from "../settings/store.ts"
-import type { ConnectionStore } from "./store.ts"
+import type { AccountConnections } from "./store.ts"
 
 type JsonValue = typeof Schema.Json.Type
 
@@ -15,15 +14,11 @@ function jsonObject(value: unknown): { readonly [key: string]: JsonValue } {
 }
 
 export function makeConnectionsToolAdapter(
-  connections: ConnectionStore | undefined,
-  settings: OwnerSettingsStore | undefined
+  connections: AccountConnections | undefined
 ): ToolCommandAdapter {
   async function connectionStatus(ownerId: string) {
     if (connections === undefined) throw new Error("Account connections are unavailable")
-    return [
-      ...(settings === undefined ? [] : await settings.connections(ownerId)),
-      ...(await connections.list(ownerId))
-    ]
+    return connections.refresh(ownerId)
   }
 
   return {

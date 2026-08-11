@@ -4,7 +4,7 @@ import { and, eq, isNull, lt, or, sql } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
-import type { ConnectionStore } from "../connections/store.ts"
+import type { AccountConnections } from "../connections/store.ts"
 import type { JournalStore } from "../journal/store.ts"
 import type { MemoryStore } from "../memory/store.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
@@ -83,7 +83,7 @@ type ToolServices = {
   journal: JournalStore
   training: TrainingStore | TrainingModule
   settings?: OwnerSettingsStore
-  connections?: ConnectionStore
+  connections?: AccountConnections
 }
 
 type ToolExecutorImplementation = ToolExecutor & LegacyTrainingProposalAccess
@@ -152,7 +152,7 @@ export function makeToolExecutor(
     journal: makeJournalToolAdapter(services.journal, { uiBaseUrl: options.uiBaseUrl }),
     training: makeTrainingToolAdapter(training),
     settings: makeSettingsToolAdapter(services.settings, services.connections),
-    connections: makeConnectionsToolAdapter(services.connections, services.settings)
+    connections: makeConnectionsToolAdapter(services.connections)
   } satisfies Readonly<Record<string, ToolCommandAdapter>>
 
   async function ownerKey(ownerId: string): Promise<CryptoKey> {
