@@ -10,7 +10,11 @@ export default {
     }
     return new Response(null, { status: 404 })
   },
-  queue(batch: MessageBatch<unknown>, bindings: EgressBindings): Promise<void> {
-    return handleOutboundQueue(batch, bindings)
+  queue(
+    batch: MessageBatch<unknown>,
+    bindings: EgressBindings,
+    context: ExecutionContext
+  ): Promise<void> {
+    return handleOutboundQueue(batch, bindings, context)
   }
 } satisfies ExportedHandler<EgressBindings>

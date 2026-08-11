@@ -11,12 +11,9 @@ import {
   TrainingProposalApproval
 } from "@bob/contracts/ui"
 import { featureForToolName } from "@bob/observability/attribution"
-import {
-  observeSpan,
-  parseTraceparent,
-  traceContextFromCorrelationId
-} from "@bob/observability/trace"
-import { Schema } from "effect"
+import { recordDecision, withBobSpan } from "@bob/observability/effect"
+import { externalParentFromTraceparent } from "@bob/observability/propagation"
+import { Effect, Schema } from "effect"
 
 import type { CoreBindings } from "../bindings.ts"
 
@@ -34,6 +31,22 @@ const securityHeaders = {
   "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
   "referrer-policy": "no-referrer",
   "x-content-type-options": "nosniff"
+}
+
+export interface CoreTelemetryRunner {
+  readonly runPromise: <A, E>(effect: Effect.Effect<A, E>) => Promise<A>
+}
+
+function promiseEffect<A>(operation: (signal: AbortSignal) => Promise<A>) {
+  return Effect.tryPromise({ try: operation, catch: (error) => error })
+}
+
+function withRequestParent<A, E>(
+  request: Request,
+  effect: Effect.Effect<A, E>
+): Effect.Effect<A, E> {
+  const parent = externalParentFromTraceparent(request.headers.get("traceparent"))
+  return parent === undefined ? effect : Effect.withParentSpan(effect, parent)
 }
 
 function json(value: unknown, status = 200): Response {
@@ -128,8 +141,10 @@ async function handleSetup(
 export async function handleHttp(
   request: Request,
   bindings: CoreBindings,
-  verifyAccess?: AccessTokenVerifier
+  verifyAccess?: AccessTokenVerifier,
+  telemetry?: CoreTelemetryRunner
 ): Promise<Response> {
+  const runTelemetry = telemetry?.runPromise ?? Effect.runPromise
   const url = new URL(request.url)
   if (request.method === "GET" && url.pathname === "/health") {
     return json({ healthy: true, service: "core", version: 1 })
@@ -176,53 +191,110 @@ export async function handleHttp(
 
     if (request.method === "POST" && url.pathname === "/internal/inbound") {
       const event = Schema.decodeUnknownSync(NormalizedInboundEvent)(await readJson(request))
-      const parent =
-        parseTraceparent(request.headers.get("traceparent")) ??
-        traceContextFromCorrelationId(event.correlationId)
       return json(
-        await observeSpan(
-          {
-            sink: composition.services.events,
-            correlationId: event.correlationId,
-            parent,
-            name: "inbound.process",
-            feature: "assistant",
-            workflow: "inbound_message",
-            failureCode: "durable_store"
-          },
-          () => composition.services.conversations.acceptInbound(event)
+        await runTelemetry(
+          withRequestParent(
+            request,
+            withBobSpan(
+              {
+                name: "bob.inbound.accept",
+                correlationId: event.correlationId,
+                feature: "assistant"
+              },
+              withBobSpan(
+                {
+                  name: "bob.inbound.persist",
+                  correlationId: event.correlationId,
+                  feature: "assistant"
+                },
+                promiseEffect(() => composition.services.conversations.acceptInbound(event))
+              )
+            )
+          )
         )
       )
     }
 
     const inboundEnqueued = url.pathname.match(/^\/internal\/inbound\/([^/]+)\/enqueued$/)
     if (request.method === "POST" && inboundEnqueued !== null) {
-      await composition.services.conversations.markEnqueued(
-        decodeURIComponent(inboundEnqueued[1]!),
-        new Date().toISOString()
+      const eventId = decodeURIComponent(inboundEnqueued[1]!)
+      const correlationId = request.headers.get("x-bob-correlation-id") ?? eventId
+      await runTelemetry(
+        withRequestParent(
+          request,
+          withBobSpan(
+            {
+              name: "bob.inbound.confirm_accept",
+              correlationId,
+              feature: "assistant"
+            },
+            promiseEffect(() =>
+              composition.services.conversations.markEnqueued(eventId, new Date().toISOString())
+            )
+          )
+        )
       )
       return json({ ok: true })
     }
 
     if (request.method === "POST" && url.pathname === "/internal/status") {
       const event = Schema.decodeUnknownSync(NormalizedStatusEvent)(await readJson(request))
-      await composition.services.delivery.recordProviderEvent(event)
+      await runTelemetry(
+        withRequestParent(
+          request,
+          withBobSpan(
+            {
+              name: "bob.delivery_result.accept",
+              correlationId: event.correlationId,
+              feature: "delivery",
+              ...(event.outboxId === undefined ? {} : { outboxId: event.outboxId }),
+              ...(event.attemptId === undefined ? {} : { deliveryAttemptId: event.attemptId })
+            },
+            withBobSpan(
+              {
+                name: "bob.delivery_result.record",
+                correlationId: event.correlationId,
+                feature: "delivery",
+                ...(event.outboxId === undefined ? {} : { outboxId: event.outboxId }),
+                ...(event.attemptId === undefined ? {} : { deliveryAttemptId: event.attemptId })
+              },
+              promiseEffect(() => composition.services.delivery.recordProviderEvent(event))
+            )
+          )
+        )
+      )
       return json({ ok: true })
     }
 
     const outboxClaim = url.pathname.match(/^\/internal\/outbox\/([^/]+)\/claim$/)
     if (request.method === "POST" && outboxClaim !== null) {
-      const claim = await composition.services.delivery.claimOutbox(
-        decodeURIComponent(outboxClaim[1]!),
-        60_000
+      const outboxId = Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
+        decodeURIComponent(outboxClaim[1]!)
+      )
+      const suppliedCorrelation = request.headers.get("x-bob-correlation-id")
+      const correlationId =
+        suppliedCorrelation === null
+          ? outboxId
+          : Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(suppliedCorrelation)
+      const claim = await runTelemetry(
+        withRequestParent(
+          request,
+          withBobSpan(
+            {
+              name: "bob.outbox.claim",
+              correlationId,
+              outboxId,
+              feature: "delivery"
+            },
+            promiseEffect(() => composition.services.delivery.claimOutbox(outboxId, 60_000))
+          )
+        )
       )
       return claim === undefined
         ? json(
             {
               claim: null,
-              disposition: await composition.services.delivery.outboxDisposition(
-                decodeURIComponent(outboxClaim[1]!)
-              )
+              disposition: await composition.services.delivery.outboxDisposition(outboxId)
             },
             409
           )
@@ -234,7 +306,30 @@ export async function handleHttp(
       const result = Schema.decodeUnknownSync(DeliveryResult)(await readJson(request))
       if (result.outboxId !== decodeURIComponent(outboxResult[1]!))
         return json({ code: "id_mismatch" }, 400)
-      await composition.services.delivery.recordResult(result)
+      await runTelemetry(
+        withRequestParent(
+          request,
+          withBobSpan(
+            {
+              name: "bob.delivery_result.accept",
+              correlationId: result.correlationId ?? result.outboxId,
+              outboxId: result.outboxId,
+              deliveryAttemptId: result.attemptId,
+              feature: "delivery"
+            },
+            withBobSpan(
+              {
+                name: "bob.delivery_result.record",
+                correlationId: result.correlationId ?? result.outboxId,
+                outboxId: result.outboxId,
+                deliveryAttemptId: result.attemptId,
+                feature: "delivery"
+              },
+              promiseEffect(() => composition.services.delivery.recordResult(result))
+            )
+          )
+        )
+      )
       return json({ ok: true })
     }
 
@@ -245,29 +340,42 @@ export async function handleHttp(
         suppliedCorrelation === null
           ? command.runId
           : Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(suppliedCorrelation)
-      const parent =
-        parseTraceparent(request.headers.get("traceparent")) ??
-        traceContextFromCorrelationId(correlationId)
       const startedAt = Date.now()
       let status: "completed" | "failed" = "failed"
       try {
         return json(
-          await observeSpan(
-            {
-              sink: composition.services.events,
-              correlationId,
-              parent,
-              name: "tool.execute",
-              feature: featureForToolName(command.name),
-              workflow: "tool_execution",
-              failureCode: "tool_execution"
-            },
-            async () => {
-              const result = await composition.services.tools.execute(command)
-              status = result.ok ? "completed" : "failed"
-              return result
-            },
-            (result) => (result.ok ? undefined : "tool_execution")
+          await runTelemetry(
+            withRequestParent(
+              request,
+              withBobSpan(
+                {
+                  name: "bob.tool.execute",
+                  correlationId,
+                  feature: featureForToolName(command.name),
+                  runId: command.runId,
+                  toolName: command.name
+                },
+                Effect.gen(function* () {
+                  const result = yield* withBobSpan(
+                    {
+                      name: "bob.tool.domain",
+                      correlationId,
+                      feature: featureForToolName(command.name),
+                      runId: command.runId,
+                      toolName: command.name
+                    },
+                    promiseEffect(() => composition.services.tools.execute(command))
+                  )
+                  status = result.ok ? "completed" : "failed"
+                  yield* recordDecision({
+                    name: "bob.decision.policy",
+                    code: result.ok ? "allowed" : "confirmation_required",
+                    outcome: result.ok ? "allowed" : "denied"
+                  })
+                  return result
+                })
+              )
+            )
           )
         )
       } finally {
@@ -276,7 +384,6 @@ export async function handleHttp(
             type: "tool_call",
             correlationId,
             runId: command.runId,
-            toolCallId: command.toolCallId,
             toolName: command.name,
             status,
             durationMs: Math.max(0, Date.now() - startedAt)

@@ -1,3 +1,4 @@
+import { makeCaptureTelemetry } from "@bob/observability/testing"
 import {
   applyD1Migrations,
   createExecutionContext,
@@ -8,6 +9,7 @@ import {
 } from "cloudflare:test"
 import { env } from "cloudflare:workers"
 import { eq } from "drizzle-orm"
+import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import type { CoreBindings } from "../src/bindings.ts"
@@ -176,6 +178,11 @@ describe("D1 migrations and durability", () => {
   })
 
   it("accepts the first encrypted inbound with production hex keys", async () => {
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-core-worker",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
     const bindings = {
       ...(env as unknown as CoreBindings),
       DATA_KEK_KEYRING_JSON: JSON.stringify({ 1: "07".repeat(32) }),
@@ -199,11 +206,16 @@ describe("D1 migrations and durability", () => {
         method: "POST",
         headers: {
           "content-type": "application/json",
+          traceparent: "00-11111111111111111111111111111111-2222222222222222-01",
           "x-bob-caller-token": bindings.INGRESS_CALLER_SECRET
         },
         body: JSON.stringify(event)
       }),
-      bindings
+      bindings,
+      undefined,
+      {
+        runPromise: (effect) => Effect.runPromise(effect.pipe(Effect.provide(telemetry.layer)))
+      }
     )
 
     expect(response.status).toBe(200)
@@ -220,6 +232,70 @@ describe("D1 migrations and durability", () => {
         (SELECT COUNT(*) FROM inbound_events) AS inbound_events`
     ).first<Record<string, number>>()
     expect(counts).toEqual({ users: 1, channels: 1, messages: 1, inbound_events: 1 })
+    const spans = telemetry.finishedSpans()
+    const persist = spans.find((span) => span.name === "bob.inbound.persist")
+    const accept = spans.find((span) => span.name === "bob.inbound.accept")
+    expect(accept).toMatchObject({
+      traceId: "11111111111111111111111111111111",
+      parentSpanId: "2222222222222222",
+      attributes: expect.objectContaining({
+        "bob.correlation.id": event.correlationId
+      })
+    })
+    expect(persist).toMatchObject({
+      traceId: "11111111111111111111111111111111",
+      parentSpanId: accept?.spanId
+    })
+    expect(
+      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
+        typeof value === "bigint" ? value.toString() : value
+      )
+    ).not.toContain(event.text)
+  })
+
+  it("continues the inbound confirmation through one server span", async () => {
+    const { database } = await seedRunData()
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-core-worker",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const bindings = env as unknown as CoreBindings
+    const traceId = "11111111111111111111111111111111"
+    const parentSpanId = "2222222222222222"
+
+    const response = await handleHttp(
+      new Request(`https://core.internal/internal/inbound/${inboundId}/enqueued`, {
+        method: "POST",
+        headers: {
+          traceparent: `00-${traceId}-${parentSpanId}-01`,
+          "x-bob-caller-token": bindings.INGRESS_CALLER_SECRET,
+          "x-bob-correlation-id": correlationId
+        }
+      }),
+      bindings,
+      undefined,
+      {
+        runPromise: (effect) => Effect.runPromise(effect.pipe(Effect.provide(telemetry.layer)))
+      }
+    )
+
+    expect(response.status).toBe(200)
+    const confirm = telemetry
+      .finishedSpans()
+      .find((span) => span.name === "bob.inbound.confirm_accept")
+    expect(confirm).toMatchObject({
+      traceId,
+      parentSpanId,
+      kind: "server",
+      attributes: expect.objectContaining({ "bob.correlation.id": correlationId })
+    })
+    const [stored] = await database
+      .select({ enqueuedAt: inboundEvents.enqueuedAt })
+      .from(inboundEvents)
+      .where(eq(inboundEvents.id, inboundId))
+      .limit(1)
+    expect(stored?.enqueuedAt).toBeDefined()
   })
 
   it("stores owner locality and reports the Sendblue connection", async () => {
@@ -356,7 +432,13 @@ describe("D1 migrations and durability", () => {
       .from(inboundEvents)
       .where(eq(inboundEvents.id, inboundId))
     expect(result.explicitAcks).toEqual(["queue-message-1"])
-    expect(sent).toEqual([{ eventId: inboundId }])
+    expect(sent).toEqual([
+      {
+        eventId: inboundId,
+        correlationId: inboundId,
+        traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
+      }
+    ])
     expect(event).toMatchObject({ recoveryCount: 1, claimedAt: null, claimExpiresAt: null })
     expect(event?.deadLetteredAt).not.toBeNull()
   })
@@ -525,6 +607,7 @@ describe("D1 migrations and durability", () => {
     expect(sent).toEqual([
       {
         outboxId: outbox?.id,
+        correlationId,
         traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
       }
     ])

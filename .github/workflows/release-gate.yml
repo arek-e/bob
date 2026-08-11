@@ -2,6 +2,11 @@ name: Release gate
 
 on:
   workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full reviewed commit SHA from main
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -17,6 +22,7 @@ jobs:
       BAO_JWT_ROLE: ${{ vars.BAO_JWT_ROLE }}
       SENDBLUE_ACCOUNT_ID: ${{ secrets.SENDBLUE_ACCOUNT_ID }}
       SENDBLUE_LINE_ID: ${{ secrets.SENDBLUE_LINE_ID }}
+      BOB_RELEASE_SHA: ${{ inputs.release_sha }}
       ALCHEMY_TELEMETRY_DISABLED: "true"
       # This reviewed workflow declares the handoff action. A plan does not apply it.
       RUNTIME_CREDENTIAL_HANDOFF_ENABLED: "true"
@@ -29,6 +35,19 @@ jobs:
       CLOUDFLARED_IMAGE_DIGEST: ${{ vars.CLOUDFLARED_IMAGE_DIGEST }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+      - name: Verify reviewed release commit
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
       - uses: pnpm/action-setup@v4
         with:
           version: 10.19.0

@@ -77,6 +77,7 @@ describe("Sendblue webhook handling", () => {
         lineId: "line-1",
         outboxId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0",
         attemptId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
+        correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba2",
         randomUuid: () => "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
       }
     )
@@ -84,6 +85,7 @@ describe("Sendblue webhook handling", () => {
     expect(event.destinationE164).toBe("+46700000000")
     expect(event.outboxId).toBe("018e6f65-4d55-7a1b-8df4-4ee15ea1dba0")
     expect(event.attemptId).toBe("018e6f65-4d55-7a1b-8df4-4ee15ea1dba1")
+    expect(event.correlationId).toBe("018e6f65-4d55-7a1b-8df4-4ee15ea1dba2")
   })
 
   it("preserves unrelated hooks and adds only missing Bob hooks", async () => {

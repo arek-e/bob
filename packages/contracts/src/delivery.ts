@@ -25,6 +25,10 @@ export const OutboxClaim = Schema.Struct({
 export const DeliveryResult = Schema.Struct({
   outboxId: Uuid,
   attemptId: Uuid,
+  correlationId: Schema.optionalKey(Uuid),
+  traceparent: Schema.optionalKey(
+    Schema.String.check(Schema.isPattern(/^00-[0-9a-f]{32}-[0-9a-f]{16}-(00|01)$/))
+  ),
   state: DeliveryAttemptState,
   providerMessageHandle: Schema.optionalKey(Schema.String),
   errorCode: Schema.optionalKey(Schema.String),

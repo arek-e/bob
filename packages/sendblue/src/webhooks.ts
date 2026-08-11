@@ -90,6 +90,7 @@ export interface NormalizationContext {
   readonly lineId: string
   readonly outboxId?: string
   readonly attemptId?: string
+  readonly correlationId?: string
   readonly now?: () => Date
   readonly randomUuid?: () => string
 }
@@ -115,7 +116,7 @@ export function normalizeInbound(
     text: payload.content,
     providerOptedOut: payload.opted_out,
     receivedAt: new Date(payload.date_sent).toISOString(),
-    correlationId: randomUuid()
+    correlationId: context.correlationId ?? randomUuid()
   } as NormalizedInboundEvent
 }
 
@@ -157,6 +158,6 @@ export function normalizeStatus(
     ...(context.outboxId === undefined ? {} : { outboxId: context.outboxId }),
     ...(context.attemptId === undefined ? {} : { attemptId: context.attemptId }),
     occurredAt: new Date(payload.date_updated).toISOString(),
-    correlationId: randomUuid()
+    correlationId: context.correlationId ?? randomUuid()
   } as NormalizedStatusEvent
 }

@@ -76,7 +76,7 @@ export default defineConfig({
           NANGO_SECRET_KEY: "test-nango-secret-key-at-least-32-bytes",
           NANGO_GOOGLE_CALENDAR_INTEGRATION_ID: "bob-google-calendar",
           NANGO_MICROSOFT_CALENDAR_INTEGRATION_ID: "bob-microsoft-calendar",
-          BOB_MODEL: "test-model",
+          BOB_MODEL: "gpt-test",
           BOB_PROVIDER: "openai-codex",
           BOB_RUN_TOKEN_BUDGET: 32_000,
           BOB_DAILY_TOKEN_BUDGET: 250_000

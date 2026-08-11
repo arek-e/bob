@@ -43,6 +43,10 @@ export interface CoreBindings {
   BOB_PROVIDER: string
   BOB_RUN_TOKEN_BUDGET: number
   BOB_DAILY_TOKEN_BUDGET: number
+  BOB_RELEASE_SHA?: string
+  OTEL_EXPORTER_OTLP_ENDPOINT?: string
+  OTEL_ACCESS_CLIENT_ID?: string
+  OTEL_ACCESS_CLIENT_SECRET?: string
 }
 
 export interface IngressBindings {

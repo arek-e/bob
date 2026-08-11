@@ -6,11 +6,13 @@ const Traceparent = Schema.String.check(Schema.isPattern(/^00-[0-9a-f]{32}-[0-9a
 
 export const InboundJob = Schema.Struct({
   eventId: Uuid,
+  correlationId: Schema.optionalKey(Uuid),
   traceparent: Schema.optionalKey(Traceparent)
 })
 
 export const OutboundJob = Schema.Struct({
   outboxId: Uuid,
+  correlationId: Schema.optionalKey(Uuid),
   traceparent: Schema.optionalKey(Traceparent)
 })
 

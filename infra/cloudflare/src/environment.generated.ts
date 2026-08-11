@@ -46,6 +46,13 @@ export type CoercedEnvSchema = {
   BOB_DOMAIN: string;
   
   /**
+   * **BOB_RELEASE_SHA**  
+   * Full reviewed source commit deployed to production Workers.  
+   * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M29%2022h-5a2.003%202.003%200%200%201-2-2v-6a2%202%200%200%201%202-2h5v2h-5v6h5ZM18%2012h-4V8h-2v14h6a2.003%202.003%200%200%200%202-2v-6a2%202%200%200%200-2-2m-4%208v-6h4v6Zm-6-8H3v2h5v2H4a2%202%200%200%200-2%202v2a2%202%200%200%200%202%202h6v-8a2%202%200%200%200-2-2m0%208H4v-2h4Z%22%2F%3E%3C%2Fsvg%3E)   
+   */
+  BOB_RELEASE_SHA: string;
+  
+  /**
    * **OWNER_ACCESS_EMAIL** 🔐 _sensitive_  
    * Email allowed to enter the private owner UI.  
    * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23808080%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20stroke-width%3D%221.5%22%3E%3Cpath%20d%3D%22M17.5%2019.125A9%209%200%201%201%2021%2012c0%205.5-6%205.5-6%202V8%22%2F%3E%3Cpath%20d%3D%22M15%2012v-1.5C15%209.12%2013.657%208%2012%208s-3%201.12-3%202.5V12m6%200v1.5c0%201.38-1.343%202.5-3%202.5s-3-1.12-3-2.5V12%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E)   
@@ -279,7 +286,7 @@ export type CoercedEnvSchema = {
   
 };
 
-type _CoercedEnvSchema_a5a3289a = CoercedEnvSchema;
+type _CoercedEnvSchema_05adbd7b = CoercedEnvSchema;
 
 export type EnvSchemaAsStrings = {
   [Property in keyof CoercedEnvSchema]:
@@ -287,9 +294,9 @@ export type EnvSchemaAsStrings = {
       : (CoercedEnvSchema[Property] extends boolean ? ('true' | 'false') : string)
 };
 
-type _EnvSchemaAsStrings_a5a3289a = EnvSchemaAsStrings;
+type _EnvSchemaAsStrings_05adbd7b = EnvSchemaAsStrings;
 
-export type PublicCoercedEnvSchema = Readonly<Pick<CoercedEnvSchema, 'CLOUDFLARE_WORKERS_SUBDOMAIN' | 'CLOUDFLARE_CORE_WORKER_NAME' | 'BOB_DOMAIN' | 'ACCESS_TEAM_DOMAIN' | 'AGENT_ORIGIN_URL' | 'OWNER_TIME_ZONE' | 'REMINDER_QUIET_HOURS_START' | 'REMINDER_QUIET_HOURS_END' | 'REMINDER_DAILY_LIMIT' | 'BOB_MODEL' | 'BOB_PROVIDER' | 'BOB_RUN_TOKEN_BUDGET' | 'BOB_DAILY_TOKEN_BUDGET' | 'SENDBLUE_ENABLED' | 'ALCHEMY_PRODUCTION_STATE_APPROVED' | 'ALCHEMY_TELEMETRY_DISABLED' | 'RUNTIME_CREDENTIAL_HANDOFF_ENABLED' | 'ACTIONS_ID_TOKEN_REQUEST_URL' | 'ACCESS_SERVICE_TOKEN_ROTATION_VERSION' | 'ACCESS_SERVICE_TOKEN_ROTATE_BY' | 'BAO_ADDR' | 'BAO_JWT_ROLE'>>;
+export type PublicCoercedEnvSchema = Readonly<Pick<CoercedEnvSchema, 'CLOUDFLARE_WORKERS_SUBDOMAIN' | 'CLOUDFLARE_CORE_WORKER_NAME' | 'BOB_DOMAIN' | 'BOB_RELEASE_SHA' | 'ACCESS_TEAM_DOMAIN' | 'AGENT_ORIGIN_URL' | 'OWNER_TIME_ZONE' | 'REMINDER_QUIET_HOURS_START' | 'REMINDER_QUIET_HOURS_END' | 'REMINDER_DAILY_LIMIT' | 'BOB_MODEL' | 'BOB_PROVIDER' | 'BOB_RUN_TOKEN_BUDGET' | 'BOB_DAILY_TOKEN_BUDGET' | 'SENDBLUE_ENABLED' | 'ALCHEMY_PRODUCTION_STATE_APPROVED' | 'ALCHEMY_TELEMETRY_DISABLED' | 'RUNTIME_CREDENTIAL_HANDOFF_ENABLED' | 'ACTIONS_ID_TOKEN_REQUEST_URL' | 'ACCESS_SERVICE_TOKEN_ROTATION_VERSION' | 'ACCESS_SERVICE_TOKEN_ROTATE_BY' | 'BAO_ADDR' | 'BAO_JWT_ROLE'>>;
 
 // re-export of the runtime ENV proxy, typed to this package's schema
 export const ENV = _ENV as unknown as Readonly<CoercedEnvSchema>;

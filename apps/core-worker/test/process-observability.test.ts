@@ -1,5 +1,11 @@
-import { captureEvents } from "@bob/observability/testing"
-import { parseTraceparent } from "@bob/observability/trace"
+import { withBobSpan } from "@bob/observability/effect"
+import {
+  externalParentFromTraceparent,
+  formatTraceparent,
+  parseTraceparent
+} from "@bob/observability/propagation"
+import { captureEvents, makeCaptureTelemetry } from "@bob/observability/testing"
+import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { CoreBindings } from "../src/bindings.ts"
@@ -22,12 +28,24 @@ afterEach(() => {
 })
 
 describe("core workflow telemetry", () => {
-  it("propagates one trace through context, model, and outbox spans", async () => {
+  it("keeps one safe trace through inbound processing and outbox publish", async () => {
     const events = captureEvents()
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-core",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const telemetryRunner = {
+      runPromise: <A, E>(effect: Effect.Effect<A, E>) =>
+        Effect.runPromise(effect.pipe(Effect.provide(telemetry.layer)))
+    }
     const sent: unknown[] = []
+    const privateContext = "private-context-note-8841"
+    const privateUserText = "What is my private saved note?"
+    const privateResponse = "private-safe-response-5532"
     const contextItem = {
       kind: "fact" as const,
-      text: "Stored private fact",
+      text: privateContext,
       instruction: false as const,
       conflict: false,
       sources: [{ sourceId: messageId, sourceLabel: "message 2026-08-11" }]
@@ -41,23 +59,20 @@ describe("core workflow telemetry", () => {
         expect(trace?.traceId).toBe(inboundTraceId)
         expect(headers.get("x-bob-correlation-id")).toBe(correlationId)
         const body = JSON.parse(String(init?.body)) as { runId: string }
-        return Response.json(
-          {
-            protocolVersion: 1,
-            runId: body.runId,
-            correlationId,
-            status: "completed",
-            responseText: "Safe response",
-            sourceIds: [messageId],
-            conflict: "none",
-            model: "test-model",
-            durationMs: 20,
-            inputTokens: 10,
-            outputTokens: 5,
-            toolCalls: 0
-          },
-          { headers: { traceparent: headers.get("traceparent")! } }
-        )
+        return Response.json({
+          protocolVersion: 1,
+          runId: body.runId,
+          correlationId,
+          status: "completed",
+          responseText: privateResponse,
+          sourceIds: [messageId],
+          conflict: "none",
+          model: "gpt-test",
+          durationMs: 20,
+          inputTokens: 10,
+          outputTokens: 5,
+          toolCalls: 0
+        })
       })
     )
     const composition = {
@@ -65,7 +80,7 @@ describe("core workflow telemetry", () => {
         AGENT_URL: "https://agent.example.invalid",
         AGENT_ACCESS_CLIENT_ID: "client",
         AGENT_ACCESS_CLIENT_SECRET: "secret",
-        BOB_MODEL: "test-model",
+        BOB_MODEL: "gpt-test",
         BOB_RUN_TOKEN_BUDGET: 32_000,
         BOB_DAILY_TOKEN_BUDGET: 250_000
       },
@@ -78,7 +93,7 @@ describe("core workflow telemetry", () => {
             ownerId,
             channelId,
             messageId,
-            text: "What is my saved note?",
+            text: privateUserText,
             correlationId
           }))
         },
@@ -103,7 +118,7 @@ describe("core workflow telemetry", () => {
           completeWithResponse: vi.fn(async () => outboxId)
         },
         alerts: { record: vi.fn() },
-        delivery: { markEnqueued: vi.fn() }
+        delivery: { markEnqueued: vi.fn(async () => undefined) }
       }
     } as unknown as CoreComposition
     const bindings = {
@@ -114,20 +129,43 @@ describe("core workflow telemetry", () => {
       }
     } as unknown as CoreBindings
 
-    await processInbound(eventId, bindings, composition, inboundTraceparent)
+    const inboundParent = externalParentFromTraceparent(inboundTraceparent)
+    if (inboundParent === undefined) throw new Error("Test traceparent is invalid")
+    const processTraceparent = await telemetryRunner.runPromise(
+      Effect.withParentSpan(
+        withBobSpan(
+          {
+            name: "bob.inbound.consume",
+            correlationId,
+            feature: "assistant"
+          },
+          Effect.currentSpan.pipe(Effect.map(formatTraceparent))
+        ),
+        inboundParent
+      )
+    )
+    await processInbound(
+      eventId,
+      bindings,
+      composition,
+      processTraceparent,
+      telemetryRunner,
+      correlationId
+    )
 
     expect(contextBuild).toHaveBeenCalledWith(
       expect.objectContaining({
         ownerId,
         channelId,
         currentMessageId: messageId,
-        currentUserText: "What is my saved note?",
+        currentUserText: privateUserText,
         timeZone: "Europe/Stockholm"
       })
     )
     expect(sent).toEqual([
       {
         outboxId,
+        correlationId,
         traceparent: expect.stringMatching(new RegExp(`^00-${inboundTraceId}-[0-9a-f]{16}-01$`))
       }
     ])
@@ -135,36 +173,54 @@ describe("core workflow telemetry", () => {
       expect.objectContaining({ sourceIds: [messageId], conflict: "none" }),
       {
         channelId,
-        text: "Safe response\nSource: message 2026-08-11",
+        text: `${privateResponse}\nSource: message 2026-08-11`,
         reasonCode: "agent_reply"
       }
     )
-    expect(events.events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ type: "workflow_span", name: "context.build" }),
-        expect.objectContaining({
-          type: "retrieval",
-          strategy: "fts",
-          selectedCount: 1,
-          sourceCount: 1
-        }),
-        expect.objectContaining({ type: "workflow_span", name: "model.run" }),
-        expect.objectContaining({ type: "workflow_span", name: "outbox.create" }),
-        expect.objectContaining({ type: "workflow_span", name: "outbox.publish" })
-      ])
+
+    const spans = telemetry.finishedSpans()
+    const consume = spans.find((span) => span.name === "bob.inbound.consume")
+    const process = spans.find((span) => span.name === "bob.inbound.process")
+    const claim = spans.find((span) => span.name === "bob.inbound.claim")
+    const context = spans.find((span) => span.name === "bob.context.build")
+    const retrieve = spans.find((span) => span.name === "bob.context.retrieve")
+    const invoke = spans.find((span) => span.name === "bob.agent.invoke")
+    const create = spans.find((span) => span.name === "bob.outbox.create")
+    const publish = spans.find((span) => span.name === "bob.outbox.publish")
+    expect(consume?.parentSpanId).toBe(inboundParentSpanId)
+    expect(process?.parentSpanId).toBe(consume?.spanId)
+    expect(claim?.parentSpanId).toBe(process?.spanId)
+    expect(context?.parentSpanId).toBe(process?.spanId)
+    expect(retrieve?.parentSpanId).toBe(context?.spanId)
+    expect(invoke?.parentSpanId).toBe(process?.spanId)
+    expect(create?.parentSpanId).toBe(process?.spanId)
+    expect(publish?.parentSpanId).toBe(create?.spanId)
+    expect(new Set(spans.map((span) => span.traceId))).toEqual(new Set([inboundTraceId]))
+    expect(new Set(spans.map((span) => span.attributes["bob.correlation.id"]))).toEqual(
+      new Set([correlationId])
     )
-    const traceIds = events.events.flatMap((event) =>
-      event.type === "workflow_span" ? [event.traceId] : []
-    )
-    expect(new Set(traceIds)).toEqual(new Set([inboundTraceId]))
-    expect(events.events).toContainEqual(
+    expect(process?.events).toContainEqual(
       expect.objectContaining({
-        type: "workflow_span",
-        name: "context.build",
-        parentSpanId: inboundParentSpanId
+        name: "bob.decision.route",
+        attributes: {
+          "bob.decision.code": "agent_turn",
+          "bob.decision.outcome": "selected"
+        }
       })
     )
-    expect(JSON.stringify(events.events)).not.toContain("Stored private fact")
-    expect(JSON.stringify(events.events)).not.toContain("What is my saved note?")
+    expect(events.events).toContainEqual(
+      expect.objectContaining({
+        type: "retrieval",
+        strategy: "fts",
+        selectedCount: 1,
+        sourceCount: 1
+      })
+    )
+    const serialized = JSON.stringify(spans, (_key, value) =>
+      typeof value === "bigint" ? value.toString() : value
+    )
+    for (const canary of [privateContext, privateUserText, privateResponse]) {
+      expect(serialized).not.toContain(canary)
+    }
   })
 })

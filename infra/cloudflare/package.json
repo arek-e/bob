@@ -29,6 +29,6 @@
     "@varlock/hashicorp-vault-plugin": "2.1.0",
     "typescript": "5.9.3",
     "varlock": "1.16.1",
-    "vitest": "4.1.10"
+    "vitest": "4.1.9"
   }
 }

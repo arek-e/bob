@@ -1,12 +1,13 @@
-import type { EventSink } from "@bob/observability/events"
-
 import { ToolResult, type ToolCommand } from "@bob/contracts/tools"
-import { featureForToolName } from "@bob/observability/attribution"
-import { currentNodeTelemetryContext, observeNodeSpan } from "@bob/observability/node"
-import { traceHeaders } from "@bob/observability/trace"
-import { Context, Layer, Schema } from "effect"
+import { currentBobCorrelationId, Telemetry } from "@bob/observability/effect"
+import { injectCurrentTraceparent } from "@bob/observability/propagation"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 
 export interface CoreToolClient {
+  executeEffect(
+    command: ToolCommand,
+    signal?: AbortSignal
+  ): Effect.Effect<typeof ToolResult.Type, unknown>
   execute(command: ToolCommand, signal?: AbortSignal): Promise<typeof ToolResult.Type>
 }
 
@@ -17,71 +18,64 @@ export function createCoreToolClient(options: {
   readonly accessClientId: string
   readonly accessClientSecret: string
   readonly fetch?: typeof fetch
-  readonly events?: EventSink
   readonly now?: () => number
 }): CoreToolClient {
   const request = options.fetch ?? fetch
   const now = options.now ?? Date.now
-  return {
-    async execute(command, signal) {
+  const executeEffect = (
+    command: ToolCommand,
+    signal?: AbortSignal
+  ): Effect.Effect<typeof ToolResult.Type, unknown> =>
+    Effect.suspend(() => {
       const startedAt = now()
-      const feature = featureForToolName(command.name)
       let status: "completed" | "failed" = "failed"
-      try {
-        const execute = async (trace: Parameters<typeof traceHeaders>[0] | undefined) => {
-          const active = currentNodeTelemetryContext()
-          const response = await request(`${options.coreUrl}/internal/tools`, {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "CF-Access-Client-Id": options.accessClientId,
-              "CF-Access-Client-Secret": options.accessClientSecret,
-              ...(trace === undefined ? {} : traceHeaders(trace)),
-              ...(active === undefined ? {} : { "x-bob-correlation-id": active.correlationId })
-            },
-            body: JSON.stringify(command),
-            signal:
-              signal === undefined
-                ? AbortSignal.timeout(15_000)
-                : AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+      return Effect.flatMap(currentBobCorrelationId, (activeCorrelationId) => {
+        const correlationId = activeCorrelationId ?? command.runId
+        const execution = Effect.gen(function* () {
+          const headers = yield* injectCurrentTraceparent({
+            "content-type": "application/json",
+            "CF-Access-Client-Id": options.accessClientId,
+            "CF-Access-Client-Secret": options.accessClientSecret,
+            "x-bob-correlation-id": correlationId
           })
-          if (!response.ok) throw new Error(`Core tool request failed: ${response.status}`)
-          const result = Schema.decodeUnknownSync(ToolResult)(await response.json())
+          const result = yield* Effect.tryPromise({
+            try: async () => {
+              const response = await request(`${options.coreUrl}/internal/tools`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(command),
+                signal:
+                  signal === undefined
+                    ? AbortSignal.timeout(15_000)
+                    : AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+              })
+              if (!response.ok) throw new Error(`Core tool request failed: ${response.status}`)
+              return Schema.decodeUnknownSync(ToolResult)(await response.json())
+            },
+            catch: (error) => error
+          })
           status = result.ok ? "completed" : "failed"
           return result
-        }
-        return options.events === undefined
-          ? await execute(undefined)
-          : await observeNodeSpan(
-              {
-                sink: options.events,
-                name: "tool.execute",
-                feature,
-                workflow: "tool_execution",
-                failureCode: "core_request",
-                resultCode: (result) => (result.ok ? undefined : "tool_execution"),
-                now
-              },
-              execute
-            )
-      } finally {
-        if (options.events !== undefined) {
-          try {
-            await options.events.emit({
-              type: "tool_call",
-              correlationId: currentNodeTelemetryContext()?.correlationId ?? command.runId,
-              runId: command.runId,
-              toolCallId: command.toolCallId,
-              toolName: command.name,
-              status,
-              durationMs: Math.max(0, Math.round(now() - startedAt))
-            })
-          } catch {
-            // Telemetry must not change a tool result.
-          }
-        }
-      }
-    }
+        })
+        const emitResult = Effect.flatMap(Effect.serviceOption(Telemetry), (telemetry) =>
+          Option.isNone(telemetry)
+            ? Effect.void
+            : telemetry.value.emitHealth({
+                type: "tool_call",
+                correlationId,
+                runId: command.runId,
+                toolName: command.name,
+                status,
+                durationMs: Math.max(0, Math.round(now() - startedAt))
+              })
+        ).pipe(Effect.catchCause(() => Effect.void))
+        return execution.pipe(Effect.ensuring(emitResult))
+      })
+    })
+
+  return {
+    executeEffect,
+    execute: (command, signal) => Effect.runPromise(executeEffect(command, signal))
   }
 }
 

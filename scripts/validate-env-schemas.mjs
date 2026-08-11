@@ -60,6 +60,8 @@ const safeValidationEnvironment = {
   BOB_PROVIDER: "openai-codex",
   BOB_RELEASE_SHA: "0000000000000000000000000000000000000000",
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.fixture.invalid:4318",
+  OTEL_ACCESS_CLIENT_ID: "fixture-otel-access-client",
+  OTEL_ACCESS_CLIENT_SECRET: "fixture-otel-access-secret",
   AGENT_URL: "https://agent.example.invalid",
   AGENT_ADMIN_URL: "https://agent-admin.example.invalid",
   UI_BASE_URL: "https://bob.example.invalid",

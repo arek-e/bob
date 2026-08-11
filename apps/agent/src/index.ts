@@ -1,10 +1,10 @@
 import { NodeRuntime } from "@effect/platform-node"
-import { Effect } from "effect"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 
 import { composeAgent } from "./composition.ts"
 import { handleAgentHttp } from "./http.ts"
 import { AGENT_LISTEN_HOST } from "./listener.ts"
+import { serveAgent } from "./server.ts"
 
 const MAX_BODY_BYTES = 64 * 1024
 
@@ -59,22 +59,10 @@ const server = createServer(async (input, output) => {
   }
 })
 
-const main = Effect.acquireRelease(
-  Effect.callback<typeof server>((resume) => {
-    const onError = (error: Error) => resume(Effect.die(error))
-    server.once("error", onError)
-    server.listen(composition.config.port, AGENT_LISTEN_HOST, () => {
-      server.off("error", onError)
-      resume(Effect.succeed(server))
-    })
-  }),
-  (active) =>
-    Effect.callback<void>((resume) => {
-      active.close(() => resume(Effect.void))
-    })
-).pipe(
-  Effect.flatMap(() => Effect.never),
-  Effect.scoped
-)
+const main = serveAgent(server, {
+  port: composition.config.port,
+  host: AGENT_LISTEN_HOST,
+  disposeRuntime: composition.runtime.disposeEffect
+})
 
 NodeRuntime.runMain(main)

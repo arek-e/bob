@@ -1,12 +1,15 @@
 import type { AgentRunRequest } from "@bob/contracts/agent"
 import type { ToolCommand, ToolResult } from "@bob/contracts/tools"
 
+import { withBobSpan } from "@bob/observability/effect"
+import { makeCaptureTelemetry } from "@bob/observability/testing"
 import {
   fauxAssistantMessage,
   fauxToolCall,
   type AssistantMessage,
   type Context
 } from "@earendil-works/pi-ai"
+import { Effect } from "effect"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { createBobPiAgent } from "../src/index.ts"
@@ -35,7 +38,7 @@ const modelHarness = vi.hoisted(() => {
     completeSimple,
     state,
     model: {
-      id: "test-model",
+      id: "gpt-test",
       name: "Test model",
       api: "openai-codex-responses",
       provider: "openai-codex",
@@ -131,8 +134,8 @@ const makeAgent = (
   createBobPiAgent({
     credentials: { read: async () => undefined } as never,
     provider: "openai-codex",
-    model: "test-model",
-    allowedModels: ["test-model"],
+    model: "gpt-test",
+    allowedModels: ["gpt-test"],
     executeTool,
     now
   })
@@ -142,6 +145,433 @@ const okResult = (code = "test", message = "Done."): ToolResult => ({ ok: true, 
 describe("Bob's direct pi-ai loop", () => {
   beforeEach(() => {
     modelHarness.reset()
+  })
+
+  it("runs one traceable Effect program for a Tool-assisted turn", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("memory_search", { query: "routine" }, { id: "call-1" })),
+      structuredResponse({
+        responseText: "You prefer morning training.",
+        sourceIds: ["fact-revision-1"],
+        toolNames: ["memory_search"]
+      })
+    )
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const agent = makeAgent(async () => ({
+      ok: true,
+      code: "memory_results",
+      message: "One source found.",
+      data: {
+        matches: [
+          {
+            id: "search-document-1",
+            sourceId: "fact-revision-1",
+            text: "I prefer morning training.",
+            sourceLabel: "Owner message"
+          }
+        ]
+      }
+    }))
+
+    const request = baseRequest()
+    const output = await Effect.runPromise(
+      withBobSpan(
+        {
+          name: "bob.agent.run",
+          correlationId: request.correlationId,
+          runId: request.runId,
+          feature: "memory"
+        },
+        agent.runTurnEffect(request)
+      ).pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(output).toMatchObject({ status: "completed", toolCalls: 1 })
+    const spans = telemetry.finishedSpans()
+    const runs = spans.filter((span) => span.name === "bob.agent.run")
+    const run = runs[0]
+    const loop = spans.find((span) => span.name === "bob.agent.loop")
+    const turns = spans.filter((span) => span.name === "bob.agent.turn")
+    const models = spans.filter((span) => span.name === "bob.model.complete")
+    const tool = spans.find((span) => span.name === "bob.tool.invoke")
+    const validation = spans.find((span) => span.name === "bob.output.validate")
+    expect(runs).toHaveLength(1)
+    expect(loop?.parentSpanId).toBe(run?.spanId)
+    expect(turns).toHaveLength(2)
+    expect(models).toHaveLength(2)
+    expect(models.map((span) => span.parentSpanId)).toEqual(turns.map((span) => span.spanId))
+    expect(tool?.parentSpanId).toBe(turns[0]?.spanId)
+    expect(validation?.parentSpanId).toBe(loop?.spanId)
+    expect(loop?.events).toContainEqual(
+      expect.objectContaining({
+        name: "bob.decision.toolset",
+        attributes: {
+          "bob.decision.code": "allowed",
+          "bob.decision.outcome": "selected",
+          "bob.tool.name": "memory_search"
+        }
+      })
+    )
+    expect(turns[0]?.events).toContainEqual(
+      expect.objectContaining({
+        name: "bob.decision.loop",
+        attributes: {
+          "bob.decision.code": "tool_calls",
+          "bob.decision.outcome": "selected",
+          "bob.selected.count": 1
+        }
+      })
+    )
+  })
+
+  it("records a content-free provider failure inside the model span", async () => {
+    const privateCanary = "private-provider-error-+46700000000"
+    modelHarness.completeSimple.mockRejectedValue(new Error(privateCanary))
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const agent = makeAgent(async () => okResult())
+
+    const output = await Effect.runPromise(
+      agent.runTurnEffect(baseRequest()).pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(output).toMatchObject({ status: "failed", errorCode: "provider" })
+    const modelSpan = telemetry.finishedSpans().find((span) => span.name === "bob.model.complete")
+    expect(modelSpan?.outcome).toBe("failed")
+    expect(modelSpan?.events).toContainEqual(
+      expect.objectContaining({
+        name: "bob.decision.loop",
+        attributes: {
+          "bob.decision.code": "provider_failure",
+          "bob.decision.outcome": "denied"
+        }
+      })
+    )
+    expect(
+      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
+        typeof value === "bigint" ? value.toString() : value
+      )
+    ).not.toContain(privateCanary)
+  })
+
+  it("marks a resolved provider error message as a failed model span", async () => {
+    const privateCanary = "private-resolved-provider-error-+46700000001"
+    modelHarness.state.responses.push({
+      ...fauxAssistantMessage("", { stopReason: "error" }),
+      errorMessage: privateCanary
+    } satisfies AssistantMessage)
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const agent = makeAgent(async () => okResult())
+
+    const output = await Effect.runPromise(
+      agent
+        .runTurnEffect(baseRequest({ userText: "Hello Bob", allowedTools: [] }))
+        .pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(output).toMatchObject({ status: "failed", errorCode: "provider" })
+    const modelSpan = telemetry.finishedSpans().find((span) => span.name === "bob.model.complete")
+    expect(modelSpan?.outcome).toBe("failed")
+    expect(modelSpan?.events).toContainEqual(
+      expect.objectContaining({
+        name: "bob.decision.loop",
+        attributes: {
+          "bob.decision.code": "provider_failure",
+          "bob.decision.outcome": "denied"
+        }
+      })
+    )
+    expect(
+      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
+        typeof value === "bigint" ? value.toString() : value
+      )
+    ).not.toContain(privateCanary)
+  })
+
+  it("marks a resolved aborted message as a failed model span", async () => {
+    const privateCanary = "private-resolved-abort-+46700000002"
+    modelHarness.state.responses.push({
+      ...fauxAssistantMessage("", { stopReason: "aborted" }),
+      errorMessage: privateCanary
+    } satisfies AssistantMessage)
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const agent = makeAgent(async () => okResult())
+
+    const output = await Effect.runPromise(
+      agent
+        .runTurnEffect(baseRequest({ userText: "Hello Bob", allowedTools: [] }))
+        .pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(output).toMatchObject({ status: "cancelled", errorCode: "cancelled" })
+    const modelSpan = telemetry.finishedSpans().find((span) => span.name === "bob.model.complete")
+    expect(modelSpan?.outcome).toBe("failed")
+    expect(modelSpan?.events).toContainEqual(
+      expect.objectContaining({
+        name: "bob.decision.loop",
+        attributes: {
+          "bob.decision.code": "timeout",
+          "bob.decision.outcome": "applied"
+        }
+      })
+    )
+    expect(
+      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
+        typeof value === "bigint" ? value.toString() : value
+      )
+    ).not.toContain(privateCanary)
+  })
+
+  it("does not export prompts, Tool data, or assistant content", async () => {
+    const privateUser = "private-user-routine-8841"
+    const privateArgument = "private-tool-argument-5532"
+    const privateResult = "private-tool-result-9074"
+    const privateAssistant = "private-assistant-output-1168"
+    modelHarness.state.responses.push(
+      toolResponse(
+        fauxToolCall("memory_search", { query: privateArgument }, { id: "safe-tool-call-id" })
+      ),
+      structuredResponse({
+        responseText: privateAssistant,
+        sourceIds: ["safe-source-id"],
+        toolNames: ["memory_search"]
+      })
+    )
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const agent = makeAgent(async () => ({
+      ok: true,
+      code: "memory_results",
+      message: privateResult,
+      data: {
+        matches: [
+          {
+            sourceId: "safe-source-id",
+            sourceLabel: privateResult,
+            text: privateResult
+          }
+        ]
+      }
+    }))
+
+    const output = await Effect.runPromise(
+      agent
+        .runTurnEffect(baseRequest({ userText: `What is my routine? ${privateUser}` }))
+        .pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(output).toMatchObject({ status: "completed", responseText: privateAssistant })
+    const serialized = JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
+      typeof value === "bigint" ? value.toString() : value
+    )
+    for (const canary of [privateUser, privateArgument, privateResult, privateAssistant]) {
+      expect(serialized).not.toContain(canary)
+    }
+  })
+
+  it("runs the Effect Tool adapter inside the active Tool span", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "call-effect" })),
+      structuredResponse({
+        responseText: "You have no reminders.",
+        toolNames: ["reminder_list"]
+      })
+    )
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const fallback = vi.fn(async () => okResult("unexpected"))
+    const agent = createBobPiAgent({
+      credentials: { read: async () => undefined } as never,
+      provider: "openai-codex",
+      model: "gpt-test",
+      allowedModels: ["gpt-test"],
+      executeTool: fallback,
+      executeToolEffect: (command) =>
+        withBobSpan(
+          {
+            name: "bob.tool.domain",
+            correlationId: baseRequest().correlationId,
+            runId: command.runId,
+            feature: "reminders",
+            toolName: command.name
+          },
+          Effect.succeed(okResult("reminder_list", "No reminders."))
+        ),
+      now: () => 1
+    })
+
+    const output = await Effect.runPromise(
+      agent
+        .runTurnEffect(
+          baseRequest({
+            userText: "Hello Bob",
+            allowedTools: ["reminder_list"]
+          })
+        )
+        .pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(output).toMatchObject({ status: "completed", toolCalls: 1 })
+    expect(fallback).not.toHaveBeenCalled()
+    const spans = telemetry.finishedSpans()
+    const invoke = spans.find((span) => span.name === "bob.tool.invoke")
+    const domain = spans.find((span) => span.name === "bob.tool.domain")
+    expect(domain?.parentSpanId).toBe(invoke?.spanId)
+  })
+
+  it("does not let provider Tool call identifiers break telemetry", async () => {
+    const providerToolCallId = `call|${"x".repeat(500)}`
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("reminder_list", {}, { id: providerToolCallId })),
+      structuredResponse({
+        responseText: "You have no reminders.",
+        toolNames: ["reminder_list"]
+      })
+    )
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const agent = makeAgent(async () => okResult("reminder_list", "No reminders."))
+
+    const output = await Effect.runPromise(
+      agent
+        .runTurnEffect(
+          baseRequest({
+            userText: "Hello Bob",
+            allowedTools: ["reminder_list"]
+          })
+        )
+        .pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(output.errorCode).toBeUndefined()
+    expect(output).toMatchObject({ status: "completed", toolCalls: 1 })
+    expect(telemetry.finishedSpans().some((span) => span.name === "bob.tool.invoke")).toBe(true)
+    expect(
+      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
+        typeof value === "bigint" ? value.toString() : value
+      )
+    ).not.toContain(providerToolCallId)
+  })
+
+  it("converts an Effect Tool transport failure inside the Tool span", async () => {
+    const privateCanary = "private-tool-transport-error-7721"
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "call-effect-failure" }))
+    )
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const fallback = vi.fn(async () => okResult("unexpected"))
+    const agent = createBobPiAgent({
+      credentials: { read: async () => undefined } as never,
+      provider: "openai-codex",
+      model: "gpt-test",
+      allowedModels: ["gpt-test"],
+      executeTool: fallback,
+      executeToolEffect: () => Effect.fail(new Error(privateCanary)),
+      now: () => 1
+    })
+
+    const output = await Effect.runPromise(
+      agent
+        .runTurnEffect(
+          baseRequest({
+            userText: "Hello Bob",
+            allowedTools: ["reminder_list"]
+          })
+        )
+        .pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(output).toMatchObject({ status: "failed", errorCode: "policy", toolCalls: 1 })
+    expect(fallback).not.toHaveBeenCalled()
+    const invoke = telemetry.finishedSpans().find((span) => span.name === "bob.tool.invoke")
+    expect(invoke?.outcome).toBe("failed")
+    expect(invoke?.events).toContainEqual(
+      expect.objectContaining({
+        name: "bob.decision.policy",
+        attributes: {
+          "bob.decision.code": "provider_failure",
+          "bob.decision.outcome": "denied"
+        }
+      })
+    )
+    expect(
+      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
+        typeof value === "bigint" ? value.toString() : value
+      )
+    ).not.toContain(privateCanary)
+  })
+
+  it("traces output repair as a nested repair turn", async () => {
+    modelHarness.state.responses.push(
+      fauxAssistantMessage("not json", { stopReason: "stop" }),
+      structuredResponse({ responseText: "Hello. How can I help?" })
+    )
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const agent = makeAgent(async () => okResult())
+
+    const output = await Effect.runPromise(
+      agent
+        .runTurnEffect(baseRequest({ userText: "Hello Bob", allowedTools: [] }))
+        .pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(output).toMatchObject({ status: "completed", responseText: "Hello. How can I help?" })
+    const spans = telemetry.finishedSpans()
+    const loop = spans.find((span) => span.name === "bob.agent.loop")
+    const repair = spans.find((span) => span.name === "bob.output.repair")
+    const repairTurn = spans.find(
+      (span) => span.name === "bob.agent.turn" && span.attributes["bob.turn.phase"] === "repair"
+    )
+    const repairModel = spans.find(
+      (span) => span.name === "bob.model.complete" && span.attributes["bob.turn.phase"] === "repair"
+    )
+    const validations = spans.filter((span) => span.name === "bob.output.validate")
+    expect(repair?.parentSpanId).toBe(loop?.spanId)
+    expect(repairTurn?.parentSpanId).toBe(repair?.spanId)
+    expect(repairModel?.parentSpanId).toBe(repairTurn?.spanId)
+    expect(validations).toHaveLength(2)
+    expect(validations[1]?.parentSpanId).toBe(repair?.spanId)
+    expect(repair?.events).toContainEqual(
+      expect.objectContaining({
+        name: "bob.decision.output",
+        attributes: {
+          "bob.decision.code": "repair_succeeded",
+          "bob.decision.outcome": "applied"
+        }
+      })
+    )
   })
 
   it("executes tool calls through pi-ai, then validates the final response", async () => {
@@ -179,7 +609,7 @@ describe("Bob's direct pi-ai loop", () => {
       responseText: "You prefer morning training.",
       sourceIds: ["fact-revision-1"],
       toolCalls: 1,
-      model: "test-model"
+      model: "gpt-test"
     })
     expect(commands).toHaveLength(1)
     expect(commands[0]).toMatchObject({
@@ -316,10 +746,21 @@ describe("Bob's direct pi-ai loop", () => {
       }
     )
     const agent = makeAgent(async () => okResult())
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
 
-    await expect(
-      agent.runTurn(baseRequest({ limits: { ...baseRequest().limits, maxDurationMs: 5 } }))
-    ).resolves.toMatchObject({ status: "cancelled", errorCode: "timeout" })
+    const output = await Effect.runPromise(
+      agent
+        .runTurnEffect(baseRequest({ limits: { ...baseRequest().limits, maxDurationMs: 5 } }))
+        .pipe(Effect.provide(telemetry.layer))
+    )
+    expect(output).toMatchObject({ status: "cancelled", errorCode: "timeout" })
+    expect(
+      telemetry.finishedSpans().find((span) => span.name === "bob.model.complete")?.outcome
+    ).toBe("failed")
     expect(observedSignal?.aborted).toBe(true)
   })
 
@@ -332,12 +773,21 @@ describe("Bob's direct pi-ai loop", () => {
       observedSignal = signal
       return new Promise<ToolResult>(() => undefined)
     })
-    const run = agent.runTurn(
-      baseRequest({
-        userText: "List my reminders.",
-        allowedTools: ["reminder_list"],
-        limits: { ...baseRequest().limits, maxDurationMs: 5 }
-      })
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const run = Effect.runPromise(
+      agent
+        .runTurnEffect(
+          baseRequest({
+            userText: "List my reminders.",
+            allowedTools: ["reminder_list"],
+            limits: { ...baseRequest().limits, maxDurationMs: 5 }
+          })
+        )
+        .pipe(Effect.provide(telemetry.layer))
     )
     let guardTimer: ReturnType<typeof setTimeout> | undefined
     const outcome = await Promise.race([
@@ -353,6 +803,9 @@ describe("Bob's direct pi-ai loop", () => {
       expect(outcome.result).toMatchObject({ status: "cancelled", errorCode: "timeout" })
     }
     expect(observedSignal?.aborted).toBe(true)
+    expect(telemetry.finishedSpans().find((span) => span.name === "bob.tool.invoke")?.outcome).toBe(
+      "failed"
+    )
   })
 
   it("returns a consistent cancelled result when Pi throws AbortError", async () => {

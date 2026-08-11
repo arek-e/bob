@@ -1,24 +1,29 @@
 import { InboundAcceptance, type NormalizedInboundEvent } from "@bob/contracts/channel"
+import { flushCloudflareTelemetry } from "@bob/observability/cloudflare"
+import { recordDecision, withBobSpan } from "@bob/observability/effect"
 import {
-  formatTraceparent,
-  observeSpan,
-  parseTraceparent,
-  traceContextFromCorrelationId,
-  traceHeaders
-} from "@bob/observability/trace"
+  externalParentFromTraceparent,
+  injectCurrentTraceparent
+} from "@bob/observability/propagation"
 import {
   decodeWebhookPayload,
   normalizeInbound,
   normalizeStatus,
   timingSafeEqual
 } from "@bob/sendblue/webhooks"
-import { Schema } from "effect"
+import { Effect, Schema, type Tracer } from "effect"
 
 import type { IngressBindings } from "../bindings.ts"
 
 import { composeIngress } from "../composition.ts"
 
 const MAX_BODY_BYTES = 16 * 1024
+
+class WorkflowResponseFailure {
+  readonly _tag = "WorkflowResponseFailure"
+
+  constructor(readonly response: Response) {}
+}
 
 function response(code: string, status: number): Response {
   return Response.json(
@@ -35,47 +40,121 @@ async function readJson(request: Request): Promise<unknown> {
   return JSON.parse(new TextDecoder().decode(bytes)) as unknown
 }
 
-async function persistInbound(
+function persistInbound(
   event: NormalizedInboundEvent,
-  composition: ReturnType<typeof composeIngress>,
-  trace: Parameters<typeof traceHeaders>[0]
-): Promise<Response> {
-  const stored = await composition.ports.core.fetch("https://core.internal/internal/inbound", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-bob-caller-token": composition.config.CORE_CALLER_SECRET,
-      ...traceHeaders(trace),
-      "x-bob-correlation-id": event.correlationId
-    },
-    body: JSON.stringify(event)
-  })
-  if (!stored.ok) return response("durable_store_failed", 503)
-  const acceptance = Schema.decodeUnknownSync(InboundAcceptance)(await stored.json())
-  if (acceptance.shouldEnqueue) {
-    try {
-      await composition.ports.queue.send({
-        eventId: acceptance.eventId,
-        traceparent: formatTraceparent(trace)
-      })
-    } catch {
-      return response("queue_publish_failed", 503)
-    }
-    const marked = await composition.ports.core.fetch(
-      `https://core.internal/internal/inbound/${encodeURIComponent(acceptance.eventId)}/enqueued`,
+  composition: ReturnType<typeof composeIngress>
+) {
+  return Effect.gen(function* () {
+    const stored = yield* withBobSpan(
       {
-        method: "POST",
-        headers: { "x-bob-caller-token": composition.config.CORE_CALLER_SECRET }
-      }
+        name: "bob.inbound.invoke",
+        correlationId: event.correlationId,
+        feature: "assistant"
+      },
+      Effect.gen(function* () {
+        const headers = yield* injectCurrentTraceparent({
+          "content-type": "application/json",
+          "x-bob-caller-token": composition.config.CORE_CALLER_SECRET,
+          "x-bob-correlation-id": event.correlationId
+        })
+        const response = yield* Effect.tryPromise(() =>
+          composition.ports.core.fetch("https://core.internal/internal/inbound", {
+            method: "POST",
+            headers,
+            body: JSON.stringify(event)
+          })
+        )
+        if (!response.ok) return yield* Effect.fail(new WorkflowResponseFailure(response))
+        return response
+      })
+    ).pipe(
+      Effect.catchTag("WorkflowResponseFailure", (failure) => Effect.succeed(failure.response))
     )
-    if (!marked.ok) return response("enqueue_record_failed", 503)
+    if (!stored.ok) return response("durable_store_failed", 503)
+    const acceptance = yield* Effect.tryPromise(async () =>
+      Schema.decodeUnknownSync(InboundAcceptance)(await stored.json())
+    )
+    yield* recordDecision({
+      name: "bob.decision.idempotency",
+      code: acceptance.duplicate ? "replay" : "new",
+      outcome: "selected"
+    })
+    if (acceptance.shouldEnqueue) {
+      const published = yield* withBobSpan(
+        {
+          name: "bob.inbound.publish",
+          correlationId: event.correlationId,
+          feature: "assistant"
+        },
+        Effect.gen(function* () {
+          const headers = yield* injectCurrentTraceparent()
+          const traceparent = headers.get("traceparent")
+          yield* Effect.tryPromise(() =>
+            composition.ports.queue.send({
+              eventId: acceptance.eventId,
+              correlationId: event.correlationId,
+              ...(traceparent === null ? {} : { traceparent })
+            })
+          )
+        })
+      ).pipe(
+        Effect.as(true),
+        Effect.catch(() => Effect.succeed(false))
+      )
+      if (!published) return response("queue_publish_failed", 503)
+      const marked = yield* withBobSpan(
+        {
+          name: "bob.inbound.confirm",
+          correlationId: event.correlationId,
+          feature: "assistant"
+        },
+        Effect.gen(function* () {
+          const headers = yield* injectCurrentTraceparent({
+            "x-bob-caller-token": composition.config.CORE_CALLER_SECRET,
+            "x-bob-correlation-id": event.correlationId
+          })
+          const response = yield* Effect.tryPromise(() =>
+            composition.ports.core.fetch(
+              `https://core.internal/internal/inbound/${encodeURIComponent(acceptance.eventId)}/enqueued`,
+              { method: "POST", headers }
+            )
+          )
+          if (!response.ok) return yield* Effect.fail(new WorkflowResponseFailure(response))
+          return response
+        })
+      ).pipe(
+        Effect.catchTag("WorkflowResponseFailure", (failure) => Effect.succeed(failure.response))
+      )
+      if (!marked.ok) return response("enqueue_record_failed", 503)
+    }
+    return response(acceptance.duplicate ? "duplicate" : "accepted", 202)
+  })
+}
+
+async function runTraced<A, E>(
+  effect: Effect.Effect<A, E>,
+  parent: Tracer.ExternalSpan | undefined,
+  composition: ReturnType<typeof composeIngress>,
+  context: ExecutionContext | undefined
+): Promise<A> {
+  const continued = parent === undefined ? effect : effect.pipe(Effect.withParentSpan(parent))
+  try {
+    return await Effect.runPromise(continued.pipe(Effect.provide(composition.layer)))
+  } finally {
+    if (context !== undefined) {
+      try {
+        context.waitUntil(Effect.runPromise(flushCloudflareTelemetry(composition.processor)))
+      } catch {
+        // Telemetry must not change webhook acceptance.
+      }
+    }
   }
-  return response(acceptance.duplicate ? "duplicate" : "accepted", 202)
 }
 
 export async function handleIngressHttp(
   request: Request,
-  bindings: IngressBindings
+  bindings: IngressBindings,
+  context?: ExecutionContext
 ): Promise<Response> {
   const url = new URL(request.url)
   if (request.method === "GET" && url.pathname === "/health") {
@@ -106,20 +185,34 @@ export async function handleIngressHttp(
         lineId: composition.config.SENDBLUE_LINE_ID
       })
       const startedAt = Date.now()
-      const result = await observeSpan(
-        {
-          sink: composition.events,
-          correlationId: event.correlationId,
-          parent: traceContextFromCorrelationId(event.correlationId),
-          name: "inbound.accept",
-          feature: "assistant",
-          workflow: "inbound_message",
-          failureCode: "durable_store"
-        },
-        (trace) => persistInbound(event, composition, trace),
-        (response) => (response.ok ? undefined : "durable_store")
+      const result = await runTraced(
+        withBobSpan(
+          {
+            name: "bob.webhook.receive",
+            correlationId: event.correlationId,
+            feature: "assistant"
+          },
+          Effect.gen(function* () {
+            const result = yield* persistInbound(event, composition)
+            if (!result.ok) return yield* Effect.fail(new WorkflowResponseFailure(result))
+            return result
+          })
+        ).pipe(
+          Effect.catchTag("WorkflowResponseFailure", (failure) => Effect.succeed(failure.response))
+        ),
+        externalParentFromTraceparent(request.headers.get("traceparent")),
+        composition,
+        context
       )
       const resultBody = (await result.clone().json()) as { code?: string }
+      const healthCode =
+        resultBody.code === "accepted" ||
+        resultBody.code === "duplicate" ||
+        resultBody.code === "durable_store_failed" ||
+        resultBody.code === "queue_publish_failed" ||
+        resultBody.code === "enqueue_record_failed"
+          ? resultBody.code
+          : "unknown"
       try {
         await composition.events.emit({
           type: "webhook",
@@ -130,7 +223,7 @@ export async function handleIngressHttp(
               : resultBody.code === "duplicate"
                 ? "duplicate"
                 : "failed",
-          code: resultBody.code ?? "unknown",
+          code: healthCode,
           durationMs: Math.max(0, Date.now() - startedAt)
         })
       } catch {
@@ -153,32 +246,55 @@ export async function handleIngressHttp(
           : { outboxId: url.searchParams.get("outbox_id")! }),
         ...(url.searchParams.get("attempt_id") === null
           ? {}
-          : { attemptId: url.searchParams.get("attempt_id")! })
+          : { attemptId: url.searchParams.get("attempt_id")! }),
+        ...(url.searchParams.get("correlation_id") === null
+          ? {}
+          : { correlationId: url.searchParams.get("correlation_id")! })
       })
-      const stored = await observeSpan(
-        {
-          sink: composition.events,
-          correlationId: event.correlationId,
-          parent:
-            parseTraceparent(url.searchParams.get("traceparent")) ??
-            traceContextFromCorrelationId(event.correlationId),
-          name: "provider.status",
-          feature: "delivery",
-          workflow: "outbound_delivery",
-          failureCode: "durable_store"
-        },
-        (trace) =>
-          composition.ports.core.fetch("https://core.internal/internal/status", {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-bob-caller-token": composition.config.CORE_CALLER_SECRET,
-              ...traceHeaders(trace),
-              "x-bob-correlation-id": event.correlationId
-            },
-            body: JSON.stringify(event)
-          }),
-        (response) => (response.ok ? undefined : "durable_store")
+      const stored = await runTraced(
+        withBobSpan(
+          {
+            name: "bob.provider.status",
+            correlationId: event.correlationId,
+            feature: "delivery"
+          },
+          Effect.gen(function* () {
+            const response = yield* withBobSpan(
+              {
+                name: "bob.delivery_result.invoke",
+                correlationId: event.correlationId,
+                feature: "delivery",
+                ...(event.outboxId === undefined ? {} : { outboxId: event.outboxId }),
+                ...(event.attemptId === undefined ? {} : { deliveryAttemptId: event.attemptId })
+              },
+              Effect.gen(function* () {
+                const headers = yield* injectCurrentTraceparent({
+                  "content-type": "application/json",
+                  "x-bob-caller-token": composition.config.CORE_CALLER_SECRET,
+                  "x-bob-correlation-id": event.correlationId
+                })
+                const response = yield* Effect.tryPromise(() =>
+                  composition.ports.core.fetch("https://core.internal/internal/status", {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify(event)
+                  })
+                )
+                if (!response.ok) {
+                  return yield* Effect.fail(new WorkflowResponseFailure(response))
+                }
+                return response
+              })
+            )
+            return response
+          })
+        ).pipe(
+          Effect.catchTag("WorkflowResponseFailure", (failure) => Effect.succeed(failure.response))
+        ),
+        externalParentFromTraceparent(request.headers.get("traceparent")) ??
+          externalParentFromTraceparent(url.searchParams.get("traceparent")),
+        composition,
+        context
       )
       return stored.ok ? response("accepted", 202) : response("durable_store_failed", 503)
     }

@@ -1,10 +1,14 @@
 import type { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/contracts/agent"
 
-import { Layer } from "effect"
-import { describe, expect, it, vi } from "vitest"
+import { withBobSpan } from "@bob/observability/effect"
+import { makeCaptureTelemetry } from "@bob/observability/testing"
+import { Effect, Layer, ManagedRuntime } from "effect"
+import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { AgentComposition } from "../src/composition.ts"
 
+import { accessVerifierLayer } from "../src/access.ts"
+import { coreToolClientLayer } from "../src/core-tools.ts"
 import { handleAgentHttp } from "../src/http.ts"
 
 const runRequest: AgentRunRequest = {
@@ -34,23 +38,57 @@ const runResult: AgentRunResult = {
   toolCalls: 1
 }
 
+const activeRuntimes: Array<{ readonly dispose: () => Promise<void> }> = []
+
+afterEach(async () => {
+  await Promise.all(activeRuntimes.splice(0).map((runtime) => runtime.dispose()))
+})
+
 function composition(
   authorized: boolean,
   allowedScope: "run" | "admin" | "both" = "both"
-): AgentComposition {
+): AgentComposition & {
+  readonly telemetry: ReturnType<typeof makeCaptureTelemetry>
+} {
+  const telemetry = makeCaptureTelemetry({
+    serviceName: "bob-agent",
+    serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+    deploymentEnvironment: "test"
+  })
+  const access = {
+    verify: vi.fn(async (_request: Request, scope: "run" | "admin") => {
+      if (!authorized || (allowedScope !== "both" && allowedScope !== scope)) {
+        throw new Error("access_denied")
+      }
+      return { subject: "", commonName: "service-token", scope }
+    })
+  }
+  const coreTools = {
+    executeEffect: vi.fn(() => Effect.die("not implemented in HTTP boundary test")),
+    execute: vi.fn()
+  }
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(telemetry.layer, accessVerifierLayer(access), coreToolClientLayer(coreTools))
+  )
+  activeRuntimes.push(runtime)
   return {
     config: {} as never,
-    layer: Layer.empty,
+    runtime,
+    telemetry,
     services: {
-      access: {
-        verify: vi.fn(async (_request, scope) => {
-          if (!authorized || (allowedScope !== "both" && allowedScope !== scope)) {
-            throw new Error("access_denied")
-          }
-          return { subject: "", commonName: "service-token", scope }
-        })
-      },
+      access,
       agent: {
+        runTurnEffect: vi.fn(() =>
+          withBobSpan(
+            {
+              name: "bob.agent.loop",
+              correlationId: runRequest.correlationId,
+              runId: runRequest.runId,
+              feature: "reminders"
+            },
+            Effect.succeed(runResult)
+          )
+        ),
         runTurn: vi.fn(async () => runResult),
         getAuthStatus: vi.fn(async () => ({
           configured: false,
@@ -63,8 +101,7 @@ function composition(
           expiresAt: "2026-08-11T12:15:00.000Z"
         }))
       },
-      coreTools: { execute: vi.fn() },
-      events: { emit: vi.fn() }
+      coreTools
     }
   }
 }
@@ -102,12 +139,23 @@ describe("agent HTTP boundary", () => {
     expect(response.headers.get("traceparent")).toMatch(
       /^00-11111111111111111111111111111111-[0-9a-f]{16}-01$/u
     )
-    expect(target.services.agent.runTurn).toHaveBeenCalledWith(runRequest)
+    const runSpan = target.telemetry.finishedSpans().find((span) => span.name === "bob.agent.run")
+    expect(runSpan).toMatchObject({
+      traceId: "11111111111111111111111111111111",
+      parentSpanId: "2222222222222222",
+      outcome: "completed"
+    })
+    expect(response.headers.get("traceparent")).toBe(`00-${runSpan?.traceId}-${runSpan?.spanId}-01`)
+    expect(
+      target.telemetry.finishedSpans().filter((span) => span.name === "bob.agent.run")
+    ).toHaveLength(1)
+    expect(
+      target.telemetry.finishedSpans().find((span) => span.name === "bob.agent.loop")?.parentSpanId
+    ).toBe(runSpan?.spanId)
+    expect(target.services.agent.runTurnEffect).toHaveBeenCalledWith(runRequest)
+    expect(target.services.agent.runTurn).not.toHaveBeenCalled()
     expect(target.services.access.verify).toHaveBeenCalledWith(expect.any(Request), "run")
-    expect(target.services.events.emit).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "workflow_span", name: "model.run", status: "completed" })
-    )
-    expect(target.services.events.emit).toHaveBeenCalledWith(
+    expect(target.telemetry.healthEvents()).toContainEqual(
       expect.objectContaining({
         type: "token_usage",
         feature: "reminders",

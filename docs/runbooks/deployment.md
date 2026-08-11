@@ -93,6 +93,8 @@ Review every replacement. Stop when any replacement lacks written approval.
 
 Run `pnpm infra:load` before the plan.
 
+Set `BOB_RELEASE_SHA` to the full reviewed commit. The value must match the planned Worker source.
+
 The infrastructure workspace uses the reviewed Effect beta.102 exception.
 Application workspaces use beta.107.
 
@@ -216,7 +218,10 @@ Create and push a reviewed GitOps commit with those pins. Do not change runtime 
 GITOPS_SHA="$(git rev-parse HEAD)"
 git diff --exit-code "$RELEASE_SHA" "$GITOPS_SHA" -- apps packages tools
 node scripts/verify-deployment-readiness.mjs
+gh workflow run release-gate.yml --ref main -f release_sha="$GITOPS_SHA"
 ```
+
+Wait for the release gate to pass. It checks out `GITOPS_SHA` and plans that exact commit.
 
 ### 2. Deploy the compatible agent while the old Core stays live
 
@@ -311,6 +316,7 @@ Apply only the reviewed production plan. Use the same GitOps commit that produce
 ```sh
 test "$(git rev-parse HEAD)" = "$GITOPS_SHA"
 git diff --quiet
+export BOB_RELEASE_SHA="$GITOPS_SHA"
 pnpm infra:plan
 pnpm --filter @bob/cloudflare-infra deploy
 ```
@@ -324,6 +330,43 @@ Verify Better Auth protects each owner API route.
 Verify Access protects only the Core `/internal` and `/setup` paths.
 
 Verify Access still protects the agent host. Verify the ingress host remains public.
+
+Verify the Worker OTLP host requires Cloudflare Access.
+
+```sh
+OTLP_URL="https://bob-otel.${BOB_DOMAIN}"
+OTLP_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' "$OTLP_URL/v1/traces")"
+case "$OTLP_STATUS" in 401|403) ;; *) exit 1 ;; esac
+```
+
+Do not use `/health` as a trace test. Health checks do not create application spans.
+
+Send this invented text from the allowlisted owner number:
+
+```text
+List my reminders.
+```
+
+This check uses a read-only Tool. An empty reminder list is valid.
+
+Record the new inbound correlation ID from D1. Do not print message text or phone numbers.
+
+Confirm that one Tempo trace contains these services:
+
+- `bob-sendblue-ingress`
+- `bob-core-worker`
+- `bob-agent`
+- `bob-sendblue-egress`
+
+Confirm that the trace contains `bob.tool.invoke`, `bob.tool.execute`, and `bob.tool.domain`.
+
+Confirm that D1 shows one processed inbound event, one terminal run, one accepted outbox, and one terminal delivery.
+
+Confirm that Loki shows only approved JSON fields for that correlation ID.
+
+Do not mark production tracing complete until Tempo, Loki, and D1 agree.
+
+The Worker OTLP token goes directly into Worker bindings. Do not copy the Worker OTLP token to OpenBao.
 
 Enable the reviewed credential handoff only in trusted GitHub Actions.
 
@@ -401,9 +444,11 @@ Increment `ACCESS_SERVICE_TOKEN_ROTATION_VERSION` for each rotation.
 
 Set `ACCESS_SERVICE_TOKEN_ROTATE_BY` between 24 hours and eight days ahead.
 
-Rotate and sync all three service tokens before that deadline.
+Rotate and sync the three agent service tokens before that deadline.
 
-Never print a service secret or Tunnel token. Store only runtime copies in OpenBao.
+Redeploy the Workers to rotate the Worker OTLP token before that deadline.
+
+Never print a service secret or Tunnel token. Store only agent runtime copies in OpenBao.
 
 The generic base uses invalid image sentinels and unresolved host inputs.
 

@@ -1,5 +1,7 @@
+import { Layer } from "effect"
 import { AsyncLocalStorage } from "node:async_hooks"
 
+import { telemetryLayer, type Telemetry } from "./effect.ts"
 import {
   parseHealthEvent,
   type EventSink,
@@ -9,6 +11,7 @@ import {
   TelemetryWorkflow,
   WorkflowSpanName
 } from "./events.ts"
+import { makeOtlpHttpSpanProcessor } from "./otlp.ts"
 import { observeSpan, type TraceContext } from "./trace.ts"
 
 export interface NodeTelemetryContext {
@@ -97,6 +100,41 @@ function otlpTracePayload(
       }
     ]
   }
+}
+
+export interface NodeTelemetryLayerOptions {
+  readonly endpoint: string
+  readonly serviceName: string
+  readonly serviceVersion: string
+  readonly deploymentEnvironment: string
+  readonly headers?: HeadersInit
+  readonly fetch?: typeof fetch
+  readonly exportIntervalMs?: number
+  readonly exportTimeoutMs?: number
+  readonly maxQueueSize?: number
+  readonly maxBatchSize?: number
+  readonly writeHealth?: (event: HealthEvent) => void
+}
+
+export function nodeTelemetryLayer(options: NodeTelemetryLayerOptions): Layer.Layer<Telemetry> {
+  return Layer.suspend(() =>
+    telemetryLayer({
+      processor: makeOtlpHttpSpanProcessor({
+        endpoint: options.endpoint,
+        serviceName: options.serviceName,
+        serviceVersion: options.serviceVersion,
+        deploymentEnvironment: options.deploymentEnvironment,
+        scheduledDelayMs: options.exportIntervalMs ?? 5_000,
+        flushOnShutdown: true,
+        ...(options.headers === undefined ? {} : { headers: options.headers }),
+        ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+        ...(options.exportTimeoutMs === undefined ? {} : { timeoutMs: options.exportTimeoutMs }),
+        ...(options.maxQueueSize === undefined ? {} : { maxQueueSize: options.maxQueueSize }),
+        ...(options.maxBatchSize === undefined ? {} : { maxBatchSize: options.maxBatchSize })
+      }),
+      ...(options.writeHealth === undefined ? {} : { writeHealth: options.writeHealth })
+    })
+  )
 }
 
 export function nodeEventSink(write: (line: string) => void = console.log): EventSink {

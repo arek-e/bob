@@ -78,6 +78,17 @@ export function selectAgentResponse(
   if (result.status === "completed") {
     const grounded = groundedBoundaryText(result, request)
     if (grounded !== undefined) return { text: grounded, reasonCode: "agent_reply" }
+    const usesLegacyResultContract = result.sourceIds === undefined && result.conflict === undefined
+    if (
+      usesLegacyResultContract &&
+      result.toolCalls === 0 &&
+      !requiresPersonalGrounding(request.userText)
+    ) {
+      const legacyText = safeBoundaryText(result.responseText, request.limits.maxResponseCharacters)
+      if (legacyText !== undefined) {
+        return { text: legacyText, reasonCode: "agent_boundary_fallback" }
+      }
+    }
     if (requiresPersonalGrounding(request.userText)) {
       return {
         text: noSupportedRecordFallback(request.locale),
