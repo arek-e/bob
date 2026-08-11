@@ -92,6 +92,42 @@ describe("agent response selection", () => {
     })
   })
 
+  it("delivers a trusted empty reminder record set", () => {
+    expect(
+      selectAgentResponse(
+        {
+          protocolVersion: 1,
+          runId: request.runId,
+          correlationId: request.correlationId,
+          status: "completed",
+          responseText: "You have no active reminders.",
+          sourceIds: ["bob:active-reminders"],
+          trustedToolSources: [
+            {
+              sourceId: "bob:active-reminders",
+              sourceLabel: "Bob active reminders"
+            }
+          ],
+          conflict: "none",
+          model: "test-model",
+          durationMs: 10,
+          inputTokens: 10,
+          outputTokens: 5,
+          toolCalls: 1
+        },
+        {
+          ...request,
+          userText: "List my reminders.",
+          contextItems: [],
+          allowedTools: ["reminder_list"]
+        }
+      )
+    ).toEqual({
+      text: "You have no active reminders.\nSource: Bob active reminders",
+      reasonCode: "agent_reply"
+    })
+  })
+
   it("rejects completed personal recall without an approved source", () => {
     const groundedRequest = {
       ...request,

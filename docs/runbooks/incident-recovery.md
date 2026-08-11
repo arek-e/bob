@@ -70,18 +70,20 @@ Restore the failed release source SHA from the operator record.
 export BOB_RELEASE_SHA
 ```
 
-Restore each prior Worker version at 100 percent traffic.
+Restore egress before ingress. The new ingress accepts the prior callback format.
+
+Then restore ingress. Restore Core last because both channel Workers depend on its stable interface.
 
 ```sh
 pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
   wrangler versions deploy \
-  "$PRIOR_CORE_VERSION_ID@100" --name "$CORE_WORKER_NAME" --yes
+  "$PRIOR_EGRESS_VERSION_ID@100" --name "$EGRESS_WORKER_NAME" --yes
 pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
   wrangler versions deploy \
   "$PRIOR_INGRESS_VERSION_ID@100" --name "$INGRESS_WORKER_NAME" --yes
 pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
   wrangler versions deploy \
-  "$PRIOR_EGRESS_VERSION_ID@100" --name "$EGRESS_WORKER_NAME" --yes
+  "$PRIOR_CORE_VERSION_ID@100" --name "$CORE_WORKER_NAME" --yes
 ```
 
 These commands create new deployments. They do not delete retained resources.

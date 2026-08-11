@@ -8,6 +8,7 @@ import {
   externalParentFromTraceparent,
   injectCurrentTraceparent
 } from "@bob/observability/propagation"
+import { buildSendblueStatusCallback } from "@bob/sendblue/status-callback"
 import { Effect, Schema } from "effect"
 
 import type { EgressBindings } from "../bindings.ts"
@@ -26,19 +27,6 @@ class CoreResponseFailure {
   readonly _tag = "CoreResponseFailure"
 
   constructor(readonly response: Response) {}
-}
-
-function providerCallback(
-  composition: EgressComposition,
-  claim: typeof OutboxClaim.Type,
-  traceparent: string | null
-): string {
-  const callback = new URL(composition.config.SENDBLUE_STATUS_CALLBACK_URL)
-  callback.searchParams.set("outbox_id", claim.outboxId)
-  callback.searchParams.set("attempt_id", claim.attemptId)
-  callback.searchParams.set("correlation_id", claim.correlationId)
-  if (traceparent !== null) callback.searchParams.set("traceparent", traceparent)
-  return callback.toString()
 }
 
 function processOutboundJobEffect(job: OutboundJobValue, composition: EgressComposition) {
@@ -99,7 +87,12 @@ function processOutboundJobEffect(job: OutboundJobValue, composition: EgressComp
           const result = yield* Effect.tryPromise(() =>
             composition.ports.sendblue.sendMessage(
               claim,
-              providerCallback(composition, claim, headers.get("traceparent"))
+              buildSendblueStatusCallback(composition.config.SENDBLUE_STATUS_CALLBACK_URL, {
+                outboxId: claim.outboxId,
+                attemptId: claim.attemptId,
+                correlationId: claim.correlationId,
+                traceparent: headers.get("traceparent")
+              })
             )
           )
           yield* recordDecision({

@@ -31,6 +31,8 @@ import { classifyProviderError } from "./errors.ts"
 import { renderRepairPrompt, renderSystemPrompt } from "./prompt.ts"
 import {
   deterministicToolResultFallback,
+  emptyReminderListResponse,
+  emptyReminderListSource,
   noSupportedRecordFallback,
   requiresPersonalGrounding,
   toolResultConfirmsAction,
@@ -179,6 +181,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
       let inputTokens = 0
       let outputTokens = 0
       let timedOut = false
+      let latestReminderListIsEmpty: boolean | undefined
       const toolResults: ToolResult[] = []
       const executedToolNames = new Set<string>()
       const confirmedActionToolNames = new Set<string>()
@@ -374,7 +377,19 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
             : Effect.suspend(() => executeToolEffect(command, controller.signal))
         const completed = (toolResult: ToolResult) => {
           toolResults.push(toolResult)
-          for (const source of trustedToolSourcesFromResult(toolResult)) {
+          if (
+            tool.label === "reminder_list" &&
+            toolResult.ok &&
+            toolResult.code === "reminder_list" &&
+            Array.isArray(toolResult.data?.reminders)
+          ) {
+            latestReminderListIsEmpty = toolResult.data.reminders.length === 0
+            if (!latestReminderListIsEmpty) {
+              trustedToolSources.delete(emptyReminderListSource.sourceId)
+              approvedSourceIds.delete(emptyReminderListSource.sourceId)
+            }
+          }
+          for (const source of trustedToolSourcesFromResult(toolResult, tool.label)) {
             if (!trustedToolSources.has(source.sourceId) && trustedToolSources.size >= 24) continue
             trustedToolSources.set(source.sourceId, source)
             approvedSourceIds.add(source.sourceId)
@@ -575,6 +590,12 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
             )
           )
         )
+
+      const hasVerifiedEmptyReminderList = () =>
+        latestReminderListIsEmpty === true &&
+        executedToolNames.size === 1 &&
+        executedToolNames.has("reminder_list") &&
+        trustedToolSources.has(emptyReminderListSource.sourceId)
 
       const responsePolicy = {
         maxResponseCharacters: request.limits.maxResponseCharacters,
@@ -795,6 +816,24 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
             outcome: "allowed",
             selectedCount: approvedSourceIds.size
           })
+        }
+        if (hasVerifiedEmptyReminderList()) {
+          const emptyList = yield* validateOutput(
+            JSON.stringify({
+              protocolVersion: 1,
+              responseText: emptyReminderListResponse(request.locale),
+              sourceIds: [emptyReminderListSource.sourceId],
+              toolNames: ["reminder_list"],
+              conflict: "none"
+            })
+          )
+          if (emptyList.ok) return completeResult(emptyList.value)
+          yield* recordDecision({
+            name: "bob.decision.output",
+            code: "invalid_output",
+            outcome: "denied"
+          })
+          return result("failed", noSupportedRecordFallback(request.locale), "invalid_output")
         }
         return yield* validateAndRepair(loop.message)
       })

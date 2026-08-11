@@ -121,8 +121,14 @@ describe("Sendblue egress", () => {
     const providerBody = JSON.parse(String(providerRequests[0]?.body)) as {
       status_callback?: string
     }
-    expect(providerBody.status_callback).toMatch(
-      /traceparent=00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/
+    const providerCallback = new URL(providerBody.status_callback!)
+    expect(providerCallback.toString().length).toBeLessThanOrEqual(255)
+    expect([...providerCallback.searchParams.keys()]).toEqual(["o", "a", "c", "t"])
+    expect(providerCallback.searchParams.get("o")).toBe(outboxId)
+    expect(providerCallback.searchParams.get("a")).toBe(attemptId)
+    expect(providerCallback.searchParams.get("c")).toBe(correlationId)
+    expect(providerCallback.searchParams.get("t")).toMatch(
+      /^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/
     )
     expect(exports).toHaveLength(1)
     const exportHeaders = new Headers(exports[0]?.headers)
@@ -144,10 +150,7 @@ describe("Sendblue egress", () => {
     ])
     expect(spans[3]?.parentSpanId).toBe(parseTraceparent(parent)?.spanId)
     expectTraceparentFrom(claimHeaders[0]?.get("traceparent"), spans[0])
-    expectTraceparentFrom(
-      new URL(providerBody.status_callback!).searchParams.get("traceparent"),
-      spans[1]
-    )
+    expectTraceparentFrom(providerCallback.searchParams.get("t"), spans[1])
     const published = deliveryResults[0] as { readonly traceparent?: string }
     expectTraceparentFrom(published.traceparent, spans[2])
     expect(spans[1]?.events).toEqual([
@@ -498,7 +501,7 @@ describe("Sendblue egress", () => {
     expect(providerRequests).toEqual([
       expect.objectContaining({
         status_callback: expect.stringMatching(
-          /^https:\/\/bob\.example\/webhooks\/outbound\?outbox_id=.*&attempt_id=.*&correlation_id=018e6f65-4d55-7a1b-8df4-4ee15ea1dba1&traceparent=00-018e6f654d557a1b8df44ee15ea1dba1-[0-9a-f]{16}-01$/
+          /^https:\/\/bob\.example\/webhooks\/outbound\?o=.*&a=.*&c=018e6f65-4d55-7a1b-8df4-4ee15ea1dba1&t=00-018e6f654d557a1b8df44ee15ea1dba1-[0-9a-f]{16}-01$/
         )
       })
     ])

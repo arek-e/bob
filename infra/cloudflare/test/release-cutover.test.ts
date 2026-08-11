@@ -99,6 +99,11 @@ describe("production release cutover contract", () => {
     expect(runbook).toContain('"$PRIOR_CORE_VERSION_ID@100" --name "$CORE_WORKER_NAME" --yes')
     expect(runbook).toContain('"$PRIOR_INGRESS_VERSION_ID@100" --name "$INGRESS_WORKER_NAME" --yes')
     expect(runbook).toContain('"$PRIOR_EGRESS_VERSION_ID@100" --name "$EGRESS_WORKER_NAME" --yes')
+    expectInOrder(runbook, [
+      '"$PRIOR_EGRESS_VERSION_ID@100"',
+      '"$PRIOR_INGRESS_VERSION_ID@100"',
+      '"$PRIOR_CORE_VERSION_ID@100"'
+    ])
     expect(runbook).not.toContain("wrangler deployments rollback")
     expect(deployment.match(/--yes --dry-run/gu)).toHaveLength(3)
     expect(deployment).toContain("wrangler deployments list")

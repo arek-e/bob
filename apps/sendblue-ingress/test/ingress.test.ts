@@ -304,7 +304,7 @@ describe("Sendblue ingress", () => {
     const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba2"
     const response = await handleIngressHttp(
       new Request(
-        `https://bob.example/webhooks/outbound?outbox_id=018e6f65-4d55-7a1b-8df4-4ee15ea1db9f&attempt_id=018e6f65-4d55-7a1b-8df4-4ee15ea1dba0&correlation_id=${correlationId}&traceparent=${encodeURIComponent(traceparent)}`,
+        `https://bob.example/webhooks/outbound?o=018e6f65-4d55-7a1b-8df4-4ee15ea1db9f&a=018e6f65-4d55-7a1b-8df4-4ee15ea1dba0&c=${correlationId}&t=${encodeURIComponent(traceparent)}`,
         {
           method: "POST",
           headers: { "sb-signing-secret": "s".repeat(64) },
@@ -327,6 +327,11 @@ describe("Sendblue ingress", () => {
     expect(parseTraceparent(forwarded.get("traceparent"))?.traceId).toBe(
       "018e6f654d557a1b8df44ee15ea1dba1"
     )
+    expect(JSON.parse(String(target.coreFetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+      outboxId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
+      attemptId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0",
+      correlationId
+    })
     expect(exports).toHaveLength(1)
     const body = String(exports[0]?.body)
     const spans = JSON.parse(body).resourceSpans[0].scopeSpans[0].spans as ExportedSpan[]
@@ -339,6 +344,36 @@ describe("Sendblue ingress", () => {
     expectTraceparentFrom(forwarded.get("traceparent"), spans[0])
     expect(body).not.toContain(payload.to_number)
     expect(body).not.toContain(payload.content)
+  })
+
+  it("accepts the existing long status callback keys", async () => {
+    const target = bindings()
+    const callbackCorrelationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba2"
+
+    const result = await handleIngressHttp(
+      new Request(
+        `https://bob.example/webhooks/outbound?outbox_id=018e6f65-4d55-7a1b-8df4-4ee15ea1db9f&attempt_id=018e6f65-4d55-7a1b-8df4-4ee15ea1dba0&correlation_id=${callbackCorrelationId}`,
+        {
+          method: "POST",
+          headers: { "sb-signing-secret": "s".repeat(64) },
+          body: JSON.stringify({
+            ...payload,
+            is_outbound: true,
+            status: "ACCEPTED",
+            from_number: "+46711111111",
+            to_number: "+46700000000"
+          })
+        }
+      ),
+      target.value as never
+    )
+
+    expect(result.status).toBe(202)
+    expect(JSON.parse(String(target.coreFetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+      outboxId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
+      attemptId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0",
+      correlationId: callbackCorrelationId
+    })
   })
 
   it("marks the Core delivery-result client span failed after a non-success response", async () => {

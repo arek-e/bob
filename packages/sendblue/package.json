@@ -6,6 +6,7 @@
   "exports": {
     "./account": "./src/account.ts",
     "./client": "./src/client.ts",
+    "./status-callback": "./src/status-callback.ts",
     "./webhooks": "./src/webhooks.ts"
   },
   "scripts": {

@@ -435,7 +435,10 @@ export function createBobStack(options: BobStackOptions) {
             SENDBLUE_API_SECRET_KEY: Redacted.make(
               requiredSendblue(ENV.SENDBLUE_API_SECRET_KEY, "SENDBLUE_API_SECRET_KEY")
             ),
-            SENDBLUE_STATUS_CALLBACK_URL: `https://${ingressHost}/webhooks/outbound`,
+            SENDBLUE_STATUS_CALLBACK_URL: Output.map(
+              ingress.url,
+              () => `https://${ingressHost}/webhooks/outbound`
+            ),
             CORE_CALLER_SECRET: egressCallerSecret,
             BOB_RELEASE_SHA: ENV.BOB_RELEASE_SHA,
             OTEL_EXPORTER_OTLP_ENDPOINT: `https://${otlpHost}`,

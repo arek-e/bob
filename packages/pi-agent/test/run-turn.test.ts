@@ -908,6 +908,257 @@ describe("Bob's direct pi-ai loop", () => {
     })
   })
 
+  it("completes an empty reminder list with trusted record-set grounding", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "call-reminders" })),
+      structuredResponse({
+        responseText: "You have no active reminders.",
+        toolNames: ["reminder_list"]
+      })
+    )
+    const agent = makeAgent(async () => ({
+      ok: true,
+      code: "reminder_list",
+      message: "0 reminders found.",
+      data: { reminders: [] }
+    }))
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const request = baseRequest({
+      userText: "List my reminders.",
+      allowedTools: ["reminder_list"]
+    })
+
+    const output = await Effect.runPromise(
+      agent.runTurnEffect(request).pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(output).toMatchObject({
+      status: "completed",
+      responseText: "You have no active reminders.",
+      sourceIds: ["bob:active-reminders"],
+      trustedToolSources: [
+        {
+          sourceId: "bob:active-reminders",
+          sourceLabel: "Bob active reminders"
+        }
+      ]
+    })
+    const loop = telemetry.finishedSpans().find((span) => span.name === "bob.agent.loop")
+    expect(loop?.events).toContainEqual(
+      expect.objectContaining({
+        name: "bob.decision.grounding",
+        attributes: {
+          "bob.decision.code": "grounding_present",
+          "bob.decision.outcome": "allowed",
+          "bob.selected.count": 1
+        }
+      })
+    )
+    expect(loop?.events).not.toContainEqual(
+      expect.objectContaining({
+        attributes: expect.objectContaining({ "bob.decision.code": "grounding_missing" })
+      })
+    )
+  })
+
+  it("replaces unrelated model text after an empty reminder list", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "call-reminders" })),
+      structuredResponse({
+        responseText: "Du tränar på tisdagar.",
+        toolNames: ["reminder_list"]
+      })
+    )
+    const agent = makeAgent(async () => ({
+      ok: true,
+      code: "reminder_list",
+      message: "0 reminders found.",
+      data: { reminders: [] }
+    }))
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          userText: "Lista mina påminnelser.",
+          locale: "sv-SE",
+          allowedTools: ["reminder_list"]
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "Du har inga aktiva påminnelser.",
+      sourceIds: ["bob:active-reminders"]
+    })
+  })
+
+  it("uses a later nonempty reminder list instead of a stale empty result", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "call-reminders-empty" })),
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "call-reminders-current" })),
+      structuredResponse({
+        responseText: "Your active reminder is due tomorrow at 09:00.",
+        sourceIds: ["reminder-occurrence-1"],
+        toolNames: ["reminder_list"]
+      })
+    )
+    const results = [
+      {
+        ok: true,
+        code: "reminder_list",
+        message: "0 reminders found.",
+        data: { reminders: [] }
+      },
+      {
+        ok: true,
+        code: "reminder_list",
+        message: "1 reminder found.",
+        data: {
+          reminders: [
+            {
+              id: "reminder-1",
+              displayText: "Morning task",
+              localDisplayTime: "2026-08-12 09:00",
+              timeZone: "Europe/Stockholm",
+              state: "active",
+              actionTargets: []
+            }
+          ]
+        }
+      }
+    ] satisfies ToolResult[]
+    const agent = makeAgent(async () => {
+      const result = results.shift()
+      if (result === undefined) throw new Error("No scripted Tool result remains")
+      return result
+    })
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          userText: "List my reminders.",
+          allowedTools: ["reminder_list"],
+          contextItems: [
+            {
+              kind: "reminder",
+              text: "Morning task. Due 2026-08-12 09:00 Europe/Stockholm. State active.",
+              instruction: false,
+              conflict: false,
+              sources: [
+                {
+                  sourceId: "reminder-occurrence-1",
+                  sourceLabel: "reminder 2026-08-12"
+                }
+              ]
+            }
+          ]
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "Your active reminder is due tomorrow at 09:00.",
+      sourceIds: ["reminder-occurrence-1"]
+    })
+  })
+
+  it("completes a nonempty reminder list when the response cites its approved source", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "call-reminders" })),
+      structuredResponse({
+        responseText: "Your active reminder is due tomorrow at 09:00.",
+        sourceIds: ["reminder-occurrence-1"],
+        toolNames: ["reminder_list"]
+      })
+    )
+    const agent = makeAgent(async () => ({
+      ok: true,
+      code: "reminder_list",
+      message: "1 reminder found.",
+      data: {
+        reminders: [
+          {
+            id: "reminder-1",
+            displayText: "Morning task",
+            localDisplayTime: "2026-08-12 09:00",
+            timeZone: "Europe/Stockholm",
+            state: "active",
+            actionTargets: []
+          }
+        ]
+      }
+    }))
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          userText: "List my reminders.",
+          allowedTools: ["reminder_list"],
+          contextItems: [
+            {
+              kind: "reminder",
+              text: "Morning task. Due 2026-08-12 09:00 Europe/Stockholm. State active.",
+              instruction: false,
+              conflict: false,
+              sources: [
+                {
+                  sourceId: "reminder-occurrence-1",
+                  sourceLabel: "reminder 2026-08-12"
+                }
+              ]
+            }
+          ]
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "Your active reminder is due tomorrow at 09:00.",
+      sourceIds: ["reminder-occurrence-1"]
+    })
+  })
+
+  it("rejects an unsourced nonempty reminder list", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "call-reminders" })),
+      structuredResponse({
+        responseText: "Your active reminder is due tomorrow at 09:00.",
+        toolNames: ["reminder_list"]
+      })
+    )
+    const agent = makeAgent(async () => ({
+      ok: true,
+      code: "reminder_list",
+      message: "1 reminder found.",
+      data: {
+        reminders: [
+          {
+            id: "reminder-1",
+            displayText: "Morning task",
+            localDisplayTime: "2026-08-12 09:00",
+            timeZone: "Europe/Stockholm",
+            state: "active",
+            actionTargets: []
+          }
+        ]
+      }
+    }))
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          userText: "List my reminders.",
+          allowedTools: ["reminder_list"]
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "failed",
+      errorCode: "policy",
+      responseText: "I do not have a supported record for that."
+    })
+  })
+
   it("allows a greeting without citations when profile context is present", async () => {
     modelHarness.state.responses.push(
       structuredResponse({ responseText: "Hello. How can I help?" })

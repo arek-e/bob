@@ -1,7 +1,26 @@
+import * as Alchemy from "alchemy"
+import { Stage } from "alchemy/Stage"
+import * as AlchemyTest from "alchemy/Test/Core"
+import * as Effect from "effect/Effect"
 import { spawnSync } from "node:child_process"
 import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
+
+import offlineStack from "../alchemy.smoke.run.ts"
+import { smokeProviders } from "../src/smoke-providers.ts"
+
+async function offlinePlan() {
+  const compiled = await AlchemyTest.run(offlineStack.pipe(Effect.provideService(Stage, "prod")), {
+    providers: smokeProviders(),
+    state: Alchemy.inMemoryState(),
+    stage: "prod",
+    dev: false,
+    sidecar: false
+  })
+
+  return Effect.runPromise(Alchemy.Plan.make(compiled).pipe(Effect.provide(compiled.services)))
+}
 
 describe("Alchemy compatibility stack", () => {
   it("evaluates the real Bob stack with injected state and providers", async () => {
@@ -112,4 +131,10 @@ describe("Alchemy compatibility stack", () => {
     expect(stack).toContain("domain: coreHost")
     expect(stack).toContain("coreUrl: `https://${coreHost}`")
   })
+
+  it("deploys Sendblue ingress before egress can emit a new callback format", async () => {
+    const plan = await offlinePlan()
+
+    expect(plan.resources.SendblueIngress.downstream).toContain("SendblueEgress")
+  }, 30_000)
 })

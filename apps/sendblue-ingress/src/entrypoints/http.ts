@@ -5,6 +5,7 @@ import {
   externalParentFromTraceparent,
   injectCurrentTraceparent
 } from "@bob/observability/propagation"
+import { readSendblueStatusCallback } from "@bob/sendblue/status-callback"
 import {
   decodeWebhookPayload,
   normalizeInbound,
@@ -238,18 +239,11 @@ export async function handleIngressHttp(
       ) {
         return response("unknown_line", 403)
       }
+      const callback = readSendblueStatusCallback(url)
       const event = normalizeStatus(payload, {
         accountId: composition.config.SENDBLUE_ACCOUNT_ID,
         lineId: composition.config.SENDBLUE_LINE_ID,
-        ...(url.searchParams.get("outbox_id") === null
-          ? {}
-          : { outboxId: url.searchParams.get("outbox_id")! }),
-        ...(url.searchParams.get("attempt_id") === null
-          ? {}
-          : { attemptId: url.searchParams.get("attempt_id")! }),
-        ...(url.searchParams.get("correlation_id") === null
-          ? {}
-          : { correlationId: url.searchParams.get("correlation_id")! })
+        ...callback
       })
       const stored = await runTraced(
         withBobSpan(
@@ -292,7 +286,7 @@ export async function handleIngressHttp(
           Effect.catchTag("WorkflowResponseFailure", (failure) => Effect.succeed(failure.response))
         ),
         externalParentFromTraceparent(request.headers.get("traceparent")) ??
-          externalParentFromTraceparent(url.searchParams.get("traceparent")),
+          externalParentFromTraceparent(callback.traceparent),
         composition,
         context
       )

@@ -158,6 +158,23 @@ describe("assistant response safety", () => {
     ).toHaveLength(24)
   })
 
+  it("trusts an empty reminder record set only for the matching read Tool", () => {
+    const emptyList = {
+      ok: true,
+      code: "reminder_list",
+      message: "0 reminders found.",
+      data: { reminders: [] }
+    } as const
+
+    expect(trustedToolSourcesFromResult(emptyList)).toEqual([])
+    expect(trustedToolSourcesFromResult(emptyList, "reminder_list")).toEqual([
+      {
+        sourceId: "bob:active-reminders",
+        sourceLabel: "Bob active reminders"
+      }
+    ])
+  })
+
   it("accepts one strict structured response", () => {
     expect(
       validateAssistantResponse(

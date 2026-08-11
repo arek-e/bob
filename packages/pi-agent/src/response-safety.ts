@@ -61,6 +61,17 @@ export interface TrustedToolSource {
   readonly occurredAt?: string
 }
 
+export const emptyReminderListSource: TrustedToolSource = {
+  sourceId: "bob:active-reminders",
+  sourceLabel: "Bob active reminders"
+}
+
+export function emptyReminderListResponse(locale: string | undefined): string {
+  return locale?.toLocaleLowerCase().startsWith("sv") === true
+    ? "Du har inga aktiva påminnelser."
+    : "You have no active reminders."
+}
+
 function trustedToolSource(value: unknown): TrustedToolSource | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
   const sourceId = Reflect.get(value, "sourceId")
@@ -82,9 +93,21 @@ function trustedToolSource(value: unknown): TrustedToolSource | undefined {
   }
 }
 
-/** Only Core-returned memory search records may extend response citations. */
-export function trustedToolSourcesFromResult(result: ToolResult): readonly TrustedToolSource[] {
-  if (!result.ok || result.code !== "memory_results" || result.data === undefined) return []
+/** Only reviewed Core-returned records may extend response citations. */
+export function trustedToolSourcesFromResult(
+  result: ToolResult,
+  toolName?: typeof ToolName.Type
+): readonly TrustedToolSource[] {
+  if (!result.ok || result.data === undefined) return []
+  if (
+    toolName === "reminder_list" &&
+    result.code === "reminder_list" &&
+    Array.isArray(result.data.reminders) &&
+    result.data.reminders.length === 0
+  ) {
+    return [emptyReminderListSource]
+  }
+  if (result.code !== "memory_results") return []
   const matches = result.data.matches
   if (!Array.isArray(matches)) return []
   const sources = new Map<string, TrustedToolSource>()
