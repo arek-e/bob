@@ -1,0 +1,17 @@
+{
+  "name": "@bob/pi-smoke",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "env:check": "varlock load --agent --path . --skip-cache",
+    "smoke": "varlock run --inject vars --skip-cache -- tsx src/index.ts --completion",
+    "smoke:auth": "varlock run --inject vars --skip-cache -- tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/contracts": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  }
+}

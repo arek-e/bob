@@ -1,0 +1,11 @@
+.git
+.github
+.alchemy
+.varlock
+**/.env
+**/.env.*
+**/dist
+**/node_modules
+coverage
+docs
+tmp

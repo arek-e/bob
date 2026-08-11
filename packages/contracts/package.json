@@ -1,0 +1,21 @@
+{
+  "name": "@bob/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./agent": "./src/agent.ts",
+    "./channel": "./src/channel.ts",
+    "./delivery": "./src/delivery.ts",
+    "./jobs": "./src/jobs.ts",
+    "./tools": "./src/tools.ts",
+    "./ui": "./src/ui.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "effect": "4.0.0-beta.107"
+  }
+}

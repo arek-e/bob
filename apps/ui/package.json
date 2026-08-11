@@ -1,0 +1,18 @@
+{
+  "name": "@bob/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "varlock run --inject vars --skip-cache -- node scripts/build.mjs",
+    "env:check": "varlock load --agent --path . --skip-cache",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/contracts": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9"
+  }
+}

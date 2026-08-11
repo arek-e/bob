@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.19.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+  alchemy-compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.19.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - name: Probe pinned Alchemy and Effect runtime
+        run: pnpm infra:load
+
+  trusted-infra-plan:
+    if: github.event_name != 'pull_request' && vars.BAO_JWT_ROLE != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production-readonly
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      BAO_ADDR: ${{ vars.BAO_ADDR }}
+      BAO_JWT_ROLE: ${{ vars.BAO_JWT_ROLE }}
+      SENDBLUE_ACCOUNT_ID: ${{ secrets.SENDBLUE_ACCOUNT_ID }}
+      SENDBLUE_LINE_ID: ${{ secrets.SENDBLUE_LINE_ID }}
+      ALCHEMY_TELEMETRY_DISABLED: "true"
+      # This trusted production job declares the handoff action. A plan does not apply it.
+      RUNTIME_CREDENTIAL_HANDOFF_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.19.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm secrets:scan:trusted
+      - run: pnpm infra:plan

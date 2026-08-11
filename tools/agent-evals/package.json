@@ -1,0 +1,15 @@
+{
+  "name": "@bob/agent-evals",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "eval": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/contracts": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  }
+}

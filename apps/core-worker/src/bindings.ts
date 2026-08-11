@@ -1,0 +1,58 @@
+import type { DeliveryResult } from "@bob/contracts/delivery"
+import type { InboundJob, OutboundJob } from "@bob/contracts/jobs"
+
+export interface CoreBindings {
+  ASSETS?: Fetcher
+  DB: D1Database
+  PRIVATE_OBJECTS: R2Bucket
+  INBOUND_QUEUE: Queue<InboundJob>
+  INBOUND_DEAD_LETTER_QUEUE_NAME: string
+  DELIVERY_RESULT_QUEUE_NAME: string
+  DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: string
+  OUTBOUND_QUEUE: Queue<OutboundJob>
+  OWNER_RUN_COORDINATOR: DurableObjectNamespace
+  REMINDER_CLOCK: DurableObjectNamespace
+  OWNER_ID: string
+  OWNER_TIME_ZONE: string
+  REMINDER_QUIET_HOURS_START: string
+  REMINDER_QUIET_HOURS_END: string
+  REMINDER_DAILY_LIMIT: number
+  DATA_KEK_ACTIVE_VERSION: string
+  DATA_KEK_KEYRING_JSON: string
+  DATA_LOOKUP_KEY: string
+  INGRESS_CALLER_SECRET: string
+  EGRESS_CALLER_SECRET: string
+  ACCESS_TEAM_DOMAIN: string
+  CORE_ACCESS_AUDIENCE: string
+  OWNER_ACCESS_EMAIL: string
+  AGENT_CALLER_SUBJECT: string
+  AGENT_URL: string
+  AGENT_ACCESS_CLIENT_ID: string
+  AGENT_ACCESS_CLIENT_SECRET: string
+  AGENT_ADMIN_URL: string
+  AGENT_ADMIN_ACCESS_CLIENT_ID: string
+  AGENT_ADMIN_ACCESS_CLIENT_SECRET: string
+  UI_BASE_URL: string
+  BOB_MODEL: string
+  BOB_PROVIDER: string
+}
+
+export interface IngressBindings {
+  CORE: Fetcher
+  INBOUND_QUEUE: Queue<InboundJob>
+  SENDBLUE_ACCOUNT_ID: string
+  SENDBLUE_LINE_ID: string
+  SENDBLUE_WEBHOOK_SIGNING_SECRET: string
+  SENDBLUE_FROM_NUMBER: string
+  SENDBLUE_ALLOWED_USER_NUMBER: string
+  CORE_CALLER_SECRET: string
+}
+
+export interface EgressBindings {
+  CORE: Fetcher
+  DELIVERY_RESULT_QUEUE: Queue<DeliveryResult>
+  SENDBLUE_API_KEY_ID: string
+  SENDBLUE_API_SECRET_KEY: string
+  SENDBLUE_STATUS_CALLBACK_URL: string
+  CORE_CALLER_SECRET: string
+}

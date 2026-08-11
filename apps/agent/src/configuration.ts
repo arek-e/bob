@@ -1,0 +1,64 @@
+import { Schema } from "effect"
+
+const Environment = Schema.Struct({
+  PORT: Schema.NumberFromString.pipe(
+    Schema.check(Schema.isBetween({ minimum: 1, maximum: 65_535 }))
+  ),
+  BAO_ADDR: Schema.URLFromString,
+  BAO_KUBERNETES_ROLE: Schema.String.check(Schema.isMinLength(1)),
+  BAO_KUBERNETES_JWT_PATH: Schema.String.check(Schema.isMinLength(1)),
+  BOB_PROVIDER: Schema.Literal("openai-codex"),
+  BOB_MODEL: Schema.String.check(Schema.isMinLength(1)),
+  BOB_ALLOWED_MODELS: Schema.String.check(Schema.isMinLength(1)),
+  CORE_URL: Schema.URLFromString,
+  CORE_ACCESS_CLIENT_ID: Schema.String.check(Schema.isMinLength(1)),
+  CORE_ACCESS_CLIENT_SECRET: Schema.String.check(Schema.isMinLength(1)),
+  ACCESS_TEAM_DOMAIN: Schema.String.check(Schema.isPattern(/^[a-z0-9-]+\.cloudflareaccess\.com$/)),
+  RUN_ACCESS_AUDIENCE: Schema.String.check(Schema.isMinLength(1)),
+  RUN_ACCESS_SUBJECT: Schema.String.check(Schema.isMinLength(1)),
+  ADMIN_ACCESS_AUDIENCE: Schema.String.check(Schema.isMinLength(1)),
+  ADMIN_ACCESS_SUBJECT: Schema.String.check(Schema.isMinLength(1))
+})
+
+export interface AgentConfiguration {
+  readonly port: number
+  readonly baoAddress: string
+  readonly baoKubernetesRole: string
+  readonly baoKubernetesJwtPath: string
+  readonly provider: "openai-codex"
+  readonly model: string
+  readonly allowedModels: readonly string[]
+  readonly coreUrl: string
+  readonly coreAccessClientId: string
+  readonly coreAccessClientSecret: string
+  readonly accessTeamDomain: string
+  readonly runAccessAudience: string
+  readonly runAccessSubject: string
+  readonly adminAccessAudience: string
+  readonly adminAccessSubject: string
+}
+
+export function readAgentConfiguration(environment: NodeJS.ProcessEnv): AgentConfiguration {
+  const decoded = Schema.decodeUnknownSync(Environment)(environment)
+  const allowedModels = decoded.BOB_ALLOWED_MODELS.split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+  if (allowedModels.length === 0) throw new Error("BOB_ALLOWED_MODELS must contain one model")
+  return {
+    port: decoded.PORT,
+    baoAddress: decoded.BAO_ADDR.toString().replace(/\/$/, ""),
+    baoKubernetesRole: decoded.BAO_KUBERNETES_ROLE,
+    baoKubernetesJwtPath: decoded.BAO_KUBERNETES_JWT_PATH,
+    provider: decoded.BOB_PROVIDER,
+    model: decoded.BOB_MODEL,
+    allowedModels,
+    coreUrl: decoded.CORE_URL.toString().replace(/\/$/, ""),
+    coreAccessClientId: decoded.CORE_ACCESS_CLIENT_ID,
+    coreAccessClientSecret: decoded.CORE_ACCESS_CLIENT_SECRET,
+    accessTeamDomain: decoded.ACCESS_TEAM_DOMAIN,
+    runAccessAudience: decoded.RUN_ACCESS_AUDIENCE,
+    runAccessSubject: decoded.RUN_ACCESS_SUBJECT,
+    adminAccessAudience: decoded.ADMIN_ACCESS_AUDIENCE,
+    adminAccessSubject: decoded.ADMIN_ACCESS_SUBJECT
+  }
+}

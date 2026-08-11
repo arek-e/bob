@@ -1,0 +1,29 @@
+{
+  "name": "@bob/core-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/index.js",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "env:check": "varlock load --agent --path . --skip-cache",
+    "test:workers": "vitest run --config vitest.workers.config.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/contracts": "workspace:*",
+    "@bob/observability": "workspace:*",
+    "@js-temporal/polyfill": "0.5.1",
+    "drizzle-orm": "1.0.0-rc.4",
+    "effect": "4.0.0-beta.107",
+    "jose": "6.2.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260810.1",
+    "drizzle-kit": "1.0.0-rc.4",
+    "esbuild": "0.25.9"
+  }
+}

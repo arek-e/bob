@@ -1,0 +1,24 @@
+packages:
+  - apps/*
+  - packages/*
+  - tools/*
+  - infra/cloudflare
+
+# Keep the isolated Alchemy peer graph on its reviewed Effect beta.
+resolvePeersFromWorkspaceRoot: false
+
+# Alchemy beta.70 declares broad Effect ranges in these private dependencies.
+# Keep only its dependency subtree on the compatible beta.102 release.
+overrides:
+  "@distilled.cloud/axiom@1.0.0-rc.2>effect": 4.0.0-beta.102
+  "@distilled.cloud/axiom@1.0.0-rc.2>@effect/platform-bun": 4.0.0-beta.102
+  "@distilled.cloud/cloudflare@1.0.0-rc.2>effect": 4.0.0-beta.102
+  "@distilled.cloud/cloudflare@1.0.0-rc.2>@effect/platform-bun": 4.0.0-beta.102
+  "@distilled.cloud/neon@1.0.0-rc.2>effect": 4.0.0-beta.102
+  "@distilled.cloud/neon@1.0.0-rc.2>@effect/platform-bun": 4.0.0-beta.102
+  "@distilled.cloud/planetscale@1.0.0-rc.2>effect": 4.0.0-beta.102
+  "@distilled.cloud/planetscale@1.0.0-rc.2>@effect/platform-bun": 4.0.0-beta.102
+
+onlyBuiltDependencies:
+  - esbuild
+  - workerd

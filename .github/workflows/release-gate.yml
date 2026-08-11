@@ -1,0 +1,42 @@
+name: Release gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      BAO_ADDR: ${{ vars.BAO_ADDR }}
+      BAO_JWT_ROLE: ${{ vars.BAO_JWT_ROLE }}
+      SENDBLUE_ACCOUNT_ID: ${{ secrets.SENDBLUE_ACCOUNT_ID }}
+      SENDBLUE_LINE_ID: ${{ secrets.SENDBLUE_LINE_ID }}
+      ALCHEMY_TELEMETRY_DISABLED: "true"
+      # This reviewed workflow declares the handoff action. A plan does not apply it.
+      RUNTIME_CREDENTIAL_HANDOFF_ENABLED: "true"
+      CILIUM_FQDN_POLICY_APPROVED: ${{ vars.CILIUM_FQDN_POLICY_APPROVED }}
+      BOB_CORE_FQDN: ${{ vars.BOB_CORE_FQDN }}
+      OPENBAO_FQDN: ${{ vars.OPENBAO_FQDN }}
+      BOB_AGENT_IMAGE_REPOSITORY: ${{ vars.BOB_AGENT_IMAGE_REPOSITORY }}
+      BOB_AGENT_IMAGE_DIGEST: ${{ vars.BOB_AGENT_IMAGE_DIGEST }}
+      CLOUDFLARED_IMAGE_REPOSITORY: ${{ vars.CLOUDFLARED_IMAGE_REPOSITORY }}
+      CLOUDFLARED_IMAGE_DIGEST: ${{ vars.CLOUDFLARED_IMAGE_DIGEST }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.19.0 --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm secrets:scan:trusted
+      - run: pnpm check
+      - run: node scripts/verify-deployment-readiness.mjs
+      - run: pnpm infra:plan
