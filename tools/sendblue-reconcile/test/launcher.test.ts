@@ -12,7 +12,15 @@ describe("Sendblue reconciler launcher", () => {
 
     const result = await execFileAsync(
       pnpm,
-      ["--filter", "@bob/sendblue-reconcile", "reconcile", "--", "--check"],
+      [
+        "--filter",
+        "@bob/sendblue-reconcile",
+        "reconcile",
+        "--",
+        "--check",
+        "--message-handle",
+        "provider-1"
+      ],
       {
         cwd: repositoryRoot,
         env: {
@@ -31,8 +39,8 @@ describe("Sendblue reconciler launcher", () => {
     )
 
     expect(result.stderr).not.toContain("varlock ENV not initialized")
-    expect(result.stdout).toContain(
-      '{"mode":"check","valid":true,"secretMatches":true,"receiveCount":1,"outboundCount":1,"additions":[]}'
-    )
+    expect(result.stdout).toContain('"readyForPing":true')
+    expect(result.stdout).toContain('"messageHandle":"provider-1"')
+    expect(result.stdout).toContain('"nextAction":"Ask the allowlisted owner to send PING."')
   })
 })

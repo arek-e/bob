@@ -39,6 +39,7 @@ export interface ReconcilePlan {
   readonly outboundCount: number
   readonly additions: readonly { type: "receive" | "outbound"; url: string }[]
   readonly valid: boolean
+  readonly complete: boolean
 }
 
 function urlOf(value: typeof WebhookValue.Type): string {
@@ -65,12 +66,14 @@ export async function planWebhookReconciliation(
     additions.push({ type: "receive", url: required.receiveUrl })
   if (secretMatches && outboundCount === 0)
     additions.push({ type: "outbound", url: required.outboundUrl })
+  const valid = secretMatches && receiveCount <= 1 && outboundCount <= 1
   return {
     secretMatches,
     receiveCount,
     outboundCount,
     additions,
-    valid: secretMatches && receiveCount <= 1 && outboundCount <= 1
+    valid,
+    complete: valid && additions.length === 0
   }
 }
 

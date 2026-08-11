@@ -6,6 +6,7 @@
   "exports": {
     "./account": "./src/account.ts",
     "./client": "./src/client.ts",
+    "./readiness": "./src/readiness.ts",
     "./webhooks": "./src/webhooks.ts"
   },
   "scripts": {

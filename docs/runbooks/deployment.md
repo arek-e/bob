@@ -383,6 +383,17 @@ Resume Sendblue only after every prior gate passes.
 
 Run the Sendblue reconciler after the ingress URL is stable.
 
+Use a known harmless outbound message handle for the delivery-status proof.
+
+```sh
+pnpm sendblue:reconcile -- --check --message-handle <message-handle>
+pnpm sendblue:reconcile -- --message-handle <message-handle>
+```
+
+Continue only when the command reports `readyForPing: true`.
+
+Ask the allowlisted owner to send `PING`. Confirm one generic response.
+
 Run one harmless round trip. Then verify duplicate and timeout states in D1.
 
 Test read-only domain tools first. Test one reversible write only after those checks pass.
