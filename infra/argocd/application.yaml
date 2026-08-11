@@ -9,7 +9,7 @@ spec:
   project: bob
   source:
     repoURL: git@github.com:arek-e/bob.git
-    targetRevision: 2605f87c64cc9da41a9492c75f9ebf7c3e060fc5
+    targetRevision: e9a032ab528034e8073e6516edaa053b2a21bd66
     path: infra/kubernetes/overlays/prod
   destination:
     server: https://kubernetes.default.svc
