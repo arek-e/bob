@@ -1,22 +1,22 @@
-import { onMount } from "solid-js"
 import { createFileRoute } from "@tanstack/solid-router"
+import { onMount } from "solid-js"
 
 import { ProtectedLayout } from "~/components/auth"
-import { DashboardPage } from "~/components/dashboard"
+import { SettingsPage } from "~/components/settings"
 
 export const Route = createFileRoute("/")({
-  head: () => ({ meta: [{ title: "Dashboard · Bob" }] }),
+  head: () => ({ meta: [{ title: "Settings · Bob" }] }),
   component: IndexRoute
 })
 
 function IndexRoute() {
   onMount(() => {
-    document.title = "Dashboard · Bob"
+    document.title = "Settings · Bob"
   })
 
   return (
     <ProtectedLayout>
-      <DashboardPage />
+      <SettingsPage />
     </ProtectedLayout>
   )
 }

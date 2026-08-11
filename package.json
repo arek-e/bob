@@ -4,12 +4,13 @@
   "type": "module",
   "scripts": {
     "build": "pnpm -r --if-present build",
-    "check": "pnpm format:check && pnpm lint && pnpm boundaries && pnpm deps:check && pnpm env:schema && pnpm env:audit && pnpm infra:load && pnpm typecheck && pnpm test && pnpm build && pnpm ui:safety",
+    "check": "pnpm format:check && pnpm lint && pnpm boundaries && pnpm deps:check && pnpm env:schema && pnpm env:audit && pnpm infra:load && pnpm typecheck && pnpm eval:offline && pnpm test && pnpm build && pnpm ui:safety",
     "boundaries": "node scripts/verify-boundaries.mjs",
     "deps:check": "node scripts/verify-dependency-versions.mjs",
     "env:check": "pnpm -r --if-present env:check",
     "env:audit": "node scripts/audit-env-schemas.mjs",
     "env:schema": "node scripts/validate-env-schemas.mjs",
+    "eval:offline": "pnpm --filter @bob/agent-evals eval:offline",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "hooks:install": "lefthook install",
@@ -24,8 +25,8 @@
     "agent:start": "pnpm --filter @bob/agent start",
     "infra:plan": "pnpm --filter @bob/cloudflare-infra plan",
     "infra:load": "pnpm --filter @bob/cloudflare-infra load:check",
-    "secrets:scan:staged": "varlock scan --staged --path apps/core-worker --path apps/sendblue-ingress --path apps/sendblue-egress --path apps/agent --path tools/sendblue-reconcile --path tools/pi-smoke --path infra/cloudflare",
-    "secrets:scan:trusted": "varlock scan . --path apps/core-worker --path apps/sendblue-ingress --path apps/sendblue-egress --path apps/agent --path tools/sendblue-reconcile --path tools/pi-smoke --path infra/cloudflare",
+    "secrets:scan:staged": "varlock scan --staged --path apps/core-worker --path apps/sendblue-ingress --path apps/sendblue-egress --path apps/agent --path tools/sendblue-reconcile --path tools/pi-smoke --path tools/data-backup --path infra/cloudflare",
+    "secrets:scan:trusted": "varlock scan . --path apps/core-worker --path apps/sendblue-ingress --path apps/sendblue-egress --path apps/agent --path tools/sendblue-reconcile --path tools/pi-smoke --path tools/data-backup --path infra/cloudflare",
     "ui:safety": "node scripts/verify-ui-safety.mjs"
   },
   "devDependencies": {

@@ -8,6 +8,8 @@
     "./channel": "./src/channel.ts",
     "./delivery": "./src/delivery.ts",
     "./jobs": "./src/jobs.ts",
+    "./output-safety": "./src/output-safety.ts",
+    "./settings": "./src/settings.ts",
     "./tools": "./src/tools.ts",
     "./ui": "./src/ui.ts"
   },

@@ -183,9 +183,11 @@ Workers must not import `@effect/platform-node`.
 
 The Node agent host can use `@effect/platform-node`.
 
-Keep Pi's stable Agent as the only conversational loop.
+Keep Bob's direct `pi-ai` loop in `@bob/pi-agent` as the only conversational
+loop.
 
-Effect wraps Pi adapters. It does not replace Pi's loop.
+Effect wraps Bob's I/O Modules. It does not replace Bob's loop or Pi's provider
+support.
 
 Do not use `effect/unstable/*` in the first release.
 

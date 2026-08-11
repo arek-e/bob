@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: bob-backups
+  namespace: bob
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 16Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bob-data-backup
+  namespace: bob
+spec:
+  schedule: "15 */4 * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 1800
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 3600
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: bob-data-backup
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: bob-backup
+          imagePullSecrets:
+            - name: bob-ghcr-pull
+          securityContext:
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+          containers:
+            - name: backup
+              image: bob-backup.invalid/repository
+              imagePullPolicy: IfNotPresent
+              envFrom:
+                - secretRef:
+                    name: bob-backup-runtime
+                    optional: false
+              env:
+                - name: BACKUP_OUTPUT_DIRECTORY
+                  value: /backups
+                - name: BACKUP_MAX_BYTES
+                  value: "268435456"
+                - name: BACKUP_RETENTION_COUNT
+                  value: "42"
+                - name: BACKUP_MIGRATIONS_DIRECTORY
+                  value: ../../apps/core-worker/migrations
+                - name: BACKUP_RESTORE_DATABASE_PREFIX
+                  value: bob-restore-drill
+                - name: BACKUP_RESTORE_BUCKET_PREFIX
+                  value: bob-restore-drill
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                seccompProfile:
+                  type: RuntimeDefault
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: bob-backups

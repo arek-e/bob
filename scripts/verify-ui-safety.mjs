@@ -1,9 +1,24 @@
-import { readFile } from "node:fs/promises"
+import { readdir, readFile } from "node:fs/promises"
 
-const [script, headers] = await Promise.all([
-  readFile(new URL("../apps/ui/dist/app.js", import.meta.url), "utf8"),
+async function javascriptFiles(directory) {
+  const files = []
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = new URL(entry.name, directory)
+    if (entry.isDirectory()) {
+      files.push(...(await javascriptFiles(new URL(`${entry.name}/`, directory))))
+    } else if (entry.name.endsWith(".js")) {
+      files.push(path)
+    }
+  }
+  return files
+}
+
+const assetDirectory = new URL("../apps/ui/dist/assets/", import.meta.url)
+const [scripts, headers] = await Promise.all([
+  Promise.all((await javascriptFiles(assetDirectory)).map((file) => readFile(file, "utf8"))),
   readFile(new URL("../apps/ui/dist/_headers", import.meta.url), "utf8")
 ])
+const script = scripts.join("\n")
 
 const forbiddenNames = [
   "DATA_KEK",

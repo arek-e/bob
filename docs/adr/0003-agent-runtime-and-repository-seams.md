@@ -1,4 +1,4 @@
-# ADR 0003: Use one Pi loop with domain-owned workflows
+# ADR 0003: Use one Bob agent runtime with domain-owned workflows
 
 - Status: Accepted for the first release
 - Date: 2026-08-10
@@ -28,7 +28,7 @@ Bob needs stronger durability, privacy, provenance, and confirmation rules.
 
 | Reference        | Adopt                                                        | Do not adopt                                            |
 | ---------------- | ------------------------------------------------------------ | ------------------------------------------------------- |
-| Pi               | Stable Agent, context hooks, tool gates, and events          | Coding tools and incomplete AgentHarness                |
+| Pi               | `pi-ai` model streaming, provider auth, and tool schemas     | Coding tools and a second agent loop                    |
 | Waku             | Visible composition, capability exclusion, and release gate  | Automatic fact promotion and self-editing skills        |
 | OpenClaw         | Provenance, supersession, typed intents, and layered policy  | Broad plugins, host authority, and in-process queues    |
 | Hermes           | Staged writes, recovery ledger, and content-free health      | Shell, browser, and autonomous skill changes            |
@@ -43,23 +43,19 @@ Bob combines selected features behind Bob-owned interfaces.
 
 [ADR 0005](0005-varlock-environment-contracts.md) defines environment contracts.
 
+[ADR 0007](0007-bob-owned-pi-ai-loop.md) defines Bob's direct `pi-ai` loop.
+
 ## Decision
 
-Pi owns the only conversational agent loop.
+The Bob Pi loop owns the only conversational agent loop policy.
 
-Do not write a second Waku-style model loop around Pi.
+Do not add a second agent loop inside Pi or another package.
 
 Do not run Codex app-server inside the Pi path.
 
 Do not use sub-agents in the first release.
 
-Use Pi's stable Agent API for the first release.
-
-At the reviewed Pi commit, `AgentHarness` cannot run a prompt or restore a session.
-
 Keep Bob's durable state in the core Worker.
-
-Reassess `AgentHarness` after Pi completes and tests its public operations.
 
 Use deterministic domain workflows outside the model.
 
@@ -80,8 +76,8 @@ Use this sequence:
 3. Resolve urgent-safety responses before Pi.
 4. Build one policy-cleared context pack.
 5. Select the smallest reviewed tool set for the run.
-6. Create one ephemeral Pi agent.
-7. Run Pi with explicit turn, tool, time, and output limits.
+6. Create one ephemeral Bob Pi loop with a direct `pi-ai` model context.
+7. Run the loop with explicit turn, tool, time, and output limits.
 8. Execute each tool through a typed core interface.
 9. Store the run result and response intent.
 10. Send the response later through the delivery outbox.
@@ -100,7 +96,7 @@ The model never receives Sendblue credentials or Cloudflare bindings.
 
 The core Worker builds the context pack.
 
-The Pi host renders that pack into model context.
+The Bob Pi loop renders that pack into a `pi-ai` model context.
 
 The pack contains:
 
@@ -152,7 +148,7 @@ The core Worker checks authorization and domain invariants again.
 
 Every mutating call includes a run ID, tool-call ID, and idempotency key.
 
-Use Pi's `beforeToolCall` hook as an agent-host gate.
+The Bob Pi loop owns the tool gate and executes tools in code.
 
 Run mutating tools sequentially.
 
@@ -166,6 +162,7 @@ Keep these first-release tool groups:
 - Memory proposals and recall
 - Journal metadata and private links
 - Gym, routines, and workouts
+- Owner locality settings
 
 Do not expose transport, authentication, shell, browser, filesystem, or package tools.
 
@@ -229,7 +226,7 @@ Do not retry an `unknown` external action before reconciliation.
 
 ### Events and observability
 
-Use Pi lifecycle events for agent activity.
+Use Bob loop lifecycle events for agent activity.
 
 Use Hermes-style content-free health events.
 
@@ -316,7 +313,7 @@ apps/
 packages/
   contracts/            Versioned cross-runtime schemas
   sendblue/             Provider verifier, decoder, client, and reconciler
-  pi-agent/             Pi composition, tools, limits, auth, and errors
+  pi-agent/             Bob's Pi loop, prompts, tools, auth, and safety
   observability/        Content-free events and runtime adapters
 
 tools/
@@ -407,7 +404,9 @@ Use explicit exports for `webhooks`, `client`, and `account`.
 
 `@bob/pi-agent` owns every Pi import and Pi-specific type.
 
-Its public interface uses Bob-owned run, event, tool, and error types.
+It owns the Bob loop, prompts, run policy, output validation, safety rules,
+fallback behavior, and normalized model results. It uses `@earendil-works/pi-ai`
+directly. Its public Interface uses Bob-owned run, event, tool, and error types.
 
 Keep its public surface small:
 
@@ -415,6 +414,9 @@ Keep its public surface small:
 - `runTurn`
 - `getAuthStatus`
 - `startDeviceLogin`
+
+Keep Bob's policy local to this package. Pi provides model and provider support,
+but it does not own Bob's loop or safety decisions.
 
 Keep the OpenBao credential adapter inside this package.
 
@@ -525,9 +527,8 @@ Its domain modules and entrypoint adapters keep that implementation navigable.
 - [Waku memory tools](https://github.com/ShenSeanChen/waku-agent/blob/4547e9193dad298df3f30f88ebbb2f1a6f0c8c82/waku/tools/memory_admin.py)
 - [Waku tracing](https://github.com/ShenSeanChen/waku-agent/blob/4547e9193dad298df3f30f88ebbb2f1a6f0c8c82/waku/ops/tracing.py)
 - [Waku release gate](https://github.com/ShenSeanChen/waku-agent/blob/4547e9193dad298df3f30f88ebbb2f1a6f0c8c82/waku/ops/release_gate.py)
-- [Pi SDK](https://pi.dev/docs/latest/sdk)
-- [Pi AgentHarness review point](https://github.com/earendil-works/pi/blob/98145a6c063f00303405ef91ad4a5314670702e9/packages/agent/src/harness/agent-harness.ts)
-- [Pi agent loop](https://github.com/earendil-works/pi/blob/98145a6c063f00303405ef91ad4a5314670702e9/packages/agent/src/agent-loop.ts)
+- [Pi AI package](https://github.com/earendil-works/pi/tree/main/packages/ai)
+- [Pi provider documentation](https://pi.dev/docs/latest/providers#subscriptions)
 - [OpenClaw review point](https://github.com/openclaw/openclaw/tree/8e91d6c0c195d53667f2cd221517c55fe9ad6251)
 - [OpenClaw memory architecture](https://github.com/openclaw/openclaw/blob/8e91d6c0c195d53667f2cd221517c55fe9ad6251/docs/concepts/memory-architecture.md)
 - [OpenClaw queue limits](https://github.com/openclaw/openclaw/blob/8e91d6c0c195d53667f2cd221517c55fe9ad6251/docs/concepts/queue.md)

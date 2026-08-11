@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises"
-
 import { describe, expect, it } from "vitest"
 
 import { alchemyCommandArguments } from "../src/run-alchemy.mjs"

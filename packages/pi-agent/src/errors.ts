@@ -1,5 +1,11 @@
 export type BobAgentErrorCode =
-  "authentication" | "quota" | "timeout" | "cancelled" | "provider" | "policy" | "invalid_output"
+  | "authentication"
+  | "quota"
+  | "timeout"
+  | "cancelled"
+  | "provider"
+  | "policy"
+  | "invalid_output"
 
 export class BobAgentError extends Error {
   constructor(
@@ -11,6 +17,7 @@ export class BobAgentError extends Error {
   }
 }
 
+/** Classify provider failures without exposing provider-specific text. */
 export function classifyProviderError(message: string | undefined): BobAgentErrorCode {
   const normalized = message?.toLowerCase() ?? ""
   if (/auth|oauth|token|unauthorized|forbidden|401|403/.test(normalized)) return "authentication"

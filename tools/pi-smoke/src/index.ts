@@ -38,6 +38,7 @@ if (process.argv.includes("--completion")) {
       runId,
       ownerId: crypto.randomUUID(),
       correlationId,
+      sourceMessageId: crypto.randomUUID(),
       localTime: new Date().toISOString(),
       timeZone: "Europe/Stockholm",
       userText: "This is an approved production smoke check. Reply only READY.",

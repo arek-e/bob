@@ -1,5 +1,5 @@
-import { createServer } from "node:http"
 import { readFile, stat } from "node:fs/promises"
+import { createServer } from "node:http"
 import { extname, isAbsolute, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 

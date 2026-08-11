@@ -8,3 +8,12 @@ resources:
   - service.yaml
   - network-policy.yaml
   - cilium-egress-policy.yaml
+  - backup-secret-delivery.yaml
+  - backup-job.yaml
+  - backup-network-policy.yaml
+  - nango-config.yaml
+  - nango-secret-delivery.yaml
+  - nango-database.yaml
+  - nango-redis.yaml
+  - nango-deployment.yaml
+  - nango-network-policy.yaml

@@ -16,5 +16,16 @@ export function journalMetadata(record: JournalRecord) {
 }
 
 export function journalModelContext(record: JournalRecord): string | undefined {
-  return record.approvedSummary
+  void record
+  return undefined
+}
+
+export function journalAgentMetadata(
+  record: Pick<JournalRecord, "createdAt" | "tags"> &
+    Partial<Pick<JournalRecord, "id" | "approvedSummary" | "rawText">>
+) {
+  return {
+    createdAt: record.createdAt,
+    tags: record.tags
+  }
 }

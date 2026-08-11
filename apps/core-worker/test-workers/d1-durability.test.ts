@@ -1,6 +1,3 @@
-import { env } from "cloudflare:workers"
-import { eq } from "drizzle-orm"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import {
   applyD1Migrations,
   createExecutionContext,
@@ -9,18 +6,19 @@ import {
   reset,
   runInDurableObject
 } from "cloudflare:test"
+import { env } from "cloudflare:workers"
+import { eq } from "drizzle-orm"
+import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import type { CoreBindings } from "../src/bindings.ts"
-import { operationalAlerts } from "../src/modules/alerts/schema.ts"
+
 import { composeCore } from "../src/composition.ts"
 import { createCoreDatabase } from "../src/database.ts"
 import { handleHttp } from "../src/entrypoints/http.ts"
 import { handleInboundQueue } from "../src/entrypoints/queue.ts"
-import { processInbound } from "../src/process-inbound.ts"
-import { makeAgentRunStore } from "../src/modules/conversations/run-store.ts"
+import { operationalAlerts } from "../src/modules/alerts/schema.ts"
 import { makeContextStore } from "../src/modules/context/store.ts"
-import { makeConversationStore } from "../src/modules/conversations/store.ts"
-import { makeToolExecutor, toolCommandHash } from "../src/modules/conversations/tool-executor.ts"
+import { makeAgentRunStore } from "../src/modules/conversations/run-store.ts"
 import {
   agentRuns,
   channels,
@@ -31,6 +29,8 @@ import {
   toolCalls,
   users
 } from "../src/modules/conversations/schema.ts"
+import { makeConversationStore } from "../src/modules/conversations/store.ts"
+import { makeToolExecutor, toolCommandHash } from "../src/modules/conversations/tool-executor.ts"
 import { deliveryAttempts, outboxMessages } from "../src/modules/delivery/schema.ts"
 import { makeDeliveryStore } from "../src/modules/delivery/store.ts"
 import { journalEntries, journalHandoffs } from "../src/modules/journal/schema.ts"
@@ -46,6 +46,7 @@ import { makeMemoryStore } from "../src/modules/memory/store.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { reminderOccurrences, reminders } from "../src/modules/reminders/schema.ts"
 import { makeReminderStore } from "../src/modules/reminders/store.ts"
+import { makeOwnerSettingsStore } from "../src/modules/settings/store.ts"
 import {
   equipmentExercises,
   exercises,
@@ -57,6 +58,7 @@ import {
   workoutSets
 } from "../src/modules/training/schema.ts"
 import { makeTrainingStore } from "../src/modules/training/store.ts"
+import { processInbound } from "../src/process-inbound.ts"
 import { decodeTestMigrations } from "./migrations.ts"
 
 declare global {
@@ -159,6 +161,7 @@ describe("D1 migrations and durability", () => {
     expect(names.has("agent_runs")).toBe(true)
     expect(names.has("search_documents_fts")).toBe(true)
     expect(names.has("journal_entries_valid_handoff")).toBe(true)
+    expect(names.has("external_connections")).toBe(true)
   })
 
   it("rolls back a D1 batch after an injected failure", async () => {
@@ -217,6 +220,109 @@ describe("D1 migrations and durability", () => {
         (SELECT COUNT(*) FROM inbound_events) AS inbound_events`
     ).first<Record<string, number>>()
     expect(counts).toEqual({ users: 1, channels: 1, messages: 1, inbound_events: 1 })
+  })
+
+  it("stores owner locality and reports the Sendblue connection", async () => {
+    const { database, protection } = await seedRunData()
+    let next = 220
+    const settings = makeOwnerSettingsStore(database, protection, {
+      defaultTimeZone: "Europe/Stockholm",
+      now: () => new Date("2026-08-11T10:05:00.000Z"),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+
+    expect(await settings.get(ownerId)).toMatchObject({
+      timeZone: "Europe/Stockholm",
+      locale: "en",
+      hourCycle: "auto"
+    })
+    expect(await settings.connections(ownerId)).toEqual([
+      { provider: "sendblue", status: "connected" }
+    ])
+    await database
+      .update(channels)
+      .set({ optedOutAt: "2026-08-11T10:04:00.000Z" })
+      .where(eq(channels.id, channelId))
+    expect(await settings.connections(ownerId)).toEqual([
+      { provider: "sendblue", status: "paused" }
+    ])
+
+    const saved = await settings.update(
+      ownerId,
+      { timeZone: "America/New_York", locale: "en-gb", hourCycle: "h23" },
+      "settings:test:update"
+    )
+    expect(saved).toMatchObject({
+      timeZone: "America/New_York",
+      locale: "en-GB",
+      hourCycle: "h23"
+    })
+    await expect(
+      settings.update(ownerId, { timeZone: "UTC" }, "settings:test:update")
+    ).resolves.toMatchObject(saved)
+  })
+
+  it("updates owner locality through the bounded messaging tool", async () => {
+    const { database, protection } = await seedRunData()
+    const runStore = makeAgentRunStore(database, protection, {})
+    await runStore.create(
+      {
+        protocolVersion: 1,
+        runId,
+        ownerId,
+        correlationId,
+        sourceMessageId: messageId,
+        localTime: "2026-08-11T10:00:00.000Z",
+        timeZone: "Europe/Stockholm",
+        userText: "Set my time zone to America/New_York and use 24-hour time.",
+        contextItems: [],
+        allowedTools: ["settings_get", "settings_update"],
+        limits: {
+          maxTurns: 4,
+          maxToolCalls: 4,
+          maxDurationMs: 60_000,
+          maxResponseCharacters: 1_200
+        }
+      },
+      inboundId
+    )
+    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    const settings = makeOwnerSettingsStore(database, protection, {
+      defaultTimeZone: "Europe/Stockholm"
+    })
+    const executor = makeToolExecutor(
+      database,
+      protection,
+      {
+        reminders: {} as never,
+        memory: {} as never,
+        journal: {} as never,
+        training: {} as never,
+        settings
+      },
+      { uiBaseUrl: "https://bob.example.invalid" }
+    )
+
+    const result = await executor.execute({
+      runId,
+      toolCallId: "settings-call-1",
+      idempotencyKey: "settings:tool:update",
+      ownerId,
+      name: "settings_update",
+      arguments: { timeZone: "America/New_York", hourCycle: "h23" }
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      code: "owner_settings_updated",
+      data: {
+        settings: { timeZone: "America/New_York", hourCycle: "h23" }
+      }
+    })
+    await expect(settings.get(ownerId)).resolves.toMatchObject({
+      timeZone: "America/New_York",
+      hourCycle: "h23"
+    })
   })
 
   it("recovers an exhausted inbound Queue message through the durable event", async () => {
@@ -307,6 +413,7 @@ describe("D1 migrations and durability", () => {
       runId,
       ownerId,
       correlationId,
+      sourceMessageId: messageId,
       localTime: current.toISOString(),
       timeZone: "Europe/Stockholm",
       userText: "What is my training routine?",
@@ -336,6 +443,7 @@ describe("D1 migrations and durability", () => {
         runId,
         ownerId,
         correlationId,
+        sourceMessageId: messageId,
         localTime: "2026-08-11T10:00:00.000Z",
         timeZone: "Europe/Stockholm",
         userText: "Hello",
@@ -380,6 +488,7 @@ describe("D1 migrations and durability", () => {
       runId,
       ownerId,
       correlationId,
+      sourceMessageId: messageId,
       localTime: "2026-08-11T10:00:00.000Z",
       timeZone: "Europe/Stockholm",
       userText: "Hello",
@@ -413,7 +522,12 @@ describe("D1 migrations and durability", () => {
       .from(inboundEvents)
       .where(eq(inboundEvents.id, inboundId))
     expect(outbox?.reasonCode).toBe("agent_recovery")
-    expect(sent).toEqual([{ outboxId: outbox?.id }])
+    expect(sent).toEqual([
+      {
+        outboxId: outbox?.id,
+        traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
+      }
+    ])
     expect(event?.processedAt).not.toBeNull()
   })
 
@@ -669,6 +783,7 @@ describe("D1 migrations and durability", () => {
       .from(reminderOccurrences)
       .where(eq(reminderOccurrences.id, occurrenceId))
     expect(updated?.state).toBe("completed")
+    expect(await reminderStore.list(ownerId)).toEqual([])
   })
 
   it("marks expired reminder responses missed and consumes reply bindings", async () => {
@@ -788,6 +903,36 @@ describe("D1 migrations and durability", () => {
       state: "scheduled",
       intendedDueAt: "2026-08-12T05:00:00Z"
     })
+  })
+
+  it("uses the saved owner time zone for quiet hours", async () => {
+    const { database, protection } = await seedRunData()
+    await database.update(users).set({ timeZone: "America/New_York" }).where(eq(users.id, ownerId))
+    let next = 485
+    const reminderStore = makeReminderStore(database, protection, {
+      now: () => new Date("2026-08-11T21:30:00.000Z"),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`,
+      quietHours: { start: "22:00", end: "07:00", timeZone: "Europe/Stockholm" },
+      dailyLimit: 8
+    })
+    await reminderStore.createOneShot(
+      ownerId,
+      channelId,
+      "Evening reminder",
+      {
+        displayText: "Evening reminder",
+        smsSafeText: "Evening reminder",
+        localDate: "2026-08-11",
+        localTime: "17:00",
+        timeZone: "America/New_York",
+        dueAt: "2026-08-11T21:00:00.000Z",
+        sourceMessageId: messageId,
+        requiresAcknowledgment: true
+      },
+      "reminder:test:saved-zone"
+    )
+
+    expect(await reminderStore.claimDueAndCreateOutbox(ownerId, 60_000)).toHaveLength(1)
   })
 
   it("defers reminders after the local daily send limit", async () => {
@@ -1172,6 +1317,83 @@ describe("D1 migrations and durability", () => {
     expect(indexed).toHaveLength(0)
   })
 
+  it("binds agent memory proposals to the current owner message", async () => {
+    const { database, protection } = await seedRunData()
+    const runStore = makeAgentRunStore(database, protection, {})
+    await runStore.create(
+      {
+        protocolVersion: 1,
+        runId,
+        ownerId,
+        correlationId,
+        sourceMessageId: messageId,
+        localTime: "2026-08-11T10:00:00.000Z",
+        timeZone: "Europe/Stockholm",
+        userText: "Remember that I prefer morning training.",
+        contextItems: [],
+        allowedTools: ["memory_propose"],
+        limits: {
+          maxTurns: 4,
+          maxToolCalls: 4,
+          maxDurationMs: 60_000,
+          maxResponseCharacters: 1_200
+        }
+      },
+      inboundId
+    )
+    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    let next = 2_000
+    const memory = makeMemoryStore(database, protection, {
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const executor = makeToolExecutor(
+      database,
+      protection,
+      {
+        reminders: {} as never,
+        memory,
+        journal: {} as never,
+        training: {} as never,
+        settings: {} as never
+      },
+      {
+        uiBaseUrl: "https://bob.example.invalid",
+        randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+      }
+    )
+
+    const result = await executor.execute({
+      runId,
+      toolCallId: "memory-call-1",
+      idempotencyKey: "memory:tool:propose",
+      ownerId,
+      name: "memory_propose",
+      arguments: {
+        scope: "preferences",
+        key: "training_time",
+        value: "morning",
+        canonicalText: "I prefer morning training.",
+        assertionKind: "user_stated",
+        originClass: "background_model",
+        sourceType: "assistant_claim",
+        sourceId: "00000000-0000-4000-8000-999999999999",
+        extractionConfidence: 0.9,
+        importance: 0.8,
+        explicitRemember: true
+      }
+    })
+
+    expect(result).toMatchObject({ ok: true, code: "memory_proposed" })
+    await expect(memory.listCandidates(ownerId)).resolves.toEqual([
+      expect.objectContaining({
+        originClass: "owner_input",
+        sourceType: "message",
+        sourceId: messageId,
+        status: "proposed"
+      })
+    ])
+  })
+
   it("lists memory candidates by owner and validates confirmation evidence", async () => {
     const { database, protection } = await seedRunData()
     const memory = makeMemoryStore(database, protection, {})
@@ -1256,6 +1478,201 @@ describe("D1 migrations and durability", () => {
     ).rejects.toThrow("evidence")
   })
 
+  it("does not confirm a rejected memory candidate with a new action key", async () => {
+    const { database, protection } = await seedRunData()
+    let next = 2_100
+    const memory = makeMemoryStore(database, protection, {
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const proposal = await memory.propose(
+      {
+        ownerId,
+        scope: "preferences",
+        key: "training_time",
+        value: "morning",
+        canonicalText: "I prefer morning training.",
+        assertionKind: "user_stated",
+        originClass: "owner_input",
+        sourceType: "message",
+        sourceId: messageId,
+        extractionConfidence: 0.9,
+        importance: 0.8,
+        explicitRemember: true,
+        authority: "agent"
+      },
+      "memory:terminal:propose"
+    )
+
+    await memory.reject(ownerId, proposal.candidateId, "memory:terminal:reject")
+
+    await expect(
+      memory.confirm(
+        ownerId,
+        proposal.candidateId,
+        "owner_ui",
+        "memory:terminal:confirm-after-reject"
+      )
+    ).rejects.toThrow("already reviewed")
+    await expect(database.select().from(factRevisions)).resolves.toEqual([])
+  })
+
+  it("does not revise a confirmed candidate through another review action", async () => {
+    const { database, protection } = await seedRunData()
+    let next = 2_200
+    const memory = makeMemoryStore(database, protection, {
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const proposal = await memory.propose(
+      {
+        ownerId,
+        scope: "preferences",
+        key: "training_time",
+        value: "morning",
+        canonicalText: "I prefer morning training.",
+        assertionKind: "user_stated",
+        originClass: "owner_input",
+        sourceType: "message",
+        sourceId: messageId,
+        extractionConfidence: 0.9,
+        importance: 0.8,
+        explicitRemember: true,
+        authority: "agent"
+      },
+      "memory:confirmed-terminal:propose"
+    )
+    const revisionId = await memory.confirm(
+      ownerId,
+      proposal.candidateId,
+      "owner_ui",
+      "memory:confirmed-terminal:confirm"
+    )
+
+    await expect(
+      memory.confirm(
+        ownerId,
+        proposal.candidateId,
+        "owner_ui",
+        "memory:confirmed-terminal:confirm-again"
+      )
+    ).rejects.toThrow("already reviewed")
+    await expect(
+      memory.correct(
+        ownerId,
+        proposal.candidateId,
+        "I prefer evening training.",
+        "memory:confirmed-terminal:correct"
+      )
+    ).rejects.toThrow("already reviewed")
+    await expect(database.select({ id: factRevisions.id }).from(factRevisions)).resolves.toEqual([
+      { id: revisionId }
+    ])
+  })
+
+  it("does not review an original candidate again after a correction", async () => {
+    const { database, protection } = await seedRunData()
+    let next = 2_250
+    const memory = makeMemoryStore(database, protection, {
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const proposal = await memory.propose(
+      {
+        ownerId,
+        scope: "preferences",
+        key: "training_time",
+        value: "morning",
+        canonicalText: "I prefer morning training.",
+        assertionKind: "user_stated",
+        originClass: "owner_input",
+        sourceType: "message",
+        sourceId: messageId,
+        extractionConfidence: 0.9,
+        importance: 0.8,
+        explicitRemember: true,
+        authority: "agent"
+      },
+      "memory:correct-terminal:propose"
+    )
+    const replacementId = await memory.correct(
+      ownerId,
+      proposal.candidateId,
+      "I prefer evening training.",
+      "memory:correct-terminal:correct"
+    )
+
+    await expect(
+      memory.confirm(
+        ownerId,
+        proposal.candidateId,
+        "owner_ui",
+        "memory:correct-terminal:confirm-old"
+      )
+    ).rejects.toThrow("already reviewed")
+    await expect(
+      memory.correct(
+        ownerId,
+        proposal.candidateId,
+        "I prefer lunch training.",
+        "memory:correct-terminal:correct-old"
+      )
+    ).rejects.toThrow("already reviewed")
+    await expect(
+      memory.reject(ownerId, proposal.candidateId, "memory:correct-terminal:reject-old")
+    ).rejects.toThrow("already reviewed")
+    await expect(memory.listCandidates(ownerId)).resolves.toEqual([
+      expect.objectContaining({ id: replacementId, canonicalText: "I prefer evening training." })
+    ])
+  })
+
+  it("lets exactly one concurrent review action claim a memory candidate", async () => {
+    const { database, protection } = await seedRunData()
+    let next = 2_300
+    const memory = makeMemoryStore(database, protection, {
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const proposal = await memory.propose(
+      {
+        ownerId,
+        scope: "preferences",
+        key: "training_time",
+        value: "morning",
+        canonicalText: "I prefer morning training.",
+        assertionKind: "user_stated",
+        originClass: "owner_input",
+        sourceType: "message",
+        sourceId: messageId,
+        extractionConfidence: 0.9,
+        importance: 0.8,
+        explicitRemember: true,
+        authority: "agent"
+      },
+      "memory:concurrent-review:propose"
+    )
+
+    const outcomes = await Promise.allSettled([
+      memory.confirm(ownerId, proposal.candidateId, "owner_ui", "memory:concurrent-review:confirm"),
+      memory.correct(
+        ownerId,
+        proposal.candidateId,
+        "I prefer evening training.",
+        "memory:concurrent-review:correct"
+      ),
+      memory.reject(ownerId, proposal.candidateId, "memory:concurrent-review:reject")
+    ])
+
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1)
+    const [reviewed] = await database
+      .select({ status: memoryCandidates.status })
+      .from(memoryCandidates)
+      .where(eq(memoryCandidates.id, proposal.candidateId))
+    expect(reviewed?.status === "confirmed" || reviewed?.status === "rejected").toBe(true)
+    const revisions = await database.select({ id: factRevisions.id }).from(factRevisions)
+    const replacements = await database
+      .select({ id: memoryCandidates.id })
+      .from(memoryCandidates)
+      .where(eq(memoryCandidates.status, "proposed"))
+    expect(revisions.length + replacements.length).toBeLessThanOrEqual(1)
+  })
+
   it("recovers an expired tool lease without losing idempotency", async () => {
     const { database, protection } = await seedRunData()
     const runStore = makeAgentRunStore(database, protection, {
@@ -1268,6 +1685,7 @@ describe("D1 migrations and durability", () => {
         runId,
         ownerId,
         correlationId,
+        sourceMessageId: messageId,
         localTime: "2026-08-11T10:00:00.000Z",
         timeZone: "Europe/Stockholm",
         userText: "List reminders",
@@ -1282,6 +1700,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
+    expect(await runStore.claim(runId, 90_000)).toBe(true)
     const leaseCommand = {
       runId,
       toolCallId: "tool-call-1",
@@ -1314,7 +1733,8 @@ describe("D1 migrations and durability", () => {
         reminders: { list: async () => [] } as never,
         memory: {} as never,
         journal: {} as never,
-        training: {} as never
+        training: {} as never,
+        settings: {} as never
       },
       {
         uiBaseUrl: "https://bob.example.invalid",
@@ -1341,6 +1761,7 @@ describe("D1 migrations and durability", () => {
         runId,
         ownerId,
         correlationId,
+        sourceMessageId: messageId,
         localTime: "2026-08-11T10:00:00.000Z",
         timeZone: "Europe/Stockholm",
         userText: "List reminders",
@@ -1355,6 +1776,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
+    expect(await runStore.claim(runId, 90_000)).toBe(true)
     const executor = makeToolExecutor(
       database,
       protection,
@@ -1362,7 +1784,8 @@ describe("D1 migrations and durability", () => {
         reminders: { list: async () => [] } as never,
         memory: {} as never,
         journal: {} as never,
-        training: {} as never
+        training: {} as never,
+        settings: {} as never
       },
       { uiBaseUrl: "https://bob.example.invalid" }
     )
@@ -1523,6 +1946,105 @@ describe("D1 migrations and durability", () => {
     ).rejects.toThrow("approval evidence")
   })
 
+  it("lists stable owner training IDs through bounded assistant tools", async () => {
+    const { database, protection } = await seedRunData()
+    const allowedTools = ["gym_list", "equipment_list", "exercise_list"] as const
+    const runStore = makeAgentRunStore(database, protection, {})
+    await runStore.create(
+      {
+        protocolVersion: 1,
+        runId,
+        ownerId,
+        correlationId,
+        sourceMessageId: messageId,
+        localTime: "2026-08-11T10:00:00.000Z",
+        timeZone: "Europe/Stockholm",
+        userText: "Which gyms, machines, and exercises do I have?",
+        contextItems: [],
+        allowedTools: [...allowedTools],
+        limits: {
+          maxTurns: 8,
+          maxToolCalls: 8,
+          maxDurationMs: 60_000,
+          maxResponseCharacters: 1_200
+        }
+      },
+      inboundId
+    )
+    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    const training = makeTrainingStore(database, {})
+    const gymId = await training.createGym(ownerId, "Home gym", "lookup:gym:create")
+    const exerciseId = await training.createExercise(
+      ownerId,
+      "Chest press",
+      "Keep your back supported.",
+      "lookup:exercise:create"
+    )
+    const equipmentId = await training.addEquipment(
+      ownerId,
+      gymId,
+      "Chest press machine",
+      "Machine 12",
+      "lookup:equipment:create"
+    )
+    await training.mapEquipment(ownerId, equipmentId, exerciseId, "lookup:equipment:map")
+    const executor = makeToolExecutor(
+      database,
+      protection,
+      {
+        reminders: {} as never,
+        memory: {} as never,
+        journal: {} as never,
+        training,
+        settings: {} as never
+      },
+      { uiBaseUrl: "https://bob.example.invalid" }
+    )
+    let call = 0
+    const lookup = (name: (typeof allowedTools)[number], query?: string) => {
+      call += 1
+      return executor.execute({
+        runId,
+        toolCallId: `training-lookup-${call}`,
+        idempotencyKey: `training-lookup-${call}`,
+        ownerId,
+        name,
+        arguments: query === undefined ? {} : { query }
+      })
+    }
+
+    await expect(lookup("gym_list")).resolves.toMatchObject({
+      ok: true,
+      code: "gym_list",
+      data: { gyms: [{ id: gymId, name: "Home gym" }] }
+    })
+    await expect(lookup("equipment_list", "press")).resolves.toMatchObject({
+      ok: true,
+      code: "equipment_list",
+      data: {
+        equipment: [
+          {
+            id: equipmentId,
+            name: "Chest press machine",
+            identifier: "Machine 12",
+            gymId,
+            gymName: "Home gym",
+            exerciseIds: [exerciseId]
+          }
+        ]
+      }
+    })
+    await expect(lookup("exercise_list", "press")).resolves.toMatchObject({
+      ok: true,
+      code: "exercise_list",
+      data: { exercises: [{ id: exerciseId, name: "Chest press" }] }
+    })
+    await expect(lookup("exercise_list", "x".repeat(101))).resolves.toMatchObject({
+      ok: false,
+      code: "domain_error"
+    })
+  })
+
   it("runs the complete training flow through durable owner-bound tool proposals", async () => {
     const { database, protection } = await seedRunData()
     const allowedTools = [
@@ -1544,6 +2066,7 @@ describe("D1 migrations and durability", () => {
         runId,
         ownerId,
         correlationId,
+        sourceMessageId: messageId,
         localTime: "2026-08-11T10:00:00.000Z",
         timeZone: "Europe/Stockholm",
         userText: "Please set up my gym and record this workout.",
@@ -1558,6 +2081,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
+    expect(await runStore.claim(runId, 90_000)).toBe(true)
     const training = makeTrainingStore(database, {})
     const executor = makeToolExecutor(
       database,
@@ -1566,7 +2090,8 @@ describe("D1 migrations and durability", () => {
         reminders: {} as never,
         memory: {} as never,
         journal: {} as never,
-        training
+        training,
+        settings: {} as never
       },
       { uiBaseUrl: "https://bob.example.invalid" }
     )
@@ -1683,6 +2208,7 @@ describe("D1 migrations and durability", () => {
         runId,
         ownerId,
         correlationId,
+        sourceMessageId: messageId,
         localTime: "2026-08-11T10:00:00.000Z",
         timeZone: "Europe/Stockholm",
         userText: "Please add my recovery gym.",
@@ -1697,6 +2223,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
+    expect(await runStore.claim(runId, 90_000)).toBe(true)
     const training = makeTrainingStore(database, {})
     const executor = makeToolExecutor(
       database,
@@ -1705,7 +2232,8 @@ describe("D1 migrations and durability", () => {
         reminders: {} as never,
         memory: {} as never,
         journal: {} as never,
-        training
+        training,
+        settings: {} as never
       },
       { uiBaseUrl: "https://bob.example.invalid" }
     )

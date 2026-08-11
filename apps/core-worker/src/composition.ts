@@ -1,8 +1,16 @@
+import { cloudflareEventSink } from "@bob/observability/cloudflare"
 import { Effect, Layer, Schema } from "effect"
 
 import type { CoreBindings } from "./bindings.ts"
+
 import { createCoreDatabase } from "./database.ts"
 import { AlertStore, makeAlertStore, alertStoreLayer } from "./modules/alerts/store.ts"
+import { makeNangoClient } from "./modules/connections/nango.ts"
+import {
+  ConnectionStore,
+  connectionStoreLayer,
+  makeConnectionStore
+} from "./modules/connections/store.ts"
 import { ContextStore, makeContextStore, contextStoreLayer } from "./modules/context/store.ts"
 import {
   AgentRunStore,
@@ -24,7 +32,18 @@ import { JournalStore, makeJournalStore, journalStoreLayer } from "./modules/jou
 import { MemoryStore, makeMemoryStore, memoryStoreLayer } from "./modules/memory/store.ts"
 import { createDataProtection } from "./modules/policy/data-protection.ts"
 import { ReminderStore, makeReminderStore, reminderStoreLayer } from "./modules/reminders/store.ts"
-import { TrainingStore, makeTrainingStore, trainingStoreLayer } from "./modules/training/store.ts"
+import {
+  OwnerSettingsStore,
+  makeOwnerSettingsStore,
+  ownerSettingsStoreLayer
+} from "./modules/settings/store.ts"
+import {
+  TrainingModule,
+  makeTrainingModule,
+  trainingModuleLayer
+} from "./modules/training/module.ts"
+import { makeTrainingProposalStore } from "./modules/training/proposal-store.ts"
+import { makeTrainingStore, trainingStoreLayer } from "./modules/training/store.ts"
 
 const Configuration = Schema.Struct({
   OWNER_ID: Schema.String.check(Schema.isUUID()),
@@ -40,8 +59,10 @@ const Configuration = Schema.Struct({
   DATA_LOOKUP_KEY: Schema.String.check(Schema.isMinLength(40)),
   INGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   EGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  BETTER_AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
   ACCESS_TEAM_DOMAIN: Schema.String.check(Schema.isPattern(/^[a-z0-9-]+\.cloudflareaccess\.com$/)),
   CORE_ACCESS_AUDIENCE: Schema.String.check(Schema.isMinLength(1)),
+  SETUP_ACCESS_AUDIENCE: Schema.String.check(Schema.isMinLength(1)),
   OWNER_ACCESS_EMAIL: Schema.String.check(Schema.isMinLength(3)),
   AGENT_CALLER_SUBJECT: Schema.String.check(Schema.isMinLength(1)),
   AGENT_URL: Schema.String,
@@ -51,12 +72,25 @@ const Configuration = Schema.Struct({
   AGENT_ADMIN_ACCESS_CLIENT_ID: Schema.String,
   AGENT_ADMIN_ACCESS_CLIENT_SECRET: Schema.String,
   UI_BASE_URL: Schema.String,
+  NANGO_API_URL: Schema.String,
+  NANGO_SECRET_KEY: Schema.String.check(Schema.isMinLength(32)),
+  NANGO_GOOGLE_CALENDAR_INTEGRATION_ID: Schema.String.check(Schema.isMinLength(1)),
+  NANGO_MICROSOFT_CALENDAR_INTEGRATION_ID: Schema.String.check(Schema.isMinLength(1)),
   BOB_MODEL: Schema.String,
-  BOB_PROVIDER: Schema.Literal("openai-codex")
+  BOB_PROVIDER: Schema.Literal("openai-codex"),
+  BOB_RUN_TOKEN_BUDGET: Schema.Number.check(
+    Schema.isInt(),
+    Schema.isBetween({ minimum: 1_000, maximum: 1_000_000 })
+  ),
+  BOB_DAILY_TOKEN_BUDGET: Schema.Number.check(
+    Schema.isInt(),
+    Schema.isBetween({ minimum: 1_000, maximum: 10_000_000 })
+  )
 })
 
 export function composeCore(bindings: CoreBindings) {
   const config = Schema.decodeUnknownSync(Configuration)(bindings)
+  const events = cloudflareEventSink()
   const database = createCoreDatabase(bindings.DB)
   const activeKekVersion = Number.parseInt(config.DATA_KEK_ACTIVE_VERSION, 10)
   const keyringInput = Schema.decodeUnknownSync(
@@ -71,6 +105,19 @@ export function composeCore(bindings: CoreBindings) {
   )
   if (keyring[activeKekVersion] === undefined) throw new Error("Active KEK is missing")
   const protection = createDataProtection(keyring, activeKekVersion, config.DATA_LOOKUP_KEY)
+  const settings = makeOwnerSettingsStore(database, protection, {
+    defaultTimeZone: config.OWNER_TIME_ZONE
+  })
+  const connections = makeConnectionStore(
+    database,
+    makeNangoClient({ apiUrl: config.NANGO_API_URL, secretKey: config.NANGO_SECRET_KEY }),
+    {
+      integrations: {
+        google_calendar: config.NANGO_GOOGLE_CALENDAR_INTEGRATION_ID,
+        microsoft_calendar: config.NANGO_MICROSOFT_CALENDAR_INTEGRATION_ID
+      }
+    }
+  )
   const conversations = makeConversationStore(database, protection, {
     ownerId: config.OWNER_ID,
     ownerTimeZone: config.OWNER_TIME_ZONE,
@@ -88,13 +135,17 @@ export function composeCore(bindings: CoreBindings) {
   })
   const memory = makeMemoryStore(database, protection, {})
   const journal = makeJournalStore(database, protection, {})
-  const training = makeTrainingStore(database, {})
+  const trainingStore = makeTrainingStore(database, {})
+  const training = makeTrainingModule(
+    trainingStore,
+    makeTrainingProposalStore(database, protection, trainingStore, {})
+  )
   const context = makeContextStore(database, protection, {})
   const runs = makeAgentRunStore(database, protection, {})
   const tools = makeToolExecutor(
     database,
     protection,
-    { reminders, memory, journal, training },
+    { reminders, memory, journal, training, settings, connections },
     { uiBaseUrl: config.UI_BASE_URL }
   )
 
@@ -105,7 +156,10 @@ export function composeCore(bindings: CoreBindings) {
     reminderStoreLayer(reminders),
     memoryStoreLayer(memory),
     journalStoreLayer(journal),
-    trainingStoreLayer(training),
+    trainingStoreLayer(trainingStore),
+    trainingModuleLayer(training),
+    ownerSettingsStoreLayer(settings),
+    connectionStoreLayer(connections),
     contextStoreLayer(context),
     agentRunStoreLayer(runs),
     toolExecutorLayer(tools)
@@ -113,13 +167,16 @@ export function composeCore(bindings: CoreBindings) {
   const services = Effect.runSync(
     Effect.gen(function* () {
       return {
+        events,
         conversations: yield* ConversationStore,
         alerts: yield* AlertStore,
         delivery: yield* DeliveryStore,
         reminders: yield* ReminderStore,
         memory: yield* MemoryStore,
         journal: yield* JournalStore,
-        training: yield* TrainingStore,
+        training: yield* TrainingModule,
+        settings: yield* OwnerSettingsStore,
+        connections: yield* ConnectionStore,
         context: yield* ContextStore,
         runs: yield* AgentRunStore,
         tools: yield* ToolExecutor

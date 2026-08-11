@@ -1,12 +1,32 @@
 import { AgentRunResult } from "@bob/contracts/agent"
 import { NormalizedInboundEvent, NormalizedStatusEvent } from "@bob/contracts/channel"
 import { DeliveryResult } from "@bob/contracts/delivery"
-import { JournalEntryCreate, TrainingProposalApproval } from "@bob/contracts/ui"
+import { ConnectionProvider, OwnerSettingsUpdate } from "@bob/contracts/settings"
+import { ToolCommand } from "@bob/contracts/tools"
+import {
+  JournalEntryCreate,
+  JournalEntryUpdate,
+  MemoryCandidateCorrection,
+  ReminderSnoozeRequest,
+  TrainingProposalApproval
+} from "@bob/contracts/ui"
+import { featureForToolName } from "@bob/observability/attribution"
+import {
+  observeSpan,
+  parseTraceparent,
+  traceContextFromCorrelationId
+} from "@bob/observability/trace"
 import { Schema } from "effect"
 
 import type { CoreBindings } from "../bindings.ts"
+
 import { composeCore } from "../composition.ts"
-import { authorizeCoreRequest } from "../modules/policy/access.ts"
+import { createOwnerAuth, ownerSession } from "../modules/auth/service.ts"
+import {
+  authorizeCoreRequest,
+  authorizeSetupRequest,
+  type AccessTokenVerifier
+} from "../modules/policy/access.ts"
 
 const MAX_BODY_BYTES = 64 * 1024
 const securityHeaders = {
@@ -18,6 +38,16 @@ const securityHeaders = {
 
 function json(value: unknown, status = 200): Response {
   return Response.json(value, { status, headers: securityHeaders })
+}
+
+function secure(response: Response): Response {
+  const headers = new Headers(response.headers)
+  for (const [name, value] of Object.entries(securityHeaders)) headers.set(name, value)
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  })
 }
 
 async function readJson(request: Request): Promise<unknown> {
@@ -36,23 +66,109 @@ function idempotencyKey(request: Request): string {
   return value
 }
 
-export async function handleHttp(request: Request, bindings: CoreBindings): Promise<Response> {
+async function authUserExists(bindings: CoreBindings): Promise<boolean> {
+  const row = await bindings.DB.prepare("SELECT `id` FROM `auth_user` LIMIT 1").first()
+  return row !== null
+}
+
+async function handleSetup(
+  request: Request,
+  bindings: CoreBindings,
+  verifyAccess?: AccessTokenVerifier
+): Promise<Response> {
+  try {
+    await authorizeSetupRequest(
+      request,
+      {
+        ownerEmail: bindings.OWNER_ACCESS_EMAIL,
+        accessIssuer: `https://${bindings.ACCESS_TEAM_DOMAIN}`,
+        accessAudience: bindings.SETUP_ACCESS_AUDIENCE
+      },
+      verifyAccess
+    )
+  } catch {
+    return json({ code: "unauthorized" }, 401)
+  }
+
+  if (request.method === "GET") {
+    return json({ setupRequired: !(await authUserExists(bindings)) })
+  }
+  if (request.method !== "POST") return json({ code: "method_not_allowed" }, 405)
+  if (await authUserExists(bindings)) return json({ code: "setup_complete" }, 409)
+
+  let value: unknown
+  try {
+    value = await readJson(request)
+  } catch {
+    return json({ code: "invalid_request" }, 400)
+  }
+  const password =
+    typeof value === "object" && value !== null && "password" in value
+      ? (value as { password?: unknown }).password
+      : undefined
+  if (typeof password !== "string" || password.length < 12 || password.length > 128) {
+    return json({ code: "invalid_password" }, 400)
+  }
+
+  const headers = new Headers(request.headers)
+  headers.delete("content-length")
+  headers.set("content-type", "application/json")
+  const signupRequest = new Request(new URL("/api/auth/sign-up/email", request.url), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      name: "Owner",
+      email: bindings.OWNER_ACCESS_EMAIL,
+      password
+    })
+  })
+  return secure(await createOwnerAuth(bindings, { allowSignUp: true }).handler(signupRequest))
+}
+
+export async function handleHttp(
+  request: Request,
+  bindings: CoreBindings,
+  verifyAccess?: AccessTokenVerifier
+): Promise<Response> {
   const url = new URL(request.url)
   if (request.method === "GET" && url.pathname === "/health") {
     return json({ healthy: true, service: "core", version: 1 })
   }
 
-  try {
-    await authorizeCoreRequest(request, {
-      ingressSecret: bindings.INGRESS_CALLER_SECRET,
-      egressSecret: bindings.EGRESS_CALLER_SECRET,
-      ownerEmail: bindings.OWNER_ACCESS_EMAIL,
-      agentSubject: bindings.AGENT_CALLER_SUBJECT,
-      accessIssuer: `https://${bindings.ACCESS_TEAM_DOMAIN}`,
-      accessAudience: bindings.CORE_ACCESS_AUDIENCE
-    })
-  } catch {
-    return json({ code: "unauthorized" }, 401)
+  if (url.pathname === "/api/auth" || url.pathname.startsWith("/api/auth/")) {
+    return secure(await createOwnerAuth(bindings).handler(request))
+  }
+
+  if (url.pathname === "/setup/api") {
+    return handleSetup(request, bindings, verifyAccess)
+  }
+
+  if (url.pathname.startsWith("/api/")) {
+    try {
+      if ((await ownerSession(request, bindings)) === null) {
+        return json({ code: "unauthorized" }, 401)
+      }
+    } catch {
+      return json({ code: "unauthorized" }, 401)
+    }
+  } else if (url.pathname.startsWith("/internal/")) {
+    try {
+      await authorizeCoreRequest(
+        request,
+        {
+          ingressSecret: bindings.INGRESS_CALLER_SECRET,
+          egressSecret: bindings.EGRESS_CALLER_SECRET,
+          agentSubject: bindings.AGENT_CALLER_SUBJECT,
+          accessIssuer: `https://${bindings.ACCESS_TEAM_DOMAIN}`,
+          accessAudience: bindings.CORE_ACCESS_AUDIENCE
+        },
+        verifyAccess
+      )
+    } catch {
+      return json({ code: "unauthorized" }, 401)
+    }
+  } else {
+    return json({ code: "not_found" }, 404)
   }
 
   try {
@@ -60,7 +176,23 @@ export async function handleHttp(request: Request, bindings: CoreBindings): Prom
 
     if (request.method === "POST" && url.pathname === "/internal/inbound") {
       const event = Schema.decodeUnknownSync(NormalizedInboundEvent)(await readJson(request))
-      return json(await composition.services.conversations.acceptInbound(event))
+      const parent =
+        parseTraceparent(request.headers.get("traceparent")) ??
+        traceContextFromCorrelationId(event.correlationId)
+      return json(
+        await observeSpan(
+          {
+            sink: composition.services.events,
+            correlationId: event.correlationId,
+            parent,
+            name: "inbound.process",
+            feature: "assistant",
+            workflow: "inbound_message",
+            failureCode: "durable_store"
+          },
+          () => composition.services.conversations.acceptInbound(event)
+        )
+      )
     }
 
     const inboundEnqueued = url.pathname.match(/^\/internal\/inbound\/([^/]+)\/enqueued$/)
@@ -107,13 +239,141 @@ export async function handleHttp(request: Request, bindings: CoreBindings): Prom
     }
 
     if (request.method === "POST" && url.pathname === "/internal/tools") {
-      return json(await composition.services.tools.execute(await readJson(request)))
+      const command = Schema.decodeUnknownSync(ToolCommand)(await readJson(request))
+      const suppliedCorrelation = request.headers.get("x-bob-correlation-id")
+      const correlationId =
+        suppliedCorrelation === null
+          ? command.runId
+          : Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(suppliedCorrelation)
+      const parent =
+        parseTraceparent(request.headers.get("traceparent")) ??
+        traceContextFromCorrelationId(correlationId)
+      const startedAt = Date.now()
+      let status: "completed" | "failed" = "failed"
+      try {
+        return json(
+          await observeSpan(
+            {
+              sink: composition.services.events,
+              correlationId,
+              parent,
+              name: "tool.execute",
+              feature: featureForToolName(command.name),
+              workflow: "tool_execution",
+              failureCode: "tool_execution"
+            },
+            async () => {
+              const result = await composition.services.tools.execute(command)
+              status = result.ok ? "completed" : "failed"
+              return result
+            },
+            (result) => (result.ok ? undefined : "tool_execution")
+          )
+        )
+      } finally {
+        try {
+          await composition.services.events.emit({
+            type: "tool_call",
+            correlationId,
+            runId: command.runId,
+            toolCallId: command.toolCallId,
+            toolName: command.name,
+            status,
+            durationMs: Math.max(0, Date.now() - startedAt)
+          })
+        } catch {
+          // Telemetry must not change a tool result.
+        }
+      }
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/settings") {
+      return json({
+        settings: await composition.services.settings.get(composition.config.OWNER_ID),
+        connections: [
+          ...(await composition.services.settings.connections(composition.config.OWNER_ID)),
+          ...(await composition.services.connections.list(composition.config.OWNER_ID))
+        ]
+      })
+    }
+
+    if (request.method === "PUT" && url.pathname === "/api/settings") {
+      const input = Schema.decodeUnknownSync(OwnerSettingsUpdate)(await readJson(request))
+      const settings = await composition.services.settings.update(
+        composition.config.OWNER_ID,
+        input,
+        idempotencyKey(request)
+      )
+      return json({
+        settings,
+        connections: [
+          ...(await composition.services.settings.connections(composition.config.OWNER_ID)),
+          ...(await composition.services.connections.list(composition.config.OWNER_ID))
+        ]
+      })
+    }
+
+    const connectionSession = url.pathname.match(/^\/api\/connections\/([^/]+)\/session$/)
+    if (request.method === "POST" && connectionSession !== null) {
+      const provider = Schema.decodeUnknownSync(ConnectionProvider)(
+        decodeURIComponent(connectionSession[1]!)
+      )
+      return json(
+        await composition.services.connections.createSession(composition.config.OWNER_ID, provider),
+        201
+      )
     }
 
     if (request.method === "GET" && url.pathname === "/api/reminders") {
       return json({
         reminders: await composition.services.reminders.list(composition.config.OWNER_ID)
       })
+    }
+
+    const reminderOccurrenceAction = url.pathname.match(
+      /^\/api\/reminder-occurrences\/([^/]+)\/(seen|done|snooze)$/
+    )
+    if (request.method === "POST" && reminderOccurrenceAction !== null) {
+      const occurrenceId = decodeURIComponent(reminderOccurrenceAction[1]!)
+      const action = reminderOccurrenceAction[2]!
+      const actionKey = idempotencyKey(request)
+      if (action === "seen") {
+        await composition.services.reminders.acknowledge(
+          composition.config.OWNER_ID,
+          occurrenceId,
+          actionKey
+        )
+        return json({ ok: true })
+      }
+      if (action === "done") {
+        await composition.services.reminders.complete(
+          composition.config.OWNER_ID,
+          occurrenceId,
+          actionKey
+        )
+        return json({ ok: true })
+      }
+      const input = Schema.decodeUnknownSync(ReminderSnoozeRequest)(await readJson(request))
+      if (Date.parse(input.dueAt) <= Date.now())
+        throw new Error("Snooze time must be in the future")
+      const successorOccurrenceId = await composition.services.reminders.snooze(
+        composition.config.OWNER_ID,
+        occurrenceId,
+        input.dueAt,
+        actionKey
+      )
+      return json({ successorOccurrenceId })
+    }
+
+    const reminderCancel = url.pathname.match(/^\/api\/reminders\/([^/]+)\/cancel$/)
+    if (request.method === "POST" && reminderCancel !== null) {
+      await composition.services.reminders.cancel(
+        composition.config.OWNER_ID,
+        decodeURIComponent(reminderCancel[1]!),
+        undefined,
+        idempotencyKey(request)
+      )
+      return json({ ok: true })
     }
 
     if (request.method === "GET" && url.pathname === "/api/alerts") {
@@ -237,9 +497,40 @@ export async function handleHttp(request: Request, bindings: CoreBindings): Prom
       return json({ revisionId })
     }
 
+    const memoryCorrect = url.pathname.match(/^\/api\/memory\/candidates\/([^/]+)\/correct$/)
+    if (request.method === "POST" && memoryCorrect !== null) {
+      const input = Schema.decodeUnknownSync(MemoryCandidateCorrection)(await readJson(request))
+      const candidateId = await composition.services.memory.correct(
+        composition.config.OWNER_ID,
+        decodeURIComponent(memoryCorrect[1]!),
+        input.canonicalText,
+        idempotencyKey(request)
+      )
+      return json({ candidateId })
+    }
+
+    const memoryReject = url.pathname.match(/^\/api\/memory\/candidates\/([^/]+)\/reject$/)
+    if (request.method === "POST" && memoryReject !== null) {
+      await composition.services.memory.reject(
+        composition.config.OWNER_ID,
+        decodeURIComponent(memoryReject[1]!),
+        idempotencyKey(request)
+      )
+      return json({ ok: true })
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/training/overview") {
+      return json(
+        await composition.services.training.overview(
+          composition.config.OWNER_ID,
+          url.searchParams.get("q") ?? undefined
+        )
+      )
+    }
+
     if (request.method === "GET" && url.pathname === "/api/training/proposals") {
       return json({
-        proposals: await composition.services.tools.listTrainingProposals(
+        proposals: await composition.services.training.listTrainingProposals(
           composition.config.OWNER_ID
         )
       })
@@ -249,7 +540,7 @@ export async function handleHttp(request: Request, bindings: CoreBindings): Prom
     if (request.method === "POST" && trainingApprove !== null) {
       const input = Schema.decodeUnknownSync(TrainingProposalApproval)(await readJson(request))
       return json(
-        await composition.services.tools.approveTrainingProposal(
+        await composition.services.training.approveTrainingProposal(
           composition.config.OWNER_ID,
           decodeURIComponent(trainingApprove[1]!),
           input.proposalHash,
@@ -265,6 +556,17 @@ export async function handleHttp(request: Request, bindings: CoreBindings): Prom
         decodeURIComponent(journalEntry[1]!)
       )
       return entry === undefined ? json({ code: "not_found" }, 404) : json(entry)
+    }
+
+    if (request.method === "PUT" && journalEntry !== null) {
+      const input = Schema.decodeUnknownSync(JournalEntryUpdate)(await readJson(request))
+      await composition.services.journal.updateEntry(
+        composition.config.OWNER_ID,
+        decodeURIComponent(journalEntry[1]!),
+        input,
+        idempotencyKey(request)
+      )
+      return json({ ok: true })
     }
 
     const journalDelete = journalEntry

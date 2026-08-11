@@ -2,7 +2,7 @@
 
 ## Journal handling
 
-Keep raw journal text in the Access-protected UI.
+Keep raw journal text in the Better Auth-protected UI.
 
 Do not send raw journal text through Sendblue or Pi.
 

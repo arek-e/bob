@@ -17,6 +17,7 @@
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
     "effect": "4.0.0-beta.107",
+    "lucide-solid": "1.31.0",
     "solid-js": "1.9.14"
   },
   "devDependencies": {

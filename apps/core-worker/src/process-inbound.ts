@@ -1,17 +1,32 @@
-import { AgentRunResult, type AgentRunRequest } from "@bob/contracts/agent"
 import type { OutboundJob } from "@bob/contracts/jobs"
+import type { TelemetryFeature } from "@bob/observability/events"
+
+import { AgentRunResult, type AgentRunRequest } from "@bob/contracts/agent"
+import { agentRunSpanCode, featureForTools } from "@bob/observability/attribution"
+import {
+  observeSpan,
+  formatTraceparent,
+  parseTraceparent,
+  traceContextFromCorrelationId,
+  traceHeaders,
+  type TraceContext
+} from "@bob/observability/trace"
 import { Effect, Schema } from "effect"
 
 import type { CoreBindings } from "./bindings.ts"
 import type { CoreComposition } from "./composition.ts"
+
 import { selectTools } from "./modules/context/tool-selection.ts"
+import { reportAgentFailure, reportAgentUsage } from "./modules/observability/reporting.ts"
+import { selectAgentResponse } from "./modules/policy/agent-response.ts"
 import {
   classifyDeterministicCommand,
+  deterministicCommandLanguage,
   fixedHelpText,
   resolveShortReply,
   urgentSafetyResponse
 } from "./modules/policy/rules.ts"
-import { trainingSafetySignal } from "./modules/training/rules.ts"
+import { trainingSafetyResponse, trainingSafetySignal } from "./modules/training/rules.ts"
 
 class AgentCallError extends Error {
   readonly _tag = "AgentCallError"
@@ -20,13 +35,73 @@ class AgentCallError extends Error {
   }
 }
 
+export function assertAgentResultIdentity(
+  request: AgentRunRequest,
+  result: AgentRunResult
+): AgentRunResult {
+  if (result.runId !== request.runId || result.correlationId !== request.correlationId) {
+    throw new AgentCallError("policy")
+  }
+  return result
+}
+
+interface WorkflowTelemetry {
+  readonly correlationId: string
+  readonly parent: TraceContext
+  readonly feature: TelemetryFeature
+}
+
+async function emitSafely(
+  composition: CoreComposition,
+  event: Parameters<CoreComposition["services"]["events"]["emit"]>[0]
+) {
+  try {
+    await composition.services.events.emit(event)
+  } catch {
+    // Telemetry must not change a durable workflow.
+  }
+}
+
+function featureForReason(reasonCode: string): TelemetryFeature {
+  if (
+    reasonCode.includes("reminder") ||
+    reasonCode.includes("command_done") ||
+    reasonCode.includes("command_seen")
+  ) {
+    return "reminders"
+  }
+  if (reasonCode.includes("journal")) return "journal"
+  if (reasonCode.includes("safety")) return "safety"
+  if (reasonCode.includes("training")) return "training"
+  return "assistant"
+}
+
 async function publishOutbox(
   bindings: CoreBindings,
   composition: CoreComposition,
-  outboxId: string
+  outboxId: string,
+  telemetry?: WorkflowTelemetry
 ): Promise<void> {
-  await bindings.OUTBOUND_QUEUE.send({ outboxId } satisfies OutboundJob)
-  await composition.services.delivery.markEnqueued(outboxId, new Date().toISOString())
+  const publish = async (trace?: TraceContext) => {
+    await bindings.OUTBOUND_QUEUE.send({
+      outboxId,
+      ...(trace === undefined ? {} : { traceparent: formatTraceparent(trace) })
+    } satisfies OutboundJob)
+    await composition.services.delivery.markEnqueued(outboxId, new Date().toISOString())
+  }
+  if (telemetry === undefined) return publish()
+  return observeSpan(
+    {
+      sink: composition.services.events,
+      correlationId: telemetry.correlationId,
+      parent: telemetry.parent,
+      name: "outbox.publish",
+      feature: telemetry.feature,
+      workflow: "outbound_delivery",
+      failureCode: "queue_publish"
+    },
+    publish
+  )
 }
 
 async function enqueueOutbox(
@@ -41,8 +116,29 @@ async function enqueueOutbox(
     idempotencyKey: string
   }
 ): Promise<string> {
-  const outboxId = await composition.services.delivery.createOutbox(input)
-  await publishOutbox(bindings, composition, outboxId)
+  const root = traceContextFromCorrelationId(input.correlationId)
+  const feature = featureForReason(input.reasonCode)
+  let publishParent = root
+  const outboxId = await observeSpan(
+    {
+      sink: composition.services.events,
+      correlationId: input.correlationId,
+      parent: root,
+      name: "outbox.create",
+      feature,
+      workflow: "outbound_delivery",
+      failureCode: "durable_store"
+    },
+    async (trace) => {
+      publishParent = trace
+      return composition.services.delivery.createOutbox(input)
+    }
+  )
+  await publishOutbox(bindings, composition, outboxId, {
+    correlationId: input.correlationId,
+    parent: publishParent,
+    feature
+  })
   return outboxId
 }
 
@@ -76,7 +172,7 @@ async function deterministicReply(
     await enqueueOutbox(bindings, composition, {
       ownerId: claimed.ownerId,
       channelId: claimed.channelId,
-      text: "Stop this exercise now. Do not increase the weight. Ask a qualified trainer or health professional for help.",
+      text: trainingSafetyResponse(claimed.text)!,
       reasonCode: "training_safety_stop",
       correlationId: claimed.correlationId,
       idempotencyKey: `inbound:${claimed.eventId}:training-safety-reply`
@@ -86,10 +182,12 @@ async function deterministicReply(
 
   const command = classifyDeterministicCommand(claimed.text)
   if (command === undefined) return false
+  const language = deterministicCommandLanguage(claimed.text)
+  const swedish = language === "sv"
   let response: string
   switch (command) {
     case "help":
-      response = fixedHelpText()
+      response = fixedHelpText(language)
       break
     case "journal": {
       const handoff = await composition.services.journal.createHandoff(
@@ -97,7 +195,9 @@ async function deterministicReply(
         10 * 60_000,
         `inbound:${claimed.eventId}:journal-handoff`
       )
-      response = `Open your private journal: ${composition.config.UI_BASE_URL}/journal/${handoff.id}`
+      response = swedish
+        ? `Öppna din privata dagbok: ${composition.config.UI_BASE_URL}/journal/${handoff.id}`
+        : `Open your private journal: ${composition.config.UI_BASE_URL}/journal/${handoff.id}`
       break
     }
     case "done":
@@ -109,11 +209,17 @@ async function deterministicReply(
       )
       const resolution = resolveShortReply(command, bindingsForReply, new Date())
       if (resolution.kind === "ambiguous") {
-        response = "More than one action matches. Open Bob to choose the correct item."
+        response = swedish
+          ? "Fler än en åtgärd matchar. Öppna Bob och välj rätt post."
+          : "More than one action matches. Open Bob to choose the correct item."
       } else if (resolution.kind === "none") {
-        response = `I cannot match ${command.toUpperCase()} to one current item.`
+        response = swedish
+          ? `Jag kan inte koppla ${claimed.text.trim().toUpperCase()} till en aktuell post.`
+          : `I cannot match ${command.toUpperCase()} to one current item.`
       } else if (resolution.binding.targetType !== "reminder") {
-        response = "That reply is not linked to a reminder. Open Bob to choose the item."
+        response = swedish
+          ? "Svaret är inte kopplat till en påminnelse. Öppna Bob och välj posten."
+          : "That reply is not linked to a reminder. Open Bob to choose the item."
       } else {
         const applied = await composition.services.reminders.applyBoundReply(
           claimed.ownerId,
@@ -122,10 +228,16 @@ async function deterministicReply(
         )
         response =
           applied === "invalid"
-            ? "That action is no longer available. Open Bob to choose the item."
+            ? swedish
+              ? "Åtgärden är inte längre tillgänglig. Öppna Bob och välj posten."
+              : "That action is no longer available. Open Bob to choose the item."
             : command === "done"
-              ? "Marked complete."
-              : "Marked as seen."
+              ? swedish
+                ? "Påminnelsen är markerad som klar."
+                : "Marked complete."
+              : swedish
+                ? "Påminnelsen är markerad som sedd."
+                : "Marked as seen."
       }
       break
     }
@@ -138,16 +250,24 @@ async function deterministicReply(
       response = "Sendblue manages START. Bob resumes only after Sendblue confirms the change."
       break
     case "repeat":
-      response = "Open Bob to view the last message."
+      response = swedish
+        ? "Öppna Bob för att se det senaste meddelandet."
+        : "Open Bob to view the last message."
       break
     case "why":
-      response = "Open Bob to view the stored reason and source for the last reminder."
+      response = swedish
+        ? "Öppna Bob för att se den sparade orsaken och källan för den senaste påminnelsen."
+        : "Open Bob to view the stored reason and source for the last reminder."
       break
     case "pause":
-      response = "This interaction is paused. Your scheduled reminders are unchanged."
+      response = swedish
+        ? "Den här interaktionen är pausad. Dina schemalagda påminnelser ändras inte."
+        : "This interaction is paused. Your scheduled reminders are unchanged."
       break
     case "undo":
-      response = "I cannot match UNDO to one safe inverse action. Open Bob to choose an item."
+      response = swedish
+        ? "Jag kan inte koppla ÅNGRA till en säker omvänd åtgärd. Öppna Bob och välj en post."
+        : "I cannot match UNDO to one safe inverse action. Open Bob to choose an item."
       break
   }
   await enqueueOutbox(bindings, composition, {
@@ -164,7 +284,8 @@ async function deterministicReply(
 export async function processInbound(
   eventId: string,
   bindings: CoreBindings,
-  composition: CoreComposition
+  composition: CoreComposition,
+  traceparent?: string
 ): Promise<void> {
   const claimed = await composition.services.conversations.claimInbound(eventId, 90_000)
   if (claimed === undefined) return
@@ -173,30 +294,101 @@ export async function processInbound(
     return
   }
 
+  const rootTrace =
+    parseTraceparent(traceparent) ?? traceContextFromCorrelationId(claimed.correlationId)
+  let stageParent = rootTrace
   const stored = await composition.services.runs.loadForInbound(claimed.eventId)
   if (stored?.outboxId !== undefined) {
-    await publishOutbox(bindings, composition, stored.outboxId)
+    await publishOutbox(bindings, composition, stored.outboxId, {
+      correlationId: claimed.correlationId,
+      parent: rootTrace,
+      feature: featureForTools(stored.request.allowedTools)
+    })
     return
   }
-  const request: AgentRunRequest =
-    stored?.request ??
-    ({
+  let request: AgentRunRequest | undefined = stored?.request
+  if (request === undefined) {
+    const ownerSettings = await composition.services.settings.get(claimed.ownerId)
+    const localTime = new Date().toISOString()
+    const runId = crypto.randomUUID()
+    const allowedTools = selectTools(claimed.text)
+    const feature = featureForTools(allowedTools)
+    const retrievalStartedAt = Date.now()
+    let contextItems: AgentRunRequest["contextItems"]
+    try {
+      contextItems = await observeSpan(
+        {
+          sink: composition.services.events,
+          correlationId: claimed.correlationId,
+          parent: rootTrace,
+          name: "context.build",
+          feature,
+          workflow: "agent_turn",
+          failureCode: "retrieval"
+        },
+        async (trace) => {
+          stageParent = trace
+          return composition.services.context.build({
+            ownerId: claimed.ownerId,
+            channelId: claimed.channelId,
+            currentMessageId: claimed.messageId,
+            currentUserText: claimed.text,
+            localTime,
+            timeZone: ownerSettings.timeZone
+          })
+        }
+      )
+      await emitSafely(composition, {
+        type: "retrieval",
+        correlationId: claimed.correlationId,
+        runId,
+        feature,
+        workflow: "agent_turn",
+        strategy: "fts",
+        status: "completed",
+        selectedCount: contextItems.length,
+        sourceCount: contextItems.reduce((count, item) => count + item.sources.length, 0),
+        conflictCount: contextItems.filter((item) => item.conflict).length,
+        durationMs: Math.max(0, Date.now() - retrievalStartedAt)
+      })
+    } catch (error) {
+      await emitSafely(composition, {
+        type: "retrieval",
+        correlationId: claimed.correlationId,
+        runId,
+        feature,
+        workflow: "agent_turn",
+        strategy: "fts",
+        status: "failed",
+        selectedCount: 0,
+        sourceCount: 0,
+        conflictCount: 0,
+        durationMs: Math.max(0, Date.now() - retrievalStartedAt)
+      })
+      throw error
+    }
+    request = {
       protocolVersion: 1,
-      runId: crypto.randomUUID(),
+      runId,
       ownerId: claimed.ownerId,
       correlationId: claimed.correlationId,
-      localTime: new Date().toISOString(),
-      timeZone: composition.config.OWNER_TIME_ZONE,
+      sourceMessageId: claimed.messageId,
+      localTime,
+      timeZone: ownerSettings.timeZone,
+      locale: ownerSettings.locale,
+      hourCycle: ownerSettings.hourCycle,
       userText: claimed.text,
-      contextItems: await composition.services.context.build(claimed.ownerId, claimed.channelId),
-      allowedTools: selectTools(claimed.text),
+      contextItems,
+      allowedTools,
       limits: {
         maxTurns: 4,
         maxToolCalls: 4,
         maxDurationMs: 60_000,
         maxResponseCharacters: 1_200
       }
-    } satisfies AgentRunRequest)
+    }
+  }
+  const feature = featureForTools(request.allowedTools)
   const created =
     stored === undefined
       ? await composition.services.runs.create(request, claimed.eventId)
@@ -215,42 +407,85 @@ export async function processInbound(
       outputTokens: 0,
       toolCalls: 0
     }
-    const outboxId = await composition.services.runs.completeWithResponse(recovered, {
-      channelId: claimed.channelId,
-      text: "I recovered your request, but its prior response was unavailable. I made no automatic provider change.",
-      reasonCode: "agent_recovery"
+    let publishParent = stageParent
+    const outboxId = await observeSpan(
+      {
+        sink: composition.services.events,
+        correlationId: claimed.correlationId,
+        parent: stageParent,
+        name: "outbox.create",
+        feature,
+        workflow: "outbound_delivery",
+        failureCode: "durable_store"
+      },
+      async (trace) => {
+        publishParent = trace
+        return composition.services.runs.completeWithResponse(recovered, {
+          channelId: claimed.channelId,
+          text: "I recovered your request, but its prior response was unavailable. I made no automatic provider change.",
+          reasonCode: "agent_recovery"
+        })
+      }
+    )
+    await publishOutbox(bindings, composition, outboxId, {
+      correlationId: claimed.correlationId,
+      parent: publishParent,
+      feature
     })
-    await publishOutbox(bindings, composition, outboxId)
     return
   }
   if (!(await composition.services.runs.claim(created.runId, 90_000))) return
 
   const program = Effect.tryPromise({
     try: async (signal) => {
-      const response = await fetch(`${composition.config.AGENT_URL}/v1/run`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "CF-Access-Client-Id": composition.config.AGENT_ACCESS_CLIENT_ID,
-          "CF-Access-Client-Secret": composition.config.AGENT_ACCESS_CLIENT_SECRET
+      return observeSpan(
+        {
+          sink: composition.services.events,
+          correlationId: claimed.correlationId,
+          parent: stageParent,
+          name: "model.run",
+          feature,
+          workflow: "agent_turn",
+          failureCode: "provider",
+          errorCode: (error) =>
+            error instanceof AgentCallError
+              ? (agentRunSpanCode("failed", error.code) ?? "provider")
+              : "provider"
         },
-        body: JSON.stringify(request),
-        signal
-      })
-      if (!response.ok) {
-        const code =
-          response.status === 401 || response.status === 403
-            ? "authentication"
-            : response.status === 429
-              ? "quota"
-              : response.status === 408 || response.status === 504
-                ? "timeout"
-                : response.status >= 400 && response.status < 500
-                  ? "policy"
-                  : "provider"
-        throw new AgentCallError(code)
-      }
-      return Schema.decodeUnknownSync(AgentRunResult)(await response.json())
+        async (trace) => {
+          const response = await fetch(`${composition.config.AGENT_URL}/v1/run`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "CF-Access-Client-Id": composition.config.AGENT_ACCESS_CLIENT_ID,
+              "CF-Access-Client-Secret": composition.config.AGENT_ACCESS_CLIENT_SECRET,
+              ...traceHeaders(trace),
+              "x-bob-correlation-id": claimed.correlationId
+            },
+            body: JSON.stringify(request),
+            signal
+          })
+          stageParent = parseTraceparent(response.headers.get("traceparent")) ?? trace
+          if (!response.ok) {
+            const code =
+              response.status === 401 || response.status === 403
+                ? "authentication"
+                : response.status === 429
+                  ? "quota"
+                  : response.status === 408 || response.status === 504
+                    ? "timeout"
+                    : response.status >= 400 && response.status < 500
+                      ? "policy"
+                      : "provider"
+            throw new AgentCallError(code)
+          }
+          return assertAgentResultIdentity(
+            request,
+            Schema.decodeUnknownSync(AgentRunResult)(await response.json())
+          )
+        },
+        (result) => agentRunSpanCode(result.status, result.errorCode)
+      )
     },
     catch: (error) => (error instanceof AgentCallError ? error : new AgentCallError("provider"))
   }).pipe(Effect.timeout(request.limits.maxDurationMs + 5_000))
@@ -280,23 +515,54 @@ export async function processInbound(
       toolCalls: 0
     }
   }
-  const responseText =
-    result.status === "completed" && result.responseText !== undefined
-      ? result.responseText
-      : "I could not complete that request. I did not make an automatic billing or provider change."
-  if (result.status === "failed" && result.errorCode === "authentication") {
-    await composition.services.alerts.record({
+  const response = selectAgentResponse(result, request)
+  await reportAgentUsage(
+    composition.database,
+    composition.services.alerts,
+    composition.services.events,
+    {
+      runId: result.runId,
       ownerId: claimed.ownerId,
-      code: "agent_authentication_failed",
-      objectType: "agent_run",
-      objectId: result.runId,
-      idempotencyKey: `alert:agent-authentication:${result.runId}`
-    })
-  }
-  const outboxId = await composition.services.runs.completeWithResponse(result, {
-    channelId: claimed.channelId,
-    text: responseText,
-    reasonCode: result.status === "completed" ? "agent_reply" : "agent_failure"
+      correlationId: result.correlationId,
+      feature,
+      provider: "openai-codex",
+      model: result.model,
+      status: result.status,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      toolCalls: result.toolCalls,
+      durationMs: result.durationMs,
+      occurredAt: new Date().toISOString()
+    },
+    {
+      runTokens: composition.config.BOB_RUN_TOKEN_BUDGET,
+      dailyTokens: composition.config.BOB_DAILY_TOKEN_BUDGET
+    }
+  )
+  await reportAgentFailure(composition.services.alerts, claimed.ownerId, result)
+  let publishParent = stageParent
+  const outboxId = await observeSpan(
+    {
+      sink: composition.services.events,
+      correlationId: claimed.correlationId,
+      parent: stageParent,
+      name: "outbox.create",
+      feature,
+      workflow: "outbound_delivery",
+      failureCode: "durable_store"
+    },
+    async (trace) => {
+      publishParent = trace
+      return composition.services.runs.completeWithResponse(result, {
+        channelId: claimed.channelId,
+        text: response.text,
+        reasonCode: response.reasonCode
+      })
+    }
+  )
+  await publishOutbox(bindings, composition, outboxId, {
+    correlationId: claimed.correlationId,
+    parent: publishParent,
+    feature
   })
-  await publishOutbox(bindings, composition, outboxId)
 }

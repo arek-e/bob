@@ -1,14 +1,16 @@
-import type { DeliveryResult, OutboxClaim } from "@bob/contracts/delivery"
 import type { NormalizedStatusEvent } from "@bob/contracts/channel"
-import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
+import type { DeliveryResult, OutboxClaim } from "@bob/contracts/delivery"
 import type { BatchItem } from "drizzle-orm/batch"
+
+import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
 import { Context, Layer } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
+import type { DataProtection } from "../policy/data-protection.ts"
+
 import { operationalAlerts } from "../alerts/schema.ts"
 import { recordOperationalAlert } from "../alerts/store.ts"
 import { channels, messages, shortReplyBindings, users } from "../conversations/schema.ts"
-import type { DataProtection } from "../policy/data-protection.ts"
 import { reminderOccurrences } from "../reminders/schema.ts"
 import { deliveryAttempts, outboxMessages, providerEvents } from "./schema.ts"
 

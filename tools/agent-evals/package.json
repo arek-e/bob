@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "eval": "tsx src/index.ts",
+    "eval": "tsx src/index.ts offline",
+    "eval:offline": "tsx src/index.ts offline",
+    "eval:live": "tsx src/index.ts live",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

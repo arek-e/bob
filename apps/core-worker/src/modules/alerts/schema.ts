@@ -11,6 +11,9 @@ export const operationalAlerts = sqliteTable(
         "delivery_uncertain",
         "delivery_result_exhausted",
         "agent_authentication_failed",
+        "agent_quota_exhausted",
+        "agent_run_failed",
+        "token_budget_exceeded",
         "reminder_missed"
       ]
     }).notNull(),

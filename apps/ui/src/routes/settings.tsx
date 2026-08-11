@@ -1,5 +1,5 @@
-import { onMount } from "solid-js"
 import { createFileRoute } from "@tanstack/solid-router"
+import { onMount } from "solid-js"
 
 import { ProtectedLayout } from "~/components/auth"
 import { SettingsPage } from "~/components/settings"

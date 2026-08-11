@@ -20,6 +20,39 @@ spec:
     - to:
         - namespaceSelector:
             matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: prod-otel-collector
+              app.kubernetes.io/name: opentelemetry-collector
+              component: standalone-collector
+      ports:
+        - protocol: TCP
+          port: 4318
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: bob-nango
+      ports:
+        - protocol: TCP
+          port: 3003
+        - protocol: TCP
+          port: 3009
+    - to:
+        - namespaceSelector:
+            matchLabels:
               kubernetes.io/metadata.name: openbao
       ports:
         - protocol: TCP

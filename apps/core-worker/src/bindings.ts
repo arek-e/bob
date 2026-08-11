@@ -22,8 +22,10 @@ export interface CoreBindings {
   DATA_LOOKUP_KEY: string
   INGRESS_CALLER_SECRET: string
   EGRESS_CALLER_SECRET: string
+  BETTER_AUTH_SECRET: string
   ACCESS_TEAM_DOMAIN: string
   CORE_ACCESS_AUDIENCE: string
+  SETUP_ACCESS_AUDIENCE: string
   OWNER_ACCESS_EMAIL: string
   AGENT_CALLER_SUBJECT: string
   AGENT_URL: string
@@ -33,8 +35,14 @@ export interface CoreBindings {
   AGENT_ADMIN_ACCESS_CLIENT_ID: string
   AGENT_ADMIN_ACCESS_CLIENT_SECRET: string
   UI_BASE_URL: string
+  NANGO_API_URL: string
+  NANGO_SECRET_KEY: string
+  NANGO_GOOGLE_CALENDAR_INTEGRATION_ID: string
+  NANGO_MICROSOFT_CALENDAR_INTEGRATION_ID: string
   BOB_MODEL: string
   BOB_PROVIDER: string
+  BOB_RUN_TOKEN_BUDGET: number
+  BOB_DAILY_TOKEN_BUDGET: number
 }
 
 export interface IngressBindings {

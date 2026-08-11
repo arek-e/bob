@@ -1,4 +1,5 @@
 import type { IngressBindings } from "./bindings.ts"
+
 import { handleIngressHttp } from "./entrypoints/http.ts"
 
 export default {

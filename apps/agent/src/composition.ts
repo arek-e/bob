@@ -1,9 +1,8 @@
-import { readFile } from "node:fs/promises"
-
-import { Effect, Layer } from "effect"
+import { nodeTelemetrySink } from "@bob/observability/node"
 import { createBobPiAgent, type BobPiAgent } from "@bob/pi-agent"
 import { OpenBaoCredentialStore } from "@bob/pi-agent/auth"
-import { nodeEventSink } from "@bob/observability/node"
+import { Effect, Layer } from "effect"
+import { readFile } from "node:fs/promises"
 
 import { AccessVerifier, accessVerifierLayer, createAccessVerifier } from "./access.ts"
 import { readAgentConfiguration, type AgentConfiguration } from "./configuration.ts"
@@ -15,13 +14,19 @@ export interface AgentComposition {
     readonly access: AccessVerifier
     readonly agent: BobPiAgent
     readonly coreTools: CoreToolClient
-    readonly events: ReturnType<typeof nodeEventSink>
+    readonly events: ReturnType<typeof nodeTelemetrySink>
   }
   readonly layer: Layer.Layer<never>
 }
 
 export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
   const config = readAgentConfiguration(environment)
+  const events = nodeTelemetrySink({
+    endpoint: config.otlpEndpoint,
+    serviceName: "bob-agent",
+    deploymentEnvironment: "prod",
+    releaseSha: config.releaseSha
+  })
   const access = createAccessVerifier({
     teamDomain: config.accessTeamDomain,
     runAudience: config.runAccessAudience,
@@ -32,7 +37,8 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
   const coreTools = createCoreToolClient({
     coreUrl: config.coreUrl,
     accessClientId: config.coreAccessClientId,
-    accessClientSecret: config.coreAccessClientSecret
+    accessClientSecret: config.coreAccessClientSecret,
+    events
   })
   const credentials = new OpenBaoCredentialStore({
     address: config.baoAddress,
@@ -49,7 +55,6 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
     allowedModels: config.allowedModels,
     executeTool: coreTools.execute
   })
-  const events = nodeEventSink()
   const layer = Layer.mergeAll(accessVerifierLayer(access), coreToolClientLayer(coreTools))
   const services = Effect.runSync(
     Effect.gen(function* () {

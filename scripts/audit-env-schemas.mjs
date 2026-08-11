@@ -8,6 +8,7 @@ const paths = [
   "apps/ui",
   "tools/sendblue-reconcile",
   "tools/pi-smoke",
+  "tools/data-backup",
   "infra/cloudflare"
 ]
 

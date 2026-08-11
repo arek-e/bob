@@ -26,6 +26,79 @@ Resume one agent replica. Resume egress after provider reconciliation.
 
 Notify the owner with short factual text when the incident affected reminders.
 
+## Roll back before the Core deployment
+
+Use this path when the new agent fails while the old Core remains live.
+
+Keep Sendblue traffic paused. Do not deploy the Cloudflare plan.
+
+Restore the prior Argo SHA. This also restores the prior agent digest.
+
+```sh
+kubectl --context=teampitch-prod -n argocd patch application bob --type=merge \
+  --patch "{\"spec\":{\"source\":{\"targetRevision\":\"$PRIOR_ARGO_SHA\"}}}"
+kubectl --context=teampitch-prod -n argocd wait \
+  --for=jsonpath='{.status.sync.status}'=Synced application/bob --timeout=10m
+kubectl --context=teampitch-prod -n argocd wait \
+  --for=jsonpath='{.status.health.status}'=Healthy application/bob --timeout=10m
+kubectl --context=teampitch-prod -n bob rollout status deployment/bob-agent --timeout=10m
+
+CURRENT_AGENT_IMAGE="$(kubectl --context=teampitch-prod -n bob \
+  get deployment bob-agent -o jsonpath='{.spec.template.spec.containers[?(@.name=="agent")].image}')"
+test "$CURRENT_AGENT_IMAGE" = "$PRIOR_AGENT_IMAGE"
+```
+
+Repeat the stable Core, agent health, and agent-to-Core checks.
+
+Resume traffic only after all checks pass.
+
+Do not reverse an additive D1 migration. A migration can exist before its code uses it.
+
+## Roll back after the Core deployment
+
+Use this path when the reviewed Cloudflare deployment has started or completed.
+
+Pause Sendblue traffic. Reconcile each active or unknown action before rollback.
+
+Do not deploy an old infrastructure tree without review. It can remove required Access resources.
+
+Create a rollback commit from the current release. Restore only the prior Core Worker code.
+
+Keep the stable `bob.<domain>` host, current Access resources, retained data, and current migrations.
+
+Run a new production plan. Reject any D1, R2, Queue, or retained-resource deletion.
+
+```sh
+pnpm infra:plan
+pnpm --filter @bob/cloudflare-infra deploy
+```
+
+Never roll back additive D1 migrations. The prior Core must tolerate the expanded schema.
+
+Verify the stable Core `/health` and `/setup` paths with the new compatible agent.
+
+Wait for the External Secrets refresh. Force and verify the agent restart.
+
+Then restore the prior Argo SHA and prior agent digest.
+
+```sh
+kubectl --context=teampitch-prod -n argocd patch application bob --type=merge \
+  --patch "{\"spec\":{\"source\":{\"targetRevision\":\"$PRIOR_ARGO_SHA\"}}}"
+kubectl --context=teampitch-prod -n argocd wait \
+  --for=jsonpath='{.status.sync.status}'=Synced application/bob --timeout=10m
+kubectl --context=teampitch-prod -n argocd wait \
+  --for=jsonpath='{.status.health.status}'=Healthy application/bob --timeout=10m
+kubectl --context=teampitch-prod -n bob rollout status deployment/bob-agent --timeout=10m
+
+CURRENT_AGENT_IMAGE="$(kubectl --context=teampitch-prod -n bob \
+  get deployment bob-agent -o jsonpath='{.spec.template.spec.containers[?(@.name=="agent")].image}')"
+test "$CURRENT_AGENT_IMAGE" = "$PRIOR_AGENT_IMAGE"
+```
+
+Repeat the stable Core, agent health, and agent-to-Core checks.
+
+Resume traffic and domain tools only after every check passes.
+
 ## Review
 
 Record the cause, affected opaque identifiers, duration, and corrective control.

@@ -1,7 +1,6 @@
-import { readFile } from "node:fs/promises"
 import { spawnSync } from "node:child_process"
+import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
-
 import { describe, expect, it } from "vitest"
 
 import { assertDeploymentReadiness } from "../../../scripts/deployment-readiness.mjs"
@@ -11,6 +10,8 @@ const agentImage =
   "ghcr.io/arek-e/bob-agent@sha256:5cc91f03c170b2ffb086f520777dd125fd747fec45569063f958e3c83695fbc2"
 const tunnelImage =
   "docker.io/cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf"
+const backupImage =
+  "ghcr.io/arek-e/bob-data-backup@sha256:ec1cd724701105d46748b9fce580b8bd31f06c86a810df77498016318a0aeb37"
 
 function renderKustomization(directory: string): string {
   const result = spawnSync("kubectl", ["kustomize", directory], {
@@ -28,12 +29,16 @@ async function validInput() {
     deployment,
     config,
     delivery,
+    backupJob,
+    backupDelivery,
+    backupNetworkPolicy,
     networkPolicy,
     ciliumPolicy,
     serviceAccounts,
     argocdNamespace,
     agentPolicy,
     secretDeliveryPolicy,
+    backupSecretDeliveryPolicy,
     argocdRepositoryPolicy,
     productionOverlay,
     kubernetesKustomization,
@@ -48,6 +53,9 @@ async function validInput() {
     readFile(new URL("infra/kubernetes/base/deployment.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/kubernetes/base/agent-config.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/kubernetes/base/secret-delivery.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/kubernetes/base/backup-job.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/kubernetes/base/backup-secret-delivery.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/kubernetes/base/backup-network-policy.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/kubernetes/base/network-policy.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/kubernetes/base/cilium-egress-policy.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/kubernetes/base/service-account.yaml", repositoryRoot), "utf8"),
@@ -55,6 +63,10 @@ async function validInput() {
     readFile(new URL("infra/openbao/agent-production-policy.hcl", repositoryRoot), "utf8"),
     readFile(
       new URL("infra/openbao/agent-secret-delivery-production-policy.hcl", repositoryRoot),
+      "utf8"
+    ),
+    readFile(
+      new URL("infra/openbao/backup-secret-delivery-production-policy.hcl", repositoryRoot),
       "utf8"
     ),
     readFile(
@@ -75,10 +87,14 @@ async function validInput() {
     deployment,
     config,
     delivery,
+    backupJob,
+    backupDelivery,
+    backupNetworkPolicy,
     serviceAccounts,
     argocdNamespace,
     agentPolicy,
     secretDeliveryPolicy,
+    backupSecretDeliveryPolicy,
     argocdRepositoryPolicy,
     networkPolicy,
     ciliumPolicy,
@@ -100,6 +116,7 @@ describe("production GitOps deployment readiness", () => {
   it("accepts the literal production overlay and scoped Argo CD contract", async () => {
     expect(assertDeploymentReadiness(await validInput())).toEqual({
       agentImage,
+      backupImage,
       tunnelImage,
       openBaoAddress: "http://openbao.openbao.svc.cluster.local:8200",
       targetRevision: "f974ae0fc5b53ca1c233faa0dfd69e9f814cb25f"
@@ -195,6 +212,31 @@ describe("production GitOps deployment readiness", () => {
         )
       })
     ).toThrow(/secret-delivery OpenBao policy/u)
+  })
+
+  it("rejects an incomplete backup schedule or broad backup policy", async () => {
+    const input = await validInput()
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        backupJob: input.backupJob.replace('schedule: "15 */4 * * *"', 'schedule: "* * * * *"')
+      })
+    ).toThrow(/scheduled backup/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        backupSecretDeliveryPolicy: input.backupSecretDeliveryPolicy.replace(
+          "apps/prod/bob/backup/runtime",
+          "apps/prod/bob/backup/*"
+        )
+      })
+    ).toThrow(/backup secret-delivery/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        renderedKubernetes: input.renderedKubernetes.replace(backupImage, "bob-backup:latest")
+      })
+    ).toThrow(/reviewed sha256 digest/u)
   })
 
   it("rejects an unscoped Argo CD repository or project", async () => {

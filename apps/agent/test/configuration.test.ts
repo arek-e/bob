@@ -12,6 +12,8 @@ describe("agent configuration", () => {
       BOB_PROVIDER: "openai-codex",
       BOB_MODEL: "gpt-5.6-luna",
       BOB_ALLOWED_MODELS: "gpt-5.6-luna,gpt-5.6-terra",
+      BOB_RELEASE_SHA: "f974ae0fc5b53ca1c233faa0dfd69e9f814cb25f",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.example.invalid:4318/",
       CORE_URL: "https://bob.example.invalid/",
       CORE_ACCESS_CLIENT_ID: "fixture-client-id",
       CORE_ACCESS_CLIENT_SECRET: "fixture-client-value",
@@ -24,7 +26,9 @@ describe("agent configuration", () => {
 
     expect(configuration.baoAddress).toBe("https://openbao.example.invalid")
     expect(configuration.coreUrl).toBe("https://bob.example.invalid")
+    expect(configuration.otlpEndpoint).toBe("http://collector.example.invalid:4318")
     expect(configuration.port).toBe(8787)
+    expect(configuration.releaseSha).toBe("f974ae0fc5b53ca1c233faa0dfd69e9f814cb25f")
     expect(configuration.allowedModels).toEqual(["gpt-5.6-luna", "gpt-5.6-terra"])
   })
 })

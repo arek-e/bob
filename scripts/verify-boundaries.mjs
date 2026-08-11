@@ -1,5 +1,5 @@
 import { readFile, readdir } from "node:fs/promises"
-import { extname, join, relative, sep } from "node:path"
+import { extname, join, sep } from "node:path"
 
 const root = new URL("../", import.meta.url)
 const sourceRoots = ["apps", "packages", "tools", "infra/cloudflare"]

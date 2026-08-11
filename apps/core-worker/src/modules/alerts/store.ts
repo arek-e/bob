@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm"
 import { Context, Layer } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
+
 import { operationalAlerts } from "./schema.ts"
 
 export type OperationalAlertCode =
@@ -9,6 +10,9 @@ export type OperationalAlertCode =
   | "delivery_uncertain"
   | "delivery_result_exhausted"
   | "agent_authentication_failed"
+  | "agent_quota_exhausted"
+  | "agent_run_failed"
+  | "token_budget_exceeded"
   | "reminder_missed"
 
 export interface AlertInput {

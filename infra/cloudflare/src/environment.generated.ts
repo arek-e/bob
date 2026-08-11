@@ -25,6 +25,20 @@ export type CoercedEnvSchema = {
   CLOUDFLARE_API_TOKEN: string;
   
   /**
+   * **CLOUDFLARE_WORKERS_SUBDOMAIN**  
+   * Account subdomain used for temporary workers.dev routes.  
+   * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M29%2022h-5a2.003%202.003%200%200%201-2-2v-6a2%202%200%200%201%202-2h5v2h-5v6h5ZM18%2012h-4V8h-2v14h6a2.003%202.003%200%200%200%202-2v-6a2%202%200%200%200-2-2m-4%208v-6h4v6Zm-6-8H3v2h5v2H4a2%202%200%200%200-2%202v2a2%202%200%200%200%202%202h6v-8a2%202%200%200%200-2-2m0%208H4v-2h4Z%22%2F%3E%3C%2Fsvg%3E)   
+   */
+  CLOUDFLARE_WORKERS_SUBDOMAIN: string;
+  
+  /**
+   * **CLOUDFLARE_CORE_WORKER_NAME**  
+   * Existing Core Worker name. Keep this stable to preserve Worker-owned state.  
+   * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M29%2022h-5a2.003%202.003%200%200%201-2-2v-6a2%202%200%200%201%202-2h5v2h-5v6h5ZM18%2012h-4V8h-2v14h6a2.003%202.003%200%200%200%202-2v-6a2%202%200%200%200-2-2m-4%208v-6h4v6Zm-6-8H3v2h5v2H4a2%202%200%200%200-2%202v2a2%202%200%200%200%202%202h6v-8a2%202%200%200%200-2-2m0%208H4v-2h4Z%22%2F%3E%3C%2Fsvg%3E)   
+   */
+  CLOUDFLARE_CORE_WORKER_NAME: string;
+  
+  /**
    * **BOB_DOMAIN**  
    * Base DNS zone for Bob routes.  
    * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M29%2022h-5a2.003%202.003%200%200%201-2-2v-6a2%202%200%200%201%202-2h5v2h-5v6h5ZM18%2012h-4V8h-2v14h6a2.003%202.003%200%200%200%202-2v-6a2%202%200%200%200-2-2m-4%208v-6h4v6Zm-6-8H3v2h5v2H4a2%202%200%200%200-2%202v2a2%202%200%200%200%202%202h6v-8a2%202%200%200%200-2-2m0%208H4v-2h4Z%22%2F%3E%3C%2Fsvg%3E)   
@@ -96,6 +110,20 @@ export type CoercedEnvSchema = {
   BOB_PROVIDER: "openai-codex";
   
   /**
+   * **BOB_RUN_TOKEN_BUDGET**  
+   * Soft per-run token threshold. It creates an alert but does not stop a run.  
+   * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M26%2012h-4v2h4v2h-3v2h3v2h-4v2h4a2.003%202.003%200%200%200%202-2v-6a2%202%200%200%200-2-2m-7%2010h-6v-4a2%202%200%200%201%202-2h2v-2h-4v-2h4a2%202%200%200%201%202%202v2a2%202%200%200%201-2%202h-2v2h4ZM8%2020v-8H6v1H4v2h2v5H4v2h6v-2z%22%2F%3E%3C%2Fsvg%3E)   
+   */
+  BOB_RUN_TOKEN_BUDGET: number;
+  
+  /**
+   * **BOB_DAILY_TOKEN_BUDGET**  
+   * Soft UTC-day token threshold. It creates an alert but does not stop a run.  
+   * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M26%2012h-4v2h4v2h-3v2h3v2h-4v2h4a2.003%202.003%200%200%200%202-2v-6a2%202%200%200%200-2-2m-7%2010h-6v-4a2%202%200%200%201%202-2h2v-2h-4v-2h4a2%202%200%200%201%202%202v2a2%202%200%200%201-2%202h-2v2h4ZM8%2020v-8H6v1H4v2h2v5H4v2h6v-2z%22%2F%3E%3C%2Fsvg%3E)   
+   */
+  BOB_DAILY_TOKEN_BUDGET: number;
+  
+  /**
    * **DATA_KEK_ACTIVE_VERSION** 🔐 _sensitive_  
    * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M29%2022h-5a2.003%202.003%200%200%201-2-2v-6a2%202%200%200%201%202-2h5v2h-5v6h5ZM18%2012h-4V8h-2v14h6a2.003%202.003%200%200%200%202-2v-6a2%202%200%200%200-2-2m-4%208v-6h4v6Zm-6-8H3v2h5v2H4a2%202%200%200%200-2%202v2a2%202%200%200%200%202%202h6v-8a2%202%200%200%200-2-2m0%208H4v-2h4Z%22%2F%3E%3C%2Fsvg%3E)   
    */
@@ -113,6 +141,20 @@ export type CoercedEnvSchema = {
    * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M29%2022h-5a2.003%202.003%200%200%201-2-2v-6a2%202%200%200%201%202-2h5v2h-5v6h5ZM18%2012h-4V8h-2v14h6a2.003%202.003%200%200%200%202-2v-6a2%202%200%200%200-2-2m-4%208v-6h4v6Zm-6-8H3v2h5v2H4a2%202%200%200%200-2%202v2a2%202%200%200%200%202%202h6v-8a2%202%200%200%200-2-2m0%208H4v-2h4Z%22%2F%3E%3C%2Fsvg%3E)   
    */
   DATA_LOOKUP_KEY: string;
+  
+  /**
+   * **BETTER_AUTH_SECRET** 🔐 _sensitive_  
+   * Better Auth session and token encryption secret.  
+   * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M29%2022h-5a2.003%202.003%200%200%201-2-2v-6a2%202%200%200%201%202-2h5v2h-5v6h5ZM18%2012h-4V8h-2v14h6a2.003%202.003%200%200%200%202-2v-6a2%202%200%200%200-2-2m-4%208v-6h4v6Zm-6-8H3v2h5v2H4a2%202%200%200%200-2%202v2a2%202%200%200%200%202%202h6v-8a2%202%200%200%200-2-2m0%208H4v-2h4Z%22%2F%3E%3C%2Fsvg%3E)   
+   */
+  BETTER_AUTH_SECRET: string;
+  
+  /**
+   * **NANGO_SECRET_KEY** 🔐 _sensitive_  
+   * Nango development-environment API key. The same value reaches Nango through External Secrets.  
+   * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M29%2022h-5a2.003%202.003%200%200%201-2-2v-6a2%202%200%200%201%202-2h5v2h-5v6h5ZM18%2012h-4V8h-2v14h6a2.003%202.003%200%200%200%202-2v-6a2%202%200%200%200-2-2m-4%208v-6h4v6Zm-6-8H3v2h5v2H4a2%202%200%200%200-2%202v2a2%202%200%200%200%202%202h6v-8a2%202%200%200%200-2-2m0%208H4v-2h4Z%22%2F%3E%3C%2Fsvg%3E)   
+   */
+  NANGO_SECRET_KEY: string;
   
   /**
    * **SENDBLUE_ENABLED**  
@@ -179,12 +221,14 @@ export type CoercedEnvSchema = {
   
   /**
    * **SENDBLUE_ACCOUNT_ID** 🔐 _sensitive_  
+   * Stable internal identifier for the linked Sendblue account.  
    * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M29%2022h-5a2.003%202.003%200%200%201-2-2v-6a2%202%200%200%201%202-2h5v2h-5v6h5ZM18%2012h-4V8h-2v14h6a2.003%202.003%200%200%200%202-2v-6a2%202%200%200%200-2-2m-4%208v-6h4v6Zm-6-8H3v2h5v2H4a2%202%200%200%200-2%202v2a2%202%200%200%200%202%202h6v-8a2%202%200%200%200-2-2m0%208H4v-2h4Z%22%2F%3E%3C%2Fsvg%3E)   
    */
   SENDBLUE_ACCOUNT_ID?: string;
   
   /**
    * **SENDBLUE_LINE_ID** 🔐 _sensitive_  
+   * Stable internal identifier for the linked Sendblue line.  
    * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M29%2022h-5a2.003%202.003%200%200%201-2-2v-6a2%202%200%200%201%202-2h5v2h-5v6h5ZM18%2012h-4V8h-2v14h6a2.003%202.003%200%200%200%202-2v-6a2%202%200%200%200-2-2m-4%208v-6h4v6Zm-6-8H3v2h5v2H4a2%202%200%200%200-2%202v2a2%202%200%200%200%202%202h6v-8a2%202%200%200%200-2-2m0%208H4v-2h4Z%22%2F%3E%3C%2Fsvg%3E)   
    */
   SENDBLUE_LINE_ID?: string;
@@ -235,7 +279,7 @@ export type CoercedEnvSchema = {
   
 };
 
-type _CoercedEnvSchema_11a3a3c6 = CoercedEnvSchema;
+type _CoercedEnvSchema_a5a3289a = CoercedEnvSchema;
 
 export type EnvSchemaAsStrings = {
   [Property in keyof CoercedEnvSchema]:
@@ -243,9 +287,9 @@ export type EnvSchemaAsStrings = {
       : (CoercedEnvSchema[Property] extends boolean ? ('true' | 'false') : string)
 };
 
-type _EnvSchemaAsStrings_11a3a3c6 = EnvSchemaAsStrings;
+type _EnvSchemaAsStrings_a5a3289a = EnvSchemaAsStrings;
 
-export type PublicCoercedEnvSchema = Readonly<Pick<CoercedEnvSchema, 'BOB_DOMAIN' | 'ACCESS_TEAM_DOMAIN' | 'AGENT_ORIGIN_URL' | 'OWNER_TIME_ZONE' | 'REMINDER_QUIET_HOURS_START' | 'REMINDER_QUIET_HOURS_END' | 'REMINDER_DAILY_LIMIT' | 'BOB_MODEL' | 'BOB_PROVIDER' | 'SENDBLUE_ENABLED' | 'ALCHEMY_PRODUCTION_STATE_APPROVED' | 'ALCHEMY_TELEMETRY_DISABLED' | 'RUNTIME_CREDENTIAL_HANDOFF_ENABLED' | 'ACTIONS_ID_TOKEN_REQUEST_URL' | 'ACCESS_SERVICE_TOKEN_ROTATION_VERSION' | 'ACCESS_SERVICE_TOKEN_ROTATE_BY' | 'BAO_ADDR' | 'BAO_JWT_ROLE'>>;
+export type PublicCoercedEnvSchema = Readonly<Pick<CoercedEnvSchema, 'CLOUDFLARE_WORKERS_SUBDOMAIN' | 'CLOUDFLARE_CORE_WORKER_NAME' | 'BOB_DOMAIN' | 'ACCESS_TEAM_DOMAIN' | 'AGENT_ORIGIN_URL' | 'OWNER_TIME_ZONE' | 'REMINDER_QUIET_HOURS_START' | 'REMINDER_QUIET_HOURS_END' | 'REMINDER_DAILY_LIMIT' | 'BOB_MODEL' | 'BOB_PROVIDER' | 'BOB_RUN_TOKEN_BUDGET' | 'BOB_DAILY_TOKEN_BUDGET' | 'SENDBLUE_ENABLED' | 'ALCHEMY_PRODUCTION_STATE_APPROVED' | 'ALCHEMY_TELEMETRY_DISABLED' | 'RUNTIME_CREDENTIAL_HANDOFF_ENABLED' | 'ACTIONS_ID_TOKEN_REQUEST_URL' | 'ACCESS_SERVICE_TOKEN_ROTATION_VERSION' | 'ACCESS_SERVICE_TOKEN_ROTATE_BY' | 'BAO_ADDR' | 'BAO_JWT_ROLE'>>;
 
 // re-export of the runtime ENV proxy, typed to this package's schema
 export const ENV = _ENV as unknown as Readonly<CoercedEnvSchema>;

@@ -1,6 +1,6 @@
-import { defineConfig } from "vite"
 import tailwindcss from "@tailwindcss/vite"
 import { tanstackStart } from "@tanstack/solid-start/plugin/vite"
+import { defineConfig } from "vite"
 import viteSolid from "vite-plugin-solid"
 
 const sourceDirectory = new URL("./src/", import.meta.url).pathname

@@ -5,11 +5,6 @@ import {
   type HourCycle,
   type SettingsConnection
 } from "@bob/contracts/settings"
-import {
-  DeviceLoginEvent,
-  type DeviceLoginEvent as DeviceLoginEventType
-} from "@bob/contracts/agent"
-import { AdminStatus } from "@bob/contracts/ui"
 import { Schema } from "effect"
 import {
   createEffect,
@@ -23,26 +18,46 @@ import {
   type JSX
 } from "solid-js"
 
-import { useOwnerSession } from "~/components/auth"
 import { useStatus } from "~/components/app-shell"
+import { useOwnerSession } from "~/components/auth"
 import { Badge } from "~/components/ui/badge"
 import { Button } from "~/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle
-} from "~/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card"
 import { Input } from "~/components/ui/input"
 import { Notice } from "~/components/ui/notice"
 import { Select } from "~/components/ui/select"
 import { api, parseJson, schemas } from "~/lib/api"
-import { formatDate, supportedTimeZones } from "~/lib/utils"
 import { styles } from "~/lib/styles"
+import { formatDate, supportedTimeZones } from "~/lib/utils"
 
 type ClientProps = { enabled: Accessor<boolean> }
+
+const DeviceLoginEvent = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("device_code"),
+    verificationUri: Schema.String,
+    userCode: Schema.String,
+    expiresAt: Schema.String
+  }),
+  Schema.Struct({
+    type: Schema.Literal("completed"),
+    accountIdRedacted: Schema.String,
+    expiresAt: Schema.String
+  }),
+  Schema.Struct({
+    type: Schema.Literal("failed"),
+    code: Schema.String
+  })
+])
+
+type DeviceLoginEventType = typeof DeviceLoginEvent.Type
+
+const AdminStatus = Schema.Struct({
+  configured: Schema.Boolean,
+  provider: Schema.String,
+  expiresAt: Schema.optionalKey(Schema.String),
+  accountIdRedacted: Schema.optionalKey(Schema.String)
+})
 
 function SectionHeader(props: {
   eyebrow: string
@@ -91,7 +106,7 @@ export function SettingsPage() {
           </p>
         </div>
       </header>
-      <div class={styles.dashboardStack}>
+      <div class={styles.settingsStack}>
         <LocalitySection enabled={enabled} />
         <ConnectionsSection enabled={enabled} />
         <MessageSettingsSection />
@@ -199,7 +214,7 @@ function LocalitySection(props: ClientProps) {
           onSubmit={(event) => void save(event)}
         >
           <p id="locality-description" class={styles.formIntro}>
-            Bob uses these settings for new reminders, replies, and dates in this dashboard.
+            Bob uses these settings for new reminders, replies, and calendar dates.
           </p>
           <div class={styles.fieldGroup}>
             <label class={styles.fieldLabel} for="settings-time-zone">
@@ -359,15 +374,19 @@ function ConnectionsSection(props: ClientProps) {
   }
 
   async function linkCalendar(provider: ConnectionProvider, label: string) {
+    const popup = window.open("about:blank", "_blank")
+    if (popup !== null) popup.opener = null
     setLinking(provider)
     try {
       const session = parseJson(
         schemas.connectionSession,
         await api(`/api/connections/${provider}/session`, { method: "POST", body: "{}" })
       )
-      window.open(session.connectUrl, "_blank", "noopener,noreferrer")
+      if (popup === null) window.location.assign(session.connectUrl)
+      else popup.location.replace(session.connectUrl)
       status.announce(`Finish linking ${label} in the new window.`)
     } catch {
+      popup?.close()
       status.announce(`Unable to link ${label}. Try again.`, true)
     } finally {
       setLinking(undefined)
@@ -392,7 +411,7 @@ function ConnectionsSection(props: ClientProps) {
       <div class={styles.connectionGrid}>
         <ConnectionCard
           title="Bob owner account"
-          description="Controls access to this dashboard and its settings."
+          description="Controls access to Bob settings."
           status="connected"
         >
           <p class={styles.hint}>

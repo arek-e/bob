@@ -1,5 +1,5 @@
-import * as Solid from "solid-js"
 import { HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/solid-router"
+import * as Solid from "solid-js"
 import { HydrationScript } from "solid-js/web"
 
 import { styles } from "~/lib/styles"
@@ -10,7 +10,7 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { name: "description", content: "Private dashboard and settings for Bob." },
+      { name: "description", content: "Private owner settings for Bob." },
       { title: "Bob" }
     ],
     links: [{ rel: "stylesheet", href: appCss }]
@@ -19,7 +19,7 @@ export const Route = createRootRoute({
   notFoundComponent: () => (
     <div class={styles.routeLoading}>
       <h1 class={styles.heading1}>Page not found</h1>
-      <a href="/">Return to the dashboard</a>
+      <a href="/settings">Return to settings</a>
     </div>
   ),
   shellComponent: RootDocument
@@ -40,7 +40,7 @@ function RootDocument(props: { children: Solid.JSX.Element }) {
         <HydrationScript />
         <HeadContent />
       </head>
-      <body class="min-w-80 min-h-svh bg-canvas">
+      <body class="min-h-svh min-w-80 bg-canvas">
         {props.children}
         <Scripts />
       </body>

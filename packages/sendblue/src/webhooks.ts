@@ -1,4 +1,5 @@
 import type { NormalizedInboundEvent, NormalizedStatusEvent } from "@bob/contracts/channel"
+
 import { Schema } from "effect"
 
 const E164 = Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/))

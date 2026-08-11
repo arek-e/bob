@@ -1,7 +1,6 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
-
 import { NodeRuntime } from "@effect/platform-node"
 import { Effect } from "effect"
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 
 import { composeAgent } from "./composition.ts"
 import { handleAgentHttp } from "./http.ts"

@@ -19,8 +19,12 @@ spec:
       kind: Service
     - group: ""
       kind: ServiceAccount
+    - group: ""
+      kind: PersistentVolumeClaim
     - group: apps
       kind: Deployment
+    - group: batch
+      kind: CronJob
     - group: networking.k8s.io
       kind: NetworkPolicy
     - group: external-secrets.io

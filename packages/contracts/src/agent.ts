@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 
-import { IsoDateTime, NonEmptyText, ShortText, TimeZone, Uuid } from "./shared.ts"
+import { HourCycle } from "./settings.ts"
+import { IsoDateTime, Locale, NonEmptyText, ShortText, TimeZone, Uuid } from "./shared.ts"
 import { ToolName } from "./tools.ts"
 
 export const ContextSource = Schema.Struct({
@@ -22,8 +23,11 @@ export const AgentRunRequest = Schema.Struct({
   runId: Uuid,
   ownerId: Uuid,
   correlationId: Uuid,
+  sourceMessageId: Schema.optionalKey(Uuid),
   localTime: IsoDateTime,
   timeZone: TimeZone,
+  locale: Schema.optionalKey(Locale),
+  hourCycle: Schema.optionalKey(HourCycle),
   userText: NonEmptyText,
   contextItems: Schema.Array(ContextItem),
   allowedTools: Schema.Array(ToolName),
@@ -41,6 +45,9 @@ export const AgentRunResult = Schema.Struct({
   correlationId: Uuid,
   status: Schema.Literals(["completed", "failed", "cancelled"]),
   responseText: Schema.optionalKey(ShortText),
+  sourceIds: Schema.optionalKey(Schema.Array(NonEmptyText).check(Schema.isMaxLength(24))),
+  trustedToolSources: Schema.optionalKey(Schema.Array(ContextSource).check(Schema.isMaxLength(24))),
+  conflict: Schema.optionalKey(Schema.Literals(["none", "disclosed"])),
   errorCode: Schema.optionalKey(
     Schema.Literals([
       "authentication",

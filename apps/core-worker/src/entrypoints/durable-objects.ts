@@ -2,6 +2,7 @@ import { InboundJob } from "@bob/contracts/jobs"
 import { Schema } from "effect"
 
 import type { CoreBindings } from "../bindings.ts"
+
 import { composeCore } from "../composition.ts"
 import { processInbound } from "../process-inbound.ts"
 
@@ -18,7 +19,7 @@ export class OwnerRunCoordinator implements DurableObject {
     try {
       const job = Schema.decodeUnknownSync(InboundJob)(await request.json())
       await this.state.blockConcurrencyWhile(() =>
-        processInbound(job.eventId, this.bindings, composeCore(this.bindings))
+        processInbound(job.eventId, this.bindings, composeCore(this.bindings), job.traceparent)
       )
       return Response.json({ ok: true })
     } catch {

@@ -1,10 +1,12 @@
 import type { InboundAcceptance, NormalizedInboundEvent } from "@bob/contracts/channel"
-import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm"
 import type { BatchItem } from "drizzle-orm/batch"
+
+import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm"
 import { Context, Layer } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+
 import { channels, inboundEvents, messages, shortReplyBindings, users } from "./schema.ts"
 
 export interface ClaimedInbound {
@@ -64,18 +66,30 @@ export function makeConversationStore(
     if (owner?.wrappedDataKey === null || owner?.wrappedDataKey === undefined) {
       const created = await protection.createWrappedDataKey()
       const timestamp = now().toISOString()
-      await database
-        .insert(users)
-        .values({
-          id: options.ownerId,
-          timeZone: options.ownerTimeZone,
-          wrappedDataKey: created.wrapped.ciphertext,
-          wrappedDataKeyIv: created.wrapped.iv,
-          dataKeyVersion: created.wrapped.version,
-          createdAt: timestamp,
-          updatedAt: timestamp
-        })
-        .onConflictDoNothing()
+      if (owner === undefined) {
+        await database
+          .insert(users)
+          .values({
+            id: options.ownerId,
+            timeZone: options.ownerTimeZone,
+            wrappedDataKey: created.wrapped.ciphertext,
+            wrappedDataKeyIv: created.wrapped.iv,
+            dataKeyVersion: created.wrapped.version,
+            createdAt: timestamp,
+            updatedAt: timestamp
+          })
+          .onConflictDoNothing()
+      } else {
+        await database
+          .update(users)
+          .set({
+            wrappedDataKey: created.wrapped.ciphertext,
+            wrappedDataKeyIv: created.wrapped.iv,
+            dataKeyVersion: created.wrapped.version,
+            updatedAt: timestamp
+          })
+          .where(and(eq(users.id, options.ownerId), isNull(users.wrappedDataKey)))
+      }
       ;[owner] = await database.select().from(users).where(eq(users.id, options.ownerId)).limit(1)
     }
     if (

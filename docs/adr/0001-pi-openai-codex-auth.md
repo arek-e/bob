@@ -26,9 +26,7 @@ Use Pi's public provider and login interfaces. Do not copy Pi's OAuth code.
 
 Pin these packages to version 0.84.1:
 
-- `@earendil-works/pi-agent-core`
 - `@earendil-works/pi-ai`
-- `@earendil-works/pi-coding-agent`
 
 Register the provider through Pi:
 

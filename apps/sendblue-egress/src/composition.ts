@@ -1,5 +1,6 @@
-import { Context, Effect, Layer, Schema } from "effect"
+import { cloudflareEventSink } from "@bob/observability/cloudflare"
 import { createSendblueClient } from "@bob/sendblue/client"
+import { Context, Effect, Layer, Schema } from "effect"
 
 import type { EgressBindings } from "./bindings.ts"
 
@@ -18,6 +19,7 @@ const EgressPorts = Context.Service<EgressPorts>("bob/EgressPorts")
 
 export function composeEgress(bindings: EgressBindings) {
   const config = Schema.decodeUnknownSync(Configuration)(bindings)
+  const events = cloudflareEventSink()
   const ports: EgressPorts = {
     core: bindings.CORE,
     sendblue: createSendblueClient({
@@ -28,6 +30,7 @@ export function composeEgress(bindings: EgressBindings) {
   const layer = Layer.succeed(EgressPorts, ports)
   return {
     config,
+    events,
     ports: Effect.runSync(
       Effect.gen(function* () {
         return yield* EgressPorts

@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bob-nango
+  namespace: bob
+data:
+  SERVER_PORT: "3003"
+  FLAG_SERVE_CONNECT_UI: "true"
+  NANGO_CONNECT_UI_PORT: "3009"
+  NANGO_SERVER_URL: https://nango.invalid
+  NANGO_PUBLIC_SERVER_URL: https://nango.invalid
+  NANGO_PUBLIC_CONNECT_URL: https://nango-connect.invalid
+  FLAG_AUTH_ENABLED: "false"
+  NANGO_LOGS_ENABLED: "false"
+  NANGO_PROXY_BASE_URL_OVERRIDE_ENABLED: "false"
+  NANGO_TELEMETRY_SDK: "false"
+  TELEMETRY: "false"
+  LOG_LEVEL: info
+  NANGO_DB_HOST: bob-nango-db
+  NANGO_DB_PORT: "5432"
+  NANGO_DB_USER: nango
+  NANGO_DB_NAME: nango
+  NANGO_DB_SSL: "false"
+  NANGO_DB_POOL_MIN: "0"
+  NANGO_DB_POOL_MAX: "10"
+  NANGO_REDIS_URL: redis://bob-nango-redis:6379
+  NANGO_MIGRATE_AT_START: "true"

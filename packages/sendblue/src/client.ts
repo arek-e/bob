@@ -1,4 +1,5 @@
 import type { OutboxClaim } from "@bob/contracts/delivery"
+
 import { Schema } from "effect"
 
 const SendResponse = Schema.Struct({

@@ -8,7 +8,7 @@ export function Label(props: JSX.LabelHTMLAttributes<HTMLLabelElement>) {
     <label
       {...rest}
       class={cn(
-        "text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
+        "text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
         local.class
       )}
     >

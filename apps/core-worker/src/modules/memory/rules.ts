@@ -89,3 +89,28 @@ export function deriveMemoryPolicy(input: {
     channelEligible: eligible
   }
 }
+
+export function deriveConfirmedMemoryPolicy(input: {
+  readonly authority: "owner_ui" | "completed_system_command"
+  readonly originClass: OriginClass
+  readonly sourceType: string
+  readonly sensitivity: "normal" | "private" | "high"
+}): DerivedMemoryPolicy {
+  if (input.sensitivity === "high") {
+    return { sensitivity: "high", modelEligible: false, channelEligible: false }
+  }
+  const ownerReviewedMessage =
+    input.authority === "owner_ui" &&
+    input.originClass === "owner_input" &&
+    input.sourceType === "message"
+  const completedSystemRecord =
+    input.authority === "completed_system_command" &&
+    input.originClass === "system_record" &&
+    input.sensitivity === "normal"
+  const eligible = ownerReviewedMessage || completedSystemRecord
+  return {
+    sensitivity: eligible ? "normal" : input.sensitivity,
+    modelEligible: eligible,
+    channelEligible: eligible
+  }
+}

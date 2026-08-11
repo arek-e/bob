@@ -1,13 +1,16 @@
 import * as Alchemy from "alchemy"
 
-import { createBobStack } from "./src/bob-stack.ts"
 import type { CoercedEnvSchema } from "./src/environment.generated.ts"
+
+import { createBobStack } from "./src/bob-stack.ts"
 import { smokeProviders } from "./src/smoke-providers.ts"
 
 const fixtureConfig = {
   CLOUDFLARE_ACCOUNT_ID: "offline-account-fixture",
   CLOUDFLARE_ZONE_ID: "offline-zone-fixture",
   CLOUDFLARE_API_TOKEN: "offline-api-token-fixture",
+  CLOUDFLARE_WORKERS_SUBDOMAIN: "offline-workers-fixture",
+  CLOUDFLARE_CORE_WORKER_NAME: "offline-core-worker-fixture",
   BOB_DOMAIN: "bob.invalid",
   OWNER_ACCESS_EMAIL: "owner@bob.invalid",
   ACCESS_TEAM_DOMAIN: "bob.cloudflareaccess.invalid",
@@ -19,9 +22,13 @@ const fixtureConfig = {
   REMINDER_DAILY_LIMIT: 6,
   BOB_MODEL: "gpt-5.4-mini",
   BOB_PROVIDER: "openai-codex",
+  BOB_RUN_TOKEN_BUDGET: 32_000,
+  BOB_DAILY_TOKEN_BUDGET: 250_000,
   DATA_KEK_ACTIVE_VERSION: "fixture-v1",
   DATA_KEK_KEYRING_JSON: '{"fixture-v1":"offline-key-fixture"}',
   DATA_LOOKUP_KEY: "offline-lookup-fixture",
+  BETTER_AUTH_SECRET: "offline-better-auth-secret-at-least-32-bytes",
+  NANGO_SECRET_KEY: "offline-nango-secret-key-at-least-32-bytes",
   SENDBLUE_ENABLED: false,
   ALCHEMY_PRODUCTION_STATE_APPROVED: true,
   ALCHEMY_TELEMETRY_DISABLED: true,

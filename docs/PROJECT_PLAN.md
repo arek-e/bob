@@ -48,13 +48,11 @@ They are not runtime dependencies.
 
 - There is no current npm package named `pi-core-sdk`.
 - Pi packages use ESM and require Node.js 22.19 or newer.
-- Use `@earendil-works/pi-coding-agent` for the feasibility spike.
-- Use `@earendil-works/pi-agent-core` and `@earendil-works/pi-ai` for production.
+- Use `@earendil-works/pi-ai` for production model access and provider support.
 - Production must register providers and load credentials and context.
 - Production must also define login and session policies.
 - Run Pi in a private Node service.
 - Do not run the full Pi coding SDK inside a Cloudflare Worker.
-- Set `noTools: "builtin"` during the spike.
 - Provide an explicit custom-tool allowlist.
 - Expose only reviewed Bob domain tools.
 - Use Pi's `openai-codex` provider as a subscription feasibility candidate.
@@ -65,7 +63,7 @@ The local Pi CLI is version 0.82.1. The 2026-08-10 registry version is 0.84.1.
 
 Pin all direct Pi packages to the same exact version.
 
-Run the spike against workspace packages. Do not rely on the global Pi CLI.
+Run the agent host against workspace packages. Do not rely on the global Pi CLI.
 
 The ChatGPT Pro fee is not an API credit balance.
 
@@ -85,7 +83,7 @@ No public Sendblue integration for Pi was found.
 
 It runs a local Codex app server with credentials from `codex login`.
 
-Bob adopts its channel shape. Bob keeps Pi as the agent runtime.
+Bob adopts its channel shape. Bob uses Pi AI for model access.
 
 This public example does not establish OpenAI support for Bob's intended use.
 
@@ -339,7 +337,7 @@ flowchart TD
     C --> L[Owner run coordinator]
     L -->|one run at a time| C
     C -->|Access-protected run| N[Private Node agent host]
-    N --> P[One bounded Pi agent run]
+    N --> P[One bounded Bob Pi run]
     P --> T[Reviewed Bob tools]
     T -->|Access-protected command| C
     C -->|opaque outbox id| O[Outbound Queue]
@@ -402,14 +400,13 @@ Sendblue does not document that behavior.
 
 #### Node agent host
 
-- Run Pi's stable Agent loop.
+- Run Bob's bounded loop over Pi AI.
 - Load reviewed instructions and tools.
 - Render the supplied context pack.
 - Return one validated run result.
 - Never call Sendblue directly.
 - Never receive Cloudflare administrator credentials.
-- Create one ephemeral Pi Agent for each run.
-- Do not build on Pi's incomplete `AgentHarness` yet.
+- Create one ephemeral Pi model context for each run.
 - Apply deadlines and abort signals to every remote operation.
 - Limit turns, tool calls, run time, and response size.
 - Mark mutating tools as sequential.
@@ -623,13 +620,10 @@ It maps authentication, quota, timeout, cancellation, and retry errors separatel
 
 Provider and model selection are explicit. Provider fallback is never automatic.
 
-Use Pi's stable Agent API for the first release.
+Use `@earendil-works/pi-ai` directly for the first release.
 
-Do not depend on Pi's incomplete `AgentHarness` implementation.
-
-Use Pi's context hooks to render Bob's immutable context pack.
-
-Use `beforeToolCall` as an agent-host gate.
+Keep the Bob loop, context rendering, Tool gate, and safety policy in
+`@bob/pi-agent`.
 
 Run mutating tools sequentially.
 
@@ -688,7 +682,7 @@ Store provider identifiers separately.
 ### Domain glossary
 
 - **Owner:** The one person Bob serves.
-- **Agent run:** One bounded Pi turn over an immutable input snapshot.
+- **Agent run:** One bounded Bob-owned Pi turn over an immutable input snapshot.
 - **External action attempt:** One durable attempt to change state or call an external system.
 - **Fact:** Stable identity for one durable personal claim.
 - **Fact revision:** One append-only value and validity period for a fact.
@@ -1041,7 +1035,7 @@ Use TypeBox schemas for Pi tool parameters.
 
 The private UI reads and writes raw journal content through the API.
 
-Pi receives only dates, tags, and user-approved summaries.
+Pi receives only dates and tags. Approved summaries stay in the private UI and owner-started exports.
 
 Enable content-bearing journal tools only after the privacy review.
 
@@ -1062,7 +1056,7 @@ Prompt text cannot add permissions.
 
 Do not expose shell, browser, file, network, or package-install tools.
 
-Use Pi policy hooks to audit every tool call.
+Use Bob's loop gate to audit every tool call.
 
 ## 9. Conversation design
 
@@ -1448,7 +1442,7 @@ Local idempotency cannot provide exactly-once Sendblue delivery.
 
 Use structured logs without user content.
 
-Use Pi's lifecycle event stream for agent activity.
+Use Bob's loop and Tool events for agent activity.
 
 Use content-free health events for operators.
 
@@ -1562,7 +1556,7 @@ Build one complete message round trip.
 - Reconcile the receive and outbound webhook registrations.
 - Store the inbound event in D1.
 - Queue only the event identifier.
-- Call Pi with all built-in tools disabled.
+- Give Pi only the reviewed Bob Tool schemas.
 - Send one generic response through Sendblue.
 - Confirm duplicate and timeout behavior.
 
@@ -1762,8 +1756,7 @@ Recommended defaults:
 - [Pi providers](https://pi.dev/docs/latest/providers#subscriptions)
 - [Pi source](https://github.com/earendil-works/pi)
 - [Pi review point](https://github.com/earendil-works/pi/tree/98145a6c063f00303405ef91ad4a5314670702e9)
-- [Pi agent loop](https://github.com/earendil-works/pi/blob/98145a6c063f00303405ef91ad4a5314670702e9/packages/agent/src/agent-loop.ts)
-- [Pi AgentHarness review point](https://github.com/earendil-works/pi/blob/98145a6c063f00303405ef91ad4a5314670702e9/packages/agent/src/harness/agent-harness.ts)
+- [Pi AI package](https://github.com/earendil-works/pi/tree/main/packages/ai)
 - [OpenAI authentication](https://learn.chatgpt.com/docs/auth)
 - [ChatGPT and Codex pricing](https://learn.chatgpt.com/docs/pricing)
 - [Codex for Open Source](https://developers.openai.com/community/codex-for-oss)

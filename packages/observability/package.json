@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./attribution": "./src/attribution.ts",
     "./cloudflare": "./src/cloudflare.ts",
     "./events": "./src/events.ts",
     "./node": "./src/node.ts",
-    "./testing": "./src/testing.ts"
+    "./testing": "./src/testing.ts",
+    "./trace": "./src/trace.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

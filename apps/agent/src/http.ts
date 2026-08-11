@@ -1,4 +1,12 @@
 import { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/contracts/agent"
+import { agentRunSpanCode, featureForTools } from "@bob/observability/attribution"
+import { observeNodeSpan, runWithNodeTelemetryContext } from "@bob/observability/node"
+import {
+  formatTraceparent,
+  parseTraceparent,
+  traceContextFromCorrelationId,
+  type TraceContext
+} from "@bob/observability/trace"
 import { Schema } from "effect"
 
 import type { AgentComposition } from "./composition.ts"
@@ -11,8 +19,23 @@ const securityHeaders = {
   "x-content-type-options": "nosniff"
 }
 
-function json(value: unknown, status = 200): Response {
-  return Response.json(value, { status, headers: securityHeaders })
+function json(
+  value: unknown,
+  status = 200,
+  extraHeaders: Readonly<Record<string, string>> = {}
+): Response {
+  return Response.json(value, { status, headers: { ...securityHeaders, ...extraHeaders } })
+}
+
+async function emitSafely(
+  composition: AgentComposition,
+  event: Parameters<AgentComposition["services"]["events"]["emit"]>[0]
+) {
+  try {
+    await composition.services.events.emit(event)
+  } catch {
+    // Telemetry must not change an agent result.
+  }
 }
 
 async function readJson(request: Request): Promise<unknown> {
@@ -66,10 +89,35 @@ export async function handleAgentHttp(
   try {
     if (request.method === "POST" && url.pathname === "/v1/run") {
       const input = Schema.decodeUnknownSync(AgentRunRequest)(await readJson(request))
-      const output = Schema.decodeUnknownSync(AgentRunResult)(
-        await composition.services.agent.runTurn(input)
+      const feature = featureForTools(input.allowedTools)
+      const parent =
+        parseTraceparent(request.headers.get("traceparent")) ??
+        traceContextFromCorrelationId(input.correlationId)
+      let responseTrace: TraceContext | undefined
+      const output = await runWithNodeTelemetryContext(
+        {
+          correlationId: input.correlationId,
+          trace: parent,
+          feature,
+          workflow: "agent_turn"
+        },
+        () =>
+          observeNodeSpan<AgentRunResult>(
+            {
+              sink: composition.services.events,
+              name: "model.run",
+              failureCode: "provider",
+              resultCode: (result) => agentRunSpanCode(result.status, result.errorCode)
+            },
+            async (trace) => {
+              responseTrace = trace
+              return Schema.decodeUnknownSync(AgentRunResult)(
+                await composition.services.agent.runTurn(input)
+              )
+            }
+          )
       )
-      await composition.services.events.emit({
+      await emitSafely(composition, {
         type: "agent_run",
         correlationId: output.correlationId,
         runId: output.runId,
@@ -79,7 +127,25 @@ export async function handleAgentHttp(
         inputTokens: output.inputTokens,
         outputTokens: output.outputTokens
       })
-      return json(output)
+      await emitSafely(composition, {
+        type: "token_usage",
+        correlationId: output.correlationId,
+        runId: output.runId,
+        feature,
+        workflow: "agent_turn",
+        provider: "openai-codex",
+        model: output.model,
+        status: output.status,
+        inputTokens: output.inputTokens,
+        outputTokens: output.outputTokens,
+        toolCalls: output.toolCalls,
+        durationMs: output.durationMs
+      })
+      return json(
+        output,
+        200,
+        responseTrace === undefined ? {} : { traceparent: formatTraceparent(responseTrace) }
+      )
     }
     if (request.method === "GET" && url.pathname === "/v1/admin/auth/status") {
       return json(await composition.services.agent.getAuthStatus())

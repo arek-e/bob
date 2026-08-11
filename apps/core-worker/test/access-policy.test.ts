@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   authorizeCoreRequest,
+  authorizeSetupRequest,
   verifyCloudflareAccessAssertion,
   type AccessClaims
 } from "../src/modules/policy/access.ts"
@@ -10,16 +11,21 @@ import {
 const configuration = {
   ingressSecret: "i".repeat(64),
   egressSecret: "e".repeat(64),
-  ownerEmail: "owner@example.invalid",
   agentSubject: "agent-service-token",
   accessIssuer: "https://team.cloudflareaccess.com",
   accessAudience: "core-audience"
 }
 
+const setupConfiguration = {
+  ownerEmail: "owner@example.invalid",
+  accessIssuer: configuration.accessIssuer,
+  accessAudience: "setup-audience"
+}
+
 const owner: AccessClaims = {
   subject: "owner-subject",
   email: "owner@example.invalid",
-  audience: ["core-audience"]
+  audience: ["setup-audience"]
 }
 
 const agent: AccessClaims = {
@@ -55,21 +61,21 @@ describe("core route authorization", () => {
     ).resolves.toBe("agent")
   })
 
-  it("keeps signed owner email and non-empty subject checks", async () => {
+  it("accepts the owner only for the Access-protected setup route", async () => {
     const { privateKey, publicKey } = await generateKeyPair("RS256")
-    const assertion = await new SignJWT({ email: configuration.ownerEmail })
+    const assertion = await new SignJWT({ email: setupConfiguration.ownerEmail })
       .setProtectedHeader({ alg: "RS256", kid: "test" })
       .setIssuer(configuration.accessIssuer)
-      .setAudience(configuration.accessAudience)
+      .setAudience(setupConfiguration.accessAudience)
       .setSubject("owner-subject")
       .setIssuedAt()
       .setExpirationTime("5m")
       .sign(privateKey)
 
-    const claims = await verifyCloudflareAccessAssertion(assertion, configuration, publicKey)
+    const claims = await verifyCloudflareAccessAssertion(assertion, setupConfiguration, publicKey)
     await expect(
-      authorizeCoreRequest(request("/api/journal"), configuration, async () => claims)
-    ).resolves.toBe("owner")
+      authorizeSetupRequest(request("/setup/api"), setupConfiguration, async () => claims)
+    ).resolves.toBeUndefined()
   })
   it.each([
     ["/internal/inbound", "ingress", configuration.ingressSecret],
@@ -86,12 +92,9 @@ describe("core route authorization", () => {
     ).rejects.toThrow("access_denied")
   })
 
-  it("allows the owner only on private UI routes", async () => {
+  it("does not use Cloudflare Access for owner API sessions", async () => {
     await expect(
       authorizeCoreRequest(request("/api/journal"), configuration, async () => owner)
-    ).resolves.toBe("owner")
-    await expect(
-      authorizeCoreRequest(request("/api/journal"), configuration, async () => agent)
     ).rejects.toThrow("access_denied")
   })
 

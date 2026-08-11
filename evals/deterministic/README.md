@@ -1,5 +1,7 @@
 # Deterministic evaluations
 
-Add exact state, privacy, permission, and delivery assertions here.
+The release gate uses exact checks from the versioned scenario suite.
 
-Never place user messages or credentials in fixtures.
+Deterministic failures block `pnpm check` and the release workflow.
+
+See [the evaluation guide](../README.md) for metrics and commands.

@@ -1,4 +1,5 @@
 import type { CoreBindings } from "./bindings.ts"
+
 import { OwnerRunCoordinator, ReminderClock } from "./entrypoints/durable-objects.ts"
 import { handleHttp } from "./entrypoints/http.ts"
 import { handleInboundQueue } from "./entrypoints/queue.ts"

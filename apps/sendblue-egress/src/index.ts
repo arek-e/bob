@@ -1,4 +1,5 @@
 import type { EgressBindings } from "./bindings.ts"
+
 import { handleOutboundQueue } from "./entrypoints/queue.ts"
 
 export default {

@@ -1,3 +1,4 @@
+import { parseTraceparent } from "@bob/observability/trace"
 import { describe, expect, it, vi } from "vitest"
 
 import { handleIngressHttp } from "../src/entrypoints/http.ts"
@@ -31,7 +32,7 @@ const payload = {
 }
 
 function bindings(queueSend = vi.fn().mockResolvedValue(undefined)) {
-  const coreFetch = vi.fn(async (input: RequestInfo | URL) => {
+  const coreFetch = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = String(input)
     if (url.endsWith("/internal/inbound")) {
       return Response.json({
@@ -112,6 +113,33 @@ describe("Sendblue ingress", () => {
     expect(target.coreFetch).not.toHaveBeenCalled()
   })
 
+  it("continues the provider trace through a status callback", async () => {
+    const target = bindings()
+    const traceparent = "00-018e6f654d557a1b8df44ee15ea1dba1-1111111111111111-01"
+    const response = await handleIngressHttp(
+      new Request(
+        `https://bob.example/webhooks/outbound?outbox_id=018e6f65-4d55-7a1b-8df4-4ee15ea1db9f&attempt_id=018e6f65-4d55-7a1b-8df4-4ee15ea1dba0&traceparent=${encodeURIComponent(traceparent)}`,
+        {
+          method: "POST",
+          headers: { "sb-signing-secret": "s".repeat(64) },
+          body: JSON.stringify({
+            ...payload,
+            is_outbound: true,
+            status: "ACCEPTED",
+            from_number: "+46711111111",
+            to_number: "+46700000000"
+          })
+        }
+      ),
+      target.value as never
+    )
+    expect(response.status).toBe(202)
+    const forwarded = new Headers(target.coreFetch.mock.calls[0]?.[1]?.headers)
+    expect(parseTraceparent(forwarded.get("traceparent"))?.traceId).toBe(
+      "018e6f654d557a1b8df44ee15ea1dba1"
+    )
+  })
+
   it("returns 503 after the D1 write when Queue publication fails", async () => {
     const queueSend = vi.fn().mockRejectedValue(new Error("queue down"))
     const target = bindings(queueSend)
@@ -121,12 +149,13 @@ describe("Sendblue ingress", () => {
     expect(queueSend).toHaveBeenCalledOnce()
   })
 
-  it("publishes only the opaque event identifier", async () => {
+  it("publishes only opaque identifiers and trace context", async () => {
     const target = bindings()
     const response = await handleIngressHttp(request("s".repeat(64)), target.value as never)
     expect(response.status).toBe(202)
     expect(target.queueSend).toHaveBeenCalledWith({
-      eventId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
+      eventId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
+      traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
     })
   })
 })

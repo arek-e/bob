@@ -7,7 +7,14 @@ export const IsoDateTime = Schema.String.check(
 export const E164 = Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/))
 export const NonEmptyText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8_000))
 export const ShortText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1_200))
-export const TimeZone = Schema.String.check(Schema.isPattern(/^[A-Za-z_]+(?:\/[A-Za-z0-9_+\-]+)+$/))
+export const TimeZone = Schema.String.check(
+  Schema.isPattern(/^(?:UTC|[A-Za-z_]+(?:\/[A-Za-z0-9_+-]+)+)$/)
+)
+export const Locale = Schema.String.check(
+  Schema.isMinLength(2),
+  Schema.isMaxLength(64),
+  Schema.isPattern(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/)
+)
 export const JsonObject = Schema.Record(Schema.String, Schema.Json)
 
 export type Uuid = typeof Uuid.Type

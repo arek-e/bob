@@ -1,7 +1,8 @@
+import type * as Resource from "alchemy/Resource"
+
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Provider from "alchemy/Provider"
 import * as Random from "alchemy/Random"
-import type * as Resource from "alchemy/Resource"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 

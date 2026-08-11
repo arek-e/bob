@@ -2,6 +2,7 @@ import { and, desc, eq } from "drizzle-orm"
 import { Context, Layer } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
+
 import { messages } from "../conversations/schema.ts"
 import {
   completeEffect,
@@ -53,6 +54,36 @@ export interface WorkoutView {
     readonly weightGrams: number | null
     readonly notes: string | null
     readonly loggedAt: string
+  }[]
+}
+
+export interface TrainingOverview {
+  readonly gyms: readonly {
+    readonly id: string
+    readonly name: string
+    readonly equipment: readonly {
+      readonly id: string
+      readonly name: string
+      readonly identifier: string | null
+      readonly exerciseIds: readonly string[]
+    }[]
+  }[]
+  readonly exercises: readonly {
+    readonly id: string
+    readonly name: string
+    readonly instructions: string | null
+  }[]
+  readonly routines: readonly RoutineView[]
+  readonly activeWorkout?: WorkoutView
+  readonly history: readonly {
+    readonly id: string
+    readonly routineId: string
+    readonly routineName: string
+    readonly gymId: string | null
+    readonly gymName: string | null
+    readonly status: "active" | "completed" | "stopped_for_safety" | "abandoned"
+    readonly startedAt: string
+    readonly finishedAt: string | null
   }[]
 }
 
@@ -122,6 +153,7 @@ export interface TrainingStore {
   ): Promise<string | undefined>
   lastWorkout(ownerId: string, routineId?: string): Promise<WorkoutView | undefined>
   history(ownerId: string, routineId?: string): Promise<readonly unknown[]>
+  overview(ownerId: string, query?: string): Promise<TrainingOverview>
 }
 
 export const TrainingStore = Context.Service<TrainingStore>("bob/TrainingStore")
@@ -643,6 +675,213 @@ export function makeTrainingStore(
         )
         .orderBy(desc(workoutSessions.startedAt))
         .limit(20)
+    },
+
+    async overview(ownerId, query) {
+      const normalizedQuery = query?.trim().toLocaleLowerCase("en") ?? ""
+      if (normalizedQuery.length > 100) throw new Error("Training search is too long")
+      const [
+        gymRows,
+        equipmentRows,
+        exerciseRows,
+        mappingRows,
+        routineRows,
+        stepRows,
+        sessions,
+        activeSessions
+      ] = await Promise.all([
+        database.select().from(gyms).where(eq(gyms.userId, ownerId)).orderBy(gyms.name),
+        database
+          .select({ item: equipment, gymName: gyms.name })
+          .from(equipment)
+          .innerJoin(gyms, eq(equipment.gymId, gyms.id))
+          .where(eq(gyms.userId, ownerId))
+          .orderBy(equipment.name),
+        database
+          .select()
+          .from(exercises)
+          .where(eq(exercises.userId, ownerId))
+          .orderBy(exercises.name),
+        database
+          .select({
+            equipmentId: equipmentExercises.equipmentId,
+            exerciseId: equipmentExercises.exerciseId
+          })
+          .from(equipmentExercises)
+          .innerJoin(equipment, eq(equipmentExercises.equipmentId, equipment.id))
+          .innerJoin(gyms, eq(equipment.gymId, gyms.id))
+          .innerJoin(exercises, eq(equipmentExercises.exerciseId, exercises.id))
+          .where(and(eq(gyms.userId, ownerId), eq(exercises.userId, ownerId))),
+        database
+          .select()
+          .from(routines)
+          .where(eq(routines.userId, ownerId))
+          .orderBy(desc(routines.updatedAt)),
+        database
+          .select({
+            id: routineSteps.id,
+            routineId: routineSteps.routineId,
+            exerciseId: routineSteps.exerciseId,
+            exerciseName: exercises.name,
+            position: routineSteps.position,
+            targetSets: routineSteps.targetSets,
+            targetReps: routineSteps.targetReps,
+            notes: routineSteps.notes
+          })
+          .from(routineSteps)
+          .innerJoin(routines, eq(routineSteps.routineId, routines.id))
+          .innerJoin(exercises, eq(routineSteps.exerciseId, exercises.id))
+          .where(and(eq(routines.userId, ownerId), eq(exercises.userId, ownerId)))
+          .orderBy(routineSteps.position),
+        database
+          .select({
+            session: workoutSessions,
+            routineName: routines.name,
+            gymName: gyms.name
+          })
+          .from(workoutSessions)
+          .innerJoin(routines, eq(workoutSessions.routineId, routines.id))
+          .leftJoin(gyms, and(eq(workoutSessions.gymId, gyms.id), eq(gyms.userId, ownerId)))
+          .where(and(eq(workoutSessions.userId, ownerId), eq(routines.userId, ownerId)))
+          .orderBy(desc(workoutSessions.startedAt))
+          .limit(20),
+        database
+          .select({ session: workoutSessions, routineName: routines.name })
+          .from(workoutSessions)
+          .innerJoin(routines, eq(workoutSessions.routineId, routines.id))
+          .where(
+            and(
+              eq(workoutSessions.userId, ownerId),
+              eq(workoutSessions.status, "active"),
+              eq(routines.userId, ownerId)
+            )
+          )
+          .orderBy(desc(workoutSessions.startedAt))
+          .limit(1)
+      ])
+
+      const exerciseIdsByEquipment = new Map<string, string[]>()
+      for (const mapping of mappingRows) {
+        const values = exerciseIdsByEquipment.get(mapping.equipmentId) ?? []
+        values.push(mapping.exerciseId)
+        exerciseIdsByEquipment.set(mapping.equipmentId, values)
+      }
+      const equipmentByGym = new Map<
+        string,
+        {
+          id: string
+          name: string
+          identifier: string | null
+          exerciseIds: readonly string[]
+        }[]
+      >()
+      for (const row of equipmentRows) {
+        const values = equipmentByGym.get(row.item.gymId) ?? []
+        values.push({
+          id: row.item.id,
+          name: row.item.name,
+          identifier: row.item.identifier,
+          exerciseIds: exerciseIdsByEquipment.get(row.item.id) ?? []
+        })
+        equipmentByGym.set(row.item.gymId, values)
+      }
+      const stepsByRoutine = new Map<
+        string,
+        RoutineView["steps"] extends readonly (infer T)[] ? T[] : never
+      >()
+      for (const step of stepRows) {
+        const values = stepsByRoutine.get(step.routineId) ?? []
+        values.push({
+          id: step.id,
+          exerciseId: step.exerciseId,
+          exerciseName: step.exerciseName,
+          position: step.position,
+          targetSets: step.targetSets,
+          targetReps: step.targetReps,
+          notes: step.notes
+        })
+        stepsByRoutine.set(step.routineId, values)
+      }
+      const includesQuery = (...values: readonly (string | null)[]) =>
+        normalizedQuery.length === 0 ||
+        values.some((value) => value?.toLocaleLowerCase("en").includes(normalizedQuery) === true)
+      const exerciseNames = new Map(exerciseRows.map((exercise) => [exercise.id, exercise.name]))
+      const gymViews = gymRows
+        .map((gym) => ({ id: gym.id, name: gym.name, equipment: equipmentByGym.get(gym.id) ?? [] }))
+        .filter((gym) =>
+          includesQuery(
+            gym.name,
+            ...gym.equipment.flatMap((item) => [
+              item.name,
+              item.identifier,
+              ...item.exerciseIds.map((id) => exerciseNames.get(id) ?? "")
+            ])
+          )
+        )
+      const exerciseViews = exerciseRows
+        .map((exercise) => ({
+          id: exercise.id,
+          name: exercise.name,
+          instructions: exercise.instructions
+        }))
+        .filter((exercise) => includesQuery(exercise.name, exercise.instructions))
+      const routineViews = routineRows
+        .map((routine) => ({
+          id: routine.id,
+          name: routine.name,
+          revision: routine.revision,
+          steps: stepsByRoutine.get(routine.id) ?? []
+        }))
+        .filter((routine) =>
+          includesQuery(routine.name, ...routine.steps.map((step) => step.exerciseName))
+        )
+      const history = sessions
+        .filter((row) => row.session.status !== "active")
+        .map((row) => ({
+          id: row.session.id,
+          routineId: row.session.routineId,
+          routineName: row.routineName,
+          gymId: row.session.gymId,
+          gymName: row.gymName,
+          status: row.session.status,
+          startedAt: row.session.startedAt,
+          finishedAt: row.session.finishedAt
+        }))
+      const active = activeSessions[0]
+      let activeWorkout: WorkoutView | undefined
+      if (active !== undefined) {
+        const sets = await database
+          .select({
+            id: workoutSets.id,
+            routineStepId: workoutSets.routineStepId,
+            equipmentId: workoutSets.equipmentId,
+            sequence: workoutSets.sequence,
+            repetitions: workoutSets.repetitions,
+            weightGrams: workoutSets.weightGrams,
+            notes: workoutSets.notes,
+            loggedAt: workoutSets.loggedAt
+          })
+          .from(workoutSets)
+          .where(eq(workoutSets.sessionId, active.session.id))
+          .orderBy(workoutSets.loggedAt)
+        activeWorkout = {
+          id: active.session.id,
+          routineId: active.session.routineId,
+          routineName: active.routineName,
+          gymId: active.session.gymId,
+          status: active.session.status,
+          startedAt: active.session.startedAt,
+          finishedAt: active.session.finishedAt,
+          sets
+        }
+      }
+      return {
+        gyms: gymViews,
+        exercises: exerciseViews,
+        routines: routineViews,
+        ...(activeWorkout === undefined ? {} : { activeWorkout }),
+        history
+      }
     }
   }
 }

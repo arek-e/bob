@@ -1,9 +1,10 @@
 import { DeliveryResult } from "@bob/contracts/delivery"
 import { InboundJob } from "@bob/contracts/jobs"
-import { Schema } from "effect"
 import { eq } from "drizzle-orm"
+import { Schema } from "effect"
 
 import type { CoreBindings } from "../bindings.ts"
+
 import { composeCore } from "../composition.ts"
 import { outboxMessages } from "../modules/delivery/schema.ts"
 

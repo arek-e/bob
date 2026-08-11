@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 
 import type { CoercedEnvSchema } from "./environment.generated.ts"
+
 import { validateAccessTokenRotation } from "./access-token-policy.ts"
 import {
   safeHandoffFailure,
@@ -91,9 +92,12 @@ export function createBobStack(options: BobStackOptions) {
     { providers: options.providers, state: options.state },
     Effect.gen(function* () {
       const domain = ENV.BOB_DOMAIN
+      const coreWorkerName = ENV.CLOUDFLARE_CORE_WORKER_NAME
       const coreHost = `bob.${domain}`
       const agentHost = `bob-agent.${domain}`
       const agentAdminHost = `bob-agent-admin.${domain}`
+      const nangoHost = `nango.${domain}`
+      const nangoConnectHost = `nango-connect.${domain}`
       const ingressHost = `bob-sendblue.${domain}`
       const sendblueActive = ENV.SENDBLUE_ENABLED
 
@@ -179,6 +183,8 @@ export function createBobStack(options: BobStackOptions) {
         ingress: [
           { hostname: agentHost, service: ENV.AGENT_ORIGIN_URL },
           { hostname: agentAdminHost, service: ENV.AGENT_ORIGIN_URL },
+          { hostname: nangoHost, service: "http://bob-nango.bob.svc.cluster.local:3003" },
+          { hostname: nangoConnectHost, service: "http://bob-nango.bob.svc.cluster.local:3009" },
           { service: "http_status:404" }
         ]
       })
@@ -198,6 +204,22 @@ export function createBobStack(options: BobStackOptions) {
         proxied: true,
         comment: "Bob private agent administration host"
       })
+      yield* Cloudflare.DNS.Record("NangoTunnelDns", {
+        zoneId: ENV.CLOUDFLARE_ZONE_ID,
+        name: nangoHost,
+        type: "CNAME",
+        content: Output.interpolate`${agentTunnel.tunnelId}.cfargotunnel.com`,
+        proxied: true,
+        comment: "Bob Nango OAuth and API host"
+      })
+      yield* Cloudflare.DNS.Record("NangoConnectTunnelDns", {
+        zoneId: ENV.CLOUDFLARE_ZONE_ID,
+        name: nangoConnectHost,
+        type: "CNAME",
+        content: Output.interpolate`${agentTunnel.tunnelId}.cfargotunnel.com`,
+        proxied: true,
+        comment: "Bob Nango account linking host"
+      })
 
       const ownerPolicy = yield* Cloudflare.Access.Policy("OwnerPolicy", {
         name: `bob-owner-${PRODUCTION_STAGE}`,
@@ -212,30 +234,38 @@ export function createBobStack(options: BobStackOptions) {
       })
       const coreApplication = yield* Cloudflare.Access.Application("CoreApplication", {
         type: "self_hosted",
-        name: `Bob (${PRODUCTION_STAGE})`,
-        domain: coreHost,
-        sessionDuration: "12h",
-        policies: [ownerPolicy.policyId, agentCorePolicy.policyId]
+        name: `Bob internal (${PRODUCTION_STAGE})`,
+        domain: `${coreHost}/internal`,
+        sessionDuration: "1h",
+        policies: [agentCorePolicy.policyId]
+      })
+      const setupApplication = yield* Cloudflare.Access.Application("OwnerSetupApplication", {
+        type: "self_hosted",
+        name: `Bob owner setup (${PRODUCTION_STAGE})`,
+        domain: `${coreHost}/setup`,
+        sessionDuration: "15m",
+        policies: [ownerPolicy.policyId]
       })
 
       const ingressCallerSecret = yield* Alchemy.makeRandom("IngressCallerSecret")
       const egressCallerSecret = yield* Alchemy.makeRandom("EgressCallerSecret")
 
       const coreWorker = yield* Cloudflare.Worker("CoreWorker", {
+        name: coreWorkerName,
         main: "../../apps/core-worker/src/index.ts",
         workersDev: false,
         domain: coreHost,
-        compatibility: { date: "2026-08-10" },
+        compatibility: { date: "2026-08-10", flags: ["nodejs_compat"] },
         assets: {
           directory: "../../apps/ui/dist",
           notFoundHandling: "single-page-application",
-          runWorkerFirst: ["/api/*", "/internal/*", "/health"]
+          runWorkerFirst: ["/api/*", "/internal/*", "/setup/api", "/health"]
         },
         crons: ["* * * * *"],
         observability: {
           enabled: true,
           logs: { enabled: true, invocationLogs: true },
-          traces: { enabled: false }
+          traces: { enabled: true, headSamplingRate: 1, persist: true }
         },
         env: {
           DB: database,
@@ -255,10 +285,12 @@ export function createBobStack(options: BobStackOptions) {
           DATA_KEK_ACTIVE_VERSION: Redacted.make(ENV.DATA_KEK_ACTIVE_VERSION),
           DATA_KEK_KEYRING_JSON: Redacted.make(ENV.DATA_KEK_KEYRING_JSON),
           DATA_LOOKUP_KEY: Redacted.make(ENV.DATA_LOOKUP_KEY),
+          BETTER_AUTH_SECRET: Redacted.make(ENV.BETTER_AUTH_SECRET),
           INGRESS_CALLER_SECRET: ingressCallerSecret,
           EGRESS_CALLER_SECRET: egressCallerSecret,
           ACCESS_TEAM_DOMAIN: ENV.ACCESS_TEAM_DOMAIN,
           CORE_ACCESS_AUDIENCE: coreApplication.aud,
+          SETUP_ACCESS_AUDIENCE: setupApplication.aud,
           OWNER_ACCESS_EMAIL: Redacted.make(ENV.OWNER_ACCESS_EMAIL),
           AGENT_CALLER_SUBJECT: agentToCore.clientId,
           AGENT_URL: `https://${agentHost}`,
@@ -272,8 +304,14 @@ export function createBobStack(options: BobStackOptions) {
             requiredGeneratedSecret(value, "CoreToAgentAdmin client secret")
           ),
           UI_BASE_URL: `https://${coreHost}`,
+          NANGO_API_URL: `https://${nangoHost}`,
+          NANGO_SECRET_KEY: Redacted.make(ENV.NANGO_SECRET_KEY),
+          NANGO_GOOGLE_CALENDAR_INTEGRATION_ID: "bob-google-calendar",
+          NANGO_MICROSOFT_CALENDAR_INTEGRATION_ID: "bob-microsoft-calendar",
           BOB_MODEL: ENV.BOB_MODEL,
-          BOB_PROVIDER: ENV.BOB_PROVIDER
+          BOB_PROVIDER: ENV.BOB_PROVIDER,
+          BOB_RUN_TOKEN_BUDGET: ENV.BOB_RUN_TOKEN_BUDGET,
+          BOB_DAILY_TOKEN_BUDGET: ENV.BOB_DAILY_TOKEN_BUDGET
         }
       })
 
@@ -318,6 +356,11 @@ export function createBobStack(options: BobStackOptions) {
           workersDev: false,
           domain: ingressHost,
           compatibility: { date: "2026-08-10" },
+          observability: {
+            enabled: true,
+            logs: { enabled: true, invocationLogs: true },
+            traces: { enabled: true, headSamplingRate: 1, persist: true }
+          },
           env: {
             CORE: coreWorker,
             INBOUND_QUEUE: inboundQueue,
@@ -335,6 +378,11 @@ export function createBobStack(options: BobStackOptions) {
           main: "../../apps/sendblue-egress/src/index.ts",
           workersDev: false,
           compatibility: { date: "2026-08-10" },
+          observability: {
+            enabled: true,
+            logs: { enabled: true, invocationLogs: true },
+            traces: { enabled: true, headSamplingRate: 1, persist: true }
+          },
           env: {
             CORE: coreWorker,
             DELIVERY_RESULT_QUEUE: deliveryResultQueue,
@@ -378,7 +426,7 @@ export function createBobStack(options: BobStackOptions) {
 
       return {
         stage: PRODUCTION_STAGE,
-        coreUrl: coreWorker.url,
+        coreUrl: `https://${coreHost}`,
         ingressUrl,
         coreAccessAudience: coreApplication.aud,
         agentAccessAudience: agentApplication.aud,

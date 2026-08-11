@@ -51,15 +51,20 @@ describe("Sendblue egress", () => {
   })
 
   it("durably publishes an accepted provider handle before it completes", async () => {
+    const providerRequests: unknown[] = []
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(Response.json({ message_handle: "sendblue-handle", status: "ACCEPTED" }))
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        providerRequests.push(JSON.parse(String(init?.body)) as unknown)
+        return Response.json({ message_handle: "sendblue-handle", status: "ACCEPTED" })
+      })
     )
+    const traceparent = "00-018e6f654d557a1b8df44ee15ea1dba1-1111111111111111-01"
+    const claimRequests: Headers[] = []
     const core = {
-      fetch: vi.fn(async () =>
-        Response.json({
+      fetch: vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        claimRequests.push(new Headers(init?.headers))
+        return Response.json({
           outboxId,
           attemptId,
           number: "+46700000000",
@@ -68,10 +73,10 @@ describe("Sendblue egress", () => {
           correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
           claimedAt: "2026-08-11T10:00:00.000Z"
         })
-      )
+      })
     }
     let result: unknown
-    const outcome = await processOutboundJob({ outboxId }, {
+    const outcome = await processOutboundJob({ outboxId, traceparent }, {
       CORE: core,
       DELIVERY_RESULT_QUEUE: {
         send: async (body: unknown) => {
@@ -91,6 +96,14 @@ describe("Sendblue egress", () => {
       state: "accepted",
       providerMessageHandle: "sendblue-handle"
     })
+    expect(claimRequests[0]?.get("traceparent")).toBe(traceparent)
+    expect(providerRequests).toEqual([
+      expect.objectContaining({
+        status_callback: expect.stringMatching(
+          /^https:\/\/bob\.example\/webhooks\/outbound\?outbox_id=.*&attempt_id=.*&traceparent=00-018e6f654d557a1b8df44ee15ea1dba1-[0-9a-f]{16}-01$/
+        )
+      })
+    ])
   })
 
   it("uses the durable Core store when result Queue publication fails", async () => {

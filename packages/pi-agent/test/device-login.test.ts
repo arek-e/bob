@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { waitForDeviceLoginStart } from "../src/index.ts"
+import { waitForDeviceLoginStart } from "../src/device-login.ts"
 
 describe("device login", () => {
   it("returns a typed failure when Pi does not emit a start event", async () => {

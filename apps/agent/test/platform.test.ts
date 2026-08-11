@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises"
-
 import { describe, expect, it } from "vitest"
 
 import { AGENT_LISTEN_HOST } from "../src/listener.ts"
@@ -21,8 +20,9 @@ describe("agent platform contract", () => {
     const ciliumPolicy = await readFile(`${kubernetesBase}/cilium-egress-policy.yaml`, "utf8")
     const deployment = await readFile(`${kubernetesBase}/deployment.yaml`, "utf8")
     expect(policy).toContain("policyTypes: [Ingress, Egress]")
-    expect(policy).not.toContain("kubernetes.io/metadata.name: kube-system")
-    expect(policy).not.toContain("port: 53")
+    expect(policy).toContain("kubernetes.io/metadata.name: kube-system")
+    expect(policy).toContain("k8s-app: kube-dns")
+    expect(policy).toContain("port: 53")
     expect(policy).toContain("kubernetes.io/metadata.name: openbao")
     expect(policy).toContain("port: 7844")
     expect(ciliumPolicy).toContain('"k8s:k8s-app": kube-dns')

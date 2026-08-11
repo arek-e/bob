@@ -1,13 +1,15 @@
 import type { ReminderCreateArguments } from "@bob/contracts/tools"
-import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm"
 import type { BatchItem } from "drizzle-orm/batch"
+
+import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, or, sql, type SQL } from "drizzle-orm"
 import { Context, Layer } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
-import { operationalAlerts } from "../alerts/schema.ts"
-import { channels, messages, shortReplyBindings, users } from "../conversations/schema.ts"
-import { outboxMessages } from "../delivery/schema.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+
+import { operationalAlerts } from "../alerts/schema.ts"
+import { messages, shortReplyBindings, users } from "../conversations/schema.ts"
+import { outboxMessages } from "../delivery/schema.ts"
 import {
   localDisplay,
   localDayBounds,
@@ -26,6 +28,15 @@ export interface ReminderSummary {
   readonly displayText: string
   readonly nextDueAt?: string
   readonly localDisplayTime?: string
+  readonly timeZone: string
+  readonly state: string
+  readonly actionTargets: readonly ReminderActionTarget[]
+}
+
+export interface ReminderActionTarget {
+  readonly occurrenceId: string
+  readonly dueAt: string
+  readonly localDisplayTime: string
   readonly state: string
 }
 
@@ -46,15 +57,21 @@ export interface ReminderStore {
     idempotencyKey: string
   ): Promise<ReminderCreateResult>
   list(ownerId: string): Promise<readonly ReminderSummary[]>
-  acknowledge(occurrenceId: string, idempotencyKey: string): Promise<void>
-  complete(occurrenceId: string, idempotencyKey: string): Promise<void>
+  acknowledge(ownerId: string, occurrenceId: string, idempotencyKey: string): Promise<void>
+  complete(ownerId: string, occurrenceId: string, idempotencyKey: string): Promise<void>
   applyBoundReply(
     ownerId: string,
     bindingId: string,
     command: "seen" | "done"
   ): Promise<"applied" | "invalid">
-  snooze(occurrenceId: string, dueAt: string, idempotencyKey: string): Promise<string>
+  snooze(
+    ownerId: string,
+    occurrenceId: string,
+    dueAt: string,
+    idempotencyKey: string
+  ): Promise<string>
   cancel(
+    ownerId: string,
     reminderId: string,
     occurrenceId: string | undefined,
     idempotencyKey: string
@@ -81,6 +98,16 @@ export function makeReminderStore(
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const quietHours = options.quietHours
   const dailyLimit = options.dailyLimit
+
+  async function ownerQuietHours(ownerId: string): Promise<QuietHours | undefined> {
+    if (quietHours === undefined) return undefined
+    const [owner] = await database
+      .select({ timeZone: users.timeZone })
+      .from(users)
+      .where(eq(users.id, ownerId))
+      .limit(1)
+    return { ...quietHours, timeZone: owner?.timeZone ?? quietHours.timeZone }
+  }
 
   async function ownerKey(ownerId: string): Promise<{ key: CryptoKey; version: number }> {
     const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
@@ -113,6 +140,121 @@ export function makeReminderStore(
     return action !== undefined
   }
 
+  async function actionWasRecorded(actionId: string): Promise<boolean> {
+    const [action] = await database
+      .select({ id: reminderActions.id })
+      .from(reminderActions)
+      .where(eq(reminderActions.id, actionId))
+      .limit(1)
+    return action !== undefined
+  }
+
+  function actionRecorded(actionId: string) {
+    return sql<boolean>`exists (
+      select 1 from ${reminderActions}
+      where ${reminderActions.id} = ${actionId}
+    )`
+  }
+
+  function conditionalOccurrenceAction(input: {
+    readonly id: string
+    readonly ownerId: string
+    readonly reminderId: string
+    readonly sourceOccurrenceId: string
+    readonly expectedState: typeof reminderOccurrences.$inferSelect.state
+    readonly actionOccurrenceId: string
+    readonly action: "acknowledged" | "completed" | "snoozed" | "cancelled"
+    readonly idempotencyKey: string
+    readonly createdAt: string
+    readonly extraCondition?: SQL
+  }): BatchItem<"sqlite"> {
+    return database.insert(reminderActions).select(
+      database
+        .select({
+          id: sql<string>`${input.id}`.as("id"),
+          reminderId: sql<string>`${input.reminderId}`.as("reminder_id"),
+          occurrenceId: sql<string>`${input.actionOccurrenceId}`.as("occurrence_id"),
+          action: sql<typeof input.action>`${input.action}`.as("action"),
+          actor: sql<"owner">`'owner'`.as("actor"),
+          idempotencyKey: sql<string>`${input.idempotencyKey}`.as("idempotency_key"),
+          createdAt: sql<string>`${input.createdAt}`.as("created_at")
+        })
+        .from(reminderOccurrences)
+        .innerJoin(reminders, eq(reminderOccurrences.reminderId, reminders.id))
+        .where(
+          and(
+            eq(reminderOccurrences.id, input.sourceOccurrenceId),
+            eq(reminderOccurrences.reminderId, input.reminderId),
+            eq(reminderOccurrences.state, input.expectedState),
+            eq(reminders.userId, input.ownerId),
+            input.extraCondition ?? sql<boolean>`true`
+          )
+        )
+    )
+  }
+
+  function conditionalScheduledOccurrence(input: {
+    readonly actionId: string
+    readonly id: string
+    readonly reminderId: string
+    readonly sequence: number
+    readonly dueAt: string
+    readonly localDisplayTime: string
+    readonly idempotencyKey: string
+    readonly createdAt: string
+  }): BatchItem<"sqlite"> {
+    return database.insert(reminderOccurrences).select(
+      database
+        .select({
+          id: sql<string>`${input.id}`.as("id"),
+          reminderId: sql<string>`${input.reminderId}`.as("reminder_id"),
+          sequence: sql<number>`${input.sequence}`.as("sequence"),
+          intendedDueAt: sql<string>`${input.dueAt}`.as("intended_due_at"),
+          localDisplayTime: sql<string>`${input.localDisplayTime}`.as("local_display_time"),
+          idempotencyKey: sql<string>`${input.idempotencyKey}`.as("idempotency_key"),
+          state: sql<"scheduled">`'scheduled'`.as("state"),
+          createdAt: sql<string>`${input.createdAt}`.as("created_at"),
+          updatedAt: sql<string>`${input.createdAt}`.as("updated_at")
+        })
+        .from(reminderActions)
+        .where(eq(reminderActions.id, input.actionId))
+    )
+  }
+
+  function conditionalSchedulerCommand(input: {
+    readonly actionId: string
+    readonly id: string
+    readonly ownerId: string
+    readonly reminderId: string
+    readonly scheduleRevision: number
+    readonly command: "upsert" | "remove"
+    readonly createdAt: string
+  }): BatchItem<"sqlite"> {
+    return database.insert(schedulerOutbox).select(
+      database
+        .select({
+          id: sql<string>`${input.id}`.as("id"),
+          userId: sql<string>`${input.ownerId}`.as("user_id"),
+          reminderId: sql<string>`${input.reminderId}`.as("reminder_id"),
+          scheduleRevision: sql<number>`${input.scheduleRevision}`.as("schedule_revision"),
+          command: sql<typeof input.command>`${input.command}`.as("command"),
+          createdAt: sql<string>`${input.createdAt}`.as("created_at")
+        })
+        .from(reminderActions)
+        .where(eq(reminderActions.id, input.actionId))
+    )
+  }
+
+  async function ownedOccurrence(ownerId: string, occurrenceId: string) {
+    const [row] = await database
+      .select({ occurrence: reminderOccurrences })
+      .from(reminderOccurrences)
+      .innerJoin(reminders, eq(reminderOccurrences.reminderId, reminders.id))
+      .where(and(eq(reminderOccurrences.id, occurrenceId), eq(reminders.userId, ownerId)))
+      .limit(1)
+    return row?.occurrence
+  }
+
   return {
     async createOneShot(ownerId, channelId, originalWording, input, idempotencyKey) {
       const [existingAction] = await database
@@ -140,7 +282,7 @@ export function makeReminderStore(
       }
 
       const dueAt = resolveLocalDueAt(input.localDate, input.localTime, input.timeZone)
-      if (Math.abs(Date.parse(dueAt) - Date.parse(input.dueAt)) > 1_000) {
+      if (Date.parse(dueAt) !== Date.parse(input.dueAt)) {
         throw new Error("Reminder due time does not match its local date and time")
       }
       const owner = await ownerKey(ownerId)
@@ -220,6 +362,45 @@ export function makeReminderStore(
         .from(reminders)
         .where(and(eq(reminders.userId, ownerId), inArray(reminders.state, ["active", "paused"])))
         .orderBy(asc(reminders.nextDueAt))
+      const targetRows =
+        rows.length === 0
+          ? []
+          : await database
+              .select({
+                reminderId: reminderOccurrences.reminderId,
+                occurrenceId: reminderOccurrences.id,
+                dueAt: reminderOccurrences.intendedDueAt,
+                localDisplayTime: reminderOccurrences.localDisplayTime,
+                state: reminderOccurrences.state
+              })
+              .from(reminderOccurrences)
+              .where(
+                and(
+                  inArray(
+                    reminderOccurrences.reminderId,
+                    rows.map((row) => row.id)
+                  ),
+                  inArray(reminderOccurrences.state, [
+                    "scheduled",
+                    "claimed",
+                    "awaiting_delivery",
+                    "awaiting_response",
+                    "acknowledged"
+                  ])
+                )
+              )
+              .orderBy(asc(reminderOccurrences.intendedDueAt), asc(reminderOccurrences.sequence))
+      const targetsByReminder = new Map<string, ReminderActionTarget[]>()
+      for (const target of targetRows) {
+        const targets = targetsByReminder.get(target.reminderId) ?? []
+        targets.push({
+          occurrenceId: target.occurrenceId,
+          dueAt: target.dueAt,
+          localDisplayTime: target.localDisplayTime,
+          state: target.state
+        })
+        targetsByReminder.set(target.reminderId, targets)
+      }
       const key = (await ownerKey(ownerId)).key
       return Promise.all(
         rows.map(async (row) => ({
@@ -232,40 +413,42 @@ export function makeReminderStore(
           ...(row.nextDueAt === null
             ? {}
             : { localDisplayTime: localDisplay(row.nextDueAt, row.timeZone) }),
-          state: row.state
+          timeZone: row.timeZone,
+          state: row.state,
+          actionTargets: targetsByReminder.get(row.id) ?? []
         }))
       )
     },
 
-    async acknowledge(occurrenceId, idempotencyKey) {
+    async acknowledge(ownerId, occurrenceId, idempotencyKey) {
       if (await actionExists(idempotencyKey)) return
-      const [occurrence] = await database
-        .select()
-        .from(reminderOccurrences)
-        .where(eq(reminderOccurrences.id, occurrenceId))
-        .limit(1)
+      const occurrence = await ownedOccurrence(ownerId, occurrenceId)
       if (occurrence === undefined) throw new Error("Reminder occurrence not found")
       transitionOccurrence(occurrence.state, "acknowledged")
       const at = now().toISOString()
+      const actionId = randomUuid()
       await database.batch([
+        conditionalOccurrenceAction({
+          id: actionId,
+          ownerId,
+          reminderId: occurrence.reminderId,
+          sourceOccurrenceId: occurrenceId,
+          expectedState: occurrence.state,
+          actionOccurrenceId: occurrenceId,
+          action: "acknowledged",
+          idempotencyKey,
+          createdAt: at
+        }),
         database
           .update(reminderOccurrences)
           .set({ state: "acknowledged", updatedAt: at })
           .where(
             and(
               eq(reminderOccurrences.id, occurrenceId),
-              eq(reminderOccurrences.state, occurrence.state)
+              eq(reminderOccurrences.state, occurrence.state),
+              actionRecorded(actionId)
             )
           ),
-        database.insert(reminderActions).values({
-          id: randomUuid(),
-          reminderId: occurrence.reminderId,
-          occurrenceId,
-          action: "acknowledged",
-          actor: "owner",
-          idempotencyKey,
-          createdAt: at
-        }),
         database
           .update(shortReplyBindings)
           .set({ consumedAt: at })
@@ -274,41 +457,51 @@ export function makeReminderStore(
               eq(shortReplyBindings.targetType, "reminder"),
               eq(shortReplyBindings.targetId, occurrenceId),
               eq(shortReplyBindings.command, "seen"),
-              isNull(shortReplyBindings.consumedAt)
+              isNull(shortReplyBindings.consumedAt),
+              actionRecorded(actionId)
             )
           )
       ])
+      if (!(await actionWasRecorded(actionId)) && !(await actionExists(idempotencyKey))) {
+        throw new Error("Reminder occurrence changed before it could be acknowledged")
+      }
     },
 
-    async complete(occurrenceId, idempotencyKey) {
+    async complete(ownerId, occurrenceId, idempotencyKey) {
       if (await actionExists(idempotencyKey)) return
-      const [occurrence] = await database
-        .select()
-        .from(reminderOccurrences)
-        .where(eq(reminderOccurrences.id, occurrenceId))
-        .limit(1)
+      const occurrence = await ownedOccurrence(ownerId, occurrenceId)
       if (occurrence === undefined) throw new Error("Reminder occurrence not found")
+      const [reminder] = await database
+        .select({ scheduleKind: reminders.scheduleKind })
+        .from(reminders)
+        .where(and(eq(reminders.id, occurrence.reminderId), eq(reminders.userId, ownerId)))
+        .limit(1)
+      if (reminder === undefined) throw new Error("Reminder not found")
       transitionOccurrence(occurrence.state, "completed")
       const at = now().toISOString()
+      const actionId = randomUuid()
       await database.batch([
+        conditionalOccurrenceAction({
+          id: actionId,
+          ownerId,
+          reminderId: occurrence.reminderId,
+          sourceOccurrenceId: occurrenceId,
+          expectedState: occurrence.state,
+          actionOccurrenceId: occurrenceId,
+          action: "completed",
+          idempotencyKey,
+          createdAt: at
+        }),
         database
           .update(reminderOccurrences)
           .set({ state: "completed", updatedAt: at })
           .where(
             and(
               eq(reminderOccurrences.id, occurrenceId),
-              eq(reminderOccurrences.state, occurrence.state)
+              eq(reminderOccurrences.state, occurrence.state),
+              actionRecorded(actionId)
             )
           ),
-        database.insert(reminderActions).values({
-          id: randomUuid(),
-          reminderId: occurrence.reminderId,
-          occurrenceId,
-          action: "completed",
-          actor: "owner",
-          idempotencyKey,
-          createdAt: at
-        }),
         database
           .update(shortReplyBindings)
           .set({ consumedAt: at })
@@ -316,10 +509,28 @@ export function makeReminderStore(
             and(
               eq(shortReplyBindings.targetType, "reminder"),
               eq(shortReplyBindings.targetId, occurrenceId),
-              isNull(shortReplyBindings.consumedAt)
+              isNull(shortReplyBindings.consumedAt),
+              actionRecorded(actionId)
             )
-          )
+          ),
+        ...(reminder.scheduleKind === "one_shot"
+          ? [
+              database
+                .update(reminders)
+                .set({ state: "completed", nextDueAt: null, updatedAt: at })
+                .where(
+                  and(
+                    eq(reminders.id, occurrence.reminderId),
+                    eq(reminders.userId, ownerId),
+                    actionRecorded(actionId)
+                  )
+                )
+            ]
+          : [])
       ])
+      if (!(await actionWasRecorded(actionId)) && !(await actionExists(idempotencyKey))) {
+        throw new Error("Reminder occurrence changed before it could be completed")
+      }
     },
 
     async applyBoundReply(ownerId, bindingId, command) {
@@ -347,10 +558,38 @@ export function makeReminderStore(
         .where(eq(reminderOccurrences.id, binding.targetId))
         .limit(1)
       if (occurrence === undefined) return "invalid"
+      const [reminder] = await database
+        .select({ scheduleKind: reminders.scheduleKind })
+        .from(reminders)
+        .where(and(eq(reminders.id, occurrence.reminderId), eq(reminders.userId, ownerId)))
+        .limit(1)
+      if (reminder === undefined) return "invalid"
       const next = command === "seen" ? "acknowledged" : "completed"
-      transitionOccurrence(occurrence.state, next)
+      try {
+        transitionOccurrence(occurrence.state, next)
+      } catch {
+        return "invalid"
+      }
+      const actionId = randomUuid()
       try {
         await database.batch([
+          conditionalOccurrenceAction({
+            id: actionId,
+            ownerId,
+            reminderId: occurrence.reminderId,
+            sourceOccurrenceId: occurrence.id,
+            expectedState: occurrence.state,
+            actionOccurrenceId: occurrence.id,
+            action: next,
+            idempotencyKey,
+            createdAt: at,
+            extraCondition: sql<boolean>`exists (
+              select 1 from ${shortReplyBindings}
+              where ${shortReplyBindings.id} = ${binding.id}
+                and ${shortReplyBindings.consumedAt} is null
+                and ${shortReplyBindings.expiresAt} > ${at}
+            )`
+          }),
           database
             .update(shortReplyBindings)
             .set({ consumedAt: at })
@@ -358,7 +597,8 @@ export function makeReminderStore(
               and(
                 eq(shortReplyBindings.id, binding.id),
                 isNull(shortReplyBindings.consumedAt),
-                gt(shortReplyBindings.expiresAt, at)
+                gt(shortReplyBindings.expiresAt, at),
+                actionRecorded(actionId)
               )
             ),
           database
@@ -367,18 +607,10 @@ export function makeReminderStore(
             .where(
               and(
                 eq(reminderOccurrences.id, occurrence.id),
-                eq(reminderOccurrences.state, occurrence.state)
+                eq(reminderOccurrences.state, occurrence.state),
+                actionRecorded(actionId)
               )
             ),
-          database.insert(reminderActions).values({
-            id: randomUuid(),
-            reminderId: occurrence.reminderId,
-            occurrenceId: occurrence.id,
-            action: next,
-            actor: "owner",
-            idempotencyKey,
-            createdAt: at
-          }),
           ...(next === "completed"
             ? [
                 database
@@ -388,7 +620,22 @@ export function makeReminderStore(
                     and(
                       eq(shortReplyBindings.targetType, "reminder"),
                       eq(shortReplyBindings.targetId, occurrence.id),
-                      isNull(shortReplyBindings.consumedAt)
+                      isNull(shortReplyBindings.consumedAt),
+                      actionRecorded(actionId)
+                    )
+                  )
+              ]
+            : []),
+          ...(next === "completed" && reminder.scheduleKind === "one_shot"
+            ? [
+                database
+                  .update(reminders)
+                  .set({ state: "completed", nextDueAt: null, updatedAt: at })
+                  .where(
+                    and(
+                      eq(reminders.id, occurrence.reminderId),
+                      eq(reminders.userId, ownerId),
+                      actionRecorded(actionId)
                     )
                   )
               ]
@@ -397,10 +644,12 @@ export function makeReminderStore(
       } catch {
         return (await actionExists(idempotencyKey)) ? "applied" : "invalid"
       }
-      return "applied"
+      return (await actionWasRecorded(actionId)) || (await actionExists(idempotencyKey))
+        ? "applied"
+        : "invalid"
     },
 
-    async snooze(occurrenceId, dueAt, idempotencyKey) {
+    async snooze(ownerId, occurrenceId, dueAt, idempotencyKey) {
       const [existing] = await database
         .select({ occurrenceId: reminderActions.occurrenceId })
         .from(reminderActions)
@@ -408,11 +657,7 @@ export function makeReminderStore(
         .limit(1)
       if (existing?.occurrenceId !== null && existing?.occurrenceId !== undefined)
         return existing.occurrenceId
-      const [occurrence] = await database
-        .select()
-        .from(reminderOccurrences)
-        .where(eq(reminderOccurrences.id, occurrenceId))
-        .limit(1)
+      const occurrence = await ownedOccurrence(ownerId, occurrenceId)
       if (occurrence === undefined) throw new Error("Reminder occurrence not found")
       transitionOccurrence(occurrence.state, "snoozed")
       const [reminder] = await database
@@ -424,86 +669,129 @@ export function makeReminderStore(
       const successorId = randomUuid()
       const revision = reminder.scheduleRevision + 1
       const createdAt = now().toISOString()
-      await database.batch([
-        database
-          .update(reminderOccurrences)
-          .set({ state: "snoozed", snoozedToOccurrenceId: successorId, updatedAt: createdAt })
-          .where(
-            and(
-              eq(reminderOccurrences.id, occurrenceId),
-              eq(reminderOccurrences.state, occurrence.state)
-            )
-          ),
-        database.insert(reminderOccurrences).values({
-          id: successorId,
-          reminderId: reminder.id,
-          sequence: occurrence.sequence + 1,
-          intendedDueAt: dueAt,
-          localDisplayTime: localDisplay(dueAt, reminder.timeZone),
-          idempotencyKey: occurrenceIdempotencyKey(reminder.id, dueAt, occurrence.sequence + 1),
-          state: "scheduled",
-          createdAt,
-          updatedAt: createdAt
-        }),
-        database
-          .update(reminders)
-          .set({ nextDueAt: dueAt, scheduleRevision: revision, updatedAt: createdAt })
-          .where(eq(reminders.id, reminder.id)),
-        database.insert(reminderActions).values({
-          id: randomUuid(),
-          reminderId: reminder.id,
-          occurrenceId: successorId,
-          action: "snoozed",
-          actor: "owner",
-          idempotencyKey,
-          createdAt
-        }),
-        database
-          .update(shortReplyBindings)
-          .set({ consumedAt: createdAt })
-          .where(
-            and(
-              eq(shortReplyBindings.targetType, "reminder"),
-              eq(shortReplyBindings.targetId, occurrenceId),
-              isNull(shortReplyBindings.consumedAt)
-            )
-          ),
-        database.insert(schedulerOutbox).values({
-          id: randomUuid(),
-          userId: reminder.userId,
-          reminderId: reminder.id,
-          scheduleRevision: revision,
-          command: "upsert",
-          createdAt
-        })
-      ])
+      const actionId = randomUuid()
+      try {
+        await database.batch([
+          conditionalOccurrenceAction({
+            id: actionId,
+            ownerId,
+            reminderId: reminder.id,
+            sourceOccurrenceId: occurrenceId,
+            expectedState: occurrence.state,
+            actionOccurrenceId: successorId,
+            action: "snoozed",
+            idempotencyKey,
+            createdAt
+          }),
+          database
+            .update(reminderOccurrences)
+            .set({ state: "snoozed", snoozedToOccurrenceId: successorId, updatedAt: createdAt })
+            .where(
+              and(
+                eq(reminderOccurrences.id, occurrenceId),
+                eq(reminderOccurrences.state, occurrence.state),
+                actionRecorded(actionId)
+              )
+            ),
+          conditionalScheduledOccurrence({
+            actionId,
+            id: successorId,
+            reminderId: reminder.id,
+            sequence: occurrence.sequence + 1,
+            dueAt,
+            localDisplayTime: localDisplay(dueAt, reminder.timeZone),
+            idempotencyKey: occurrenceIdempotencyKey(reminder.id, dueAt, occurrence.sequence + 1),
+            createdAt
+          }),
+          database
+            .update(reminders)
+            .set({ nextDueAt: dueAt, scheduleRevision: revision, updatedAt: createdAt })
+            .where(and(eq(reminders.id, reminder.id), actionRecorded(actionId))),
+          database
+            .update(shortReplyBindings)
+            .set({ consumedAt: createdAt })
+            .where(
+              and(
+                eq(shortReplyBindings.targetType, "reminder"),
+                eq(shortReplyBindings.targetId, occurrenceId),
+                isNull(shortReplyBindings.consumedAt),
+                actionRecorded(actionId)
+              )
+            ),
+          conditionalSchedulerCommand({
+            actionId,
+            id: randomUuid(),
+            ownerId: reminder.userId,
+            reminderId: reminder.id,
+            scheduleRevision: revision,
+            command: "upsert",
+            createdAt
+          })
+        ])
+      } catch (error) {
+        const [settled] = await database
+          .select({ occurrenceId: reminderActions.occurrenceId })
+          .from(reminderActions)
+          .where(eq(reminderActions.idempotencyKey, idempotencyKey))
+          .limit(1)
+        if (settled?.occurrenceId !== null && settled?.occurrenceId !== undefined) {
+          return settled.occurrenceId
+        }
+        throw error
+      }
+      if (!(await actionWasRecorded(actionId))) {
+        const [settled] = await database
+          .select({ occurrenceId: reminderActions.occurrenceId })
+          .from(reminderActions)
+          .where(eq(reminderActions.idempotencyKey, idempotencyKey))
+          .limit(1)
+        if (settled?.occurrenceId !== null && settled?.occurrenceId !== undefined) {
+          return settled.occurrenceId
+        }
+        throw new Error("Reminder occurrence changed before it could be snoozed")
+      }
       return successorId
     },
 
-    async cancel(reminderId, occurrenceId, idempotencyKey) {
+    async cancel(ownerId, reminderId, occurrenceId, idempotencyKey) {
       if (await actionExists(idempotencyKey)) return
       const at = now().toISOString()
       const [reminder] = await database
         .select()
         .from(reminders)
-        .where(eq(reminders.id, reminderId))
+        .where(and(eq(reminders.id, reminderId), eq(reminders.userId, ownerId)))
         .limit(1)
       if (reminder === undefined) throw new Error("Reminder not found")
       if (occurrenceId !== undefined) {
-        await database.batch([
-          database
-            .update(reminderOccurrences)
-            .set({ state: "cancelled", updatedAt: at })
-            .where(eq(reminderOccurrences.id, occurrenceId)),
-          database.insert(reminderActions).values({
-            id: randomUuid(),
+        const occurrence = await ownedOccurrence(ownerId, occurrenceId)
+        if (occurrence === undefined || occurrence.reminderId !== reminderId) {
+          throw new Error("Reminder occurrence not found")
+        }
+        transitionOccurrence(occurrence.state, "cancelled")
+        const revision = reminder.scheduleRevision + 1
+        const actionId = randomUuid()
+        const statements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
+          conditionalOccurrenceAction({
+            id: actionId,
+            ownerId,
             reminderId,
-            occurrenceId,
+            sourceOccurrenceId: occurrenceId,
+            expectedState: occurrence.state,
+            actionOccurrenceId: occurrenceId,
             action: "cancelled",
-            actor: "owner",
             idempotencyKey,
             createdAt: at
           }),
+          database
+            .update(reminderOccurrences)
+            .set({ state: "cancelled", updatedAt: at })
+            .where(
+              and(
+                eq(reminderOccurrences.id, occurrenceId),
+                eq(reminderOccurrences.state, occurrence.state),
+                actionRecorded(actionId)
+              )
+            ),
           database
             .update(shortReplyBindings)
             .set({ consumedAt: at })
@@ -511,10 +799,117 @@ export function makeReminderStore(
               and(
                 eq(shortReplyBindings.targetType, "reminder"),
                 eq(shortReplyBindings.targetId, occurrenceId),
-                isNull(shortReplyBindings.consumedAt)
+                isNull(shortReplyBindings.consumedAt),
+                actionRecorded(actionId)
               )
             )
-        ])
+        ]
+
+        if (reminder.scheduleKind === "one_shot") {
+          statements.push(
+            database
+              .update(reminders)
+              .set({
+                state: "cancelled",
+                nextDueAt: null,
+                scheduleRevision: revision,
+                updatedAt: at
+              })
+              .where(
+                and(
+                  eq(reminders.id, reminderId),
+                  eq(reminders.userId, ownerId),
+                  actionRecorded(actionId)
+                )
+              ),
+            conditionalSchedulerCommand({
+              actionId,
+              id: randomUuid(),
+              ownerId: reminder.userId,
+              reminderId,
+              scheduleRevision: revision,
+              command: "remove",
+              createdAt: at
+            })
+          )
+        } else {
+          const existingOccurrences = await database
+            .select({
+              id: reminderOccurrences.id,
+              sequence: reminderOccurrences.sequence,
+              intendedDueAt: reminderOccurrences.intendedDueAt,
+              state: reminderOccurrences.state
+            })
+            .from(reminderOccurrences)
+            .where(eq(reminderOccurrences.reminderId, reminderId))
+          const nextScheduled = existingOccurrences
+            .filter((candidate) => candidate.id !== occurrenceId && candidate.state === "scheduled")
+            .sort(
+              (left, right) =>
+                Date.parse(left.intendedDueAt) - Date.parse(right.intendedDueAt) ||
+                left.sequence - right.sequence
+            )[0]
+          let nextDueAt = nextScheduled?.intendedDueAt
+
+          if (nextDueAt === undefined) {
+            if (reminder.rrule === null) {
+              throw new Error("Recurring reminder rule not found")
+            }
+            const latestOccurrence = existingOccurrences.reduce((latest, candidate) =>
+              candidate.sequence > latest.sequence ? candidate : latest
+            )
+            nextDueAt = nextRecurringDueAt(
+              latestOccurrence.intendedDueAt,
+              reminder.rrule,
+              reminder.timeZone
+            )
+            const nextSequence = latestOccurrence.sequence + 1
+            statements.push(
+              conditionalScheduledOccurrence({
+                actionId,
+                id: randomUuid(),
+                reminderId,
+                sequence: nextSequence,
+                dueAt: nextDueAt,
+                localDisplayTime: localDisplay(nextDueAt, reminder.timeZone),
+                idempotencyKey: occurrenceIdempotencyKey(reminderId, nextDueAt, nextSequence),
+                createdAt: at
+              })
+            )
+          }
+
+          statements.push(
+            database
+              .update(reminders)
+              .set({ nextDueAt, scheduleRevision: revision, updatedAt: at })
+              .where(
+                and(
+                  eq(reminders.id, reminderId),
+                  eq(reminders.userId, ownerId),
+                  actionRecorded(actionId)
+                )
+              ),
+            conditionalSchedulerCommand({
+              actionId,
+              id: randomUuid(),
+              ownerId: reminder.userId,
+              reminderId,
+              scheduleRevision: revision,
+              command: reminder.state === "active" ? "upsert" : "remove",
+              createdAt: at
+            })
+          )
+        }
+
+        try {
+          await database.batch(statements)
+        } catch (error) {
+          if (await actionExists(idempotencyKey)) return
+          throw error
+        }
+        if (!(await actionWasRecorded(actionId)) && !(await actionExists(idempotencyKey))) {
+          throw new Error("Reminder occurrence changed before it could be cancelled")
+        }
         return
       }
       const revision = reminder.scheduleRevision + 1
@@ -649,9 +1044,10 @@ export function makeReminderStore(
     async claimDueAndCreateOutbox(ownerId, leaseMs) {
       const timestamp = now()
       const timestampIso = timestamp.toISOString()
+      const activeQuietHours = await ownerQuietHours(ownerId)
       let sentToday = 0
-      if (dailyLimit !== undefined && quietHours !== undefined) {
-        const bounds = localDayBounds(timestampIso, quietHours.timeZone)
+      if (dailyLimit !== undefined && activeQuietHours !== undefined) {
+        const bounds = localDayBounds(timestampIso, activeQuietHours.timeZone)
         const [count] = await database
           .select({ count: sql<number>`count(*)` })
           .from(outboxMessages)
@@ -687,12 +1083,16 @@ export function makeReminderStore(
       const outboxIds: string[] = []
       for (const row of due) {
         const quietDeferredAt =
-          quietHours === undefined || row.reminder.quietHoursBehavior === "allow"
+          activeQuietHours === undefined || row.reminder.quietHoursBehavior === "allow"
             ? timestampIso
-            : deferForQuietHours(timestampIso, quietHours)
-        const limited = dailyLimit !== undefined && sentToday >= dailyLimit
+            : deferForQuietHours(timestampIso, activeQuietHours)
+        const limited =
+          dailyLimit !== undefined && activeQuietHours !== undefined && sentToday >= dailyLimit
         if (quietDeferredAt !== timestampIso || limited) {
-          const deferredAt = limited ? nextDailyWindow(timestampIso, quietHours!) : quietDeferredAt
+          const deferredAt =
+            limited && activeQuietHours !== undefined
+              ? nextDailyWindow(timestampIso, activeQuietHours)
+              : quietDeferredAt
           await database.batch([
             database
               .update(reminderOccurrences)

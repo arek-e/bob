@@ -59,8 +59,8 @@ export function SignInPage() {
   return (
     <AuthFrame
       title="Welcome to Bob"
-      subtitle="Your private continuity assistant"
-      description="Use the owner account for this workspace."
+      subtitle="Owner settings"
+      description="Use the owner account to manage Bob."
     >
       <div class={styles.authStatus} role="status" aria-live="polite">
         {status()}
@@ -114,7 +114,7 @@ export function SignInPage() {
         First visit? <a href="/setup">Set up the owner login</a> through the protected setup route.
       </p>
       <p class={styles.authTerms}>
-        This is a private workspace. Only the owner account can open it.
+        This is a private settings app. Only the owner account can open it.
       </p>
     </AuthFrame>
   )
@@ -189,7 +189,7 @@ export function SetupPage() {
     <AuthFrame
       eyebrow="Protected owner setup"
       title="Create the owner login"
-      subtitle="Keep your workspace private"
+      subtitle="Keep Bob private"
       description="Choose the password that you will use to open Bob. This setup works once."
     >
       <div class={styles.authStatus} role="status" aria-live="polite">
@@ -312,75 +312,7 @@ function AuthFrame(props: {
           </CardHeader>
           <CardContent>{props.children}</CardContent>
         </Card>
-        <AuthPreview />
       </div>
     </main>
-  )
-}
-
-function AuthPreview() {
-  return (
-    <div class={styles.authPreview} aria-hidden="true">
-      <div class={styles.authPreviewTopbar}>
-        <div class={styles.authPreviewBrand}>
-          <span class={styles.authPreviewBrandMark}>B</span>
-          <span>Bob workspace</span>
-        </div>
-        <span>Private preview</span>
-      </div>
-      <div class={styles.authPreviewBody}>
-        <aside class={styles.authPreviewRail}>
-          <div class={styles.authPreviewRailHeader}>
-            <span class={styles.authPreviewRailAvatar}>A</span>
-            <span>Alex's workspace</span>
-          </div>
-          <span class={styles.authPreviewRailLabel}>Workspace</span>
-          <span class={`${styles.authPreviewRailItem} ${styles.authPreviewRailItemActive}`}>
-            Overview
-          </span>
-          <span class={styles.authPreviewRailItem}>Journal</span>
-          <span class={styles.authPreviewRailItem}>Reminders</span>
-          <span class={styles.authPreviewRailLabel}>Collections</span>
-          <span class={styles.authPreviewRailItem}>Memory</span>
-          <span class={styles.authPreviewRailItem}>Training</span>
-          <span class={styles.authPreviewRailSpacer} />
-          <span class={styles.authPreviewRailItem}>Settings</span>
-        </aside>
-        <div class={styles.authPreviewMain}>
-          <div class={styles.authPreviewIntro}>
-            <span class={styles.authPreviewKicker}>Overview</span>
-            <span class={styles.authPreviewTitle}>Good to see you.</span>
-            <span class={styles.authPreviewSubtitle}>
-              A quiet place for the things worth keeping.
-            </span>
-          </div>
-          <div class={styles.authPreviewCards}>
-            <article class={`${styles.authPreviewCard} ${styles.authPreviewCardWarm}`}>
-              <span class={styles.authPreviewCardLabel}>Today</span>
-              <h2 class={styles.authPreviewCardTitle}>Review your reminders</h2>
-              <p class={styles.authPreviewCardText}>One small step is ready for you.</p>
-              <div class={styles.authPreviewCardMedia} />
-            </article>
-            <article class={`${styles.authPreviewCard} ${styles.authPreviewCardGreen}`}>
-              <span class={styles.authPreviewCardLabel}>Memory</span>
-              <h2 class={styles.authPreviewCardTitle}>A new signal to review</h2>
-              <p class={styles.authPreviewCardText}>Nothing is saved without your approval.</p>
-              <div class={styles.authPreviewCardMedia} />
-            </article>
-            <article class={`${styles.authPreviewCard} ${styles.authPreviewCardDark}`}>
-              <span class={styles.authPreviewCardLabel}>Journal</span>
-              <h2 class={styles.authPreviewCardTitle}>Keep the thread</h2>
-              <p class={styles.authPreviewCardText}>Private notes stay inside Bob.</p>
-              <div class={styles.authPreviewCardMedia} />
-            </article>
-          </div>
-          <div class={styles.authPreviewNote}>
-            <span>Workspace ready</span>
-            <span class={styles.authPreviewNoteLine} />
-            <span>100%</span>
-          </div>
-        </div>
-      </div>
-    </div>
   )
 }

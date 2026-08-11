@@ -1,13 +1,21 @@
 import { InboundAcceptance, type NormalizedInboundEvent } from "@bob/contracts/channel"
-import { Schema } from "effect"
+import {
+  formatTraceparent,
+  observeSpan,
+  parseTraceparent,
+  traceContextFromCorrelationId,
+  traceHeaders
+} from "@bob/observability/trace"
 import {
   decodeWebhookPayload,
   normalizeInbound,
   normalizeStatus,
   timingSafeEqual
 } from "@bob/sendblue/webhooks"
+import { Schema } from "effect"
 
 import type { IngressBindings } from "../bindings.ts"
+
 import { composeIngress } from "../composition.ts"
 
 const MAX_BODY_BYTES = 16 * 1024
@@ -29,13 +37,16 @@ async function readJson(request: Request): Promise<unknown> {
 
 async function persistInbound(
   event: NormalizedInboundEvent,
-  composition: ReturnType<typeof composeIngress>
+  composition: ReturnType<typeof composeIngress>,
+  trace: Parameters<typeof traceHeaders>[0]
 ): Promise<Response> {
   const stored = await composition.ports.core.fetch("https://core.internal/internal/inbound", {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-bob-caller-token": composition.config.CORE_CALLER_SECRET
+      "x-bob-caller-token": composition.config.CORE_CALLER_SECRET,
+      ...traceHeaders(trace),
+      "x-bob-correlation-id": event.correlationId
     },
     body: JSON.stringify(event)
   })
@@ -43,7 +54,10 @@ async function persistInbound(
   const acceptance = Schema.decodeUnknownSync(InboundAcceptance)(await stored.json())
   if (acceptance.shouldEnqueue) {
     try {
-      await composition.ports.queue.send({ eventId: acceptance.eventId })
+      await composition.ports.queue.send({
+        eventId: acceptance.eventId,
+        traceparent: formatTraceparent(trace)
+      })
     } catch {
       return response("queue_publish_failed", 503)
     }
@@ -91,7 +105,38 @@ export async function handleIngressHttp(
         accountId: composition.config.SENDBLUE_ACCOUNT_ID,
         lineId: composition.config.SENDBLUE_LINE_ID
       })
-      return persistInbound(event, composition)
+      const startedAt = Date.now()
+      const result = await observeSpan(
+        {
+          sink: composition.events,
+          correlationId: event.correlationId,
+          parent: traceContextFromCorrelationId(event.correlationId),
+          name: "inbound.accept",
+          feature: "assistant",
+          workflow: "inbound_message",
+          failureCode: "durable_store"
+        },
+        (trace) => persistInbound(event, composition, trace),
+        (response) => (response.ok ? undefined : "durable_store")
+      )
+      const resultBody = (await result.clone().json()) as { code?: string }
+      try {
+        await composition.events.emit({
+          type: "webhook",
+          correlationId: event.correlationId,
+          status:
+            resultBody.code === "accepted"
+              ? "accepted"
+              : resultBody.code === "duplicate"
+                ? "duplicate"
+                : "failed",
+          code: resultBody.code ?? "unknown",
+          durationMs: Math.max(0, Date.now() - startedAt)
+        })
+      } catch {
+        // Telemetry must not change webhook acceptance.
+      }
+      return result
     }
     if (url.pathname === "/webhooks/outbound") {
       if (
@@ -110,14 +155,31 @@ export async function handleIngressHttp(
           ? {}
           : { attemptId: url.searchParams.get("attempt_id")! })
       })
-      const stored = await composition.ports.core.fetch("https://core.internal/internal/status", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-bob-caller-token": composition.config.CORE_CALLER_SECRET
+      const stored = await observeSpan(
+        {
+          sink: composition.events,
+          correlationId: event.correlationId,
+          parent:
+            parseTraceparent(url.searchParams.get("traceparent")) ??
+            traceContextFromCorrelationId(event.correlationId),
+          name: "provider.status",
+          feature: "delivery",
+          workflow: "outbound_delivery",
+          failureCode: "durable_store"
         },
-        body: JSON.stringify(event)
-      })
+        (trace) =>
+          composition.ports.core.fetch("https://core.internal/internal/status", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-bob-caller-token": composition.config.CORE_CALLER_SECRET,
+              ...traceHeaders(trace),
+              "x-bob-correlation-id": event.correlationId
+            },
+            body: JSON.stringify(event)
+          }),
+        (response) => (response.ok ? undefined : "durable_store")
+      )
       return stored.ok ? response("accepted", 202) : response("durable_store_failed", 503)
     }
     return response("not_found", 404)

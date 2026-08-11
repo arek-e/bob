@@ -1,52 +1,25 @@
-import { type ToolCommand, type ToolName, type ToolResult } from "@bob/contracts/tools"
+import {
+  EquipmentMapExerciseArguments,
+  ExerciseCreateArguments,
+  GymAddEquipmentArguments,
+  GymCreateArguments,
+  RoutineSaveArguments,
+  WorkoutFinishArguments,
+  WorkoutLogSetArguments,
+  WorkoutStartArguments,
+  type ToolCommand,
+  type ToolName,
+  type ToolResult
+} from "@bob/contracts/tools"
 import { and, desc, eq } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
-import { messages, users } from "../conversations/schema.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
-import { trainingProposals } from "./schema.ts"
 import type { TrainingStore } from "./store.ts"
 
-const GymArguments = Schema.Struct({ name: Schema.String })
-const ExerciseArguments = Schema.Struct({
-  name: Schema.String,
-  instructions: Schema.optionalKey(Schema.String)
-})
-const EquipmentArguments = Schema.Struct({
-  gymId: Schema.String,
-  name: Schema.String,
-  identifier: Schema.optionalKey(Schema.String)
-})
-const EquipmentMappingArguments = Schema.Struct({
-  equipmentId: Schema.String,
-  exerciseId: Schema.String
-})
-const RoutineArguments = Schema.Struct({
-  name: Schema.String,
-  steps: Schema.Array(
-    Schema.Struct({
-      exerciseId: Schema.String,
-      targetSets: Schema.optionalKey(Schema.Int),
-      targetReps: Schema.optionalKey(Schema.Int),
-      notes: Schema.optionalKey(Schema.String)
-    })
-  )
-})
-const WorkoutStartArguments = Schema.Struct({
-  routineId: Schema.String,
-  gymId: Schema.optionalKey(Schema.String)
-})
-const WorkoutSetArguments = Schema.Struct({
-  sessionId: Schema.String,
-  routineStepId: Schema.String,
-  equipmentId: Schema.optionalKey(Schema.String),
-  sequence: Schema.Int,
-  repetitions: Schema.Int,
-  weightGrams: Schema.optionalKey(Schema.Int),
-  notes: Schema.optionalKey(Schema.String)
-})
-const IdArguments = Schema.Struct({ id: Schema.String })
+import { messages, users } from "../conversations/schema.ts"
+import { trainingProposals } from "./schema.ts"
 
 export const trainingMutationToolNames = [
   "gym_create",
@@ -112,7 +85,7 @@ function canonicalJson(value: unknown): string {
   if (typeof value === "object") {
     const record = value as Record<string, unknown>
     return `{${Object.keys(record)
-      .sort()
+      .toSorted()
       .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
       .join(",")}}`
   }
@@ -203,12 +176,12 @@ export function makeTrainingProposalStore(
     const idempotencyKey = row.commandIdempotencyKey
     switch (row.toolName as TrainingMutationToolName) {
       case "gym_create": {
-        const args = Schema.decodeUnknownSync(GymArguments)(argumentsValue)
+        const args = Schema.decodeUnknownSync(GymCreateArguments)(argumentsValue)
         const gymId = await training.createGym(ownerId, args.name, idempotencyKey)
         return { ok: true, code: "gym_created", message: "The gym is saved.", data: { gymId } }
       }
       case "exercise_create": {
-        const args = Schema.decodeUnknownSync(ExerciseArguments)(argumentsValue)
+        const args = Schema.decodeUnknownSync(ExerciseCreateArguments)(argumentsValue)
         const exerciseId = await training.createExercise(
           ownerId,
           args.name,
@@ -223,7 +196,7 @@ export function makeTrainingProposalStore(
         }
       }
       case "gym_add_equipment": {
-        const args = Schema.decodeUnknownSync(EquipmentArguments)(argumentsValue)
+        const args = Schema.decodeUnknownSync(GymAddEquipmentArguments)(argumentsValue)
         const equipmentId = await training.addEquipment(
           ownerId,
           args.gymId,
@@ -239,7 +212,7 @@ export function makeTrainingProposalStore(
         }
       }
       case "equipment_map_exercise": {
-        const args = Schema.decodeUnknownSync(EquipmentMappingArguments)(argumentsValue)
+        const args = Schema.decodeUnknownSync(EquipmentMapExerciseArguments)(argumentsValue)
         const mappingId = await training.mapEquipment(
           ownerId,
           args.equipmentId,
@@ -254,7 +227,7 @@ export function makeTrainingProposalStore(
         }
       }
       case "routine_save": {
-        const args = Schema.decodeUnknownSync(RoutineArguments)(argumentsValue)
+        const args = Schema.decodeUnknownSync(RoutineSaveArguments)(argumentsValue)
         const routineId = await training.saveRoutine(
           {
             ownerId,
@@ -287,7 +260,7 @@ export function makeTrainingProposalStore(
         }
       }
       case "workout_log_set": {
-        const args = Schema.decodeUnknownSync(WorkoutSetArguments)(argumentsValue)
+        const args = Schema.decodeUnknownSync(WorkoutLogSetArguments)(argumentsValue)
         const result = await training.logSet(ownerId, args, idempotencyKey)
         return {
           ok: true,
@@ -297,7 +270,7 @@ export function makeTrainingProposalStore(
         }
       }
       case "workout_finish": {
-        const args = Schema.decodeUnknownSync(IdArguments)(argumentsValue)
+        const args = Schema.decodeUnknownSync(WorkoutFinishArguments)(argumentsValue)
         await training.finishWorkout(ownerId, args.id, idempotencyKey)
         return {
           ok: true,

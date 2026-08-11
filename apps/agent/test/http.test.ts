@@ -1,8 +1,10 @@
 import type { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/contracts/agent"
+
 import { Layer } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import type { AgentComposition } from "../src/composition.ts"
+
 import { handleAgentHttp } from "../src/http.ts"
 
 const runRequest: AgentRunRequest = {
@@ -10,6 +12,7 @@ const runRequest: AgentRunRequest = {
   runId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
   ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db90",
   correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db91",
+  sourceMessageId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db92",
   localTime: "2026-08-11T12:00:00.000Z",
   timeZone: "Europe/Stockholm",
   userText: "Remind me at 15:00.",
@@ -85,18 +88,33 @@ describe("agent HTTP boundary", () => {
 
   it("validates and returns one bounded run", async () => {
     const target = composition(true)
+    const incomingTrace = "00-11111111111111111111111111111111-2222222222222222-01"
     const response = await handleAgentHttp(
       new Request("http://agent/v1/run", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", traceparent: incomingTrace },
         body: JSON.stringify(runRequest)
       }),
       target
     )
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual(runResult)
+    expect(response.headers.get("traceparent")).toMatch(
+      /^00-11111111111111111111111111111111-[0-9a-f]{16}-01$/u
+    )
     expect(target.services.agent.runTurn).toHaveBeenCalledWith(runRequest)
     expect(target.services.access.verify).toHaveBeenCalledWith(expect.any(Request), "run")
+    expect(target.services.events.emit).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "workflow_span", name: "model.run", status: "completed" })
+    )
+    expect(target.services.events.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "token_usage",
+        feature: "reminders",
+        inputTokens: 12,
+        outputTokens: 9
+      })
+    )
   })
 
   it("returns a device code only through the private admin route", async () => {

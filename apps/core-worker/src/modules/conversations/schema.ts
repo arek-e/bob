@@ -3,6 +3,10 @@ import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqli
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
   timeZone: text("time_zone").notNull(),
+  locale: text("locale").notNull().default("en"),
+  hourCycle: text("hour_cycle", { enum: ["auto", "h12", "h23"] })
+    .notNull()
+    .default("auto"),
   wrappedDataKey: text("wrapped_data_key"),
   wrappedDataKeyIv: text("wrapped_data_key_iv"),
   dataKeyVersion: integer("data_key_version"),

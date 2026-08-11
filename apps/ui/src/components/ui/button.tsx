@@ -34,7 +34,7 @@ export function Button(props: ButtonProps) {
     <button
       {...rest}
       class={cn(
-        "inline-flex items-center justify-center gap-2 rounded-control border border-transparent py-2 text-center text-xs font-bold leading-tight transition-[background-color,border-color,color,transform] duration-150 motion-safe:active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-60",
+        "inline-flex items-center justify-center gap-2 rounded-control border border-transparent py-2 text-center text-xs leading-tight font-bold transition-[background-color,border-color,color,transform] duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-60 motion-safe:active:scale-[0.96]",
         buttonVariants(variants),
         variants.class
       )}

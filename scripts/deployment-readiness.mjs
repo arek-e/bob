@@ -6,6 +6,18 @@ const production = Object.freeze({
   agentImage:
     "ghcr.io/arek-e/bob-agent@sha256:5cc91f03c170b2ffb086f520777dd125fd747fec45569063f958e3c83695fbc2",
   agentImagePlaceholder: "bob-agent.invalid/repository",
+  backupImage:
+    "ghcr.io/arek-e/bob-data-backup@sha256:ec1cd724701105d46748b9fce580b8bd31f06c86a810df77498016318a0aeb37",
+  backupImagePlaceholder: "bob-backup.invalid/repository",
+  nangoImage:
+    "docker.io/nangohq/nango-server@sha256:a52964a41b5ff5d113e45d8ae76a6ffeb2b76ed6e147bc5078288d0f0c79f0c6",
+  nangoImagePlaceholder: "nango.invalid/repository",
+  nangoPostgresImage:
+    "docker.io/library/postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777",
+  nangoPostgresImagePlaceholder: "nango-postgres.invalid/repository",
+  nangoRedisImage:
+    "docker.io/library/redis@sha256:05a97a479bc73de66f087dc05b569010772880f778cc8671fa6b8aadee32e5c6",
+  nangoRedisImagePlaceholder: "nango-redis.invalid/repository",
   tunnelImage:
     "docker.io/cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf",
   tunnelImagePlaceholder: "cloudflared.invalid/repository",
@@ -92,6 +104,15 @@ export function assertDeploymentReadiness(input) {
   const deployment = requiredText(input.deployment, "Kubernetes Deployment manifest")
   const config = requiredText(input.config, "Kubernetes bootstrap ConfigMap")
   const delivery = requiredText(input.delivery, "Kubernetes secret delivery contract")
+  const backupJob = requiredText(input.backupJob, "Kubernetes backup job contract")
+  const backupDelivery = requiredText(
+    input.backupDelivery,
+    "Kubernetes backup secret delivery contract"
+  )
+  const backupNetworkPolicy = requiredText(
+    input.backupNetworkPolicy,
+    "Kubernetes backup network policy"
+  )
   const networkPolicy = requiredText(input.networkPolicy, "Kubernetes NetworkPolicy")
   const ciliumPolicy = requiredText(input.ciliumPolicy, "Cilium egress policy")
   const serviceAccounts = requiredText(
@@ -103,6 +124,10 @@ export function assertDeploymentReadiness(input) {
   const secretDeliveryPolicy = requiredText(
     input.secretDeliveryPolicy,
     "Secret-delivery OpenBao policy"
+  )
+  const backupSecretDeliveryPolicy = requiredText(
+    input.backupSecretDeliveryPolicy,
+    "Backup secret-delivery OpenBao policy"
   )
   const productionOverlay = requiredText(input.productionOverlay, "Production Kustomize overlay")
   const kubernetesKustomization = requiredText(
@@ -132,7 +157,16 @@ export function assertDeploymentReadiness(input) {
   )
   const renderedArgocd = requiredText(input.renderedArgocd, "Rendered Argo CD bootstrap manifests")
 
-  const baseSource = [deployment, config, delivery, networkPolicy, ciliumPolicy].join("\n")
+  const baseSource = [
+    deployment,
+    config,
+    delivery,
+    networkPolicy,
+    ciliumPolicy,
+    backupJob,
+    backupDelivery,
+    backupNetworkPolicy
+  ].join("\n")
   if (baseSource.includes("local-only")) {
     throw new Error("The Kubernetes contract contains a local-only image")
   }
@@ -144,9 +178,15 @@ export function assertDeploymentReadiness(input) {
     [`image: ${production.agentImagePlaceholder}`, `image: ${production.tunnelImagePlaceholder}`],
     "The generic image placeholders are missing"
   )
+  requireMarkers(
+    backupJob,
+    [`image: ${production.backupImagePlaceholder}`],
+    "The generic backup image placeholder is missing"
+  )
   if (
     deployment.includes(production.agentImage) ||
     deployment.includes(production.tunnelImage) ||
+    backupJob.includes(production.backupImage) ||
     config.includes(production.openBaoAddress) ||
     delivery.includes(production.openBaoAddress)
   ) {
@@ -154,13 +194,29 @@ export function assertDeploymentReadiness(input) {
   }
 
   const [agentRepository, agentDigest] = production.agentImage.split("@")
+  const [backupRepository, backupDigest] = production.backupImage.split("@")
+  const [nangoRepository, nangoDigest] = production.nangoImage.split("@")
+  const [nangoPostgresRepository, nangoPostgresDigest] = production.nangoPostgresImage.split("@")
+  const [nangoRedisRepository, nangoRedisDigest] = production.nangoRedisImage.split("@")
   const [tunnelRepository, tunnelDigest] = production.tunnelImage.split("@")
   if (
     agentRepository === undefined ||
+    backupRepository === undefined ||
+    nangoRepository === undefined ||
+    nangoPostgresRepository === undefined ||
+    nangoRedisRepository === undefined ||
     tunnelRepository === undefined ||
     agentDigest === undefined ||
+    backupDigest === undefined ||
+    nangoDigest === undefined ||
+    nangoPostgresDigest === undefined ||
+    nangoRedisDigest === undefined ||
     tunnelDigest === undefined ||
     !DIGEST_PATTERN.test(agentDigest) ||
+    !DIGEST_PATTERN.test(backupDigest) ||
+    !DIGEST_PATTERN.test(nangoDigest) ||
+    !DIGEST_PATTERN.test(nangoPostgresDigest) ||
+    !DIGEST_PATTERN.test(nangoRedisDigest) ||
     !DIGEST_PATTERN.test(tunnelDigest)
   ) {
     throw new Error("Each production image needs a sha256 digest")
@@ -173,6 +229,18 @@ export function assertDeploymentReadiness(input) {
       `- name: ${production.agentImagePlaceholder}`,
       `newName: ${agentRepository}`,
       `digest: ${agentDigest}`,
+      `- name: ${production.backupImagePlaceholder}`,
+      `newName: ${backupRepository}`,
+      `digest: ${backupDigest}`,
+      `- name: ${production.nangoImagePlaceholder}`,
+      `newName: ${nangoRepository}`,
+      `digest: ${nangoDigest}`,
+      `- name: ${production.nangoPostgresImagePlaceholder}`,
+      `newName: ${nangoPostgresRepository}`,
+      `digest: ${nangoPostgresDigest}`,
+      `- name: ${production.nangoRedisImagePlaceholder}`,
+      `newName: ${nangoRedisRepository}`,
+      `digest: ${nangoRedisDigest}`,
       `- name: ${production.tunnelImagePlaceholder}`,
       `newName: ${tunnelRepository}`,
       `digest: ${tunnelDigest}`,
@@ -184,6 +252,7 @@ export function assertDeploymentReadiness(input) {
       "fieldPath: data.BAO_ADDR",
       "kind: SecretStore",
       "name: bob-openbao",
+      "name: bob-backup-openbao",
       "spec.provider.vault.server"
     ],
     "The literal production Kustomize overlay is incomplete"
@@ -204,7 +273,9 @@ export function assertDeploymentReadiness(input) {
   const renderedSource = [renderedKubernetes, renderedArgocd].join("\n")
   if (
     /\$\{[A-Z0-9_]+\}/u.test(renderedSource) ||
-    /(?:bob-agent|cloudflared)\.invalid\/repository/u.test(renderedSource) ||
+    /(?:bob-agent|bob-backup|cloudflared|nango|nango-postgres|nango-redis)\.invalid\/repository/u.test(
+      renderedSource
+    ) ||
     /(?:local-only|REPLACE_WITH|replace-me|changeme)/iu.test(renderedSource)
   ) {
     throw new Error("A rendered production manifest contains an unresolved or invalid input")
@@ -214,12 +285,24 @@ export function assertDeploymentReadiness(input) {
     { kind: "ConfigMap", name: "bob-agent-bootstrap", namespace: "bob" },
     { kind: "ServiceAccount", name: "bob-agent", namespace: "bob" },
     { kind: "ServiceAccount", name: "bob-agent-secret-delivery", namespace: "bob" },
+    { kind: "ServiceAccount", name: "bob-backup", namespace: "bob" },
+    { kind: "ServiceAccount", name: "bob-backup-secret-delivery", namespace: "bob" },
     { kind: "Deployment", name: "bob-agent", namespace: "bob" },
     { kind: "Service", name: "bob-agent", namespace: "bob" },
     { kind: "SecretStore", name: "bob-openbao", namespace: "bob" },
     { kind: "ExternalSecret", name: "bob-agent-bootstrap", namespace: "bob" },
     { kind: "ExternalSecret", name: "bob-agent-tunnel", namespace: "bob" },
     { kind: "ExternalSecret", name: "bob-ghcr-pull", namespace: "bob" },
+    { kind: "SecretStore", name: "bob-backup-openbao", namespace: "bob" },
+    { kind: "ExternalSecret", name: "bob-backup-runtime", namespace: "bob" },
+    { kind: "PersistentVolumeClaim", name: "bob-backups", namespace: "bob" },
+    { kind: "CronJob", name: "bob-data-backup", namespace: "bob" },
+    { kind: "NetworkPolicy", name: "bob-data-backup-default-deny", namespace: "bob" },
+    {
+      kind: "CiliumNetworkPolicy",
+      name: "bob-data-backup-reviewed-egress",
+      namespace: "bob"
+    },
     { kind: "NetworkPolicy", name: "bob-agent-restricted-network", namespace: "bob" },
     {
       kind: "CiliumNetworkPolicy",
@@ -270,13 +353,36 @@ export function assertDeploymentReadiness(input) {
     },
     "The production Kubernetes render"
   )
+  const renderedBackupJob = requireManifestObject(
+    renderedKubernetes,
+    { kind: "CronJob", name: "bob-data-backup", namespace: "bob" },
+    "The production Kubernetes render"
+  )
+  const renderedBackupClaim = requireManifestObject(
+    renderedKubernetes,
+    { kind: "PersistentVolumeClaim", name: "bob-backups", namespace: "bob" },
+    "The production Kubernetes render"
+  )
+  const renderedBackupCiliumPolicy = requireManifestObject(
+    renderedKubernetes,
+    {
+      kind: "CiliumNetworkPolicy",
+      name: "bob-data-backup-reviewed-egress",
+      namespace: "bob"
+    },
+    "The production Kubernetes render"
+  )
   const images = [...renderedKubernetes.matchAll(/^\s*image:\s*["']?([^\s"']+)["']?\s*$/gmu)].map(
     (match) => match[1]
   )
   if (
-    images.length !== 2 ||
+    images.length !== 6 ||
     images.some((image) => image === undefined || !IMAGE_PATTERN.test(image)) ||
     !images.includes(production.agentImage) ||
+    !images.includes(production.backupImage) ||
+    !images.includes(production.nangoImage) ||
+    !images.includes(production.nangoPostgresImage) ||
+    !images.includes(production.nangoRedisImage) ||
     !images.includes(production.tunnelImage)
   ) {
     throw new Error("Each production container image must use its reviewed sha256 digest")
@@ -342,6 +448,28 @@ export function assertDeploymentReadiness(input) {
     secretDeliveryMarkers,
     "The reviewed OpenBao secret delivery contract is missing"
   )
+  requireMarkers(
+    backupDelivery,
+    [
+      "kind: SecretStore",
+      "name: bob-backup-openbao",
+      "role: bob-backup-secret-delivery",
+      "name: bob-backup-secret-delivery",
+      "audiences: [openbao]",
+      "kind: ExternalSecret",
+      "name: bob-backup-runtime",
+      'key: "apps/prod/bob/backup/runtime"',
+      "property: CLOUDFLARE_ACCOUNT_ID",
+      "property: CLOUDFLARE_D1_DATABASE_ID",
+      "property: CLOUDFLARE_API_TOKEN",
+      "property: R2_BUCKET",
+      "property: R2_ENDPOINT",
+      "property: R2_ACCESS_KEY_ID",
+      "property: R2_SECRET_ACCESS_KEY",
+      "property: BACKUP_AGE_RECIPIENT"
+    ],
+    "The backup secret delivery contract is missing"
+  )
   const secretDeliveryAccount = serviceAccounts
     .split(/^---$/gmu)
     .find((document) => document.includes("name: bob-agent-secret-delivery"))
@@ -351,6 +479,18 @@ export function assertDeploymentReadiness(input) {
     !secretDeliveryAccount.includes("automountServiceAccountToken: false")
   ) {
     throw new Error("The isolated secret-delivery ServiceAccount is missing")
+  }
+  for (const name of ["bob-backup", "bob-backup-secret-delivery"]) {
+    const account = serviceAccounts
+      .split(/^---$/gmu)
+      .find((document) => document.includes(`name: ${name}`))
+    if (
+      account === undefined ||
+      !account.includes("kind: ServiceAccount") ||
+      !account.includes("automountServiceAccountToken: false")
+    ) {
+      throw new Error("The isolated backup ServiceAccounts are missing")
+    }
   }
   requireMarkers(
     argocdNamespace,
@@ -412,6 +552,46 @@ export function assertDeploymentReadiness(input) {
   ) {
     throw new Error("The secret-delivery OpenBao policy is not exact and read-only")
   }
+  if (
+    !backupSecretDeliveryPolicy.includes('path "ops/data/apps/prod/bob/backup/runtime"') ||
+    !backupSecretDeliveryPolicy.includes('capabilities = ["read"]') ||
+    (backupSecretDeliveryPolicy.match(/^path\s+"/gmu) ?? []).length !== 1 ||
+    backupSecretDeliveryPolicy.includes("+") ||
+    backupSecretDeliveryPolicy.includes("*")
+  ) {
+    throw new Error("The backup secret-delivery OpenBao policy is not exact and read-only")
+  }
+  requireMarkers(
+    backupJob,
+    ['schedule: "15 */4 * * *"', "concurrencyPolicy: Forbid"],
+    "The scheduled backup source contract is incomplete"
+  )
+  requireMarkers(
+    renderedBackupJob,
+    [
+      "schedule: 15 */4 * * *",
+      "concurrencyPolicy: Forbid",
+      "activeDeadlineSeconds: 3600",
+      "backoffLimit: 2",
+      "serviceAccountName: bob-backup",
+      "name: bob-ghcr-pull",
+      "name: bob-backup-runtime",
+      "readOnlyRootFilesystem: true",
+      "runAsNonRoot: true",
+      "mountPath: /backups",
+      "claimName: bob-backups"
+    ],
+    "The encrypted scheduled backup contract is incomplete"
+  )
+  requireMarkers(
+    renderedBackupClaim,
+    [
+      "argocd.argoproj.io/sync-options: Prune=false",
+      "storageClassName: local-path",
+      "storage: 16Gi"
+    ],
+    "The retained independent backup volume is incomplete"
+  )
   if (/port:\s*443/u.test(networkPolicy)) {
     throw new Error("The standard NetworkPolicy must not allow broad HTTPS egress")
   }
@@ -447,6 +627,41 @@ export function assertDeploymentReadiness(input) {
   if (renderedCiliumPolicy.includes("rules:") || renderedCiliumPolicy.includes("toFQDNs:")) {
     throw new Error("The production policy must not depend on the Cilium DNS proxy")
   }
+  if (
+    !backupNetworkPolicy.includes("ingress: []") ||
+    !backupNetworkPolicy.includes("egress: []") ||
+    renderedBackupCiliumPolicy.includes("rules:") ||
+    renderedBackupCiliumPolicy.includes("toFQDNs:")
+  ) {
+    throw new Error("The backup network policy is incomplete")
+  }
+  requireMarkers(
+    renderedBackupCiliumPolicy,
+    [
+      "requires-cilium-egress-enforcement",
+      "k8s:k8s-app: kube-dns",
+      "toCIDRSet:",
+      "cidr: 0.0.0.0/0",
+      "- 0.0.0.0/8",
+      "- 10.0.0.0/8",
+      "- 100.64.0.0/10",
+      "- 127.0.0.0/8",
+      "- 169.254.0.0/16",
+      "- 172.16.0.0/12",
+      "- 192.0.0.0/24",
+      "- 192.0.2.0/24",
+      "- 192.88.99.0/24",
+      "- 192.168.0.0/16",
+      "- 198.18.0.0/15",
+      "- 198.51.100.0/24",
+      "- 203.0.113.0/24",
+      "- 224.0.0.0/4",
+      "- 240.0.0.0/4",
+      '- port: "53"',
+      '- port: "443"'
+    ],
+    "The reviewed backup Cilium egress contract is missing"
+  )
 
   requireMarkers(
     argocdRepository,
@@ -523,8 +738,11 @@ export function assertDeploymentReadiness(input) {
       "kind: ConfigMap",
       "kind: Service",
       "kind: ServiceAccount",
+      "kind: PersistentVolumeClaim",
       "group: apps",
       "kind: Deployment",
+      "group: batch",
+      "kind: CronJob",
       "group: networking.k8s.io",
       "kind: NetworkPolicy",
       "group: external-secrets.io",
@@ -582,6 +800,7 @@ export function assertDeploymentReadiness(input) {
 
   return {
     agentImage: production.agentImage,
+    backupImage: production.backupImage,
     tunnelImage: production.tunnelImage,
     openBaoAddress: production.openBaoAddress,
     targetRevision: revision

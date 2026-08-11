@@ -1,17 +1,69 @@
 import type { ToolName } from "@bob/contracts/tools"
 
+function hasExplicitMemoryProposalRequest(text: string): boolean {
+  const normalized = text.trim().toLowerCase()
+  if (
+    /\b(?:do not|don't|dont|never)\s+(?:remember|save|store)\b/u.test(normalized) ||
+    /\b(?:remember|save|store)\s+not\b/u.test(normalized) ||
+    /\b(?:kom\s+inte\s+ihåg|spara\s+inte|lagra\s+inte|glöm)\b/u.test(normalized) ||
+    /\bjag\s+vill\s+inte\s+att\s+du\s+(?:kommer\s+ihåg|sparar|lagrar)\b/u.test(normalized)
+  ) {
+    return false
+  }
+  return (
+    /^(?:please\s+)?(?:remember|save|store)\b/u.test(normalized) ||
+    /^(?:can|could|would)\s+you\s+(?:please\s+)?(?:remember|save|store)\b/u.test(normalized) ||
+    /^i\s+(?:want|need)\s+you\s+to\s+(?:remember|save|store)\b/u.test(normalized) ||
+    /^(?:snälla\s+)?(?:kom\s+ihåg|spara|lagra|lägg\s+.+\s+på\s+minnet)\b/u.test(normalized) ||
+    /^(?:kan|kunde|skulle)\s+du\s+(?:snälla\s+)?(?:komma\s+ihåg|spara|lagra)\b/u.test(normalized) ||
+    /^jag\s+(?:vill|behöver)\s+att\s+du\s+(?:kommer\s+ihåg|sparar|lagrar)\b/u.test(normalized)
+  )
+}
+
 export function selectTools(text: string): readonly ToolName[] {
   const normalized = text.toLowerCase()
-  if (/\bremind|reminder|snooze\b/.test(normalized)) {
-    return ["reminder_create", "reminder_list"]
+  if (
+    /\b(?:calendar|google\s+calendar|outlook|microsoft\s+calendar|connect(?:ion)?|link(?:ed|ing)?)\b|\b(?:kalender(?:n)?|anslut(?:a|ning)?|koppla)\b/u.test(
+      normalized
+    )
+  ) {
+    return ["connection_list", "connection_link_create"]
   }
-  if (/\bjournal\b/.test(normalized)) {
+  if (
+    /\bsettings?\b|\bpreferences?\b|\blocality\b|\btime\s*zone\b|\btimezone\b|\blocale\b|\blanguage\b|\bregion\b|\btime\s*format\b|\b12[- ]hour\b|\b24[- ]hour\b|\binställning(?:en|ar|arna)?\b|\bpreferenser?\b|\btidszon(?:en)?\b|\bspråk(?:et)?\b|\b(?:svenska|engelska)\b|\btidsformat(?:et)?\b|\b(?:12|24)[- ]?timmars(?:format)?\b/u.test(
+      normalized
+    )
+  ) {
+    return ["settings_get", "settings_update"]
+  }
+  if (
+    /\bremind|reminder|snooze\b|\bpåminn|\bsnooza\b|\bsenarelägg\b|\bskjut(?:a)?\s+upp\b/u.test(
+      normalized
+    )
+  ) {
+    return [
+      "reminder_create",
+      "reminder_list",
+      "reminder_acknowledge",
+      "reminder_complete",
+      "reminder_snooze",
+      "reminder_cancel"
+    ]
+  }
+  if (/\b(?:journal|dagbok(?:en)?)\b/u.test(normalized)) {
     return ["journal_link_create", "journal_search_metadata"]
   }
-  if (/\bgym|routine|workout|exercise|set\b/.test(normalized)) {
+  if (
+    /\b(?:(?:gym|routine|workout|exercise|machine|set)s?|equipment)\b|\brutin(?:en)?\b|\btränings(?:rutin(?:en)?|pass(?:et)?|plan(?:en)?|program(?:met)?)\b|(?<![\p{L}\p{N}_])övning(?:en|ar|arna)?(?![\p{L}\p{N}_])|\bmaskin(?:en|er|erna)?\b|\butrustning(?:en)?\b/u.test(
+      normalized
+    )
+  ) {
     return [
+      "gym_list",
       "gym_create",
+      "equipment_list",
       "exercise_create",
+      "exercise_list",
       "gym_add_equipment",
       "equipment_map_exercise",
       "routine_save",
@@ -23,5 +75,7 @@ export function selectTools(text: string): readonly ToolName[] {
       "workout_history"
     ]
   }
-  return ["memory_search", "memory_propose", "memory_correct"]
+  return hasExplicitMemoryProposalRequest(text)
+    ? ["memory_search", "memory_propose", "memory_correct"]
+    : ["memory_search", "memory_correct"]
 }

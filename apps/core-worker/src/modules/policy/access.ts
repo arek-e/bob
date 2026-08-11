@@ -7,20 +7,26 @@ export interface AccessClaims {
   readonly audience: readonly string[]
 }
 
-export interface CoreAccessConfiguration {
-  readonly ingressSecret: string
-  readonly egressSecret: string
-  readonly ownerEmail: string
-  readonly agentSubject: string
+export interface AccessVerificationConfiguration {
   readonly accessIssuer: string
   readonly accessAudience: string
 }
 
-export type CoreCaller = "owner" | "ingress" | "egress" | "agent"
+export interface CoreAccessConfiguration extends AccessVerificationConfiguration {
+  readonly ingressSecret: string
+  readonly egressSecret: string
+  readonly agentSubject: string
+}
+
+export interface SetupAccessConfiguration extends AccessVerificationConfiguration {
+  readonly ownerEmail: string
+}
+
+export type CoreCaller = "ingress" | "egress" | "agent"
 
 export type AccessTokenVerifier = (
   request: Request,
-  configuration: CoreAccessConfiguration
+  configuration: AccessVerificationConfiguration
 ) => Promise<AccessClaims>
 
 async function secretMatches(supplied: string | null, expected: string): Promise<boolean> {
@@ -43,7 +49,7 @@ const keySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>()
 
 export async function verifyCloudflareAccessAssertion(
   assertion: string,
-  configuration: CoreAccessConfiguration,
+  configuration: AccessVerificationConfiguration,
   key: KeyInput | JWTVerifyGetKey
 ): Promise<AccessClaims> {
   const verified = await jwtVerify(assertion, key, {
@@ -80,7 +86,6 @@ export const verifyCloudflareAccess: AccessTokenVerifier = async (request, confi
 }
 
 function requiredCaller(pathname: string): CoreCaller | undefined {
-  if (pathname.startsWith("/api/")) return "owner"
   if (
     pathname === "/internal/inbound" ||
     pathname === "/internal/status" ||
@@ -90,7 +95,7 @@ function requiredCaller(pathname: string): CoreCaller | undefined {
   }
   if (/^\/internal\/outbox\/[^/]+\/(?:claim|result)$/.test(pathname)) return "egress"
   if (pathname === "/internal/tools" || pathname === "/internal/agent/result") return "agent"
-  return pathname.startsWith("/internal/") ? undefined : "owner"
+  return undefined
 }
 
 export async function authorizeCoreRequest(
@@ -110,13 +115,6 @@ export async function authorizeCoreRequest(
   const claims = await verifyAccess(request, configuration)
   if (!claims.audience.includes(configuration.accessAudience)) throw new Error("access_denied")
   if (
-    caller === "owner" &&
-    claims.subject.length > 0 &&
-    claims.email?.toLowerCase() === configuration.ownerEmail.toLowerCase()
-  ) {
-    return caller
-  }
-  if (
     caller === "agent" &&
     claims.email === undefined &&
     claims.subject === "" &&
@@ -125,4 +123,19 @@ export async function authorizeCoreRequest(
     return caller
   }
   throw new Error("access_denied")
+}
+
+export async function authorizeSetupRequest(
+  request: Request,
+  configuration: SetupAccessConfiguration,
+  verifyAccess: AccessTokenVerifier = verifyCloudflareAccess
+): Promise<void> {
+  const claims = await verifyAccess(request, configuration)
+  if (!claims.audience.includes(configuration.accessAudience)) throw new Error("access_denied")
+  if (
+    claims.subject.length === 0 ||
+    claims.email?.toLowerCase() !== configuration.ownerEmail.toLowerCase()
+  ) {
+    throw new Error("access_denied")
+  }
 }

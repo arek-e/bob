@@ -10,6 +10,8 @@ const Environment = Schema.Struct({
   BOB_PROVIDER: Schema.Literal("openai-codex"),
   BOB_MODEL: Schema.String.check(Schema.isMinLength(1)),
   BOB_ALLOWED_MODELS: Schema.String.check(Schema.isMinLength(1)),
+  BOB_RELEASE_SHA: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/)),
+  OTEL_EXPORTER_OTLP_ENDPOINT: Schema.URLFromString,
   CORE_URL: Schema.URLFromString,
   CORE_ACCESS_CLIENT_ID: Schema.String.check(Schema.isMinLength(1)),
   CORE_ACCESS_CLIENT_SECRET: Schema.String.check(Schema.isMinLength(1)),
@@ -28,6 +30,8 @@ export interface AgentConfiguration {
   readonly provider: "openai-codex"
   readonly model: string
   readonly allowedModels: readonly string[]
+  readonly releaseSha: string
+  readonly otlpEndpoint: string
   readonly coreUrl: string
   readonly coreAccessClientId: string
   readonly coreAccessClientSecret: string
@@ -52,6 +56,8 @@ export function readAgentConfiguration(environment: NodeJS.ProcessEnv): AgentCon
     provider: decoded.BOB_PROVIDER,
     model: decoded.BOB_MODEL,
     allowedModels,
+    releaseSha: decoded.BOB_RELEASE_SHA,
+    otlpEndpoint: decoded.OTEL_EXPORTER_OTLP_ENDPOINT.toString().replace(/\/$/, ""),
     coreUrl: decoded.CORE_URL.toString().replace(/\/$/, ""),
     coreAccessClientId: decoded.CORE_ACCESS_CLIENT_ID,
     coreAccessClientSecret: decoded.CORE_ACCESS_CLIENT_SECRET,

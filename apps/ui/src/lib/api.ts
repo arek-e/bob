@@ -1,31 +1,4 @@
-import { DeviceLoginEvent } from "@bob/contracts/agent"
-import {
-  ConnectionSession,
-  OwnerSettingsUpdate,
-  OwnerSettingsView,
-  type ConnectionProvider,
-  type HourCycle,
-  type OwnerSettings,
-  type OwnerSettingsView as OwnerSettingsViewType
-} from "@bob/contracts/settings"
-import {
-  AlertList,
-  AdminStatus,
-  JournalEntry,
-  JournalHandoff,
-  JournalList,
-  MemoryCandidateList,
-  ReminderList,
-  TrainingOverview,
-  TrainingProposalList,
-  type AlertList as AlertListType,
-  type JournalEntry as JournalEntryType,
-  type JournalList as JournalListType,
-  type MemoryCandidateList as MemoryCandidateListType,
-  type ReminderList as ReminderListType,
-  type TrainingOverview as TrainingOverviewType,
-  type TrainingProposalList as TrainingProposalListType
-} from "@bob/contracts/ui"
+import { ConnectionSession } from "@bob/contracts/settings"
 import { Schema } from "effect"
 
 export interface OwnerSession {
@@ -34,11 +7,6 @@ export interface OwnerSession {
     readonly name: string
   }
 }
-
-export type SettingsView = OwnerSettingsViewType
-export type { ConnectionProvider, HourCycle, OwnerSettings }
-export type { AlertListType, JournalEntryType, JournalListType, MemoryCandidateListType }
-export type { ReminderListType, TrainingOverviewType, TrainingProposalListType }
 
 export const apiBase = __BOB_API_BASE_URL__
 
@@ -67,9 +35,9 @@ export async function api(path: string, init?: RequestInit): Promise<unknown> {
 }
 
 export function safeReturnPath(): string {
-  if (typeof window === "undefined") return "/"
+  if (typeof window === "undefined") return "/settings"
   const value = new URLSearchParams(window.location.search).get("returnTo")
-  return value !== null && value.startsWith("/") && !value.startsWith("//") ? value : "/"
+  return value !== null && value.startsWith("/") && !value.startsWith("//") ? value : "/settings"
 }
 
 function decodeOwnerSession(value: unknown): OwnerSession | null {
@@ -98,17 +66,5 @@ export function parseJson<S extends Schema.ConstraintDecoder<unknown>>(
 }
 
 export const schemas = {
-  adminStatus: AdminStatus,
-  connectionSession: ConnectionSession,
-  deviceLoginEvent: DeviceLoginEvent,
-  journalEntry: JournalEntry,
-  journalHandoff: JournalHandoff,
-  journalList: JournalList,
-  memoryCandidateList: MemoryCandidateList,
-  ownerSettingsUpdate: OwnerSettingsUpdate,
-  ownerSettingsView: OwnerSettingsView,
-  reminderList: ReminderList,
-  trainingOverview: TrainingOverview,
-  trainingProposalList: TrainingProposalList,
-  alertList: AlertList
+  connectionSession: ConnectionSession
 } as const

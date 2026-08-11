@@ -1,7 +1,6 @@
+import { cloudflareTest } from "@cloudflare/vitest-pool-workers"
 import { readdir, readFile } from "node:fs/promises"
 import { resolve } from "node:path"
-
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers"
 import { defineConfig } from "vitest/config"
 
 async function readNestedMigrations() {
@@ -60,8 +59,10 @@ export default defineConfig({
           DATA_LOOKUP_KEY: testKey(2),
           INGRESS_CALLER_SECRET: "ingress-caller-secret-at-least-32-bytes",
           EGRESS_CALLER_SECRET: "egress-caller-secret-at-least-32-bytes",
+          BETTER_AUTH_SECRET: "test-better-auth-secret-at-least-32-bytes",
           ACCESS_TEAM_DOMAIN: "example.cloudflareaccess.com",
           CORE_ACCESS_AUDIENCE: "core-test-audience",
+          SETUP_ACCESS_AUDIENCE: "setup-test-audience",
           OWNER_ACCESS_EMAIL: "owner@example.invalid",
           AGENT_CALLER_SUBJECT: "agent-to-core-test-subject",
           AGENT_URL: "https://agent.example.invalid",
@@ -71,8 +72,14 @@ export default defineConfig({
           AGENT_ADMIN_ACCESS_CLIENT_ID: "agent-admin-client-id",
           AGENT_ADMIN_ACCESS_CLIENT_SECRET: "agent-admin-secret-at-least-32-bytes",
           UI_BASE_URL: "https://bob.example.invalid",
+          NANGO_API_URL: "https://nango.example.invalid",
+          NANGO_SECRET_KEY: "test-nango-secret-key-at-least-32-bytes",
+          NANGO_GOOGLE_CALENDAR_INTEGRATION_ID: "bob-google-calendar",
+          NANGO_MICROSOFT_CALENDAR_INTEGRATION_ID: "bob-microsoft-calendar",
           BOB_MODEL: "test-model",
-          BOB_PROVIDER: "openai-codex"
+          BOB_PROVIDER: "openai-codex",
+          BOB_RUN_TOKEN_BUDGET: 32_000,
+          BOB_DAILY_TOKEN_BUDGET: 250_000
         }
       }
     }))

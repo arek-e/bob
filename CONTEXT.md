@@ -30,12 +30,13 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 ## Domain language
 
 - **Owner:** The one person Bob serves.
+- **Owner settings:** The owner's time zone, locale, time format, and connection summaries.
 - **Channel event:** One normalized provider event from Sendblue.
 - **Conversation:** Ordered messages for one owner and channel session.
-- **Agent run:** One bounded Pi turn over an immutable input snapshot.
+- **Agent run:** One bounded Bob-owned Pi turn over an immutable input snapshot.
 - **External action attempt:** One durable attempt to change state or call an external system.
 - **Context pack:** Confirmed and policy-cleared data supplied to one agent run.
-- **Tool command:** One typed request from Pi to a Bob domain module.
+- **Tool command:** One typed request from Bob's Pi loop to a Bob domain module.
 - **Short reply binding:** An expiring link from one reply to one pending action.
 - **Memory candidate:** An unconfirmed proposed fact revision.
 - **Fact:** Stable identity for one durable personal claim.
@@ -57,9 +58,15 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 ## System invariants
 
 - D1 is authoritative for application records.
+- Better Auth owns the `auth_user`, `auth_session`, `auth_account`, `auth_verification`, and `auth_rate_limit` tables.
+- Cloudflare Access protects only Core internal routes and the one-time owner setup route.
+- Better Auth sessions protect owner API routes.
+- The owner record is authoritative for live locality settings.
+- A locality change affects new requests. Existing reminders keep their saved schedules.
 - Durable Objects coordinate run order and reminder wake-ups.
 - Durable Object state is not authoritative application data.
-- Pi owns the single model and tool loop.
+- Bob's Pi loop owns the single model and tool loop policy.
+- Pi permanently owns provider streaming, model normalization, and OAuth support.
 - One agent run uses one immutable context pack.
 - The core Worker enforces every domain invariant.
 - The agent never calls Sendblue directly.
@@ -76,7 +83,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - No Cloudflare resource has two infrastructure owners.
 - Kubernetes and OpenBao stay outside Alchemy in the first release.
 - Effect composes I/O. Pure domain rules stay as normal TypeScript.
-- Drizzle is the only relational schema and query mapper.
+- Drizzle owns application schemas and queries. Better Auth uses its built-in D1 adapter for auth tables.
 - Drizzle schemas and queries stay with their owning domain modules.
 - D1 atomic writes use batch operations, not callback transactions.
 - Every mutating tool uses database idempotency.
@@ -98,3 +105,4 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - [ADR 0003: Agent runtime and repository seams](docs/adr/0003-agent-runtime-and-repository-seams.md)
 - [ADR 0004: Alchemy, Effect v4, and Drizzle v1 RC](docs/adr/0004-alchemy-effect-drizzle.md)
 - [ADR 0005: Varlock environment contracts](docs/adr/0005-varlock-environment-contracts.md)
+- [ADR 0007: Bob-owned Pi AI loop](docs/adr/0007-bob-owned-pi-ai-loop.md)

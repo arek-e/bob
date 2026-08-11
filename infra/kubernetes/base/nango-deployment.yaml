@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bob-nango
+  namespace: bob
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: bob-nango
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: bob-nango
+    spec:
+      serviceAccountName: bob-nango
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nango
+          image: nango.invalid/repository
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: api
+              containerPort: 3003
+            - name: connect
+              containerPort: 3009
+          envFrom:
+            - configMapRef:
+                name: bob-nango
+          env:
+            - name: NANGO_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: bob-nango-runtime
+                  key: NANGO_DB_PASSWORD
+            - name: NANGO_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bob-nango-runtime
+                  key: NANGO_ENCRYPTION_KEY
+            - name: NANGO_SECRET_KEY_DEV
+              valueFrom:
+                secretKeyRef:
+                  name: bob-nango-runtime
+                  key: NANGO_SECRET_KEY_DEV
+            - name: NANGO_ADMIN_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: bob-nango-runtime
+                  key: NANGO_ADMIN_KEY
+            - name: NANGO_DASHBOARD_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: bob-nango-runtime
+                  key: NANGO_DASHBOARD_USERNAME
+            - name: NANGO_DASHBOARD_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: bob-nango-runtime
+                  key: NANGO_DASHBOARD_PASSWORD
+            - name: RECORDS_DATABASE_URL
+              value: postgresql://nango:$(NANGO_DB_PASSWORD)@bob-nango-db:5432/nango
+          startupProbe:
+            httpGet:
+              path: /health
+              port: api
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: api
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: api
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: temporary
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bob-nango
+  namespace: bob
+spec:
+  selector:
+    app.kubernetes.io/name: bob-nango
+  ports:
+    - name: api
+      port: 3003
+      targetPort: api
+    - name: connect
+      port: 3009
+      targetPort: connect
+  type: ClusterIP
