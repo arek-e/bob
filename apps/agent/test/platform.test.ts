@@ -61,6 +61,9 @@ describe("agent platform contract", () => {
     expect(deployment).toContain("mountPath: /var/run/secrets/kubernetes.io/serviceaccount")
     expect(deployment).not.toContain("subPath:")
     expect(deployment).toContain("readOnly: true")
+    expect(deployment).toContain("fsGroup: 1000")
+    expect(deployment).toContain("fsGroupChangePolicy: OnRootMismatch")
+    expect(deployment).toContain("defaultMode: 0440")
   })
 
   it("declares reviewed OpenBao-to-Kubernetes secret delivery", async () => {

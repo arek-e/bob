@@ -293,7 +293,10 @@ export function assertDeploymentReadiness(input) {
     "expirationSeconds: 600",
     "path: token",
     "mountPath: /var/run/secrets/kubernetes.io/serviceaccount",
-    "readOnly: true"
+    "readOnly: true",
+    "fsGroup: 1000",
+    "fsGroupChangePolicy: OnRootMismatch",
+    "defaultMode: 288"
   ]
   if (
     projectedTokenMarkers.some((marker) => !renderedDeployment.includes(marker)) ||

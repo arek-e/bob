@@ -15,6 +15,9 @@ spec:
       labels:
         app.kubernetes.io/name: bob-agent
     spec:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       serviceAccountName: bob-agent
       imagePullSecrets:
         - name: bob-ghcr-pull
@@ -87,7 +90,7 @@ spec:
           emptyDir: {}
         - name: openbao-token
           projected:
-            defaultMode: 0400
+            defaultMode: 0440
             sources:
               - serviceAccountToken:
                   audience: openbao
