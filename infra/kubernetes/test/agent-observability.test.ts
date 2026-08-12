@@ -27,4 +27,13 @@ describe("agent production observability contract", () => {
     expect(rendered).toContain("component: standalone-collector")
     expect(rendered.match(/port: ["']?4318["']?/gu)).toHaveLength(2)
   })
+
+  it("keeps the Kubernetes agent as a rollback standby without a production Tunnel", () => {
+    const rendered = renderProduction()
+
+    expect(rendered).toContain("name: bob-agent")
+    expect(rendered).not.toContain("name: tunnel")
+    expect(rendered).not.toContain("cloudflared.invalid/repository")
+    expect(rendered).not.toContain("docker.io/cloudflare/cloudflared")
+  })
 })

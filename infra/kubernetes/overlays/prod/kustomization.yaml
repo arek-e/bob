@@ -6,9 +6,6 @@ images:
   - name: bob-agent.invalid/repository
     newName: ghcr.io/arek-e/bob-agent
     digest: sha256:9bd1478076db1e5ff0debf580eea097eff00df6e4f791aadb57429d9f38d09e8
-  - name: cloudflared.invalid/repository
-    newName: docker.io/cloudflare/cloudflared
-    digest: sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
   - name: bob-backup.invalid/repository
     newName: ghcr.io/arek-e/bob-data-backup
     digest: sha256:d0b705754248aab197fdbb5e40472f5fa9f8d166035c1911ac2e7f78dd80ad1d
