@@ -5,6 +5,8 @@
 - Scope: Agent, Nango, backups, private ingress, and deployment control
 - Supersedes: The Kubernetes runtime ownership in ADR 0005
 
+Migration status: Complete. The Kubernetes Bob runtime and temporary canary resources are retired.
+
 ## Context
 
 Bob runs its private services on one Kubernetes node.

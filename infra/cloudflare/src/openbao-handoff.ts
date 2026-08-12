@@ -3,8 +3,6 @@ export interface RuntimeCredentials {
   readonly coreUrl: string
   readonly runAudience: string
   readonly adminAudience: string
-  readonly canaryRunAudience: string
-  readonly canaryAdminAudience: string
   readonly coreToAgentClientId: string
   readonly coreToAgentClientSecret: string
   readonly coreToAgentAdminClientId: string
@@ -12,7 +10,6 @@ export interface RuntimeCredentials {
   readonly agentToCoreClientId: string
   readonly agentToCoreClientSecret: string
   readonly tunnelToken: string
-  readonly canaryTunnelToken: string
 }
 
 export interface HandoffIdentityInput {
@@ -151,7 +148,7 @@ export async function syncRuntimeCredentials(
   input: RuntimeCredentials,
   identity: HandoffIdentity,
   fetch: typeof globalThis.fetch = globalThis.fetch
-): Promise<{ readonly recordsWritten: 7 }> {
+): Promise<{ readonly recordsWritten: 4 }> {
   const token =
     identity.kind === "openbao-token"
       ? identity.deployToken
@@ -178,24 +175,6 @@ export async function syncRuntimeCredentials(
       }
     },
     {
-      path: `${prefix}/access/core-to-agent-canary`,
-      data: {
-        AGENT_ACCESS_CLIENT_ID: input.coreToAgentClientId,
-        AGENT_ACCESS_CLIENT_SECRET: input.coreToAgentClientSecret,
-        RUN_ACCESS_AUDIENCE: input.canaryRunAudience,
-        RUN_ACCESS_SUBJECT: input.coreToAgentClientId
-      }
-    },
-    {
-      path: `${prefix}/access/core-to-agent-admin-canary`,
-      data: {
-        AGENT_ADMIN_ACCESS_CLIENT_ID: input.coreToAgentAdminClientId,
-        AGENT_ADMIN_ACCESS_CLIENT_SECRET: input.coreToAgentAdminClientSecret,
-        ADMIN_ACCESS_AUDIENCE: input.canaryAdminAudience,
-        ADMIN_ACCESS_SUBJECT: input.coreToAgentAdminClientId
-      }
-    },
-    {
       path: `${prefix}/access/agent-to-core`,
       data: {
         CORE_ACCESS_CLIENT_ID: input.agentToCoreClientId,
@@ -207,10 +186,6 @@ export async function syncRuntimeCredentials(
     {
       path: `${prefix}/tunnel/agent-host`,
       data: { TUNNEL_TOKEN: input.tunnelToken }
-    },
-    {
-      path: `${prefix}/tunnel/agent-host-canary`,
-      data: { TUNNEL_TOKEN: input.canaryTunnelToken }
     }
   ] as const
   let writeFailure: unknown
@@ -245,5 +220,5 @@ export async function syncRuntimeCredentials(
     throw new RuntimeCredentialHandoffError("handoff token revocation", revocation.status)
   }
   if (writeFailure !== undefined) throw writeFailure
-  return { recordsWritten: 7 }
+  return { recordsWritten: 4 }
 }

@@ -39,7 +39,7 @@ describe("Alchemy compatibility stack", () => {
     })
 
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain("Plan: 47 to create")
+    expect(result.stdout).toContain("Plan: 40 to create")
     for (const resource of [
       "[BackupArchives] create",
       "[NangoBackups] create",
@@ -130,17 +130,11 @@ describe("Alchemy compatibility stack", () => {
     }
   })
 
-  it("declares a separate Coolify canary tunnel", async () => {
+  it("does not keep migration canary resources in the steady-state stack", async () => {
     const stack = await readFile(new URL("../src/bob-stack.ts", import.meta.url), "utf8")
 
-    expect(stack).toContain('Cloudflare.Tunnel.Tunnel("AgentCanaryTunnel"')
-    expect(stack).toContain('"http://agent:8787"')
-    expect(stack).toContain('"http://nango:3003"')
-    expect(stack).toContain('"http://nango:3009"')
-    expect(stack).toContain('Cloudflare.Access.Application(\n        "AgentCanaryApplication"')
-    expect(stack).toContain('Cloudflare.Access.Application(\n        "AgentAdminCanaryApplication"')
-    expect(stack.match(/CanaryTunnelDns"/gu)).toHaveLength(4)
-    expect(stack).toContain("canaryTunnelToken: agentCanaryTunnel.token")
+    expect(stack).not.toContain("Canary")
+    expect(stack).not.toContain("canary")
   })
 
   it("keeps the stable Core host and limits Access to internal and setup paths", async () => {

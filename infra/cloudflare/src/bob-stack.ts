@@ -62,8 +62,6 @@ export function createBobStack(options: BobStackOptions) {
       coreUrl: string
       runAudience: string
       adminAudience: string
-      canaryRunAudience: string
-      canaryAdminAudience: string
       coreToAgentClientId: string
       coreToAgentClientSecret: Redacted.Redacted<string>
       coreToAgentAdminClientId: string
@@ -71,7 +69,6 @@ export function createBobStack(options: BobStackOptions) {
       agentToCoreClientId: string
       agentToCoreClientSecret: Redacted.Redacted<string>
       tunnelToken: Redacted.Redacted<string>
-      canaryTunnelToken: Redacted.Redacted<string>
     }) =>
       Effect.tryPromise({
         try: () => {
@@ -81,8 +78,7 @@ export function createBobStack(options: BobStackOptions) {
               coreToAgentClientSecret: Redacted.value(input.coreToAgentClientSecret),
               coreToAgentAdminClientSecret: Redacted.value(input.coreToAgentAdminClientSecret),
               agentToCoreClientSecret: Redacted.value(input.agentToCoreClientSecret),
-              tunnelToken: Redacted.value(input.tunnelToken),
-              canaryTunnelToken: Redacted.value(input.canaryTunnelToken)
+              tunnelToken: Redacted.value(input.tunnelToken)
             },
             handoffIdentity
           )
@@ -100,13 +96,9 @@ export function createBobStack(options: BobStackOptions) {
       const coreHost = `bob.${domain}`
       const agentHost = `bob-agent.${domain}`
       const agentAdminHost = `bob-agent-admin.${domain}`
-      const agentCanaryHost = `bob-agent-canary.${domain}`
-      const agentAdminCanaryHost = `bob-agent-admin-canary.${domain}`
       const otlpHost = `bob-otel.${domain}`
       const nangoHost = `nango.${domain}`
       const nangoConnectHost = `nango-connect.${domain}`
-      const nangoCanaryHost = `nango-canary.${domain}`
-      const nangoConnectCanaryHost = `nango-connect-canary.${domain}`
       const ingressHost = `bob-sendblue.${domain}`
       const egressHost = `bob-sendblue-egress.${domain}`
       const sendblueActive = ENV.SENDBLUE_ENABLED
@@ -219,26 +211,6 @@ export function createBobStack(options: BobStackOptions) {
         sessionDuration: "15m",
         policies: [agentAdminServicePolicy.policyId]
       })
-      const agentCanaryApplication = yield* Cloudflare.Access.Application(
-        "AgentCanaryApplication",
-        {
-          type: "self_hosted",
-          name: `Bob agent canary (${PRODUCTION_STAGE})`,
-          domain: agentCanaryHost,
-          sessionDuration: "1h",
-          policies: [agentServicePolicy.policyId]
-        }
-      )
-      const agentAdminCanaryApplication = yield* Cloudflare.Access.Application(
-        "AgentAdminCanaryApplication",
-        {
-          type: "self_hosted",
-          name: `Bob agent administration canary (${PRODUCTION_STAGE})`,
-          domain: agentAdminCanaryHost,
-          sessionDuration: "15m",
-          policies: [agentAdminServicePolicy.policyId]
-        }
-      )
       const workerOtlpServicePolicy = yield* Cloudflare.Access.Policy("WorkerOtlpServicePolicy", {
         name: `bob-worker-otlp-service-${PRODUCTION_STAGE}`,
         decision: "non_identity",
@@ -261,17 +233,6 @@ export function createBobStack(options: BobStackOptions) {
           { hostname: otlpHost, service: ENV.OTEL_ORIGIN_URL },
           { hostname: nangoHost, service: ENV.NANGO_ORIGIN_URL },
           { hostname: nangoConnectHost, service: ENV.NANGO_CONNECT_ORIGIN_URL },
-          { service: "http_status:404" }
-        ]
-      })
-      const agentCanaryTunnel = yield* Cloudflare.Tunnel.Tunnel("AgentCanaryTunnel", {
-        name: `bob-agent-canary-${PRODUCTION_STAGE}`,
-        configSrc: "cloudflare",
-        ingress: [
-          { hostname: agentCanaryHost, service: "http://agent:8787" },
-          { hostname: agentAdminCanaryHost, service: "http://agent:8787" },
-          { hostname: nangoCanaryHost, service: "http://nango:3003" },
-          { hostname: nangoConnectCanaryHost, service: "http://nango:3009" },
           { service: "http_status:404" }
         ]
       })
@@ -314,38 +275,6 @@ export function createBobStack(options: BobStackOptions) {
         content: Output.interpolate`${agentTunnel.tunnelId}.cfargotunnel.com`,
         proxied: true,
         comment: "Bob Nango account linking host"
-      })
-      yield* Cloudflare.DNS.Record("AgentCanaryTunnelDns", {
-        zoneId: ENV.CLOUDFLARE_ZONE_ID,
-        name: agentCanaryHost,
-        type: "CNAME",
-        content: Output.interpolate`${agentCanaryTunnel.tunnelId}.cfargotunnel.com`,
-        proxied: true,
-        comment: "Bob private agent canary host"
-      })
-      yield* Cloudflare.DNS.Record("AgentAdminCanaryTunnelDns", {
-        zoneId: ENV.CLOUDFLARE_ZONE_ID,
-        name: agentAdminCanaryHost,
-        type: "CNAME",
-        content: Output.interpolate`${agentCanaryTunnel.tunnelId}.cfargotunnel.com`,
-        proxied: true,
-        comment: "Bob private agent administration canary host"
-      })
-      yield* Cloudflare.DNS.Record("NangoCanaryTunnelDns", {
-        zoneId: ENV.CLOUDFLARE_ZONE_ID,
-        name: nangoCanaryHost,
-        type: "CNAME",
-        content: Output.interpolate`${agentCanaryTunnel.tunnelId}.cfargotunnel.com`,
-        proxied: true,
-        comment: "Bob Nango canary host"
-      })
-      yield* Cloudflare.DNS.Record("NangoConnectCanaryTunnelDns", {
-        zoneId: ENV.CLOUDFLARE_ZONE_ID,
-        name: nangoConnectCanaryHost,
-        type: "CNAME",
-        content: Output.interpolate`${agentCanaryTunnel.tunnelId}.cfargotunnel.com`,
-        proxied: true,
-        comment: "Bob Nango Connect canary host"
       })
 
       const ownerPolicy = yield* Cloudflare.Access.Policy("OwnerPolicy", {
@@ -559,8 +488,6 @@ export function createBobStack(options: BobStackOptions) {
         coreUrl: `https://${coreHost}`,
         runAudience: agentApplication.aud,
         adminAudience: agentAdminApplication.aud,
-        canaryRunAudience: agentCanaryApplication.aud,
-        canaryAdminAudience: agentAdminCanaryApplication.aud,
         coreToAgentClientId: coreToAgent.clientId,
         coreToAgentClientSecret: Output.map(coreToAgent.clientSecret, (value) =>
           requiredGeneratedSecret(value, "CoreToAgent client secret")
@@ -573,8 +500,7 @@ export function createBobStack(options: BobStackOptions) {
         agentToCoreClientSecret: Output.map(agentToCore.clientSecret, (value) =>
           requiredGeneratedSecret(value, "AgentToCore client secret")
         ),
-        tunnelToken: agentTunnel.token,
-        canaryTunnelToken: agentCanaryTunnel.token
+        tunnelToken: agentTunnel.token
       })
 
       return {
@@ -588,7 +514,6 @@ export function createBobStack(options: BobStackOptions) {
         otlpUrl: `https://${otlpHost}`,
         accessTeamDomain: ENV.ACCESS_TEAM_DOMAIN,
         agentTunnelId: agentTunnel.tunnelId,
-        agentCanaryTunnelId: agentCanaryTunnel.tunnelId,
         agentToCoreClientId: agentToCore.clientId,
         coreToAgentClientId: coreToAgent.clientId,
         coreToAgentAdminClientId: coreToAgentAdmin.clientId,
