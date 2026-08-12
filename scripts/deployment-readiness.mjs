@@ -18,7 +18,6 @@ const production = Object.freeze({
   nangoRedisImagePlaceholder: "nango-redis.invalid/repository",
   tunnelImage:
     "docker.io/cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf",
-  tunnelImagePlaceholder: "cloudflared.invalid/repository",
   openBaoAddress: "http://openbao.openbao.svc.cluster.local:8200",
   repository: "git@github.com:arek-e/bob.git",
   repositoryPath: "infra/kubernetes/overlays/prod",
@@ -188,6 +187,7 @@ export function assertDeploymentReadiness(input) {
     "Rendered production Kubernetes manifests"
   )
   const renderedArgocd = requiredText(input.renderedArgocd, "Rendered Argo CD bootstrap manifests")
+  const coolifyCompose = requiredText(input.coolifyCompose, "Coolify Compose contract")
 
   const agent = pinnedOverlayImage(
     productionOverlay,
@@ -219,7 +219,7 @@ export function assertDeploymentReadiness(input) {
   }
   requireMarkers(
     deployment,
-    [`image: ${production.agentImagePlaceholder}`, `image: ${production.tunnelImagePlaceholder}`],
+    [`image: ${production.agentImagePlaceholder}`],
     "The generic image placeholders are missing"
   )
   requireMarkers(
@@ -229,7 +229,6 @@ export function assertDeploymentReadiness(input) {
   )
   if (
     deployment.includes(agent.image) ||
-    deployment.includes(production.tunnelImage) ||
     backupJob.includes(backup.image) ||
     config.includes(production.openBaoAddress) ||
     delivery.includes(production.openBaoAddress)
@@ -279,9 +278,6 @@ export function assertDeploymentReadiness(input) {
       `- name: ${production.nangoRedisImagePlaceholder}`,
       `newName: ${nangoRedisRepository}`,
       `digest: ${nangoRedisDigest}`,
-      `- name: ${production.tunnelImagePlaceholder}`,
-      `newName: ${tunnelRepository}`,
-      `digest: ${tunnelDigest}`,
       "kind: ConfigMap",
       "name: bob-agent-bootstrap",
       "path: /data/BAO_ADDR",
@@ -298,6 +294,11 @@ export function assertDeploymentReadiness(input) {
   if (productionOverlay.includes("staging") || /\$\{[A-Z0-9_]+\}/u.test(productionOverlay)) {
     throw new Error("The production overlay contains a stage or unresolved input")
   }
+  requireMarkers(
+    coolifyCompose,
+    ["tunnel:", `image: ${production.tunnelImage}`],
+    "The Coolify production Tunnel image is missing or mutable"
+  )
   if (
     !kubernetesKustomization.includes("- overlays/prod") ||
     kubernetesKustomization.includes("- base")
@@ -414,14 +415,14 @@ export function assertDeploymentReadiness(input) {
     (match) => match[1]
   )
   if (
-    images.length !== 6 ||
+    images.length !== 5 ||
     images.some((image) => image === undefined || !IMAGE_PATTERN.test(image)) ||
     !images.includes(agent.image) ||
     !images.includes(backup.image) ||
     !images.includes(production.nangoImage) ||
     !images.includes(production.nangoPostgresImage) ||
     !images.includes(production.nangoRedisImage) ||
-    !images.includes(production.tunnelImage)
+    images.includes(production.tunnelImage)
   ) {
     throw new Error("Each production container image must use its reviewed sha256 digest")
   }
@@ -459,12 +460,11 @@ export function assertDeploymentReadiness(input) {
   if (
     !renderedDeployment.includes("configMapRef:") ||
     !renderedDeployment.includes("name: bob-agent-bootstrap") ||
-    !renderedDeployment.includes("name: bob-agent-tunnel") ||
     !renderedDeployment.includes("imagePullSecrets:") ||
     !renderedDeployment.includes("name: bob-ghcr-pull") ||
     !/secretRef:\s*\n\s*name: bob-agent-bootstrap\s*\n\s*optional: false/u.test(renderedDeployment)
   ) {
-    throw new Error("The agent bootstrap, Tunnel, or registry pull binding is missing")
+    throw new Error("The agent bootstrap or registry pull binding is missing")
   }
 
   const secretDeliveryMarkers = [

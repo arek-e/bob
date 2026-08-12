@@ -67,24 +67,6 @@ spec:
             - name: openbao-token
               mountPath: /var/run/secrets/kubernetes.io/serviceaccount
               readOnly: true
-        - name: tunnel
-          image: cloudflared.invalid/repository
-          imagePullPolicy: IfNotPresent
-          args: [tunnel, --no-autoupdate, --protocol, http2, run, --token, $(TUNNEL_TOKEN)]
-          env:
-            - name: TUNNEL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: bob-agent-tunnel
-                  key: token
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop: [ALL]
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            seccompProfile:
-              type: RuntimeDefault
       volumes:
         - name: temporary
           emptyDir: {}

@@ -32,7 +32,7 @@ describe("agent platform contract", () => {
     expect(ciliumPolicy).toContain('port: "443"')
     expect(ciliumPolicy).not.toContain("rules:")
     expect(ciliumPolicy).not.toContain("toFQDNs:")
-    expect(deployment).toContain("--protocol, http2")
+    expect(deployment).not.toContain("name: tunnel")
   })
 
   it("bootstraps the restricted Bob namespace outside the Argo-managed workload", async () => {
