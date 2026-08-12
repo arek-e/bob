@@ -39,7 +39,7 @@ describe("Alchemy compatibility stack", () => {
     })
 
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain("Plan: 38 to create")
+    expect(result.stdout).toContain("Plan: 45 to create")
     for (const resource of [
       "[WorkerToOtlp] create",
       "[WorkerOtlpServicePolicy] create",
@@ -73,16 +73,15 @@ describe("Alchemy compatibility stack", () => {
 
   it("uses one dedicated Access path for Worker OTLP", async () => {
     const stack = await readFile(new URL("../src/bob-stack.ts", import.meta.url), "utf8")
-    const collectorEndpoint =
-      "http://prod-otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4318"
-
     expect(stack).toContain("const otlpHost = `bob-otel.${domain}`")
     expect(stack).toContain('Cloudflare.Access.ServiceToken("WorkerToOtlp"')
     expect(stack).toContain('"WorkerOtlpServicePolicy"')
     expect(stack).toContain("tokenId: workerToOtlp.serviceTokenId")
     expect(stack).toContain('"WorkerOtlpApplication"')
     expect(stack).toContain("domain: otlpHost")
-    expect(stack).toContain(`service:\n              "${collectorEndpoint}"`)
+    expect(stack).toContain("{ hostname: otlpHost, service: ENV.OTEL_ORIGIN_URL }")
+    expect(stack).toContain("{ hostname: nangoHost, service: ENV.NANGO_ORIGIN_URL }")
+    expect(stack).toContain("{ hostname: nangoConnectHost, service: ENV.NANGO_CONNECT_ORIGIN_URL }")
 
     const otlpDns = stack.slice(
       stack.indexOf('Cloudflare.DNS.Record("OtlpTunnelDns"'),
@@ -116,6 +115,19 @@ describe("Alchemy compatibility stack", () => {
         stack.match(new RegExp(binding.replaceAll(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "gu"))
       ).toHaveLength(3)
     }
+  })
+
+  it("declares a separate Coolify canary tunnel", async () => {
+    const stack = await readFile(new URL("../src/bob-stack.ts", import.meta.url), "utf8")
+
+    expect(stack).toContain('Cloudflare.Tunnel.Tunnel("AgentCanaryTunnel"')
+    expect(stack).toContain('"http://agent:8787"')
+    expect(stack).toContain('"http://nango:3003"')
+    expect(stack).toContain('"http://nango:3009"')
+    expect(stack).toContain('Cloudflare.Access.Application(\n        "AgentCanaryApplication"')
+    expect(stack).toContain('Cloudflare.Access.Application(\n        "AgentAdminCanaryApplication"')
+    expect(stack.match(/CanaryTunnelDns"/gu)).toHaveLength(4)
+    expect(stack).toContain("canaryTunnelToken: agentCanaryTunnel.token")
   })
 
   it("keeps the stable Core host and limits Access to internal and setup paths", async () => {

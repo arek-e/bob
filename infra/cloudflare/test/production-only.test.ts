@@ -148,7 +148,10 @@ describe("production-only deployment contract", () => {
       "RUNTIME_CREDENTIAL_HANDOFF_ENABLED",
       "ACCESS_SERVICE_TOKEN_ROTATION_VERSION",
       "ACCESS_SERVICE_TOKEN_ROTATE_BY",
-      "AGENT_ORIGIN_URL"
+      "AGENT_ORIGIN_URL",
+      "OTEL_ORIGIN_URL",
+      "NANGO_ORIGIN_URL",
+      "NANGO_CONNECT_ORIGIN_URL"
     ]
 
     for (const field of fields) {

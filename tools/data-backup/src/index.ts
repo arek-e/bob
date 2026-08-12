@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { decryptArchive, encryptArchive } from "./archive.ts"
 import { makeCloudflareBackupSource } from "./cloudflare.ts"
 import { ENV } from "./environment.generated.ts"
-import { writeEncryptedBackup } from "./persistence.ts"
+import { uploadEncryptedBackup, writeEncryptedBackup } from "./persistence.ts"
 import { makeRestoreDrill } from "./restore.ts"
 import { expiredBackupNames } from "./retention.ts"
 
@@ -26,6 +26,30 @@ async function backup(): Promise<void> {
     filename,
     ciphertext
   })
+  const copyConfiguration = [
+    ENV.BACKUP_COPY_ENDPOINT,
+    ENV.BACKUP_COPY_REGION,
+    ENV.BACKUP_COPY_BUCKET,
+    ENV.BACKUP_COPY_ACCESS_KEY_ID,
+    ENV.BACKUP_COPY_SECRET_ACCESS_KEY
+  ]
+  const configuredCopyFields = copyConfiguration.filter((value) => value !== undefined).length
+  if (configuredCopyFields !== 0 && configuredCopyFields !== copyConfiguration.length) {
+    throw new Error("Set all independent backup copy fields together")
+  }
+  const independentCopy = configuredCopyFields === copyConfiguration.length
+  if (independentCopy) {
+    await uploadEncryptedBackup({
+      endpoint: ENV.BACKUP_COPY_ENDPOINT!,
+      region: ENV.BACKUP_COPY_REGION!,
+      bucket: ENV.BACKUP_COPY_BUCKET!,
+      prefix: ENV.BACKUP_COPY_PREFIX,
+      filename,
+      ciphertext,
+      accessKeyId: ENV.BACKUP_COPY_ACCESS_KEY_ID!,
+      secretAccessKey: ENV.BACKUP_COPY_SECRET_ACCESS_KEY!
+    })
+  }
   const backups = await readdir(ENV.BACKUP_OUTPUT_DIRECTORY)
   for (const expired of expiredBackupNames(backups, ENV.BACKUP_RETENTION_COUNT)) {
     await unlink(join(ENV.BACKUP_OUTPUT_DIRECTORY, expired))
@@ -36,6 +60,7 @@ async function backup(): Promise<void> {
       filename,
       tableCount: archive.tables.length,
       objectCount: archive.objects.length,
+      independentCopy: independentCopy ? "completed" : "disabled",
       startedAt: archive.cutoffStartedAt,
       finishedAt: archive.cutoffFinishedAt
     })
