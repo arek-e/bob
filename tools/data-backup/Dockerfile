@@ -1,11 +1,11 @@
 ARG NODE_IMAGE=node:22.19.0-bookworm-slim@sha256:4a4884e8a44826194dff92ba316264f392056cbe243dcc9fd3551e71cea02b90
-FROM ${NODE_IMAGE} AS build
+FROM --platform=${BUILDPLATFORM} ${NODE_IMAGE} AS build
 RUN corepack enable && corepack prepare pnpm@10.19.0 --activate
 WORKDIR /app
 COPY . .
 RUN --mount=type=cache,id=bob-pnpm-store,target=/pnpm/store,sharing=locked \
   pnpm config set store-dir /pnpm/store \
-  && pnpm install --frozen-lockfile \
+  && pnpm install --filter @bob/data-backup... --frozen-lockfile \
   && pnpm --filter @bob/data-backup build \
   && mkdir -p /runtime/tools/data-backup/dist /runtime/tools/data-backup/src \
     /runtime/apps/core-worker /runtime/.varlock /runtime/node_modules \
@@ -16,7 +16,7 @@ RUN --mount=type=cache,id=bob-pnpm-store,target=/pnpm/store,sharing=locked \
   && cp -a apps/core-worker/migrations /runtime/apps/core-worker/migrations \
   && cp .env.schema /runtime/.env.schema \
   && cp .varlock/config.json /runtime/.varlock/config.json \
-  && cp -aL node_modules/varlock /runtime/node_modules/varlock
+  && cp -aL tools/data-backup/node_modules/varlock /runtime/node_modules/varlock
 
 FROM ${NODE_IMAGE}
 WORKDIR /app/tools/data-backup

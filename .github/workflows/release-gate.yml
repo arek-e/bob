@@ -98,5 +98,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm secrets:scan:trusted
       - run: pnpm check
+      - run: pnpm secrets:scan:trusted
       - run: node scripts/verify-deployment-readiness.mjs
       - run: pnpm infra:plan
