@@ -250,13 +250,19 @@ Run the skill preflight script.
 
 Stop when any check fails.
 
-## Parallel deployment
+## Temporary migration canary
+
+The steady-state stack has no canary Tunnel, DNS records, or Access applications.
+
+Create temporary canary resources only for a migration that changes the private runtime.
+
+Use a reviewed Alchemy change. Remove the resources after production acceptance.
 
 Create a separate canary Cloudflare Tunnel.
 
 Use canary hostnames for the agent and Nango.
 
-Alchemy owns the `AgentCanaryTunnel` and its four canary DNS records.
+Alchemy owns each temporary canary resource while it exists.
 
 Read the canary Tunnel token from `ops/apps/prod/bob/tunnel/agent-host-canary`.
 
@@ -350,4 +356,10 @@ Do not restore PostgreSQL unless the Nango data check requires it.
 
 Preserve failed Coolify deployment logs without secret values.
 
-Delete the canary Tunnel after the rollback or successful observation window.
+Delete all temporary canary resources after rollback or successful acceptance.
+
+## Retire a former runtime
+
+After acceptance, delete the former application runtime and its local storage.
+
+Keep OpenBao and telemetry on Kubernetes until a separate migration removes that dependency.
