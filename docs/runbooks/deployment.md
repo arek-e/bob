@@ -119,9 +119,11 @@ Run the trusted production plan.
 pnpm infra:evals:plan
 ```
 
-For the first deployment, require exactly two creates.
+For the first storage deployment, require exactly two creates.
 
-The plan must contain only `EvalDatabase` and `EvalArtifacts`.
+For the first runner deployment, require `EvalDatabase` and `EvalArtifacts` to remain unchanged.
+
+Permit only the `EvalRunner` create and its three bindings.
 
 Stop for each update, replacement, or deletion.
 
@@ -142,6 +144,20 @@ Confirm that D1 contains the three migration tables.
 - `benchmark_artifacts`
 
 Confirm that the R2 bucket has no public domain.
+
+Confirm that Worker `bob-eval-runner-prod` has only these bindings.
+
+- `EVAL_DB`
+- `EVAL_ARTIFACTS`
+- `BOB_RELEASE_SHA`
+
+Confirm that its only Cron Trigger is `17 3 * * *`.
+
+The schedule runs at 03:17 UTC each day.
+
+After the first scheduled event, require one completed D1 run and one matching R2 manifest.
+
+Confirm that the manifest hash equals its D1 `sha256` value.
 
 Do not delete the retained resources to roll back an empty first deployment.
 

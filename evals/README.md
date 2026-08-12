@@ -151,7 +151,19 @@ Do not overwrite an existing artifact key.
 
 The production assistant Workers cannot access these resources.
 
-The future evaluation runner will receive private bindings to both resources.
+Cloudflare Worker `bob-eval-runner-prod` runs the version 2 interaction gate each day.
+
+The schedule is 03:17 UTC.
+
+The Worker writes scores to D1 and one content-addressed report to R2.
+
+The report contains case identifiers, metric values, and failure codes.
+
+It does not contain prompts, responses, owner data, connector data, or credentials.
+
+This deterministic runner validates the continuous evaluation path.
+
+It does not produce new live-model or official benchmark scores.
 
 ## Data rules
 

@@ -1,0 +1,20 @@
+{
+  "name": "@bob/eval-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/index.js",
+    "test:workers": "vitest run --config vitest.workers.config.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/agent-evals": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.21.0",
+    "@cloudflare/workers-types": "5.20260810.1",
+    "esbuild": "0.25.9",
+    "vitest": "4.1.9"
+  }
+}

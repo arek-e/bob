@@ -127,6 +127,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Alchemy owns each Bob Cloudflare resource that it declares.
 - A separate D1 database stores continuous public benchmark run metadata.
 - A separate private R2 bucket stores public or synthetic evaluation artifacts.
+- A scheduled Cloudflare Worker runs the committed synthetic interaction gate each day.
+- The evaluation Worker can access only the separate evaluation D1 database and R2 bucket.
 - Production assistant Workers cannot access evaluation storage.
 - Alchemy creates Access service tokens and Tunnel credentials before OpenBao receives their runtime copies.
 - No Cloudflare resource has two infrastructure owners.
