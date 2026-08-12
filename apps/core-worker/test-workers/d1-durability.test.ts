@@ -19,6 +19,8 @@ import { createCoreDatabase } from "../src/database.ts"
 import { handleHttp } from "../src/entrypoints/http.ts"
 import { handleInboundQueue } from "../src/entrypoints/queue.ts"
 import { operationalAlerts } from "../src/modules/alerts/schema.ts"
+import { artifactRevisions, artifacts } from "../src/modules/artifacts/schema.ts"
+import { makeArtifactStore } from "../src/modules/artifacts/store.ts"
 import { makeContextStore } from "../src/modules/context/store.ts"
 import { makeAgentRunStore } from "../src/modules/conversations/run-store.ts"
 import {
@@ -830,6 +832,220 @@ describe("D1 migrations and durability", () => {
     expect(run?.status).toBe("completed")
     expect(outbox?.id).toBe(outboxId)
     expect((await store.loadForInbound(inboundId))?.outboxId).toBe(outboxId)
+  })
+
+  it("stores a training plan artifact and its dependent follow-up", async () => {
+    const { database, protection, ownerKey } = await seedRunData()
+    let next = 300
+    const store = makeAgentRunStore(database, protection, {
+      now: () => new Date("2026-08-11T10:00:00.000Z"),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    await store.create(
+      {
+        protocolVersion: 1,
+        runId,
+        ownerId,
+        correlationId,
+        sourceMessageId: messageId,
+        localTime: "2026-08-11T10:00:00.000Z",
+        timeZone: "Europe/Stockholm",
+        userText: "Make a biceps plan.",
+        contextItems: [],
+        allowedTools: [],
+        limits: {
+          maxTurns: 4,
+          maxToolCalls: 4,
+          maxDurationMs: 60_000,
+          maxResponseCharacters: 1_200
+        }
+      },
+      inboundId
+    )
+    const attemptId = await store.claim(runId, 90_000)
+    const artifact = {
+      kind: "training_plan" as const,
+      title: "Biceps · Thursday, August 13",
+      durationMinutes: 50,
+      sections: [
+        {
+          heading: "Workout",
+          items: ["Incline dumbbell curl — 3 × 8–10", "Hammer curl — 3 × 10–12"]
+        }
+      ]
+    }
+    const primaryOutboxId = await store.completeWithResponse(
+      {
+        protocolVersion: 1,
+        runId,
+        correlationId,
+        status: "completed",
+        responseText: "Absolutely. Here is your plan.",
+        sourceIds: [messageId],
+        conflict: "none",
+        artifact,
+        model: "test-model",
+        durationMs: 1,
+        inputTokens: 1,
+        outputTokens: 1,
+        toolCalls: 0
+      },
+      {
+        channelId,
+        text: "Absolutely. Here is your plan.",
+        reasonCode: "agent_reply",
+        artifact
+      },
+      undefined,
+      attemptId!
+    )
+
+    const storedArtifacts = await database.select().from(artifacts)
+    const revisions = await database.select().from(artifactRevisions)
+    const outboxes = await database.select().from(outboxMessages)
+    expect(storedArtifacts).toHaveLength(1)
+    expect(storedArtifacts[0]).toMatchObject({ currentRevision: 1, kind: "training_plan" })
+    expect(revisions).toHaveLength(1)
+    expect(JSON.parse(revisions[0]!.sourceIdsJson)).toEqual([messageId])
+    expect(outboxes).toHaveLength(2)
+    expect(outboxes).toContainEqual(
+      expect.objectContaining({
+        reasonCode: "agent_artifact",
+        dependsOnOutboxId: primaryOutboxId,
+        artifactId: storedArtifacts[0]!.id,
+        artifactRevision: 1
+      })
+    )
+    await expect(
+      makeArtifactStore(database, protection).latest(ownerId, channelId)
+    ).resolves.toEqual({
+      id: storedArtifacts[0]!.id,
+      revision: 1,
+      artifact,
+      renderedText: [
+        "Biceps · Thursday, August 13",
+        "Duration: 50 minutes",
+        "",
+        "Workout",
+        "1. Incline dumbbell curl — 3 × 8–10",
+        "2. Hammer curl — 3 × 10–12"
+      ].join("\n")
+    })
+    await expect(
+      makeContextStore(database, protection, {}).build({
+        ownerId,
+        channelId,
+        currentMessageId: messageId,
+        currentUserText: "Remove the warm-up from my training plan.",
+        localTime: "2026-08-11T10:01:00.000Z",
+        timeZone: "Europe/Stockholm"
+      })
+    ).resolves.toContainEqual(
+      expect.objectContaining({
+        kind: "training",
+        text: expect.stringContaining("Current draft training plan:\nBiceps")
+      })
+    )
+
+    const revisedRunId = "00000000-0000-4000-8000-000000000320"
+    const revisedInboundId = "00000000-0000-4000-8000-000000000321"
+    const revisedMessageId = "00000000-0000-4000-8000-000000000322"
+    const revisedText = await protection.encryptText(ownerKey, "Remove the warm-up.")
+    await database.batch([
+      database.insert(messages).values({
+        id: revisedMessageId,
+        userId: ownerId,
+        channelId,
+        direction: "inbound",
+        textCiphertext: revisedText.ciphertext,
+        textIv: revisedText.iv,
+        dataKeyVersion: 1,
+        occurredAt: "2026-08-11T10:02:00.000Z",
+        createdAt: "2026-08-11T10:02:00.000Z"
+      }),
+      database.insert(inboundEvents).values({
+        id: revisedInboundId,
+        userId: ownerId,
+        channelId,
+        messageId: revisedMessageId,
+        accountId: "account",
+        lineId: "line",
+        providerMessageHandle: "provider-revision-handle",
+        correlationId: "00000000-0000-4000-8000-000000000323",
+        createdAt: "2026-08-11T10:02:00.000Z"
+      })
+    ])
+    await store.create(
+      {
+        protocolVersion: 1,
+        runId: revisedRunId,
+        ownerId,
+        correlationId: "00000000-0000-4000-8000-000000000323",
+        sourceMessageId: revisedMessageId,
+        localTime: "2026-08-11T10:02:00.000Z",
+        timeZone: "Europe/Stockholm",
+        userText: "Remove the warm-up.",
+        contextItems: [],
+        allowedTools: [],
+        limits: {
+          maxTurns: 4,
+          maxToolCalls: 4,
+          maxDurationMs: 60_000,
+          maxResponseCharacters: 1_200
+        }
+      },
+      revisedInboundId
+    )
+    const revisedAttemptId = await store.claim(revisedRunId, 90_000)
+    const revisedArtifact = {
+      ...artifact,
+      sections: [
+        {
+          heading: "Workout",
+          items: ["Hammer curl — 3 × 10–12"]
+        }
+      ]
+    }
+    await store.completeWithResponse(
+      {
+        protocolVersion: 1,
+        runId: revisedRunId,
+        correlationId: "00000000-0000-4000-8000-000000000323",
+        status: "completed",
+        responseText: "No problem. I removed the warm-up.",
+        sourceIds: [revisedMessageId],
+        conflict: "none",
+        artifact: revisedArtifact,
+        model: "test-model",
+        durationMs: 1,
+        inputTokens: 1,
+        outputTokens: 1,
+        toolCalls: 0
+      },
+      {
+        channelId,
+        text: "No problem. I removed the warm-up.",
+        reasonCode: "agent_reply",
+        artifact: revisedArtifact
+      },
+      undefined,
+      revisedAttemptId!
+    )
+
+    const [revisedStoredArtifact] = await database.select().from(artifacts)
+    expect(revisedStoredArtifact).toMatchObject({
+      id: storedArtifacts[0]!.id,
+      currentRevision: 2
+    })
+    expect(await database.select().from(artifactRevisions)).toHaveLength(2)
+    await expect(
+      makeArtifactStore(database, protection).latest(ownerId, channelId)
+    ).resolves.toMatchObject({
+      id: storedArtifacts[0]!.id,
+      revision: 2,
+      artifact: revisedArtifact,
+      renderedText: expect.stringContaining("1. Hammer curl — 3 × 10–12")
+    })
   })
 
   it("repairs a completed run that has no response outbox", async () => {

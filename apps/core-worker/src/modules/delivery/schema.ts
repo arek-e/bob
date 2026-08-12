@@ -15,6 +15,9 @@ export const outboxMessages = sqliteTable(
     replyToProviderMessageHandle: text("reply_to_provider_message_handle"),
     conversationTurnId: text("conversation_turn_id"),
     conversationTurnRevision: integer("conversation_turn_revision"),
+    dependsOnOutboxId: text("depends_on_outbox_id"),
+    artifactId: text("artifact_id"),
+    artifactRevision: integer("artifact_revision"),
     state: text("state", {
       enum: ["pending", "claimed", "accepted", "failed", "uncertain", "cancelled"]
     }).notNull(),
@@ -26,7 +29,8 @@ export const outboxMessages = sqliteTable(
   },
   (table) => [
     uniqueIndex("outbox_idempotency_uq").on(table.idempotencyKey),
-    index("outbox_publish_idx").on(table.enqueuedAt, table.state)
+    index("outbox_publish_idx").on(table.enqueuedAt, table.state),
+    index("outbox_dependency_idx").on(table.dependsOnOutboxId, table.state)
   ]
 )
 

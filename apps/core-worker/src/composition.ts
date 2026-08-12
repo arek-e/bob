@@ -5,6 +5,7 @@ import type { CoreBindings } from "./bindings.ts"
 
 import { createCoreDatabase } from "./database.ts"
 import { AlertStore, makeAlertStore, alertStoreLayer } from "./modules/alerts/store.ts"
+import { ArtifactStore, artifactStoreLayer, makeArtifactStore } from "./modules/artifacts/store.ts"
 import { makeNangoClient } from "./modules/connections/nango.ts"
 import {
   ConnectionStore,
@@ -132,6 +133,7 @@ export function composeCore(bindings: CoreBindings) {
   })
   const turns = makeConversationTurnStore(database, protection, { ownerId: config.OWNER_ID })
   const alerts = makeAlertStore(database, {})
+  const artifacts = makeArtifactStore(database, protection)
   const delivery = makeDeliveryStore(database, protection, {})
   const reminders = makeReminderStore(database, protection, {
     quietHours: {
@@ -164,6 +166,7 @@ export function composeCore(bindings: CoreBindings) {
     conversationStoreLayer(conversations),
     conversationTurnStoreLayer(turns),
     alertStoreLayer(alerts),
+    artifactStoreLayer(artifacts),
     deliveryStoreLayer(delivery),
     reminderStoreLayer(reminders),
     memoryStoreLayer(memory),
@@ -183,6 +186,7 @@ export function composeCore(bindings: CoreBindings) {
         conversations: yield* ConversationStore,
         turns: yield* ConversationTurnStore,
         alerts: yield* AlertStore,
+        artifacts: yield* ArtifactStore,
         delivery: yield* DeliveryStore,
         reminders: yield* ReminderStore,
         memory: yield* MemoryStore,

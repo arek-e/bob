@@ -4,6 +4,26 @@ import { HourCycle } from "./settings.ts"
 import { IsoDateTime, Locale, NonEmptyText, ShortText, TimeZone, Uuid } from "./shared.ts"
 import { ToolName } from "./tools.ts"
 
+const ArtifactTitle = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120))
+const ArtifactHeading = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80))
+const ArtifactItem = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(240))
+
+export const TrainingPlanArtifact = Schema.Struct({
+  kind: Schema.Literal("training_plan"),
+  title: ArtifactTitle,
+  durationMinutes: Schema.NullOr(
+    Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 240 }))
+  ),
+  sections: Schema.Array(
+    Schema.Struct({
+      heading: ArtifactHeading,
+      items: Schema.Array(ArtifactItem).check(Schema.isMinLength(1), Schema.isMaxLength(12))
+    })
+  ).check(Schema.isMinLength(1), Schema.isMaxLength(8))
+})
+
+export const AgentArtifact = TrainingPlanArtifact
+
 export const ContextSource = Schema.Struct({
   sourceId: NonEmptyText,
   sourceLabel: ShortText,
@@ -165,6 +185,7 @@ export const AgentRunResult = Schema.Struct({
   sourceIds: Schema.optionalKey(Schema.Array(NonEmptyText).check(Schema.isMaxLength(24))),
   trustedToolSources: Schema.optionalKey(Schema.Array(ContextSource).check(Schema.isMaxLength(24))),
   conflict: Schema.optionalKey(Schema.Literals(["none", "disclosed"])),
+  artifact: Schema.optionalKey(AgentArtifact),
   errorCode: Schema.optionalKey(
     Schema.Literals([
       "authentication",
@@ -210,6 +231,8 @@ export const DeviceLoginEvent = Schema.Union([
 ])
 
 export type ContextSource = typeof ContextSource.Type
+export type TrainingPlanArtifact = typeof TrainingPlanArtifact.Type
+export type AgentArtifact = typeof AgentArtifact.Type
 export type ContextItem = typeof ContextItem.Type
 export type CurrentTurnMessage = typeof CurrentTurnMessage.Type
 export type PriorToolReceiptOrigin = typeof PriorToolReceiptOrigin.Type

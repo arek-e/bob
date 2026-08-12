@@ -200,6 +200,55 @@ describe("assistant response safety", () => {
     })
   })
 
+  it("accepts a structured training plan artifact", () => {
+    expect(
+      validateAssistantResponse(
+        JSON.stringify({
+          protocolVersion: 1,
+          responseText: "Absolutely. I made this fit your 45–60 minute window.",
+          sourceIds: [],
+          toolNames: [],
+          conflict: "none",
+          artifact: {
+            kind: "training_plan",
+            title: "Biceps · Thursday, August 13",
+            durationMinutes: 50,
+            sections: [
+              {
+                heading: "Workout",
+                items: ["Incline dumbbell curl — 3 × 8–10", "Hammer curl — 3 × 10–12"]
+              }
+            ]
+          }
+        }),
+        {
+          ...policy,
+          executedToolNames: new Set<string>()
+        }
+      )
+    ).toEqual({
+      ok: true,
+      value: {
+        protocolVersion: 1,
+        responseText: "Absolutely. I made this fit your 45–60 minute window.",
+        sourceIds: [],
+        toolNames: [],
+        conflict: "none",
+        artifact: {
+          kind: "training_plan",
+          title: "Biceps · Thursday, August 13",
+          durationMinutes: 50,
+          sections: [
+            {
+              heading: "Workout",
+              items: ["Incline dumbbell curl — 3 × 8–10", "Hammer curl — 3 × 10–12"]
+            }
+          ]
+        }
+      }
+    })
+  })
+
   it("requires an approved source when the response can recall personal data", () => {
     const raw = JSON.stringify({
       protocolVersion: 1,

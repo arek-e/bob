@@ -91,7 +91,7 @@ describe("core model failure fallback", () => {
       expect.objectContaining({ status: "failed", errorCode: "provider", toolCalls: 0 }),
       {
         channelId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db92",
-        text: "I could not use the assistant. From your saved records: Routine Full Body A: 1. Leg press (3 sets × 10 reps). [routine 2026-08-09]",
+        text: "I could not use the assistant. From your saved records: Routine Full Body A: 1. Leg press (3 sets × 10 reps).",
         reasonCode: "agent_degraded_recall"
       },
       undefined,

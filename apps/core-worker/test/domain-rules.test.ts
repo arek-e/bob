@@ -9,6 +9,7 @@ import { journalAgentMetadata, journalModelContext } from "../src/modules/journa
 import { decideCandidate, deriveMemoryPolicy } from "../src/modules/memory/rules.ts"
 import {
   classifyDeterministicCommand,
+  isArtifactResendRequest,
   resolveShortReply,
   urgentSafetyResponse
 } from "../src/modules/policy/rules.ts"
@@ -82,6 +83,19 @@ describe("deterministic domain rules", () => {
   it("keeps Swedish command aliases exact", () => {
     expect(classifyDeterministicCommand("upprepa meddelandet")).toBeUndefined()
     expect(classifyDeterministicCommand("igen")).toBeUndefined()
+  })
+
+  it.each([
+    "Send the plan again",
+    "Please show me that workout again.",
+    "Skicka träningsplanen igen",
+    "Visa den igen"
+  ])("recognizes an artifact resend request: %s", (text) => {
+    expect(isArtifactResendRequest(text)).toBe(true)
+  })
+
+  it("does not capture a normal request as an artifact resend", () => {
+    expect(isArtifactResendRequest("Make me another workout plan")).toBe(false)
   })
 
   it.each([

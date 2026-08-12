@@ -54,6 +54,14 @@ export function classifyDeterministicCommand(text: string): DeterministicCommand
   return deterministicCommandAliases.get(normalized)
 }
 
+export function isArtifactResendRequest(text: string): boolean {
+  const normalized = text.trim()
+  if (normalized.length === 0 || normalized.length > 100) return false
+  return /^(?:(?:please\s+)?(?:send|show)\s+(?:(?:me\s+)?(?:the|that|my)\s+)?(?:plan|workout|artifact|it)\s+again|(?:skicka|visa)\s+(?:mig\s+)?(?:(?:planen|träningsplanen|passet|den|det)\s+)?igen)[.!?]?$/iu.test(
+    normalized
+  )
+}
+
 export function deterministicCommandLanguage(text: string): "en" | "sv" {
   return deterministicCommandAliases.has(text.trim().toLowerCase()) ? "sv" : "en"
 }

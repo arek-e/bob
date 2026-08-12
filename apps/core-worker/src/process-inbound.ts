@@ -23,6 +23,7 @@ import {
   classifyDeterministicCommand,
   deterministicCommandLanguage,
   fixedHelpText,
+  isArtifactResendRequest,
   resolveShortReply,
   urgentSafetyResponse
 } from "./modules/policy/rules.ts"
@@ -348,7 +349,15 @@ function deterministicReply(
       return true
     }
 
-    const command = classifyDeterministicCommand(claimed.text)
+    const explicitCommand = classifyDeterministicCommand(claimed.text)
+    const artifactResendRequested =
+      explicitCommand === "repeat" || isArtifactResendRequest(claimed.text)
+    const latestArtifact = artifactResendRequested
+      ? yield* promiseEffect(() =>
+          composition.services.artifacts.latest(claimed.ownerId, claimed.channelId)
+        )
+      : undefined
+    const command = latestArtifact === undefined ? explicitCommand : "repeat"
     if (command === undefined) {
       yield* recordDecision({
         name: "bob.decision.route",
@@ -438,9 +447,11 @@ function deterministicReply(
         response = "Sendblue manages START. Bob resumes only after Sendblue confirms the change."
         break
       case "repeat":
-        response = swedish
-          ? "Öppna Bob för att se det senaste meddelandet."
-          : "Open Bob to view the last message."
+        response =
+          latestArtifact?.renderedText ??
+          (swedish
+            ? "Öppna Bob för att se det senaste meddelandet."
+            : "Open Bob to view the last message.")
         break
       case "why":
         response = swedish
@@ -1268,6 +1279,7 @@ export async function processInbound(
               channelId: claimed.channelId,
               text: response.text,
               reasonCode: response.reasonCode,
+              ...(response.artifact === undefined ? {} : { artifact: response.artifact }),
               ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
             },
             undefined,
@@ -1290,6 +1302,7 @@ export async function processInbound(
               channelId: claimed.channelId,
               text: response.text,
               reasonCode: response.reasonCode,
+              ...(response.artifact === undefined ? {} : { artifact: response.artifact }),
               ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
             },
             {

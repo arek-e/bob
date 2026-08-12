@@ -1,4 +1,4 @@
-import type { AgentRunRequest, AgentRunResult } from "@bob/contracts/agent"
+import type { AgentArtifact, AgentRunRequest, AgentRunResult } from "@bob/contracts/agent"
 
 import {
   internalToolReferences,
@@ -7,10 +7,12 @@ import {
   scanUnsafeOutput
 } from "@bob/contracts/output-safety"
 
+import { renderArtifact } from "../artifacts/render.ts"
 import { degradedRecall } from "./degraded-recall.ts"
 
 export interface AgentResponseDecision {
   readonly text: string
+  readonly artifact?: AgentArtifact
   readonly reasonCode:
     | "agent_reply"
     | "agent_boundary_fallback"
@@ -66,14 +68,13 @@ function groundedBoundaryText(
   const citesConflict = selected.some((source) => source?.conflict === true)
   if ((result.conflict === "disclosed") !== citesConflict) return undefined
 
-  const labels = [
-    ...new Set(selected.flatMap((source) => (source === undefined ? [] : [source.label])))
-  ]
-  const grounded =
-    labels.length === 0
-      ? text
-      : `${text}\n${labels.length === 1 ? "Source" : "Sources"}: ${labels.join("; ")}`
-  return safeBoundaryText(grounded, request.limits.maxResponseCharacters)
+  return text
+}
+
+function safeArtifact(result: AgentRunResult): AgentArtifact | undefined {
+  if (result.artifact === undefined) return undefined
+  const rendered = renderArtifact(result.artifact)
+  return safeBoundaryText(rendered, 2_400) === undefined ? undefined : result.artifact
 }
 
 export function selectAgentResponse(
@@ -82,7 +83,14 @@ export function selectAgentResponse(
 ): AgentResponseDecision {
   if (result.status === "completed") {
     const grounded = groundedBoundaryText(result, request)
-    if (grounded !== undefined) return { text: grounded, reasonCode: "agent_reply" }
+    if (grounded !== undefined) {
+      const artifact = safeArtifact(result)
+      return {
+        text: grounded,
+        reasonCode: "agent_reply",
+        ...(artifact === undefined ? {} : { artifact })
+      }
+    }
     const usesLegacyResultContract = result.sourceIds === undefined && result.conflict === undefined
     if (
       usesLegacyResultContract &&

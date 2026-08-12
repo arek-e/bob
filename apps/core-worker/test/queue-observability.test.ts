@@ -174,7 +174,7 @@ describe("Core Queue telemetry", () => {
       deploymentEnvironment: "test"
     })
     const privateProviderHandle = "private-provider-handle-7721"
-    const recordResult = vi.fn(async () => undefined)
+    const recordResult = vi.fn(async () => [])
     const message = queueMessage({
       outboxId,
       attemptId,

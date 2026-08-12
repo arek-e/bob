@@ -56,20 +56,8 @@ export function degradedRecall(input: DegradedRecallInput): string | undefined {
   )
   const conflicts = candidates.filter((candidate) => candidate.conflict)
   if (conflicts.length > 0) {
-    const labels = [
-      ...new Set(
-        conflicts
-          .flatMap((item) => item.sources.map((source) => source.sourceLabel))
-          .filter((label) => !containsUnsafeRecall(label))
-          .slice(0, 3)
-      )
-    ]
-    const joined =
-      labels.length <= 1
-        ? labels[0]
-        : `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`
     return withinLimit(
-      `I found conflicting saved information${joined === undefined ? "" : ` from ${joined}`}. I cannot tell which record is current.`,
+      "I found conflicting saved information. I cannot tell which record is current.",
       input.maxResponseCharacters
     )
   }
@@ -90,12 +78,12 @@ export function degradedRecall(input: DegradedRecallInput): string | undefined {
   if (sourceLabel === undefined) return undefined
   if (containsUnsafeRecall(item.text) || containsUnsafeRecall(sourceLabel)) {
     return withinLimit(
-      `I found saved information, but I could not safely show it.${containsUnsafeRecall(sourceLabel) ? "" : ` Open Bob to review ${sourceLabel}.`}`,
+      "I found saved information, but I could not safely show it. Open Bob to review it.",
       input.maxResponseCharacters
     )
   }
   return withinLimit(
-    `I could not use the assistant. From your saved records: ${item.text} [${sourceLabel}]`,
+    `I could not use the assistant. From your saved records: ${item.text}`,
     input.maxResponseCharacters
   )
 }
