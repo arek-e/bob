@@ -54,6 +54,23 @@ The runner does not print model responses. It prints only metrics and case ident
 
 A live result cannot waive an offline failure.
 
+## Continuous run storage
+
+Cloudflare stores continuous evaluation data in two private resources.
+
+- D1 database `bob-evals-prod` stores run state, scores, and artifact metadata.
+- R2 bucket `bob-eval-artifacts-prod` stores raw and evaluator artifacts.
+
+Git remains authoritative for reviewed benchmark definitions and milestone scores.
+
+Use `runs/<benchmark>/<run>/<sha256>/<file>` for R2 object keys.
+
+Do not overwrite an existing artifact key.
+
+The production assistant Workers cannot access these resources.
+
+The future evaluation runner will receive private bindings to both resources.
+
 ## Data rules
 
 - Use public or invented text only.
@@ -61,3 +78,4 @@ A live result cannot waive an offline failure.
 - Do not add phone numbers, credentials, or production identifiers.
 - Review scenario and observation changes together.
 - Create a new version directory for breaking expectation changes.
+- Keep owner messages and private connector data out of evaluation storage.

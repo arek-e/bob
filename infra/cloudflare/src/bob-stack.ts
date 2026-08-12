@@ -110,8 +110,21 @@ export function createBobStack(options: BobStackOptions) {
         migrationsDir: "../../apps/core-worker/migrations"
       }).pipe(retain(true))
 
+      const evalDatabase = yield* Cloudflare.D1.Database("EvalDatabase", {
+        name: `bob-evals-${PRODUCTION_STAGE}`,
+        jurisdiction: "eu",
+        primaryLocationHint: "weur",
+        migrationsDir: "../../tools/agent-evals/migrations"
+      }).pipe(retain(true))
+
       const privateObjects = yield* Cloudflare.R2.Bucket("PrivateObjects", {
         name: `bob-private-${PRODUCTION_STAGE}`,
+        jurisdiction: "eu",
+        locationHint: "weur"
+      }).pipe(retain(true))
+
+      const evalArtifacts = yield* Cloudflare.R2.Bucket("EvalArtifacts", {
+        name: `bob-eval-artifacts-${PRODUCTION_STAGE}`,
         jurisdiction: "eu",
         locationHint: "weur"
       }).pipe(retain(true))
@@ -513,6 +526,8 @@ export function createBobStack(options: BobStackOptions) {
         workerOtlpAccessAudience: workerOtlpApplication.aud,
         otlpUrl: `https://${otlpHost}`,
         accessTeamDomain: ENV.ACCESS_TEAM_DOMAIN,
+        evalDatabaseId: evalDatabase.databaseId,
+        evalArtifactBucketName: evalArtifacts.bucketName,
         agentTunnelId: agentTunnel.tunnelId,
         agentToCoreClientId: agentToCore.clientId,
         coreToAgentClientId: coreToAgent.clientId,

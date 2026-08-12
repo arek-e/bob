@@ -39,9 +39,11 @@ describe("Alchemy compatibility stack", () => {
     })
 
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain("Plan: 40 to create")
+    expect(result.stdout).toContain("Plan: 42 to create")
     for (const resource of [
       "[BackupArchives] create",
+      "[EvalArtifacts] create",
+      "[EvalDatabase] create",
       "[NangoBackups] create",
       "[WorkerToOtlp] create",
       "[WorkerOtlpServicePolicy] create",
@@ -73,6 +75,23 @@ describe("Alchemy compatibility stack", () => {
     expect(stack).toContain("name: `bob-nango-backup-${PRODUCTION_STAGE}`")
     expect(stack.match(/expire-backups-after-180-days/gu)).toHaveLength(2)
     expect(stack.match(/maxAge: 15_552_000/gu)).toHaveLength(2)
+  })
+
+  it("isolates evaluation records and artifacts from the production Worker", async () => {
+    const stack = await readFile(new URL("../src/bob-stack.ts", import.meta.url), "utf8")
+
+    expect(stack).toContain('Cloudflare.D1.Database("EvalDatabase"')
+    expect(stack).toContain("name: `bob-evals-${PRODUCTION_STAGE}`")
+    expect(stack).toContain('migrationsDir: "../../tools/agent-evals/migrations"')
+    expect(stack).toContain('Cloudflare.R2.Bucket("EvalArtifacts"')
+    expect(stack).toContain("name: `bob-eval-artifacts-${PRODUCTION_STAGE}`")
+
+    const coreWorkerEnvironment = stack.slice(
+      stack.indexOf("const coreWorker ="),
+      stack.indexOf("let ingressUrl")
+    )
+    expect(coreWorkerEnvironment).not.toContain("EVAL_DB")
+    expect(coreWorkerEnvironment).not.toContain("EVAL_ARTIFACTS")
   })
 
   it("keeps production Worker logs and traces enabled", async () => {

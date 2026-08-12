@@ -1,0 +1,538 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "46fb4a62-a6c7-419b-a3a1-7d7c0b08316d",
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
+  "ddl": [
+    {
+      "name": "benchmark_artifacts",
+      "entityType": "tables"
+    },
+    {
+      "name": "benchmark_runs",
+      "entityType": "tables"
+    },
+    {
+      "name": "benchmark_scores",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "artifact_id",
+      "entityType": "columns",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "run_id",
+      "entityType": "columns",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "kind",
+      "entityType": "columns",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "object_key",
+      "entityType": "columns",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sha256",
+      "entityType": "columns",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "byte_size",
+      "entityType": "columns",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "content_type",
+      "entityType": "columns",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "run_id",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "benchmark_id",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "protocol",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "trigger",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "bob_revision",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "benchmark_revision",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "dataset_version",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "adapter_version",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "evaluator",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "variant",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "sample_count",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "repeat_count",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "started_at",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "failure_code",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "benchmark_runs"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "run_id",
+      "entityType": "columns",
+      "table": "benchmark_scores"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "metric_name",
+      "entityType": "columns",
+      "table": "benchmark_scores"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "benchmark_scores"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "recorded_at",
+      "entityType": "columns",
+      "table": "benchmark_scores"
+    },
+    {
+      "columns": ["run_id"],
+      "tableTo": "benchmark_runs",
+      "columnsTo": ["run_id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "nameExplicit": false,
+      "name": "fk_benchmark_artifacts_run_id_benchmark_runs_run_id_fk",
+      "entityType": "fks",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "columns": ["run_id"],
+      "tableTo": "benchmark_runs",
+      "columnsTo": ["run_id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "RESTRICT",
+      "nameExplicit": false,
+      "name": "fk_benchmark_scores_run_id_benchmark_runs_run_id_fk",
+      "entityType": "fks",
+      "table": "benchmark_scores"
+    },
+    {
+      "columns": ["run_id", "metric_name"],
+      "nameExplicit": false,
+      "name": "benchmark_scores_pk",
+      "entityType": "pks",
+      "table": "benchmark_scores"
+    },
+    {
+      "columns": ["artifact_id"],
+      "nameExplicit": false,
+      "name": "benchmark_artifacts_pk",
+      "table": "benchmark_artifacts",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["run_id"],
+      "nameExplicit": false,
+      "name": "benchmark_runs_pk",
+      "table": "benchmark_runs",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "object_key",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "benchmark_artifacts_object_key_uq",
+      "entityType": "indexes",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "columns": [
+        {
+          "value": "run_id",
+          "isExpression": false
+        },
+        {
+          "value": "kind",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "benchmark_artifacts_run_kind_idx",
+      "entityType": "indexes",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "columns": [
+        {
+          "value": "benchmark_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "benchmark_runs_benchmark_time_idx",
+      "entityType": "indexes",
+      "table": "benchmark_runs"
+    },
+    {
+      "columns": [
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "benchmark_runs_status_time_idx",
+      "entityType": "indexes",
+      "table": "benchmark_runs"
+    },
+    {
+      "columns": [
+        {
+          "value": "metric_name",
+          "isExpression": false
+        },
+        {
+          "value": "recorded_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "benchmark_scores_metric_idx",
+      "entityType": "indexes",
+      "table": "benchmark_scores"
+    },
+    {
+      "value": "\"kind\" in ('manifest', 'raw_output', 'evaluator_output', 'log', 'trace')",
+      "name": "benchmark_artifacts_kind_ck",
+      "entityType": "checks",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "value": "length(\"sha256\") = 64 and \"sha256\" not glob '*[^0-9a-f]*'",
+      "name": "benchmark_artifacts_sha256_ck",
+      "entityType": "checks",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "value": "\"byte_size\" >= 0",
+      "name": "benchmark_artifacts_byte_size_ck",
+      "entityType": "checks",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "value": "\"object_key\" glob 'runs/*'",
+      "name": "benchmark_artifacts_object_key_ck",
+      "entityType": "checks",
+      "table": "benchmark_artifacts"
+    },
+    {
+      "value": "\"protocol\" in ('official', 'adapted')",
+      "name": "benchmark_runs_protocol_ck",
+      "entityType": "checks",
+      "table": "benchmark_runs"
+    },
+    {
+      "value": "\"status\" in ('queued', 'running', 'completed', 'failed', 'cancelled')",
+      "name": "benchmark_runs_status_ck",
+      "entityType": "checks",
+      "table": "benchmark_runs"
+    },
+    {
+      "value": "\"trigger\" in ('manual', 'scheduled', 'release')",
+      "name": "benchmark_runs_trigger_ck",
+      "entityType": "checks",
+      "table": "benchmark_runs"
+    },
+    {
+      "value": "length(\"bob_revision\") = 40 and \"bob_revision\" not glob '*[^0-9a-f]*'",
+      "name": "benchmark_runs_bob_revision_ck",
+      "entityType": "checks",
+      "table": "benchmark_runs"
+    },
+    {
+      "value": "length(\"benchmark_revision\") = 40 and \"benchmark_revision\" not glob '*[^0-9a-f]*'",
+      "name": "benchmark_runs_benchmark_revision_ck",
+      "entityType": "checks",
+      "table": "benchmark_runs"
+    },
+    {
+      "value": "\"sample_count\" >= 1",
+      "name": "benchmark_runs_sample_count_ck",
+      "entityType": "checks",
+      "table": "benchmark_runs"
+    },
+    {
+      "value": "\"repeat_count\" between 1 and 100",
+      "name": "benchmark_runs_repeat_count_ck",
+      "entityType": "checks",
+      "table": "benchmark_runs"
+    },
+    {
+      "value": "(\"status\" in ('completed', 'failed', 'cancelled') and \"completed_at\" is not null) or (\"status\" in ('queued', 'running') and \"completed_at\" is null)",
+      "name": "benchmark_runs_terminal_time_ck",
+      "entityType": "checks",
+      "table": "benchmark_runs"
+    },
+    {
+      "value": "\"value\" between -1000000 and 1000000",
+      "name": "benchmark_scores_value_ck",
+      "entityType": "checks",
+      "table": "benchmark_scores"
+    }
+  ],
+  "renames": []
+}
