@@ -48,7 +48,10 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
       : {
           authMethod: "approle" as const,
           appRoleId: config.baoAuthentication.roleId,
-          getAppRoleSecretId: readSecretFile(config.baoAuthentication.secretIdPath)
+          getAppRoleSecretId:
+            config.baoAuthentication.secretId === undefined
+              ? readSecretFile(config.baoAuthentication.secretIdPath)
+              : readSecretValue(config.baoAuthentication.secretId)
         })
   })
   const agent = createBobPiAgent({
@@ -75,6 +78,13 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
     config,
     runtime,
     services: { access, agent, coreTools }
+  }
+}
+
+function readSecretValue(value: string): (signal?: AbortSignal) => Promise<string> {
+  return async (signal) => {
+    if (signal?.aborted === true) throw signal.reason
+    return value
   }
 }
 

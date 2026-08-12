@@ -66,4 +66,33 @@ describe("agent configuration", () => {
       secretIdPath: "/run/secrets/openbao_approle_secret_id"
     })
   })
+
+  it("decodes environment-backed AppRole configuration", () => {
+    const configuration = readAgentConfiguration({
+      PORT: "8787",
+      BAO_ADDR: "https://openbao.example.invalid/",
+      BAO_AUTH_METHOD: "approle",
+      BAO_APPROLE_ROLE_ID: "role-id",
+      BAO_APPROLE_SECRET_ID: "secret-id",
+      BOB_PROVIDER: "openai-codex",
+      BOB_MODEL: "gpt-5.6-luna",
+      BOB_ALLOWED_MODELS: "gpt-5.6-luna",
+      BOB_RELEASE_SHA: "f974ae0fc5b53ca1c233faa0dfd69e9f814cb25f",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.example.invalid:4318/",
+      CORE_URL: "https://bob.example.invalid/",
+      CORE_ACCESS_CLIENT_ID: "fixture-client-id",
+      CORE_ACCESS_CLIENT_SECRET: "fixture-client-value",
+      ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
+      RUN_ACCESS_AUDIENCE: "fixture-run-audience",
+      RUN_ACCESS_SUBJECT: "fixture-run-subject",
+      ADMIN_ACCESS_AUDIENCE: "fixture-admin-audience",
+      ADMIN_ACCESS_SUBJECT: "fixture-admin-subject"
+    })
+
+    expect(configuration.baoAuthentication).toEqual({
+      method: "approle",
+      roleId: "role-id",
+      secretId: "secret-id"
+    })
+  })
 })

@@ -9,6 +9,7 @@ const Environment = Schema.Struct({
   BAO_KUBERNETES_ROLE: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
   BAO_KUBERNETES_JWT_PATH: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
   BAO_APPROLE_ROLE_ID: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  BAO_APPROLE_SECRET_ID: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
   BAO_APPROLE_SECRET_ID_PATH: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
   BOB_PROVIDER: Schema.Literal("openai-codex"),
   BOB_MODEL: Schema.String.check(Schema.isMinLength(1)),
@@ -37,6 +38,13 @@ export interface AgentConfiguration {
     | {
         readonly method: "approle"
         readonly roleId: string
+        readonly secretId: string
+        readonly secretIdPath?: never
+      }
+    | {
+        readonly method: "approle"
+        readonly roleId: string
+        readonly secretId?: never
         readonly secretIdPath: string
       }
   readonly provider: "openai-codex"
@@ -67,14 +75,7 @@ export function readAgentConfiguration(environment: NodeJS.ProcessEnv): AgentCon
           role: requireValue("BAO_KUBERNETES_ROLE", decoded.BAO_KUBERNETES_ROLE),
           jwtPath: requireValue("BAO_KUBERNETES_JWT_PATH", decoded.BAO_KUBERNETES_JWT_PATH)
         }
-      : {
-          method: "approle" as const,
-          roleId: requireValue("BAO_APPROLE_ROLE_ID", decoded.BAO_APPROLE_ROLE_ID),
-          secretIdPath: requireValue(
-            "BAO_APPROLE_SECRET_ID_PATH",
-            decoded.BAO_APPROLE_SECRET_ID_PATH
-          )
-        }
+      : readAppRoleAuthentication(decoded)
   return {
     port: decoded.PORT,
     baoAddress: decoded.BAO_ADDR.toString().replace(/\/$/, ""),
@@ -92,6 +93,23 @@ export function readAgentConfiguration(environment: NodeJS.ProcessEnv): AgentCon
     runAccessSubject: decoded.RUN_ACCESS_SUBJECT,
     adminAccessAudience: decoded.ADMIN_ACCESS_AUDIENCE,
     adminAccessSubject: decoded.ADMIN_ACCESS_SUBJECT
+  }
+}
+
+function readAppRoleAuthentication(
+  decoded: typeof Environment.Type
+): Extract<AgentConfiguration["baoAuthentication"], { readonly method: "approle" }> {
+  const roleId = requireValue("BAO_APPROLE_ROLE_ID", decoded.BAO_APPROLE_ROLE_ID)
+  if (decoded.BAO_APPROLE_SECRET_ID !== undefined) {
+    return { method: "approle", roleId, secretId: decoded.BAO_APPROLE_SECRET_ID }
+  }
+  return {
+    method: "approle",
+    roleId,
+    secretIdPath: requireValue(
+      "BAO_APPROLE_SECRET_ID or BAO_APPROLE_SECRET_ID_PATH",
+      decoded.BAO_APPROLE_SECRET_ID_PATH
+    )
   }
 }
 

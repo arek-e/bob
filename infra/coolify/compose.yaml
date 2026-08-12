@@ -19,7 +19,7 @@ services:
       ADMIN_ACCESS_SUBJECT: ${ADMIN_ACCESS_SUBJECT:?}
       BAO_ADDR: ${BAO_ADDR:?}
       BAO_APPROLE_ROLE_ID: ${BAO_APPROLE_ROLE_ID:?}
-      BAO_APPROLE_SECRET_ID_PATH: /run/secrets/openbao_approle_secret_id
+      BAO_APPROLE_SECRET_ID: ${BAO_APPROLE_SECRET_ID:?}
       BAO_AUTH_METHOD: approle
       BOB_ALLOWED_MODELS: ${BOB_ALLOWED_MODELS:?}
       BOB_MODEL: ${BOB_MODEL:?}
@@ -44,10 +44,6 @@ services:
       retries: 3
       start_period: 20s
     networks: [runtime]
-    secrets:
-      - source: openbao_approle_secret_id
-        target: openbao_approle_secret_id
-        mode: 0440
     tmpfs:
       - /tmp:mode=1777,uid=1000,gid=1000
     deploy:
@@ -200,10 +196,6 @@ networks:
   runtime:
   coolify:
     external: true
-
-secrets:
-  openbao_approle_secret_id:
-    environment: BAO_APPROLE_SECRET_ID
 
 volumes:
   bob-backups:
