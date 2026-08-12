@@ -33,7 +33,7 @@ export function createEvalStorageStack(options: EvalStorageStackOptions) {
         main: "../../apps/eval-worker/src/index.ts",
         workersDev: false,
         compatibility: { date: "2026-08-10" },
-        crons: ["17 3 * * *"],
+        crons: ["45 22 * * *"],
         observability: {
           enabled: true,
           logs: { enabled: true, invocationLogs: true },

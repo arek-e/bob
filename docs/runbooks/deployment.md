@@ -145,15 +145,25 @@ Confirm that D1 contains the three migration tables.
 
 Confirm that the R2 bucket has no public domain.
 
-Confirm that Worker `bob-eval-runner-prod` has only these bindings.
+Confirm that Worker `bob-eval-runner-prod` has these functional bindings.
 
 - `EVAL_DB`
 - `EVAL_ARTIFACTS`
 - `BOB_RELEASE_SHA`
 
-Confirm that its only Cron Trigger is `17 3 * * *`.
+Alchemy also adds these plain-text management bindings.
 
-The schedule runs at 03:17 UTC each day.
+- `ALCHEMY_CLOUDFLARE_ACCOUNT_ID`
+- `ALCHEMY_PHASE`
+- `ALCHEMY_STACK_NAME`
+- `ALCHEMY_STAGE`
+- `ALCHEMY_WORKER_NAME`
+
+Stop if the Worker has another binding.
+
+Confirm that its only Cron Trigger is `45 22 * * *`.
+
+The schedule runs at 22:45 UTC each day.
 
 After the first scheduled event, require one completed D1 run and one matching R2 manifest.
 
