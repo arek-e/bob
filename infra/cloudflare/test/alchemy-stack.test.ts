@@ -104,7 +104,7 @@ describe("Alchemy compatibility stack", () => {
     expect(evalStack).toContain('Cloudflare.Worker("EvalRunner"')
     expect(evalStack).toContain('name: "bob-eval-runner-prod"')
     expect(evalStack).toContain('main: "../../apps/eval-worker/src/index.ts"')
-    expect(evalStack).toContain('crons: ["17 3 * * *"]')
+    expect(evalStack).toContain('crons: ["45 22 * * *"]')
     expect(evalStack).toContain("EVAL_DB: database")
     expect(evalStack).toContain("EVAL_ARTIFACTS: artifacts")
     expect(evalStack).toContain("BOB_RELEASE_SHA: options.releaseSha")

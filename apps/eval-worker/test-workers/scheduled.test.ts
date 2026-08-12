@@ -20,7 +20,7 @@ interface TestMigration {
   readonly queries: readonly string[]
 }
 
-const scheduledTime = Date.parse("2026-08-13T03:17:00.000Z")
+const scheduledTime = Date.parse("2026-08-12T22:45:00.000Z")
 
 beforeEach(async () => {
   await applyD1Migrations(env.EVAL_DB, JSON.parse(env.TEST_MIGRATIONS) as TestMigration[])
@@ -34,7 +34,7 @@ async function runScheduled(): Promise<void> {
   const handler = worker.scheduled
   if (handler === undefined) throw new Error("scheduled_handler_missing")
   await handler(
-    createScheduledController({ cron: "17 3 * * *", scheduledTime }),
+    createScheduledController({ cron: "45 22 * * *", scheduledTime }),
     env,
     {} as ExecutionContext
   )

@@ -153,7 +153,7 @@ The production assistant Workers cannot access these resources.
 
 Cloudflare Worker `bob-eval-runner-prod` runs the version 2 interaction gate each day.
 
-The schedule is 03:17 UTC.
+The schedule is 22:45 UTC.
 
 The Worker writes scores to D1 and one content-addressed report to R2.
 
