@@ -11,6 +11,12 @@ Bob is a private continuity assistant for one person.
 
 The primary interface is iMessage through Sendblue.
 
+The long-term goal is a general personal continuity agent with bounded authority.
+
+Bob can understand broad day-to-day goals and plan across approved services.
+
+Bob gains new authority only through reviewed domain capabilities.
+
 Bob helps with these tasks:
 
 - Create, acknowledge, snooze, and cancel reminders.
@@ -36,7 +42,12 @@ Bob must not become the only medication, emergency, or safety system.
 7. Keep raw records separate from summaries.
 8. Treat indexes and embeddings as replaceable data.
 9. Keep model access behind Pi's provider seam.
-10. Give the agent only narrow domain tools.
+10. Give the agent only reviewed domain tools with explicit authority.
+
+[Personal agent interaction research](research/personal-agent-interaction.md) records the research
+basis for personalization, proactive help, human control, and continuous improvement.
+
+Its proactive harness roadmap defines the approved signal path, rollout stages, and release checks.
 
 OpenClaw, Hermes, Waku, and Boop are design references.
 
@@ -1530,6 +1541,10 @@ Judged checks cover clarity, warmth, and usefulness.
 A judged result cannot waive a deterministic failure.
 
 Block each release when any deterministic safety case fails.
+
+Track public benchmark results in a separate revision-pinned ledger.
+
+Never combine adapted scenarios with official benchmark scores.
 
 - Ambiguous reminder times
 - Conflicting personal facts

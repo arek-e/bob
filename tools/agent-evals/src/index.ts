@@ -3,12 +3,22 @@ import { Schema } from "effect"
 import { readFile } from "node:fs/promises"
 import { pathToFileURL } from "node:url"
 
-import { evaluateSuite, metricNames, type EvaluationReport } from "./gate.ts"
-import { loadEvaluationInputs, loadEvaluationSuite } from "./io.ts"
+import { summarizeBenchmarkTracking, type BenchmarkTrackingReport } from "./benchmark-tracking.ts"
+import { compareEvaluationReports, type EvaluationComparison } from "./comparison.ts"
+import { evaluateSuite, metricNames, version1MetricNames, type EvaluationReport } from "./gate.ts"
+import {
+  loadBenchmarkCatalog,
+  loadBenchmarkRunLedger,
+  loadCandidateSet,
+  loadEvaluationInputs,
+  loadEvaluationSuite
+} from "./io.ts"
 import { runBoundedLiveEvaluation } from "./live.ts"
 import { createProcessAdapter } from "./process-adapter.ts"
 
 export * from "./gate.ts"
+export * from "./benchmark-tracking.ts"
+export * from "./comparison.ts"
 export * from "./io.ts"
 export * from "./live.ts"
 export * from "./schemas.ts"
@@ -32,6 +42,8 @@ export function evaluateResult(input: unknown): DeterministicEvaluation {
 const repositoryRoot = new URL("../../../", import.meta.url)
 const defaultSuite = new URL("evals/scenarios/v1/golden-cases.json", repositoryRoot)
 const defaultCandidates = new URL("evals/fixtures/v1/offline-candidates.json", repositoryRoot)
+const defaultBenchmarkCatalog = new URL("evals/benchmarks/catalog.json", repositoryRoot)
+const defaultBenchmarkResults = new URL("evals/benchmarks/results.json", repositoryRoot)
 
 function option(args: readonly string[], name: string): string | undefined {
   const index = args.indexOf(name)
@@ -53,13 +65,45 @@ function renderReport(report: EvaluationReport): string {
     `Suite: ${report.suiteId}`,
     `Cases: ${report.cases.passed}/${report.cases.total}`
   ]
-  for (const name of metricNames) {
+  const reportMetricNames = report.schemaVersion === 1 ? version1MetricNames : metricNames
+  for (const name of reportMetricNames) {
     const metric = report.metrics[name]
     lines.push(
       `${name}: ${metric.value.toFixed(3)} (${metric.comparison} ${metric.threshold.toFixed(3)}; ${metric.numerator}/${metric.denominator})`
     )
   }
   if (report.failures.length > 0) lines.push(`Failures: ${report.failures.join(", ")}`)
+  return lines.join("\n")
+}
+
+function renderComparison(comparison: EvaluationComparison): string {
+  const lines = [
+    `Bob candidate comparison: ${comparison.passed ? "PASS" : "FAIL"}`,
+    `Suite: ${comparison.suiteId}`,
+    `Regressed cases: ${comparison.regressedCases.length}`,
+    `Improved cases: ${comparison.improvedCases.length}`
+  ]
+  if (comparison.failures.length > 0) {
+    lines.push(`Failures: ${comparison.failures.join(", ")}`)
+  }
+  return lines.join("\n")
+}
+
+function renderBenchmarkTracking(report: BenchmarkTrackingReport): string {
+  const lines = [
+    "Bob public benchmark tracking",
+    `Verified: ${report.verifiedAt}`,
+    `Official scores: ${report.officialScores.recorded}/${report.officialScores.total}`
+  ]
+  for (const benchmark of report.benchmarks) {
+    const status = benchmark.status.replaceAll("_", " ").toUpperCase()
+    const scores = benchmark.latestRun?.scores
+      .map((score) => `${score.name}=${score.value}`)
+      .join(", ")
+    lines.push(
+      `${benchmark.name}: ${status}; adapter ${benchmark.adapterStatus}${scores === undefined ? "" : `; ${scores}`}`
+    )
+  }
   return lines.join("\n")
 }
 
@@ -70,6 +114,34 @@ async function runOffline(args: readonly string[]): Promise<void> {
   const report = evaluateSuite(suite, candidates)
   console.log(args.includes("--json") ? JSON.stringify(report) : renderReport(report))
   if (!report.passed) process.exitCode = 1
+}
+
+async function runComparison(args: readonly string[]): Promise<void> {
+  const suitePath = option(args, "--suite") ?? defaultSuite
+  const baselinePath = option(args, "--baseline")
+  const candidatePath = option(args, "--candidates")
+  if (baselinePath === undefined) throw new Error("comparison_baseline_missing")
+  if (candidatePath === undefined) throw new Error("comparison_candidate_missing")
+  const [suite, baseline, candidate] = await Promise.all([
+    loadEvaluationSuite(suitePath),
+    loadCandidateSet(baselinePath),
+    loadCandidateSet(candidatePath)
+  ])
+  const comparison = compareEvaluationReports(
+    evaluateSuite(suite, baseline),
+    evaluateSuite(suite, candidate)
+  )
+  console.log(args.includes("--json") ? JSON.stringify(comparison) : renderComparison(comparison))
+  if (!comparison.passed) process.exitCode = 1
+}
+
+async function runBenchmarkTracking(args: readonly string[]): Promise<void> {
+  const [catalog, ledger] = await Promise.all([
+    loadBenchmarkCatalog(option(args, "--catalog") ?? defaultBenchmarkCatalog),
+    loadBenchmarkRunLedger(option(args, "--results") ?? defaultBenchmarkResults)
+  ])
+  const report = summarizeBenchmarkTracking(catalog, ledger)
+  console.log(args.includes("--json") ? JSON.stringify(report) : renderBenchmarkTracking(report))
 }
 
 async function runLegacyResult(path: string): Promise<void> {
@@ -95,6 +167,8 @@ async function runLive(args: readonly string[]): Promise<void> {
 async function main(args: readonly string[]): Promise<void> {
   const command = args[0] ?? "offline"
   if (command === "offline") return runOffline(args.slice(1))
+  if (command === "compare") return runComparison(args.slice(1))
+  if (command === "benchmarks") return runBenchmarkTracking(args.slice(1))
   if (command === "live") return runLive(args.slice(1))
   if (command === "result") {
     const path = args[1]

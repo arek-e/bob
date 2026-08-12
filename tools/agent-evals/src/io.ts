@@ -1,7 +1,9 @@
 import { readFile, stat } from "node:fs/promises"
 
+import type { BenchmarkCatalog, BenchmarkRunLedger } from "./benchmark-tracking.ts"
 import type { CandidateSet, EvaluationSuite } from "./gate.ts"
 
+import { decodeBenchmarkCatalog, decodeBenchmarkRunLedger } from "./benchmark-tracking.ts"
 import { decodeCandidateSet, decodeEvaluationSuite } from "./schemas.ts"
 
 const MAX_EVALUATION_FILE_BYTES = 1_000_000
@@ -31,4 +33,16 @@ export async function loadEvaluationInputs(
 
 export async function loadEvaluationSuite(path: string | URL): Promise<EvaluationSuite> {
   return decodeEvaluationSuite(await readJson(path))
+}
+
+export async function loadCandidateSet(path: string | URL): Promise<CandidateSet> {
+  return decodeCandidateSet(await readJson(path))
+}
+
+export async function loadBenchmarkCatalog(path: string | URL): Promise<BenchmarkCatalog> {
+  return decodeBenchmarkCatalog(await readJson(path))
+}
+
+export async function loadBenchmarkRunLedger(path: string | URL): Promise<BenchmarkRunLedger> {
+  return decodeBenchmarkRunLedger(await readJson(path))
 }

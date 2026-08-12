@@ -342,6 +342,18 @@ describe("Pi training tools", () => {
     expect(prompt).toContain(
       'List only supporting context or trusted memory-search source IDs in "sourceIds".'
     )
+    expect(prompt).toContain(
+      "Ask one short question only when a missing detail can change the result."
+    )
+    expect(prompt).toContain(
+      "Use a recalled preference only when it is relevant to the current result."
+    )
+    expect(prompt).toContain(
+      "An explicit owner correction replaces the stale value for the current turn."
+    )
+    expect(prompt).toContain(
+      "If a tool returns confirmation_required or choice_required, do not retry it."
+    )
   })
 
   it("renders only closed prior action metadata as trusted system data", () => {

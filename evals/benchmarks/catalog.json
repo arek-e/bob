@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-12",
+  "benchmarks": [
+    {
+      "id": "longmemeval-v1",
+      "name": "LongMemEval",
+      "paperUrl": "https://arxiv.org/abs/2410.10813",
+      "repositoryUrl": "https://github.com/xiaowu0162/LongMemEval",
+      "license": "MIT",
+      "availability": "public_runner",
+      "trackingMode": "official_score",
+      "adapterStatus": "planned",
+      "officialMetrics": [
+        {
+          "name": "qa_accuracy",
+          "label": "Question-answer accuracy",
+          "direction": "max",
+          "unit": "rate"
+        },
+        {
+          "name": "retrieval_recall_at_5",
+          "label": "Retrieval recall at five",
+          "direction": "max",
+          "unit": "rate"
+        }
+      ],
+      "notes": "First adapter target. Use the cleaned official data and evaluator."
+    },
+    {
+      "id": "longmemeval-v2",
+      "name": "LongMemEval-V2",
+      "paperUrl": "https://arxiv.org/abs/2605.12493",
+      "repositoryUrl": "https://github.com/xiaowu0162/LongMemEval-V2",
+      "license": "Apache-2.0",
+      "availability": "public_runner",
+      "trackingMode": "official_score",
+      "adapterStatus": "planned",
+      "officialMetrics": [
+        {
+          "name": "lafs_gain",
+          "label": "Latency-adjusted frontier score gain",
+          "direction": "max",
+          "unit": "score"
+        },
+        {
+          "name": "answer_accuracy",
+          "label": "Answer accuracy",
+          "direction": "max",
+          "unit": "rate"
+        },
+        {
+          "name": "query_latency_ms",
+          "label": "Query latency",
+          "direction": "min",
+          "unit": "milliseconds"
+        }
+      ],
+      "notes": "Tracks agent memory across web and enterprise trajectory histories."
+    },
+    {
+      "id": "pahf",
+      "name": "Personalized Agents from Human Feedback",
+      "paperUrl": "https://arxiv.org/abs/2602.16173",
+      "repositoryUrl": "https://github.com/facebookresearch/PAHF",
+      "license": "MIT",
+      "availability": "public_runner",
+      "trackingMode": "official_score",
+      "adapterStatus": "planned",
+      "officialMetrics": [
+        {
+          "name": "success_rate",
+          "label": "Task success rate",
+          "direction": "max",
+          "unit": "rate"
+        },
+        {
+          "name": "feedback_frequency",
+          "label": "Human feedback frequency",
+          "direction": "min",
+          "unit": "rate"
+        },
+        {
+          "name": "average_cumulative_personalization_error",
+          "label": "Average cumulative personalization error",
+          "direction": "min",
+          "unit": "rate"
+        }
+      ],
+      "notes": "Track both domains and all four preference-learning phases."
+    },
+    {
+      "id": "pi-bench",
+      "name": "Pi-Bench",
+      "paperUrl": "https://arxiv.org/abs/2605.14678",
+      "repositoryUrl": "https://github.com/Simplified-Reasoning/Pi-Bench",
+      "license": "Apache-2.0",
+      "availability": "public_runner",
+      "trackingMode": "official_score",
+      "adapterStatus": "blocked_by_capabilities",
+      "officialMetrics": [
+        {
+          "name": "proactivity",
+          "label": "Proactivity",
+          "direction": "max",
+          "unit": "score"
+        },
+        {
+          "name": "completeness",
+          "label": "Completeness",
+          "direction": "max",
+          "unit": "score"
+        }
+      ],
+      "notes": "Official runs require its persistent workspace and three repeated trials."
+    },
+    {
+      "id": "hyperagents",
+      "name": "Hyperagents",
+      "paperUrl": "https://arxiv.org/abs/2603.19461",
+      "repositoryUrl": "https://github.com/facebookresearch/hyperagents",
+      "availability": "public_artifact",
+      "trackingMode": "reference_only",
+      "adapterStatus": "not_applicable",
+      "officialMetrics": [],
+      "notes": "Use its candidate archive pattern. It has no shared Bob benchmark score."
+    },
+    {
+      "id": "plan-then-execute",
+      "name": "Plan-Then-Execute",
+      "paperUrl": "https://arxiv.org/abs/2502.01390",
+      "repositoryUrl": "https://github.com/RichardHGL/CHI2025_Plan-then-Execute_LLMAgent",
+      "availability": "public_artifact",
+      "trackingMode": "reference_only",
+      "adapterStatus": "not_applicable",
+      "officialMetrics": [],
+      "notes": "This is a human-subject study artifact, not a Bob leaderboard benchmark."
+    },
+    {
+      "id": "interaction-augmented-instruction",
+      "name": "Interaction-Augmented Instruction",
+      "paperUrl": "https://arxiv.org/abs/2510.26069",
+      "repositoryUrl": "https://interaction-augmented-instruction.github.io/",
+      "availability": "public_artifact",
+      "trackingMode": "reference_only",
+      "adapterStatus": "not_applicable",
+      "officialMetrics": [],
+      "notes": "Use its annotated interaction corpus as design vocabulary."
+    },
+    {
+      "id": "human-ai-guidelines",
+      "name": "Guidelines for Human-AI Interaction",
+      "paperUrl": "https://www.microsoft.com/en-us/research/publication/guidelines-for-human-ai-interaction/",
+      "availability": "public_artifact",
+      "trackingMode": "reference_only",
+      "adapterStatus": "not_applicable",
+      "officialMetrics": [],
+      "notes": "Use the guidelines for qualitative review. They have no benchmark score."
+    },
+    {
+      "id": "op-bench",
+      "name": "OP-Bench",
+      "paperUrl": "https://arxiv.org/abs/2601.13722",
+      "availability": "paper_only",
+      "trackingMode": "reference_only",
+      "adapterStatus": "waiting_for_release",
+      "officialMetrics": [],
+      "notes": "No official public dataset or runner was found on the verification date."
+    }
+  ]
+}

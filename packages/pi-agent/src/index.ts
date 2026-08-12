@@ -161,6 +161,17 @@ function safeToolFailure(): ToolResult {
   }
 }
 
+const reflectedToolResultCodes = new Set([
+  "choice_required",
+  "confirmation_required",
+  "external_outcome_unknown"
+])
+
+/** These domain results need an owner-facing reply, not a generic agent failure. */
+export function toolResultNeedsReflection(result: ToolResult): boolean {
+  return !result.ok && reflectedToolResultCodes.has(result.code)
+}
+
 function toolResultMessage(
   call: ToolCall,
   result: ToolResult,
@@ -758,6 +769,22 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
                 return failedCompletion("aborted", "cancelled")
               }
               if (!execution.result.ok) {
+                if (toolResultNeedsReflection(execution.result)) {
+                  if (execution.result.code === "external_outcome_unknown") {
+                    unknownActionToolNames.add(tool.label)
+                  }
+                  yield* recordDecision({
+                    name: "bob.decision.policy",
+                    code:
+                      execution.result.code === "external_outcome_unknown"
+                        ? "external_unknown"
+                        : "confirmation_required",
+                    outcome: "applied",
+                    toolName: call.name
+                  })
+                  context.tools = []
+                  return { type: "continue" as const }
+                }
                 yield* recordDecision({
                   name: "bob.decision.policy",
                   code: "provider_failure",
@@ -993,7 +1020,9 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
             errorCode
           )
         }
-        if (toolResults.some((toolResult) => !toolResult.ok)) {
+        if (
+          toolResults.some((toolResult) => !toolResult.ok && !toolResultNeedsReflection(toolResult))
+        ) {
           return result(
             "failed",
             deterministicToolResultFallback(toolResults, request.limits.maxResponseCharacters),

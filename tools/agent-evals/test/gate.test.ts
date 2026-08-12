@@ -36,6 +36,105 @@ describe("deterministic evaluation gate", () => {
     expect(report.metrics.staleLeakRate).toMatchObject({ value: 0, denominator: 3 })
   })
 
+  it("passes the version 2 personal-agent interaction baseline", async () => {
+    const repositoryRoot = new URL("../../../", import.meta.url)
+    const { suite, candidates } = await loadEvaluationInputs(
+      new URL("evals/scenarios/v2/interaction-cases.json", repositoryRoot),
+      new URL("evals/fixtures/v2/offline-candidates.json", repositoryRoot)
+    )
+
+    const report = evaluateSuite(suite, candidates)
+
+    expect(report.passed).toBe(true)
+    expect(report.schemaVersion).toBe(2)
+    expect(report.cases).toEqual({ passed: 12, total: 12 })
+    expect(report.metrics.clarificationPrecision).toMatchObject({
+      value: 1,
+      numerator: 1,
+      denominator: 1
+    })
+    expect(report.metrics.stalePreferenceUseRate).toMatchObject({
+      value: 0,
+      numerator: 0,
+      denominator: 1
+    })
+    expect(report.metrics.unnecessaryInterruptionRate).toMatchObject({
+      value: 0,
+      numerator: 0,
+      denominator: 1
+    })
+    expect(report.metrics.connectorGroundedActionRate).toMatchObject({
+      value: 1,
+      numerator: 4,
+      denominator: 4
+    })
+    expect(report.metrics.undoCancellationSuccessRate).toMatchObject({
+      value: 1,
+      numerator: 2,
+      denominator: 2
+    })
+  })
+
+  it("fails stale preferences, needless interruptions, and hidden outcomes", async () => {
+    const repositoryRoot = new URL("../../../", import.meta.url)
+    const { suite, candidates } = await loadEvaluationInputs(
+      new URL("evals/scenarios/v2/interaction-cases.json", repositoryRoot),
+      new URL("evals/fixtures/v2/offline-candidates.json", repositoryRoot)
+    )
+    const candidateSet: CandidateSet = {
+      ...candidates,
+      candidates: candidates.candidates.map((candidate) => {
+        if (candidate.caseId === "preference-change-recovery-v2") {
+          return {
+            ...candidate,
+            interaction: {
+              appliedPreferenceRecordIds: ["synthetic-preference-morning-old"]
+            }
+          }
+        }
+        if (candidate.caseId === "proactive-correct-silence-v2") {
+          return { ...candidate, interaction: { proactiveIntervention: true } }
+        }
+        if (candidate.caseId === "connector-unknown-outcome-v2") {
+          return { ...candidate, interaction: { unknownOutcomeDisclosed: false } }
+        }
+        return candidate
+      })
+    }
+
+    const report = evaluateSuite(suite, candidateSet)
+
+    expect(report.passed).toBe(false)
+    expect(report.failures).toContain(
+      "preference-change-recovery-v2:current_preference_not_applied"
+    )
+    expect(report.failures).toContain(
+      "preference-change-recovery-v2:stale_preference_applied:synthetic-preference-morning-old"
+    )
+    expect(report.failures).toContain(
+      "proactive-correct-silence-v2:proactive_interruption_unnecessary"
+    )
+    expect(report.failures).toContain("connector-unknown-outcome-v2:unknown_outcome_not_disclosed")
+    expect(report.metrics.stalePreferenceUseRate.value).toBe(1)
+    expect(report.metrics.unnecessaryInterruptionRate.value).toBe(1)
+    expect(report.metrics.unknownOutcomeDisclosureRate.value).toBe(0)
+  })
+
+  it("rejects a version 2 suite with an untested interaction outcome", async () => {
+    const repositoryRoot = new URL("../../../", import.meta.url)
+    const { suite } = await loadEvaluationInputs(
+      new URL("evals/scenarios/v2/interaction-cases.json", repositoryRoot),
+      new URL("evals/fixtures/v2/offline-candidates.json", repositoryRoot)
+    )
+
+    expect(() =>
+      decodeEvaluationSuite({
+        ...suite,
+        cases: suite.cases.filter((scenario) => scenario.id !== "reminder-undo-v2")
+      })
+    ).toThrowError("invalid_evaluation_suite")
+  })
+
   it("counts missing and unknown observations as gate failures", async () => {
     const repositoryRoot = new URL("../../../", import.meta.url)
     const { suite, candidates } = await loadEvaluationInputs(
