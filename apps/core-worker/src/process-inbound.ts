@@ -13,8 +13,10 @@ import { Effect, Schema } from "effect"
 
 import type { CoreBindings } from "./bindings.ts"
 import type { CoreComposition } from "./composition.ts"
+import type { ConversationTurnSnapshot } from "./modules/conversations/turn-store.ts"
 
-import { selectTools } from "./modules/context/tool-selection.ts"
+import { selectTools, selectToolsWithPriorCapabilities } from "./modules/context/tool-selection.ts"
+import { conversationTiming } from "./modules/conversations/timing.ts"
 import { reportAgentFailure, reportAgentUsage } from "./modules/observability/reporting.ts"
 import { selectAgentResponse } from "./modules/policy/agent-response.ts"
 import {
@@ -88,6 +90,46 @@ function featureForReason(reasonCode: string): TelemetryFeature {
   return "assistant"
 }
 
+function boundedTurnMessages(
+  messages: ConversationTurnSnapshot["messages"],
+  maximumMessages = 12,
+  maximumCharacters = 8_000
+): ConversationTurnSnapshot["messages"] {
+  const selected: ConversationTurnSnapshot["messages"][number][] = []
+  let usedCharacters = 0
+  for (const message of messages.toReversed()) {
+    if (selected.length >= maximumMessages) break
+    if (selected.length > 0 && usedCharacters + message.text.length > maximumCharacters) break
+    selected.push(message)
+    usedCharacters += message.text.length
+  }
+  return selected.toReversed()
+}
+
+function releaseSettlingTurn(
+  bindings: CoreBindings,
+  composition: CoreComposition,
+  input: { readonly turnId: string; readonly activeRunId: string; readonly ownerId: string }
+) {
+  return Effect.gen(function* () {
+    const released = yield* promiseEffect(() =>
+      composition.services.turns.releaseSettling(input.turnId, input.activeRunId)
+    )
+    if (!released.ready) return released
+    yield* promiseEffect(async () => {
+      try {
+        const coordinators = bindings.OWNER_RUN_COORDINATOR.jurisdiction("eu")
+        await coordinators
+          .get(coordinators.idFromName(input.ownerId))
+          .fetch("https://coordinator.internal/wake", { method: "POST" })
+      } catch {
+        // The durable collecting state remains recoverable after a lost live wake-up.
+      }
+    })
+    return released
+  })
+}
+
 interface OutboxTelemetry {
   readonly correlationId: string
   readonly feature: TelemetryFeature
@@ -128,7 +170,7 @@ function createAndPublishOutbox(
   bindings: CoreBindings,
   composition: CoreComposition,
   telemetry: OutboxTelemetry,
-  create: () => Promise<string>
+  create: () => Promise<string | undefined>
 ) {
   return withBobSpan(
     {
@@ -139,6 +181,7 @@ function createAndPublishOutbox(
     },
     Effect.gen(function* () {
       const outboxId = yield* promiseEffect(create)
+      if (outboxId === undefined) return undefined
       yield* publishOutbox(bindings, composition, outboxId, telemetry)
       return outboxId
     })
@@ -233,20 +276,32 @@ function messageInteractionLifecycle(composition: CoreComposition, claimed: Clai
 }
 
 function deterministicReply(
-  bindings: CoreBindings,
   composition: CoreComposition,
-  claimed: ClaimedInbound
+  claimed: ClaimedInbound,
+  safetyText: string,
+  actionIdempotencyScope: string,
+  begin: () => Effect.Effect<boolean, unknown>,
+  enqueue: (input: {
+    readonly ownerId: string
+    readonly channelId: string
+    readonly text: string
+    readonly reasonCode: string
+    readonly correlationId: string
+    readonly idempotencyKey: string
+    readonly replyToMessageHandle?: string
+  }) => Effect.Effect<void, unknown>
 ) {
   const replyToMessageHandle = nativeReplyTarget(claimed)
   return Effect.gen(function* () {
-    const urgent = urgentSafetyResponse(claimed.text)
+    const urgent = urgentSafetyResponse(safetyText)
     if (urgent !== undefined) {
       yield* recordDecision({
         name: "bob.decision.route",
         code: "urgent_safety",
         outcome: "selected"
       })
-      yield* enqueueOutbox(bindings, composition, {
+      if (!(yield* begin())) return true
+      yield* enqueue({
         ownerId: claimed.ownerId,
         channelId: claimed.channelId,
         text: urgent,
@@ -258,24 +313,25 @@ function deterministicReply(
       return true
     }
 
-    const trainingSignal = trainingSafetySignal(claimed.text)
+    const trainingSignal = trainingSafetySignal(safetyText)
     if (trainingSignal !== undefined) {
       yield* recordDecision({
         name: "bob.decision.route",
         code: "training_safety",
         outcome: "selected"
       })
+      if (!(yield* begin())) return true
       yield* promiseEffect(() =>
         composition.services.training.stopActiveForSafety(
           claimed.ownerId,
           trainingSignal,
-          `inbound:${claimed.eventId}:training-safety-stop`
+          `${actionIdempotencyScope}:training-safety-stop`
         )
       )
-      yield* enqueueOutbox(bindings, composition, {
+      yield* enqueue({
         ownerId: claimed.ownerId,
         channelId: claimed.channelId,
-        text: trainingSafetyResponse(claimed.text)!,
+        text: trainingSafetyResponse(safetyText)!,
         reasonCode: "training_safety_stop",
         correlationId: claimed.correlationId,
         idempotencyKey: `inbound:${claimed.eventId}:training-safety-reply`,
@@ -299,6 +355,7 @@ function deterministicReply(
       code: "deterministic_command",
       outcome: "selected"
     })
+    if (!(yield* begin())) return true
     const language = deterministicCommandLanguage(claimed.text)
     const swedish = language === "sv"
     let response: string
@@ -311,7 +368,7 @@ function deterministicReply(
           composition.services.journal.createHandoff(
             claimed.ownerId,
             10 * 60_000,
-            `inbound:${claimed.eventId}:journal-handoff`
+            `${actionIdempotencyScope}:journal-handoff`
           )
         )
         response = swedish
@@ -393,7 +450,7 @@ function deterministicReply(
           : "I cannot match UNDO to one safe inverse action. Open Bob to choose an item."
         break
     }
-    yield* enqueueOutbox(bindings, composition, {
+    yield* enqueue({
       ownerId: claimed.ownerId,
       channelId: claimed.channelId,
       text: response,
@@ -447,6 +504,61 @@ function failedAgentResult(
   }
 }
 
+function cancelledAgentResult(request: AgentRunRequest, model: string): AgentRunResult {
+  return {
+    protocolVersion: 1,
+    runId: request.runId,
+    correlationId: request.correlationId,
+    status: "cancelled",
+    errorCode: "cancelled",
+    model,
+    durationMs: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    toolCalls: 0
+  }
+}
+
+function suppressStaleAgentAttempt(
+  bindings: CoreBindings,
+  composition: CoreComposition,
+  input: {
+    readonly result: AgentRunResult
+    readonly attemptId: string
+    readonly turn: ConversationTurnSnapshot
+    readonly feature: TelemetryFeature
+  }
+) {
+  return withBobSpan(
+    {
+      name: "bob.reply.suppress",
+      correlationId: input.turn.latest.correlationId,
+      runId: input.result.runId,
+      conversationTurnId: input.turn.turnId,
+      conversationRevision: input.turn.revision,
+      feature: input.feature
+    },
+    Effect.gen(function* () {
+      yield* recordDecision({
+        name: "bob.decision.steering",
+        code: "stale_reply_suppressed",
+        outcome: "applied",
+        conversationRevision: input.turn.revision
+      })
+      const suppressed = yield* promiseEffect(() =>
+        composition.services.runs.completeWithoutResponse(input.result, input.attemptId)
+      )
+      if (!suppressed) return false
+      yield* releaseSettlingTurn(bindings, composition, {
+        turnId: input.turn.turnId,
+        activeRunId: input.result.runId,
+        ownerId: input.turn.ownerId
+      })
+      return true
+    })
+  )
+}
+
 function invokeAgent(
   request: AgentRunRequest,
   composition: CoreComposition,
@@ -494,7 +606,7 @@ function invokeAgent(
         },
         catch: (error) => (error instanceof AgentCallError ? error : new AgentCallError("provider"))
       }).pipe(
-        Effect.timeout(request.limits.maxDurationMs + 5_000),
+        Effect.timeout(conversationTiming.coreAgentTimeoutMs),
         Effect.tap((result) =>
           recordDecision({
             name: "bob.decision.policy",
@@ -521,244 +633,408 @@ export async function processInbound(
   composition: CoreComposition,
   traceparent?: string,
   telemetry?: CoreWorkflowTelemetryRunner,
-  correlationId = eventId
+  correlationId = eventId,
+  conversationTurn?: ConversationTurnSnapshot
 ): Promise<void> {
   const runTelemetry = telemetry?.runPromise ?? Effect.runPromise
   let interactionStop: Effect.Effect<void> = Effect.void
-  const program = withTraceparentParent(
-    traceparent,
-    withBobSpan(
-      {
-        name: "bob.inbound.process",
-        correlationId,
-        feature: "assistant"
-      },
-      Effect.gen(function* () {
-        const claimed = yield* withBobSpan(
-          {
-            name: "bob.inbound.claim",
-            correlationId,
-            feature: "assistant"
-          },
-          promiseEffect(() => composition.services.conversations.claimInbound(eventId, 90_000))
-        )
-        if (claimed === undefined) {
-          yield* recordDecision({
-            name: "bob.decision.route",
-            code: "external_unknown",
-            outcome: "skipped"
-          })
-          return
+  const process = withBobSpan(
+    {
+      name: "bob.inbound.process",
+      correlationId,
+      feature: "assistant"
+    },
+    Effect.gen(function* () {
+      const claimed = yield* withBobSpan(
+        {
+          name: "bob.inbound.claim",
+          correlationId,
+          feature: "assistant"
+        },
+        conversationTurn === undefined
+          ? promiseEffect(() => composition.services.conversations.claimInbound(eventId, 90_000))
+          : Effect.succeed({
+              ...conversationTurn.latest,
+              ownerId: conversationTurn.ownerId,
+              channelId: conversationTurn.channelId
+            })
+      )
+      if (claimed === undefined) {
+        yield* recordDecision({
+          name: "bob.decision.route",
+          code: "external_unknown",
+          outcome: "skipped"
+        })
+        return
+      }
+
+      const interaction = messageInteractionLifecycle(composition, claimed)
+      const replyToMessageHandle = nativeReplyTarget(claimed)
+      interactionStop = interaction.stop
+      yield* interaction.start
+
+      const turn = conversationTurn
+      const deterministicRunId = turn?.latest.eventId ?? crypto.randomUUID()
+      const releaseDeterministic = () =>
+        turn === undefined
+          ? Effect.void
+          : releaseSettlingTurn(bindings, composition, {
+              turnId: turn.turnId,
+              activeRunId: deterministicRunId,
+              ownerId: claimed.ownerId
+            }).pipe(Effect.asVoid)
+      const beginDeterministic = () =>
+        turn === undefined
+          ? Effect.succeed(true)
+          : Effect.gen(function* () {
+              const started = yield* promiseEffect(() =>
+                composition.services.turns.markRunning(
+                  turn.turnId,
+                  turn.revision,
+                  deterministicRunId
+                )
+              )
+              if (!started) return false
+              const currentRevision = yield* promiseEffect(() =>
+                composition.services.turns.currentRevision(turn.turnId)
+              )
+              if (currentRevision === turn.revision) return true
+              yield* recordDecision({
+                name: "bob.decision.steering",
+                code: "stale_reply_suppressed",
+                outcome: "applied",
+                conversationRevision: turn.revision
+              })
+              yield* releaseDeterministic()
+              return false
+            })
+      const enqueueDeterministic = (input: {
+        readonly ownerId: string
+        readonly channelId: string
+        readonly text: string
+        readonly reasonCode: string
+        readonly correlationId: string
+        readonly idempotencyKey: string
+        readonly replyToMessageHandle?: string
+      }) => {
+        if (turn === undefined) {
+          return enqueueOutbox(bindings, composition, input).pipe(Effect.asVoid)
         }
-
-        const interaction = messageInteractionLifecycle(composition, claimed)
-        const replyToMessageHandle = nativeReplyTarget(claimed)
-        interactionStop = interaction.stop
-        yield* interaction.start
-
-        if (yield* deterministicReply(bindings, composition, claimed)) {
+        const feature = featureForReason(input.reasonCode)
+        return Effect.gen(function* () {
+          if (
+            (yield* promiseEffect(() =>
+              composition.services.turns.currentRevision(turn.turnId)
+            )) !== turn.revision
+          ) {
+            yield* recordDecision({
+              name: "bob.decision.steering",
+              code: "stale_reply_suppressed",
+              outcome: "applied",
+              conversationRevision: turn.revision
+            })
+            yield* releaseDeterministic()
+            return
+          }
+          const outboxId = yield* withBobSpan(
+            {
+              name: "bob.outbox.create",
+              correlationId: input.correlationId,
+              feature
+            },
+            promiseEffect(() =>
+              composition.services.delivery.createOutbox({
+                ...input,
+                conversationTurnId: turn.turnId,
+                conversationTurnRevision: turn.revision
+              })
+            )
+          )
+          const committed = yield* withBobSpan(
+            {
+              name: "bob.reply.commit",
+              correlationId: input.correlationId,
+              conversationTurnId: turn.turnId,
+              conversationRevision: turn.revision,
+              feature
+            },
+            promiseEffect(() =>
+              composition.services.turns.commitReply(
+                turn.turnId,
+                turn.revision,
+                deterministicRunId,
+                outboxId
+              )
+            )
+          )
+          if (committed === "superseded") {
+            yield* recordDecision({
+              name: "bob.decision.steering",
+              code: "stale_reply_suppressed",
+              outcome: "applied",
+              conversationRevision: turn.revision
+            })
+            yield* releaseDeterministic()
+            return
+          }
+          yield* promiseEffect(() =>
+            composition.services.turns.markEventsProcessed(turn.turnId, turn.revision)
+          )
+          yield* publishOutbox(bindings, composition, outboxId, {
+            correlationId: input.correlationId,
+            feature
+          })
+        })
+      }
+      const safetyText =
+        turn === undefined ? claimed.text : turn.messages.map((message) => message.text).join("\n")
+      const deterministicActionScope =
+        turn === undefined ? `inbound:${claimed.eventId}` : `turn:${turn.turnId}`
+      if (
+        yield* deterministicReply(
+          composition,
+          claimed,
+          safetyText,
+          deterministicActionScope,
+          beginDeterministic,
+          enqueueDeterministic
+        )
+      ) {
+        if (turn === undefined) {
           yield* promiseEffect(() =>
             composition.services.conversations.completeInbound(eventId, new Date().toISOString())
           )
-          return
         }
+        return
+      }
 
-        const stored = yield* promiseEffect(() =>
-          composition.services.runs.loadForInbound(claimed.eventId)
+      const stored = yield* promiseEffect(() =>
+        composition.services.runs.loadForInbound(claimed.eventId)
+      )
+      if (conversationTurn === undefined && stored?.outboxId !== undefined) {
+        yield* publishOutbox(bindings, composition, stored.outboxId, {
+          correlationId: claimed.correlationId,
+          feature: featureForTools(stored.request.allowedTools),
+          runId: stored.request.runId
+        })
+        return
+      }
+
+      let request: AgentRunRequest | undefined = stored?.request
+      if (request === undefined) {
+        const ownerSettings = yield* promiseEffect(() =>
+          composition.services.settings.get(claimed.ownerId)
         )
-        if (stored?.outboxId !== undefined) {
-          yield* publishOutbox(bindings, composition, stored.outboxId, {
-            correlationId: claimed.correlationId,
-            feature: featureForTools(stored.request.allowedTools),
-            runId: stored.request.runId
-          })
-          return
+        const localTime = new Date().toISOString()
+        const runId = crypto.randomUUID()
+        const turnMessages =
+          conversationTurn === undefined
+            ? [
+                {
+                  eventId: claimed.eventId,
+                  messageId: claimed.messageId,
+                  text: claimed.text,
+                  ordinal: 1
+                }
+              ]
+            : boundedTurnMessages(conversationTurn.messages)
+        const currentTurnText = turnMessages.map((message) => message.text).join("\n")
+        const contextBuildRequest = {
+          ownerId: claimed.ownerId,
+          channelId: claimed.channelId,
+          ...(conversationTurn === undefined
+            ? {}
+            : {
+                currentConversationTurnId: conversationTurn.turnId,
+                currentConversationTurnRevision: conversationTurn.revision
+              }),
+          currentMessageId: claimed.messageId,
+          currentUserText: currentTurnText,
+          localTime,
+          timeZone: ownerSettings.timeZone
         }
-
-        let request: AgentRunRequest | undefined = stored?.request
-        if (request === undefined) {
-          const ownerSettings = yield* promiseEffect(() =>
-            composition.services.settings.get(claimed.ownerId)
+        const priorToolCapabilities =
+          conversationTurn === undefined
+            ? []
+            : yield* promiseEffect(
+                () =>
+                  composition.services.context.recentToolCapabilities?.(contextBuildRequest) ?? []
+              )
+        const allowedTools = [
+          ...new Set(
+            turnMessages.flatMap((message, index) =>
+              index === turnMessages.length - 1
+                ? selectToolsWithPriorCapabilities(message.text, priorToolCapabilities)
+                : selectTools(message.text)
+            )
           )
-          const localTime = new Date().toISOString()
-          const runId = crypto.randomUUID()
-          const allowedTools = selectTools(claimed.text)
-          const feature = featureForTools(allowedTools)
-          const retrievalStartedAt = Date.now()
-          const retrieve = withBobSpan(
+        ]
+        const feature = featureForTools(allowedTools)
+        const retrievalStartedAt = Date.now()
+        const retrieve = withBobSpan(
+          {
+            name: "bob.context.build",
+            correlationId: claimed.correlationId,
+            runId,
+            feature
+          },
+          withBobSpan(
             {
-              name: "bob.context.build",
+              name: "bob.context.retrieve",
               correlationId: claimed.correlationId,
               runId,
               feature
             },
-            withBobSpan(
-              {
-                name: "bob.context.retrieve",
+            promiseEffect(() => composition.services.context.build(contextBuildRequest))
+          )
+        ).pipe(
+          Effect.tap((contextItems) =>
+            Effect.promise(() =>
+              emitSafely(composition, {
+                type: "retrieval",
                 correlationId: claimed.correlationId,
                 runId,
-                feature
-              },
-              promiseEffect(() =>
-                composition.services.context.build({
-                  ownerId: claimed.ownerId,
-                  channelId: claimed.channelId,
-                  currentMessageId: claimed.messageId,
-                  currentUserText: claimed.text,
-                  localTime,
-                  timeZone: ownerSettings.timeZone
-                })
-              )
+                feature,
+                workflow: "agent_turn",
+                strategy: "fts",
+                status: "completed",
+                selectedCount: contextItems.length,
+                sourceCount: contextItems.reduce((count, item) => count + item.sources.length, 0),
+                conflictCount: contextItems.filter((item) => item.conflict).length,
+                durationMs: Math.max(0, Date.now() - retrievalStartedAt)
+              })
             )
-          ).pipe(
-            Effect.tap((contextItems) =>
-              Effect.promise(() =>
-                emitSafely(composition, {
-                  type: "retrieval",
-                  correlationId: claimed.correlationId,
-                  runId,
-                  feature,
-                  workflow: "agent_turn",
-                  strategy: "fts",
-                  status: "completed",
-                  selectedCount: contextItems.length,
-                  sourceCount: contextItems.reduce((count, item) => count + item.sources.length, 0),
-                  conflictCount: contextItems.filter((item) => item.conflict).length,
-                  durationMs: Math.max(0, Date.now() - retrievalStartedAt)
-                })
-              )
-            ),
-            Effect.tapError(() =>
-              Effect.promise(() =>
-                emitSafely(composition, {
-                  type: "retrieval",
-                  correlationId: claimed.correlationId,
-                  runId,
-                  feature,
-                  workflow: "agent_turn",
-                  strategy: "fts",
-                  status: "failed",
-                  selectedCount: 0,
-                  sourceCount: 0,
-                  conflictCount: 0,
-                  durationMs: Math.max(0, Date.now() - retrievalStartedAt)
-                })
-              )
+          ),
+          Effect.tapError(() =>
+            Effect.promise(() =>
+              emitSafely(composition, {
+                type: "retrieval",
+                correlationId: claimed.correlationId,
+                runId,
+                feature,
+                workflow: "agent_turn",
+                strategy: "fts",
+                status: "failed",
+                selectedCount: 0,
+                sourceCount: 0,
+                conflictCount: 0,
+                durationMs: Math.max(0, Date.now() - retrievalStartedAt)
+              })
             )
           )
-          const contextItems = yield* retrieve
-          request = {
-            protocolVersion: 1,
-            runId,
-            ownerId: claimed.ownerId,
-            correlationId: claimed.correlationId,
-            sourceMessageId: claimed.messageId,
-            localTime,
-            timeZone: ownerSettings.timeZone,
-            locale: ownerSettings.locale,
-            hourCycle: ownerSettings.hourCycle,
-            userText: claimed.text,
-            contextItems,
-            allowedTools,
-            limits: {
-              maxTurns: 4,
-              maxToolCalls: 4,
-              maxDurationMs: 60_000,
-              maxResponseCharacters: 1_200
-            }
+        )
+        const contextItems = yield* retrieve
+        request = {
+          protocolVersion: 1,
+          runId,
+          ownerId: claimed.ownerId,
+          correlationId: claimed.correlationId,
+          sourceMessageId: claimed.messageId,
+          ...(conversationTurn === undefined
+            ? {}
+            : {
+                conversationTurnId: conversationTurn.turnId,
+                conversationTurnRevision: conversationTurn.revision,
+                currentTurnMessages: turnMessages.map((message) => ({
+                  sourceMessageId: message.messageId,
+                  text: message.text
+                }))
+              }),
+          localTime,
+          timeZone: ownerSettings.timeZone,
+          locale: ownerSettings.locale,
+          hourCycle: ownerSettings.hourCycle,
+          userText: claimed.text,
+          contextItems,
+          allowedTools,
+          limits: {
+            maxTurns: 4,
+            maxToolCalls: 4,
+            maxDurationMs: conversationTiming.modelDurationMs,
+            maxResponseCharacters: 1_200
           }
         }
+      }
 
-        const agentRequest = request
-        const feature = featureForTools(agentRequest.allowedTools)
-        const created = yield* withBobSpan(
-          {
-            name: "bob.agent_run.persist",
-            correlationId: claimed.correlationId,
-            runId: agentRequest.runId,
-            feature
-          },
-          stored === undefined
-            ? promiseEffect(() => composition.services.runs.create(agentRequest, claimed.eventId))
-            : Effect.succeed({ runId: agentRequest.runId, duplicate: true })
-        )
+      const agentRequest = request
+      const feature = featureForTools(agentRequest.allowedTools)
+      const created = yield* withBobSpan(
+        {
+          name: "bob.agent_run.persist",
+          correlationId: claimed.correlationId,
+          runId: agentRequest.runId,
+          feature
+        },
+        stored === undefined
+          ? promiseEffect(() => composition.services.runs.create(agentRequest, claimed.eventId))
+          : Effect.succeed({ runId: agentRequest.runId, duplicate: true })
+      )
 
-        if (stored?.status === "completed" || stored?.status === "failed") {
-          const recovered: AgentRunResult = {
-            protocolVersion: 1,
-            runId: agentRequest.runId,
-            correlationId: agentRequest.correlationId,
-            status: "failed",
-            errorCode: "provider",
-            model: composition.config.BOB_MODEL,
-            durationMs: 0,
-            inputTokens: 0,
-            outputTokens: 0,
-            toolCalls: 0
-          }
-          yield* createAndPublishOutbox(
-            bindings,
-            composition,
-            {
-              correlationId: claimed.correlationId,
-              feature,
-              runId: agentRequest.runId
-            },
-            () =>
-              composition.services.runs.completeWithResponse(recovered, {
-                channelId: claimed.channelId,
-                text: "I recovered your request, but its prior response was unavailable. I made no automatic provider change.",
-                reasonCode: "agent_recovery",
-                ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
-              })
+      if (
+        conversationTurn !== undefined &&
+        !(yield* promiseEffect(() =>
+          composition.services.turns.markRunning(
+            conversationTurn.turnId,
+            conversationTurn.revision,
+            agentRequest.runId
           )
+        ))
+      ) {
+        return
+      }
+
+      if (
+        stored?.status === "completed" ||
+        stored?.status === "failed" ||
+        stored?.status === "superseded"
+      ) {
+        if (conversationTurn !== undefined) {
+          const exactTurn =
+            stored.request.conversationTurnId === conversationTurn.turnId &&
+            stored.request.conversationTurnRevision === conversationTurn.revision &&
+            stored.request.sourceMessageId === conversationTurn.latest.messageId
+          if (!exactTurn || stored.outboxId === undefined) return
+          const committed = yield* promiseEffect(() =>
+            composition.services.turns.commitReply(
+              conversationTurn.turnId,
+              conversationTurn.revision,
+              stored.request.runId,
+              stored.outboxId!
+            )
+          )
+          if (committed === "superseded") {
+            yield* releaseSettlingTurn(bindings, composition, {
+              turnId: conversationTurn.turnId,
+              activeRunId: stored.request.runId,
+              ownerId: claimed.ownerId
+            })
+            return
+          }
+          yield* promiseEffect(() =>
+            composition.services.turns.markEventsProcessed(
+              conversationTurn.turnId,
+              conversationTurn.revision
+            )
+          )
+          yield* publishOutbox(bindings, composition, stored.outboxId, {
+            correlationId: claimed.correlationId,
+            feature,
+            runId: stored.request.runId
+          })
           return
         }
-
-        const runClaimed = yield* promiseEffect(() =>
-          composition.services.runs.claim(created.runId, 90_000)
-        )
-        yield* recordDecision({
-          name: "bob.decision.idempotency",
-          code: runClaimed ? "allowed" : "in_progress",
-          outcome: runClaimed ? "allowed" : "skipped"
-        })
-        if (!runClaimed) return
-
-        const result = yield* invokeAgent(agentRequest, composition, feature).pipe(
-          Effect.catch((error) =>
-            Effect.succeed(failedAgentResult(agentRequest, composition.config.BOB_MODEL, error))
-          )
-        )
-        const response = selectAgentResponse(result, agentRequest)
-        yield* promiseEffect(() =>
-          reportAgentUsage(
-            composition.database,
-            composition.services.alerts,
-            composition.services.events,
-            {
-              runId: result.runId,
-              ownerId: claimed.ownerId,
-              correlationId: result.correlationId,
-              feature,
-              provider: "openai-codex",
-              model: result.model,
-              status: result.status,
-              inputTokens: result.inputTokens,
-              outputTokens: result.outputTokens,
-              toolCalls: result.toolCalls,
-              durationMs: result.durationMs,
-              occurredAt: new Date().toISOString()
-            },
-            {
-              runTokens: composition.config.BOB_RUN_TOKEN_BUDGET,
-              dailyTokens: composition.config.BOB_DAILY_TOKEN_BUDGET
-            }
-          )
-        )
-        yield* promiseEffect(() =>
-          reportAgentFailure(composition.services.alerts, claimed.ownerId, result)
-        )
+        const recovered: AgentRunResult = {
+          protocolVersion: 1,
+          runId: agentRequest.runId,
+          correlationId: agentRequest.correlationId,
+          status: "failed",
+          errorCode: "provider",
+          model: composition.config.BOB_MODEL,
+          durationMs: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          toolCalls: 0
+        }
         yield* createAndPublishOutbox(
           bindings,
           composition,
@@ -768,16 +1044,219 @@ export async function processInbound(
             runId: agentRequest.runId
           },
           () =>
-            composition.services.runs.completeWithResponse(result, {
+            composition.services.runs.completeWithResponse(recovered, {
+              channelId: claimed.channelId,
+              text: "I recovered your request, but its prior response was unavailable. I made no automatic provider change.",
+              reasonCode: "agent_recovery",
+              ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
+            })
+        )
+        return
+      }
+
+      const runAttemptId = yield* promiseEffect(() =>
+        composition.services.runs.claim(created.runId, conversationTiming.activeLeaseMs)
+      )
+      yield* recordDecision({
+        name: "bob.decision.idempotency",
+        code: runAttemptId === undefined ? "in_progress" : "allowed",
+        outcome: runAttemptId === undefined ? "skipped" : "allowed"
+      })
+      if (runAttemptId === undefined) return
+
+      if (
+        conversationTurn !== undefined &&
+        (yield* promiseEffect(() =>
+          composition.services.turns.currentRevision(conversationTurn.turnId)
+        )) !== conversationTurn.revision
+      ) {
+        yield* suppressStaleAgentAttempt(bindings, composition, {
+          result: cancelledAgentResult(agentRequest, composition.config.BOB_MODEL),
+          attemptId: runAttemptId,
+          turn: conversationTurn,
+          feature
+        })
+        return
+      }
+
+      const result = yield* invokeAgent(agentRequest, composition, feature).pipe(
+        Effect.catch((error) =>
+          Effect.succeed(failedAgentResult(agentRequest, composition.config.BOB_MODEL, error))
+        )
+      )
+      if (
+        conversationTurn !== undefined &&
+        (yield* promiseEffect(() =>
+          composition.services.turns.currentRevision(conversationTurn.turnId)
+        )) !== conversationTurn.revision
+      ) {
+        yield* suppressStaleAgentAttempt(bindings, composition, {
+          result,
+          attemptId: runAttemptId,
+          turn: conversationTurn,
+          feature
+        })
+        return
+      }
+      const response = selectAgentResponse(result, agentRequest)
+      yield* promiseEffect(() =>
+        reportAgentUsage(
+          composition.database,
+          composition.services.alerts,
+          composition.services.events,
+          {
+            runId: result.runId,
+            ownerId: claimed.ownerId,
+            correlationId: result.correlationId,
+            feature,
+            provider: "openai-codex",
+            model: result.model,
+            status: result.status,
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            toolCalls: result.toolCalls,
+            durationMs: result.durationMs,
+            occurredAt: new Date().toISOString()
+          },
+          {
+            runTokens: composition.config.BOB_RUN_TOKEN_BUDGET,
+            dailyTokens: composition.config.BOB_DAILY_TOKEN_BUDGET
+          }
+        )
+      )
+      yield* promiseEffect(() =>
+        reportAgentFailure(composition.services.alerts, claimed.ownerId, result)
+      )
+      const outboxTelemetry = {
+        correlationId: claimed.correlationId,
+        feature,
+        runId: agentRequest.runId
+      }
+      if (conversationTurn === undefined) {
+        yield* createAndPublishOutbox(bindings, composition, outboxTelemetry, () =>
+          composition.services.runs.completeWithResponse(
+            result,
+            {
               channelId: claimed.channelId,
               text: response.text,
               reasonCode: response.reasonCode,
               ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
-            })
+            },
+            undefined,
+            runAttemptId
+          )
         )
-      })
-    )
+        return
+      }
+      const outboxId = yield* withBobSpan(
+        {
+          name: "bob.outbox.create",
+          correlationId: claimed.correlationId,
+          feature,
+          runId: agentRequest.runId
+        },
+        promiseEffect(() =>
+          composition.services.runs.completeWithResponse(
+            result,
+            {
+              channelId: claimed.channelId,
+              text: response.text,
+              reasonCode: response.reasonCode,
+              ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
+            },
+            {
+              conversationTurnId: conversationTurn.turnId,
+              conversationTurnRevision: conversationTurn.revision
+            },
+            runAttemptId
+          )
+        )
+      )
+      if (outboxId === undefined) return
+      const committed = yield* withBobSpan(
+        {
+          name: "bob.reply.commit",
+          correlationId: claimed.correlationId,
+          runId: agentRequest.runId,
+          conversationTurnId: conversationTurn.turnId,
+          conversationRevision: conversationTurn.revision,
+          feature
+        },
+        promiseEffect(() =>
+          composition.services.turns.commitReply(
+            conversationTurn.turnId,
+            conversationTurn.revision,
+            agentRequest.runId,
+            outboxId
+          )
+        )
+      )
+      if (committed === "superseded") {
+        yield* withBobSpan(
+          {
+            name: "bob.reply.suppress",
+            correlationId: claimed.correlationId,
+            runId: agentRequest.runId,
+            conversationTurnId: conversationTurn.turnId,
+            conversationRevision: conversationTurn.revision,
+            feature
+          },
+          Effect.gen(function* () {
+            yield* recordDecision({
+              name: "bob.decision.steering",
+              code: "stale_reply_suppressed",
+              outcome: "applied",
+              conversationRevision: conversationTurn.revision
+            })
+            yield* releaseSettlingTurn(bindings, composition, {
+              turnId: conversationTurn.turnId,
+              activeRunId: agentRequest.runId,
+              ownerId: claimed.ownerId
+            })
+          })
+        )
+        return
+      }
+      yield* promiseEffect(() =>
+        composition.services.turns.markEventsProcessed(
+          conversationTurn.turnId,
+          conversationTurn.revision
+        )
+      )
+      yield* publishOutbox(bindings, composition, outboxId, outboxTelemetry)
+    })
   )
+  const workflow =
+    conversationTurn === undefined
+      ? process
+      : withBobSpan(
+          {
+            name: "bob.turn.reflect",
+            correlationId,
+            conversationTurnId: conversationTurn.turnId,
+            conversationRevision: conversationTurn.revision,
+            feature: "assistant"
+          },
+          process
+        )
+  const program = withTraceparentParent(traceparent, workflow)
 
   await runTelemetry(program.pipe(Effect.ensuring(Effect.suspend(() => interactionStop))))
+}
+
+export function processConversationTurn(
+  snapshot: ConversationTurnSnapshot,
+  bindings: CoreBindings,
+  composition: CoreComposition,
+  telemetry?: CoreWorkflowTelemetryRunner
+): Promise<void> {
+  return processInbound(
+    snapshot.latest.eventId,
+    bindings,
+    composition,
+    snapshot.latest.traceparent,
+    telemetry,
+    snapshot.latest.correlationId,
+    snapshot
+  )
 }

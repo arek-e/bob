@@ -79,3 +79,25 @@ export function selectTools(text: string): readonly ToolName[] {
     ? ["memory_search", "memory_propose", "memory_correct"]
     : ["memory_search", "memory_correct"]
 }
+
+function isShortListFollowUp(text: string): boolean {
+  const normalized = text
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?]+$/gu, "")
+    .trim()
+  return /^(?:please\s+)?(?:list(?:\s+them)?|show(?:\s+(?:me|them))?|lista|visa(?:\s+dem)?)$/u.test(
+    normalized
+  )
+}
+
+export function selectToolsWithPriorCapabilities(
+  text: string,
+  priorCapabilities: readonly ToolName[]
+): readonly ToolName[] {
+  const selected = new Set(selectTools(text))
+  if (isShortListFollowUp(text) && priorCapabilities.includes("reminder_list")) {
+    selected.add("reminder_list")
+  }
+  return [...selected]
+}

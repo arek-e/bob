@@ -167,6 +167,45 @@ describe("agent response selection", () => {
     })
   })
 
+  it("requires grounding for personal recall in an earlier turn message", () => {
+    const targetMessageId = "00000000-0000-4000-8000-000000000004"
+
+    expect(
+      selectAgentResponse(
+        {
+          protocolVersion: 1,
+          runId: request.runId,
+          correlationId: request.correlationId,
+          status: "completed",
+          responseText: "You train on Tuesdays.",
+          sourceIds: [],
+          conflict: "none",
+          model: "test-model",
+          durationMs: 10,
+          inputTokens: 10,
+          outputTokens: 5,
+          toolCalls: 0
+        },
+        {
+          ...request,
+          sourceMessageId: targetMessageId,
+          userText: "List",
+          currentTurnMessages: [
+            {
+              sourceMessageId: "00000000-0000-4000-8000-000000000005",
+              text: "What is my training routine?"
+            },
+            { sourceMessageId: targetMessageId, text: "List" }
+          ],
+          allowedTools: ["memory_search"]
+        }
+      )
+    ).toEqual({
+      text: "I do not have a supported record for that.",
+      reasonCode: "agent_boundary_fallback"
+    })
+  })
+
   it("allows an uncited greeting despite loaded personal context", () => {
     const groundedRequest = {
       ...request,

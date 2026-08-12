@@ -1,6 +1,8 @@
 import type { AgentRunRequest } from "@bob/contracts/agent"
 
 import {
+  conversationMutationIdempotencyKey,
+  isReadOnlyToolName,
   toolDefinitionForName,
   type ToolCommand,
   type ToolInputSchema,
@@ -27,6 +29,32 @@ function toPiParameters(inputSchema: ToolInputSchema): TSchema {
   return Type.Unsafe(inputSchema)
 }
 
+export async function toolCommandForCall(
+  request: AgentRunRequest,
+  name: ToolName,
+  toolCallId: string,
+  params: unknown
+): Promise<ToolCommand> {
+  const argumentsValue = params as ToolCommand["arguments"]
+  const idempotencyKey =
+    request.conversationTurnId !== undefined && !isReadOnlyToolName(name)
+      ? await conversationMutationIdempotencyKey({
+          ownerId: request.ownerId,
+          conversationTurnId: request.conversationTurnId,
+          toolName: name,
+          arguments: argumentsValue
+        })
+      : `${request.runId}:${toolCallId}`
+  return {
+    runId: request.runId,
+    toolCallId,
+    idempotencyKey,
+    ownerId: request.ownerId,
+    name,
+    arguments: argumentsValue
+  }
+}
+
 export function createTools(options: ToolFactoryOptions): BobPiTool[] {
   return options.request.allowedTools.flatMap((name) => {
     if (options.request.sourceMessageId === undefined && sourceBoundMutationTools.has(name)) {
@@ -41,14 +69,7 @@ export function createTools(options: ToolFactoryOptions): BobPiTool[] {
       parameters: toPiParameters(definition.inputSchema),
       executionMode: "sequential",
       async execute(toolCallId, params) {
-        return options.execute({
-          runId: options.request.runId,
-          toolCallId,
-          idempotencyKey: `${options.request.runId}:${toolCallId}`,
-          ownerId: options.request.ownerId,
-          name,
-          arguments: params as ToolCommand["arguments"]
-        })
+        return options.execute(await toolCommandForCall(options.request, name, toolCallId, params))
       }
     }
     return [tool]

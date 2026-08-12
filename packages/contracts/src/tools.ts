@@ -577,6 +577,75 @@ export function toolDefinitionForName(name: ToolName): ToolDefinition | undefine
   return toolDefinitions[name]
 }
 
+const readOnlyToolNames = new Set<ToolName>([
+  "reminder_list",
+  "memory_search",
+  "journal_search_metadata",
+  "gym_list",
+  "equipment_list",
+  "exercise_list",
+  "routine_get",
+  "workout_last",
+  "workout_history",
+  "settings_get",
+  "connection_list"
+])
+
+export function isReadOnlyToolName(name: ToolName): boolean {
+  return readOnlyToolNames.has(name)
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value === "boolean" || typeof value === "number") {
+    return JSON.stringify(value)
+  }
+  if (typeof value === "string") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>
+    return `{${Object.keys(record)
+      .toSorted()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .join(",")}}`
+  }
+  throw new Error("Tool mutation identity contains an unsupported value")
+}
+
+function semanticMutationArguments(
+  toolName: ToolName,
+  argumentsValue: typeof JsonObject.Type
+): typeof JsonObject.Type {
+  if (toolName !== "reminder_create") return argumentsValue
+  return Object.fromEntries(
+    Object.entries(argumentsValue).filter(([key]) => key !== "sourceMessageId")
+  )
+}
+
+/** Build one opaque mutation key for a conversation turn and canonical arguments. */
+export async function conversationMutationIdempotencyKey(input: {
+  readonly ownerId: string
+  readonly conversationTurnId: string
+  readonly toolName: ToolName
+  readonly arguments: typeof JsonObject.Type
+}): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(
+      canonicalJson({
+        version: 1,
+        ownerId: input.ownerId,
+        conversationTurnId: input.conversationTurnId,
+        toolName: input.toolName,
+        arguments: semanticMutationArguments(input.toolName, input.arguments)
+      })
+    )
+  )
+  const hash = [...new Uint8Array(digest)]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("")
+  return `turn-mutation:sha256:${hash}`
+}
+
 export const ToolCommand = Schema.Struct({
   runId: Uuid,
   toolCallId: NonEmptyText,

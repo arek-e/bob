@@ -1,12 +1,21 @@
 import type { ContextItem } from "@bob/contracts/agent"
 
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm"
-import { Context, Layer } from "effect"
+import { isReadOnlyToolName, ToolName, ToolResult } from "@bob/contracts/tools"
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, sql } from "drizzle-orm"
+import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
 
-import { users } from "../conversations/schema.ts"
+import {
+  agentRuns,
+  conversationTurnMessages,
+  conversationTurns,
+  messages,
+  toolCalls,
+  users
+} from "../conversations/schema.ts"
+import { deliveryAttempts, outboxMessages } from "../delivery/schema.ts"
 import { buildFtsQuery } from "../memory/retrieval.ts"
 import { factEvidence, factRevisions, facts } from "../memory/schema.ts"
 import { reminderOccurrences, reminders } from "../reminders/schema.ts"
@@ -16,6 +25,8 @@ export interface ContextBuildRequest {
   readonly ownerId: string
   readonly channelId: string
   readonly currentMessageId: string
+  readonly currentConversationTurnId?: string
+  readonly currentConversationTurnRevision?: number
   readonly currentUserText: string
   readonly localTime: string
   readonly timeZone: string
@@ -24,6 +35,7 @@ export interface ContextBuildRequest {
 export interface ContextStore {
   /** String arguments remain valid for storage-safety tests and old snapshots. */
   build(input: ContextBuildRequest | string, channelId?: string): Promise<readonly ContextItem[]>
+  recentToolCapabilities(input: ContextBuildRequest): Promise<readonly ToolName[]>
 }
 
 export const ContextStore = Context.Service<ContextStore>("bob/ContextStore")
@@ -66,6 +78,14 @@ function isTrainingTask(text: string): boolean {
     text
   )
 }
+
+function hasJournalIntent(text: string): boolean {
+  return /\b(?:journal(?:ing)?|diar(?:y|ies)|dagbok(?:en|ar|arna)?|dagboks)\b|\/journal\//iu.test(
+    text
+  )
+}
+
+const safeFollowUpCapabilities = new Set<ToolName>(["reminder_list"])
 
 function contextKind(sourceType: string): ContextItem["kind"] {
   if (sourceType === "reminder") return "reminder"
@@ -167,6 +187,186 @@ export function makeContextStore(
       })
     }
     return items
+  }
+
+  async function conversationContext(
+    input: ContextBuildRequest,
+    key: CryptoKey
+  ): Promise<ContextItem[]> {
+    if (input.currentConversationTurnId === undefined) return []
+    const deliveredAfter = new Date(Date.parse(input.localTime) - 15 * 60_000).toISOString()
+    const priorTurns = await database
+      .select({
+        id: conversationTurns.id,
+        revision: conversationTurns.revision,
+        outboundMessageId: outboxMessages.messageId,
+        deliveredAt: deliveryAttempts.updatedAt
+      })
+      .from(conversationTurns)
+      .innerJoin(
+        outboxMessages,
+        and(
+          eq(outboxMessages.id, conversationTurns.replyOutboxId),
+          eq(outboxMessages.conversationTurnId, conversationTurns.id),
+          eq(outboxMessages.conversationTurnRevision, conversationTurns.revision),
+          eq(outboxMessages.state, "accepted")
+        )
+      )
+      .innerJoin(
+        deliveryAttempts,
+        and(
+          eq(deliveryAttempts.outboxId, outboxMessages.id),
+          eq(deliveryAttempts.state, "delivered")
+        )
+      )
+      .where(
+        and(
+          eq(conversationTurns.userId, input.ownerId),
+          eq(conversationTurns.channelId, input.channelId),
+          eq(conversationTurns.status, "replied"),
+          ne(conversationTurns.id, input.currentConversationTurnId),
+          gte(deliveryAttempts.updatedAt, deliveredAfter),
+          lte(deliveryAttempts.updatedAt, input.localTime)
+        )
+      )
+      .orderBy(desc(deliveryAttempts.updatedAt))
+      .limit(4)
+
+    const newestItems: ContextItem[] = []
+    let messageCount = 0
+    for (const turn of priorTurns) {
+      const remainingMessages = 6 - messageCount
+      if (remainingMessages < 2) break
+      const inboundRows = await database
+        .select({
+          id: messages.id,
+          textCiphertext: messages.textCiphertext,
+          textIv: messages.textIv,
+          occurredAt: messages.occurredAt
+        })
+        .from(conversationTurnMessages)
+        .innerJoin(messages, eq(messages.id, conversationTurnMessages.messageId))
+        .where(
+          and(
+            eq(conversationTurnMessages.turnId, turn.id),
+            lte(conversationTurnMessages.revision, turn.revision),
+            eq(messages.direction, "inbound")
+          )
+        )
+        .orderBy(asc(conversationTurnMessages.ordinal))
+      const [outbound] = await database
+        .select({
+          id: messages.id,
+          textCiphertext: messages.textCiphertext,
+          textIv: messages.textIv,
+          occurredAt: messages.occurredAt
+        })
+        .from(messages)
+        .where(and(eq(messages.id, turn.outboundMessageId), eq(messages.direction, "outbound")))
+        .limit(1)
+      if (inboundRows.length === 0 || outbound === undefined) continue
+      const inboundTexts = await Promise.all(
+        inboundRows.map((message) =>
+          protection.decryptText(key, {
+            ciphertext: message.textCiphertext,
+            iv: message.textIv
+          })
+        )
+      )
+      const outboundText = await protection.decryptText(key, {
+        ciphertext: outbound.textCiphertext,
+        iv: outbound.textIv
+      })
+      if ([...inboundTexts, outboundText].some(hasJournalIntent)) continue
+      const selectedInboundRows = inboundRows.slice(-(remainingMessages - 1))
+      const selectedInboundTexts = inboundTexts.slice(-(remainingMessages - 1))
+      messageCount += selectedInboundRows.length + 1
+      newestItems.push({
+        kind: "conversation",
+        text: [
+          ...selectedInboundTexts.map((text) => `Owner: ${text}`),
+          `Bob: ${outboundText}`
+        ].join("\n"),
+        instruction: false,
+        conflict: false,
+        sources: [
+          ...selectedInboundRows.map((message) => ({
+            sourceId: message.id,
+            sourceLabel: `owner message ${sourceDay(message.occurredAt)}`,
+            occurredAt: message.occurredAt
+          })),
+          {
+            sourceId: outbound.id,
+            sourceLabel: `Bob reply ${sourceDay(outbound.occurredAt)}`,
+            occurredAt: outbound.occurredAt
+          }
+        ]
+      })
+    }
+    return boundContextItems(newestItems, 2_400, itemCharacterBudget).toReversed()
+  }
+
+  async function toolReceiptContext(
+    input: ContextBuildRequest,
+    key: CryptoKey
+  ): Promise<ContextItem[]> {
+    if (
+      input.currentConversationTurnId === undefined ||
+      input.currentConversationTurnRevision === undefined
+    ) {
+      return []
+    }
+    const rows = await database
+      .select({
+        id: toolCalls.id,
+        toolName: toolCalls.toolName,
+        resultJson: toolCalls.resultJson,
+        completedAt: toolCalls.completedAt,
+        createdAt: toolCalls.createdAt
+      })
+      .from(toolCalls)
+      .innerJoin(agentRuns, eq(agentRuns.id, toolCalls.runId))
+      .where(
+        and(
+          eq(agentRuns.userId, input.ownerId),
+          eq(agentRuns.conversationTurnId, input.currentConversationTurnId),
+          lt(agentRuns.conversationTurnRevision, input.currentConversationTurnRevision),
+          inArray(toolCalls.status, ["completed", "failed", "unknown"]),
+          isNotNull(toolCalls.resultJson)
+        )
+      )
+      .orderBy(desc(toolCalls.completedAt), desc(toolCalls.createdAt))
+      .limit(8)
+
+    const receipts: ContextItem[] = []
+    for (const row of rows.toReversed()) {
+      try {
+        const envelope = JSON.parse(row.resultJson!) as { ciphertext: string; iv: string }
+        const result = Schema.decodeUnknownSync(ToolResult)(
+          JSON.parse(await protection.decryptText(key, envelope)) as unknown
+        )
+        const toolName = Schema.decodeUnknownSync(ToolName)(row.toolName)
+        const completedAt = row.completedAt ?? row.createdAt
+        receipts.push({
+          kind: "conversation",
+          text: `Earlier revision tool receipt. Do not repeat an identical completed mutation. ${JSON.stringify(
+            { toolName, readOnly: isReadOnlyToolName(toolName), result }
+          )}`,
+          instruction: false,
+          conflict: false,
+          sources: [
+            {
+              sourceId: row.id,
+              sourceLabel: `${toolName} receipt ${sourceDay(completedAt)}`,
+              occurredAt: completedAt
+            }
+          ]
+        })
+      } catch {
+        // A malformed private receipt is skipped. It never changes the workflow.
+      }
+    }
+    return receipts
   }
 
   async function lexicalContext(ownerId: string, text: string): Promise<ContextItem[]> {
@@ -341,6 +541,79 @@ export function makeContextStore(
   }
 
   return {
+    async recentToolCapabilities(input) {
+      if (input.currentConversationTurnId === undefined) return []
+      const deliveredAfter = new Date(Date.parse(input.localTime) - 15 * 60_000).toISOString()
+      const [latestTurn] = await database
+        .select({
+          id: conversationTurns.id,
+          revision: conversationTurns.revision
+        })
+        .from(conversationTurns)
+        .innerJoin(
+          outboxMessages,
+          and(
+            eq(outboxMessages.id, conversationTurns.replyOutboxId),
+            eq(outboxMessages.conversationTurnId, conversationTurns.id),
+            eq(outboxMessages.conversationTurnRevision, conversationTurns.revision),
+            eq(outboxMessages.state, "accepted")
+          )
+        )
+        .innerJoin(
+          deliveryAttempts,
+          and(
+            eq(deliveryAttempts.outboxId, outboxMessages.id),
+            eq(deliveryAttempts.state, "delivered")
+          )
+        )
+        .where(
+          and(
+            eq(conversationTurns.userId, input.ownerId),
+            eq(conversationTurns.channelId, input.channelId),
+            eq(conversationTurns.status, "replied"),
+            ne(conversationTurns.id, input.currentConversationTurnId),
+            gte(deliveryAttempts.updatedAt, deliveredAfter),
+            lte(deliveryAttempts.updatedAt, input.localTime)
+          )
+        )
+        .orderBy(desc(deliveryAttempts.updatedAt))
+        .limit(1)
+
+      if (latestTurn === undefined) return []
+      const rows = await database
+        .select({ toolName: toolCalls.toolName })
+        .from(agentRuns)
+        .innerJoin(
+          toolCalls,
+          and(eq(toolCalls.runId, agentRuns.id), eq(toolCalls.status, "completed"))
+        )
+        .where(
+          and(
+            eq(agentRuns.status, "completed"),
+            eq(agentRuns.conversationTurnId, latestTurn.id),
+            eq(agentRuns.conversationTurnRevision, latestTurn.revision)
+          )
+        )
+        .orderBy(desc(toolCalls.completedAt), desc(toolCalls.createdAt))
+        .limit(4)
+      const capabilities: ToolName[] = []
+      for (const row of rows) {
+        try {
+          const toolName = Schema.decodeUnknownSync(ToolName)(row.toolName)
+          if (
+            isReadOnlyToolName(toolName) &&
+            safeFollowUpCapabilities.has(toolName) &&
+            !capabilities.includes(toolName)
+          ) {
+            capabilities.push(toolName)
+          }
+        } catch {
+          // Unknown tool metadata cannot expand the next run's capability set.
+        }
+      }
+      return Object.freeze(capabilities)
+    },
+
     async build(inputOrOwnerId, legacyChannelId) {
       const input: ContextBuildRequest =
         typeof inputOrOwnerId === "string"
@@ -355,6 +628,8 @@ export function makeContextStore(
           : inputOrOwnerId
       const key = await ownerKey(input.ownerId)
       const profile = await profileContext(input.ownerId, key)
+      const conversation = await conversationContext(input, key)
+      const toolReceipts = await toolReceiptContext(input, key)
       const taskItems = isReminderTask(input.currentUserText)
         ? await reminderContext(input.ownerId, key)
         : isTrainingTask(input.currentUserText)
@@ -362,16 +637,25 @@ export function makeContextStore(
           : []
       const lexical = await lexicalContext(input.ownerId, input.currentUserText)
       const seenSources = new Set(
-        [...profile, ...taskItems].flatMap((item) => item.sources.map((source) => source.sourceId))
+        [...profile, ...conversation, ...toolReceipts, ...taskItems].flatMap((item) =>
+          item.sources.map((source) => source.sourceId)
+        )
       )
       const uniqueLexical = lexical.filter((item) =>
         item.sources.every((source) => !seenSources.has(source.sourceId))
       )
-      return boundContextItems(
-        [...profile, ...taskItems, ...uniqueLexical],
+      const boundedReceipts = boundContextItems(
+        toolReceipts.toReversed(),
         totalCharacterBudget,
         itemCharacterBudget
+      ).toReversed()
+      const receiptCharacters = boundedReceipts.reduce((total, item) => total + item.text.length, 0)
+      const otherItems = boundContextItems(
+        [...profile, ...conversation, ...taskItems, ...uniqueLexical],
+        totalCharacterBudget - receiptCharacters,
+        itemCharacterBudget
       )
+      return Object.freeze([...otherItems, ...boundedReceipts])
     }
   }
 }

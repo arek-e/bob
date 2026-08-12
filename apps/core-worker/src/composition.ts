@@ -22,11 +22,17 @@ import {
   makeConversationStore,
   conversationStoreLayer
 } from "./modules/conversations/store.ts"
+import { conversationTiming } from "./modules/conversations/timing.ts"
 import {
   ToolExecutor,
   makeToolExecutor,
   toolExecutorLayer
 } from "./modules/conversations/tool-executor.ts"
+import {
+  ConversationTurnStore,
+  conversationTurnStoreLayer,
+  makeConversationTurnStore
+} from "./modules/conversations/turn-store.ts"
 import { DeliveryStore, makeDeliveryStore, deliveryStoreLayer } from "./modules/delivery/store.ts"
 import { JournalStore, makeJournalStore, journalStoreLayer } from "./modules/journal/store.ts"
 import { MemoryStore, makeMemoryStore, memoryStoreLayer } from "./modules/memory/store.ts"
@@ -124,6 +130,7 @@ export function composeCore(bindings: CoreBindings) {
     ownerTimeZone: config.OWNER_TIME_ZONE,
     dataKeyVersion: activeKekVersion
   })
+  const turns = makeConversationTurnStore(database, protection, { ownerId: config.OWNER_ID })
   const alerts = makeAlertStore(database, {})
   const delivery = makeDeliveryStore(database, protection, {})
   const reminders = makeReminderStore(database, protection, {
@@ -147,11 +154,15 @@ export function composeCore(bindings: CoreBindings) {
     database,
     protection,
     { reminders, memory, journal, training, settings, connections },
-    { uiBaseUrl: config.UI_BASE_URL }
+    {
+      uiBaseUrl: config.UI_BASE_URL,
+      toolLeaseMs: conversationTiming.mutationSettleLeaseMs
+    }
   )
 
   const layer = Layer.mergeAll(
     conversationStoreLayer(conversations),
+    conversationTurnStoreLayer(turns),
     alertStoreLayer(alerts),
     deliveryStoreLayer(delivery),
     reminderStoreLayer(reminders),
@@ -170,6 +181,7 @@ export function composeCore(bindings: CoreBindings) {
       return {
         events,
         conversations: yield* ConversationStore,
+        turns: yield* ConversationTurnStore,
         alerts: yield* AlertStore,
         delivery: yield* DeliveryStore,
         reminders: yield* ReminderStore,

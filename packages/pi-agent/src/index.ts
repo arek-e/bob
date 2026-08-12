@@ -1,6 +1,11 @@
-import type { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/contracts/agent"
-import type { ToolCommand, ToolResult } from "@bob/contracts/tools"
+import type {
+  AgentRunRequest,
+  AgentRunResult,
+  AgentSteerResult,
+  DeviceLoginEvent
+} from "@bob/contracts/agent"
 
+import { isReadOnlyToolName, type ToolCommand, type ToolResult } from "@bob/contracts/tools"
 import { featureForToolName, featureForTools } from "@bob/observability/attribution"
 import {
   annotateModelUsage,
@@ -40,7 +45,7 @@ import {
   validateAssistantResponse,
   type TrustedToolSource
 } from "./response-safety.ts"
-import { createTools } from "./tools.ts"
+import { createTools, toolCommandForCall } from "./tools.ts"
 
 registerBunOAuthFlows()
 
@@ -66,8 +71,9 @@ export interface AuthStatus {
 }
 
 export interface BobPiAgent {
-  runTurnEffect(request: AgentRunRequest): Effect.Effect<AgentRunResult>
-  runTurn(request: AgentRunRequest): Promise<AgentRunResult>
+  runTurnEffect(request: AgentRunRequest, signal?: AbortSignal): Effect.Effect<AgentRunResult>
+  runTurn(request: AgentRunRequest, signal?: AbortSignal): Promise<AgentRunResult>
+  requestSteer(runId: AgentRunRequest["runId"]): AgentSteerResult
   getAuthStatus(): Promise<AuthStatus>
   startDeviceLogin(): Promise<DeviceLoginEvent>
 }
@@ -89,6 +95,22 @@ type ModelLoopResult =
   | FailedCompletion
 
 type LoopIteration = ModelLoopResult | { readonly type: "continue" }
+
+interface ActiveModelCall {
+  readonly abort: () => void
+}
+
+interface ActiveToolCall {
+  readonly readOnly: boolean
+  readonly abort: () => void
+}
+
+interface ActiveRunState {
+  steerRequested: boolean
+  phase: "checkpoint" | "model" | "tool"
+  modelCall?: ActiveModelCall
+  toolCall?: ActiveToolCall
+}
 
 class ModelCompletionFailure {
   readonly _tag = "ModelCompletionFailure"
@@ -209,11 +231,31 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
 
   const now = options.now ?? Date.now
   let activeLogin: Promise<unknown> | undefined
+  const activeRuns = new Map<AgentRunRequest["runId"], ActiveRunState>()
 
-  const runTurnEffect = (request: AgentRunRequest): Effect.Effect<AgentRunResult> =>
+  const runTurnEffect = (
+    request: AgentRunRequest,
+    externalSignal?: AbortSignal
+  ): Effect.Effect<AgentRunResult> =>
     Effect.suspend(() => {
       const startedAt = now()
-      const controller = new AbortController()
+      const activeRun: ActiveRunState = { steerRequested: false, phase: "checkpoint" }
+      activeRuns.set(request.runId, activeRun)
+      const timeoutController = new AbortController()
+      const runSignal =
+        externalSignal === undefined
+          ? timeoutController.signal
+          : AbortSignal.any([timeoutController.signal, externalSignal])
+      const cancellationRequested = () => runSignal.aborted || activeRun.steerRequested
+      let resolveExternalCancellation!: (completion: FailedCompletion) => void
+      const externalCancellationCompletion = new Promise<FailedCompletion>((resolve) => {
+        resolveExternalCancellation = resolve
+      })
+      const abortFromCaller = () => {
+        resolveExternalCancellation(failedCompletion("aborted", "cancelled"))
+      }
+      if (externalSignal?.aborted === true) abortFromCaller()
+      else externalSignal?.addEventListener("abort", abortFromCaller, { once: true })
       const turnsLimit = Math.max(1, request.limits.maxTurns)
       const feature = featureForTools(request.allowedTools)
       let turns = 0
@@ -234,7 +276,12 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
           .flatMap((item) => item.sources.map((source) => source.sourceId))
       )
       const trustedToolSources = new Map<string, TrustedToolSource>()
-      const needsPersonalGrounding = requiresPersonalGrounding(request.userText)
+      const currentTurnMessages = request.currentTurnMessages ?? [
+        { sourceMessageId: request.sourceMessageId, text: request.userText }
+      ]
+      const needsPersonalGrounding = requiresPersonalGrounding(
+        currentTurnMessages.map((message) => message.text).join("\n")
+      )
 
       const result = (
         status: AgentRunResult["status"],
@@ -258,7 +305,10 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         request,
         execute: async (command) => {
           try {
-            return await options.executeTool(command, controller.signal)
+            return await options.executeTool(
+              command,
+              isReadOnlyToolName(command.name) ? runSignal : undefined
+            )
           } catch {
             return safeToolFailure()
           }
@@ -272,13 +322,11 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
       const toolsByName = new Map(tools.map((tool) => [tool.name, tool]))
       const context: Context = {
         systemPrompt: renderSystemPrompt(request),
-        messages: [
-          {
-            role: "user",
-            content: request.userText,
-            timestamp: now()
-          }
-        ],
+        messages: currentTurnMessages.map((message) => ({
+          role: "user" as const,
+          content: message.text,
+          timestamp: now()
+        })),
         tools: modelTools
       }
 
@@ -287,107 +335,133 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         timeout = setTimeout(
           () => {
             timedOut = true
-            controller.abort("agent_run_timeout")
+            timeoutController.abort("agent_run_timeout")
             resolve({ type: "timeout" })
           },
           Math.max(1, request.limits.maxDurationMs)
         )
       })
       const timeoutEffect = Effect.promise(() => timeoutCompletion)
+      const externalCancellationEffect = Effect.promise(() => externalCancellationCompletion)
 
       const completeModel = (
         turnIndex: number,
         turnPhase: BobTurnPhase
       ): Effect.Effect<Completion> =>
-        withBobSpan(
-          {
-            name: "bob.model.complete",
-            correlationId: request.correlationId,
-            runId: request.runId,
-            feature,
-            turnIndex,
-            turnPhase
-          },
-          Effect.gen(function* () {
-            const providerCall = Effect.tryPromise({
-              try: () =>
-                models.completeSimple(model, context, {
-                  maxRetries: 0,
-                  reasoning: "medium",
-                  signal: controller.signal,
-                  timeoutMs: Math.max(1, request.limits.maxDurationMs)
-                }),
-              catch: (error) => error
-            }).pipe(
-              Effect.map((message) => ({ type: "message" as const, message })),
-              Effect.catch((error) => {
-                const errorMessage = error instanceof Error ? error.message : undefined
-                const errorCode =
-                  error instanceof Error && error.name === "AbortError"
-                    ? "cancelled"
-                    : classifyProviderError(errorMessage)
-                return Effect.succeed(failedCompletion(errorMessage, errorCode))
-              })
-            )
-            const completion = yield* Effect.raceFirst(providerCall, timeoutEffect)
-            if (completion.type === "message") {
-              const completionToolCalls = toolCallsFromAssistant(completion.message).length
-              inputTokens += completion.message.usage.input
-              outputTokens += completion.message.usage.output
-              yield* annotateModelUsage({
-                provider: "openai-codex",
-                model: options.model,
-                inputTokens: completion.message.usage.input,
-                outputTokens: completion.message.usage.output,
-                toolCallCount: completionToolCalls
-              })
-              if (completion.message.stopReason === "error") {
-                yield* recordDecision({
-                  name: "bob.decision.loop",
-                  code: "provider_failure",
-                  outcome: "denied"
+        Effect.suspend(() => {
+          const modelController = new AbortController()
+          const modelSignal = AbortSignal.any([runSignal, modelController.signal])
+          const modelCall: ActiveModelCall = {
+            abort: () => {
+              modelController.abort("newer_turn_revision")
+              resolveExternalCancellation(failedCompletion("aborted", "cancelled"))
+            }
+          }
+          activeRun.modelCall = modelCall
+          activeRun.phase = "model"
+          return withBobSpan(
+            {
+              name: "bob.model.complete",
+              correlationId: request.correlationId,
+              runId: request.runId,
+              feature,
+              turnIndex,
+              turnPhase
+            },
+            Effect.gen(function* () {
+              const providerCall = Effect.tryPromise({
+                try: () =>
+                  models.completeSimple(model, context, {
+                    maxRetries: 0,
+                    reasoning: "medium",
+                    signal: modelSignal,
+                    timeoutMs: Math.max(1, request.limits.maxDurationMs)
+                  }),
+                catch: (error) => error
+              }).pipe(
+                Effect.map((message) => ({ type: "message" as const, message })),
+                Effect.catch((error) => {
+                  const errorMessage = error instanceof Error ? error.message : undefined
+                  const errorCode =
+                    error instanceof Error && error.name === "AbortError"
+                      ? "cancelled"
+                      : classifyProviderError(errorMessage)
+                  return Effect.succeed(failedCompletion(errorMessage, errorCode))
                 })
-                return yield* Effect.fail(
-                  new ModelCompletionFailure(failedCompletion(completion.message.errorMessage))
-                )
-              }
-              if (completion.message.stopReason === "aborted") {
+              )
+              const completion = yield* Effect.raceFirst(
+                Effect.raceFirst(providerCall, timeoutEffect),
+                externalCancellationEffect
+              )
+              if (completion.type === "message") {
+                const completionToolCalls = toolCallsFromAssistant(completion.message).length
+                inputTokens += completion.message.usage.input
+                outputTokens += completion.message.usage.output
+                yield* annotateModelUsage({
+                  provider: "openai-codex",
+                  model: options.model,
+                  inputTokens: completion.message.usage.input,
+                  outputTokens: completion.message.usage.output,
+                  toolCallCount: completionToolCalls
+                })
+                if (completion.message.stopReason === "error") {
+                  yield* recordDecision({
+                    name: "bob.decision.loop",
+                    code: "provider_failure",
+                    outcome: "denied"
+                  })
+                  return yield* Effect.fail(
+                    new ModelCompletionFailure(failedCompletion(completion.message.errorMessage))
+                  )
+                }
+                if (completion.message.stopReason === "aborted") {
+                  yield* recordDecision({
+                    name: "bob.decision.loop",
+                    code: "timeout",
+                    outcome: "applied"
+                  })
+                  return yield* Effect.fail(
+                    new ModelCompletionFailure(
+                      failedCompletion(completion.message.errorMessage ?? "aborted", "cancelled")
+                    )
+                  )
+                }
+              } else if (completion.type === "timeout") {
                 yield* recordDecision({
                   name: "bob.decision.loop",
                   code: "timeout",
                   outcome: "applied"
                 })
-                return yield* Effect.fail(
-                  new ModelCompletionFailure(
-                    failedCompletion(completion.message.errorMessage ?? "aborted", "cancelled")
-                  )
-                )
+                return yield* Effect.fail(new ModelCompletionFailure(completion))
+              } else {
+                yield* recordDecision({
+                  name: "bob.decision.loop",
+                  code: "provider_failure",
+                  outcome: "denied"
+                })
+                return yield* Effect.fail(new ModelCompletionFailure(completion))
               }
-            } else if (completion.type === "timeout") {
-              yield* recordDecision({
-                name: "bob.decision.loop",
-                code: "timeout",
-                outcome: "applied"
+              return completion
+            })
+          ).pipe(
+            Effect.catchTag("ModelCompletionFailure", (failure) =>
+              Effect.succeed(failure.completion)
+            ),
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (activeRun.modelCall === modelCall) {
+                  delete activeRun.modelCall
+                  activeRun.phase = "checkpoint"
+                }
               })
-              return yield* Effect.fail(new ModelCompletionFailure(completion))
-            } else {
-              yield* recordDecision({
-                name: "bob.decision.loop",
-                code: "provider_failure",
-                outcome: "denied"
-              })
-              return yield* Effect.fail(new ModelCompletionFailure(completion))
-            }
-            return completion
-          })
-        ).pipe(
-          Effect.catchTag("ModelCompletionFailure", (failure) => Effect.succeed(failure.completion))
-        )
+            )
+          )
+        })
 
       const executeCall = (
         tool: (typeof tools)[number],
         call: ToolCall,
-        parameters: unknown
+        command: ToolCommand
       ): Effect.Effect<
         | {
             readonly type: "completed"
@@ -395,26 +469,32 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
             readonly message: ToolResultMessage<ToolResult>
           }
         | { readonly type: "timeout" }
+        | FailedCompletion
       > => {
+        if (cancellationRequested()) {
+          return Effect.succeed(failedCompletion("aborted", "cancelled"))
+        }
         toolCalls += 1
         executedToolNames.add(call.name)
-        const command = {
-          runId: request.runId,
-          toolCallId: call.id,
-          idempotencyKey: `${request.runId}:${call.id}`,
-          ownerId: request.ownerId,
-          name: tool.label,
-          arguments: parameters as ToolCommand["arguments"]
-        } as ToolCommand
+        const readOnly = isReadOnlyToolName(command.name)
+        const toolController = readOnly ? new AbortController() : undefined
+        const toolSignal =
+          toolController === undefined
+            ? undefined
+            : AbortSignal.any([runSignal, toolController.signal])
+        const activeToolCall: ActiveToolCall = {
+          readOnly,
+          abort: () => toolController?.abort("newer_turn_revision")
+        }
         const fallbackExecution = Effect.tryPromise({
-          try: () => options.executeTool(command, controller.signal),
+          try: () => options.executeTool(command, toolSignal),
           catch: (error) => error
         })
         const executeToolEffect = options.executeToolEffect
         const executionEffect =
           executeToolEffect === undefined
             ? fallbackExecution
-            : Effect.suspend(() => executeToolEffect(command, controller.signal))
+            : Effect.suspend(() => executeToolEffect(command, toolSignal))
         const completed = (toolResult: ToolResult) => {
           toolResults.push(toolResult)
           if (
@@ -443,18 +523,23 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
             message: toolResultMessage(call, toolResult, now)
           }
         }
-        return withBobSpan(
-          {
-            name: "bob.tool.invoke",
-            correlationId: request.correlationId,
-            runId: request.runId,
-            feature: featureForToolName(call.name),
-            toolName: call.name,
-            toolCallIndex: toolCalls
-          },
-          Effect.gen(function* () {
-            const execution = yield* Effect.raceFirst(
-              executionEffect.pipe(
+        return Effect.suspend(() => {
+          if (cancellationRequested()) {
+            return Effect.succeed(failedCompletion("aborted", "cancelled"))
+          }
+          activeRun.toolCall = activeToolCall
+          activeRun.phase = "tool"
+          return withBobSpan(
+            {
+              name: "bob.tool.invoke",
+              correlationId: request.correlationId,
+              runId: request.runId,
+              feature: featureForToolName(call.name),
+              toolName: call.name,
+              toolCallIndex: toolCalls
+            },
+            Effect.gen(function* () {
+              const completedExecution = executionEffect.pipe(
                 Effect.catchCause((cause) =>
                   Cause.hasInterrupts(cause)
                     ? Effect.interrupt
@@ -468,25 +553,42 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
                       })
                 ),
                 Effect.map((toolResult) => ({ type: "result" as const, result: toolResult }))
-              ),
-              timeoutEffect
+              )
+              const execution = yield* readOnly
+                ? Effect.raceFirst(
+                    Effect.raceFirst(completedExecution, timeoutEffect),
+                    externalCancellationEffect
+                  )
+                : completedExecution
+              if (execution.type === "timeout" || execution.type === "failed") {
+                if (execution.type === "failed") return execution
+                return yield* Effect.fail(new ToolInvocationTimeout())
+              }
+              return completed(execution.result)
+            })
+          ).pipe(
+            Effect.catchTag("ToolInvocationFailure", (failure) =>
+              Effect.succeed(completed(failure.result))
+            ),
+            Effect.catchTag("ToolInvocationTimeout", () =>
+              Effect.succeed({ type: "timeout" as const })
+            ),
+            Effect.ensuring(
+              Effect.sync(() => {
+                if (activeRun.toolCall === activeToolCall) {
+                  delete activeRun.toolCall
+                  activeRun.phase = "checkpoint"
+                }
+              })
             )
-            if (execution.type === "timeout") {
-              return yield* Effect.fail(new ToolInvocationTimeout())
-            }
-            return completed(execution.result)
-          })
-        ).pipe(
-          Effect.catchTag("ToolInvocationFailure", (failure) =>
-            Effect.succeed(completed(failure.result))
-          ),
-          Effect.catchTag("ToolInvocationTimeout", () =>
-            Effect.succeed({ type: "timeout" as const })
           )
-        )
+        })
       }
 
       const runPrimaryTurn = (): Effect.Effect<LoopIteration> => {
+        if (cancellationRequested()) {
+          return Effect.succeed(failedCompletion("aborted", "cancelled"))
+        }
         if (turns >= turnsLimit) {
           return Effect.gen(function* () {
             yield* recordDecision({
@@ -602,9 +704,21 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
                 code: "allowed",
                 outcome: "allowed"
               })
-              const execution = yield* executeCall(tool, call, parameters)
-              if (execution.type === "timeout") return execution
+              if (cancellationRequested()) {
+                return failedCompletion("aborted", "cancelled")
+              }
+              const command = yield* Effect.promise(() =>
+                toolCommandForCall(request, tool.label, call.id, parameters)
+              )
+              if (cancellationRequested()) {
+                return failedCompletion("aborted", "cancelled")
+              }
+              const execution = yield* executeCall(tool, call, command)
+              if (execution.type !== "completed") return execution
               context.messages.push(execution.message)
+              if (externalSignal?.aborted === true || activeRun.steerRequested) {
+                return failedCompletion("aborted", "cancelled")
+              }
               if (!execution.result.ok) {
                 yield* recordDecision({
                   name: "bob.decision.policy",
@@ -681,7 +795,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         Effect.gen(function* () {
           const initial = yield* validateOutput(structuredOutputText(message))
           if (initial.ok) return completeResult(initial.value)
-          if (turns >= turnsLimit || controller.signal.aborted) {
+          if (turns >= turnsLimit || runSignal.aborted || activeRun.steerRequested) {
             yield* recordDecision({
               name: "bob.decision.output",
               code: "invalid_output",
@@ -805,6 +919,13 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
           })
         }
         const loop = yield* runModelLoop()
+        if (activeRun.steerRequested) {
+          return result(
+            "cancelled",
+            deterministicToolResultFallback(toolResults, request.limits.maxResponseCharacters),
+            "cancelled"
+          )
+        }
         if (loop.type === "timeout" || timedOut) {
           return result(
             "cancelled",
@@ -891,6 +1012,8 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         Effect.ensuring(
           Effect.sync(() => {
             if (timeout !== undefined) clearTimeout(timeout)
+            externalSignal?.removeEventListener("abort", abortFromCaller)
+            if (activeRuns.get(request.runId) === activeRun) activeRuns.delete(request.runId)
           })
         )
       )
@@ -898,7 +1021,20 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
 
   return {
     runTurnEffect,
-    runTurn: (request) => Effect.runPromise(runTurnEffect(request)),
+    runTurn: (request, signal) => Effect.runPromise(runTurnEffect(request, signal)),
+    requestSteer: (runId) => {
+      const active = activeRuns.get(runId)
+      if (active === undefined) return { status: "missing" }
+      active.steerRequested = true
+      if (active.phase === "model" && active.modelCall !== undefined) {
+        active.modelCall.abort()
+        return { status: "aborted_model" }
+      }
+      if (active.phase === "tool" && active.toolCall?.readOnly === true) {
+        active.toolCall.abort()
+      }
+      return { status: "queued" }
+    },
 
     async getAuthStatus() {
       const credential = await options.credentials.read("openai-codex")
@@ -957,8 +1093,12 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
   }
 }
 
-export function runTurn(agent: BobPiAgent, request: AgentRunRequest): Promise<AgentRunResult> {
-  return agent.runTurn(request)
+export function runTurn(
+  agent: BobPiAgent,
+  request: AgentRunRequest,
+  signal?: AbortSignal
+): Promise<AgentRunResult> {
+  return agent.runTurn(request, signal)
 }
 
 export function getAuthStatus(agent: BobPiAgent): Promise<AuthStatus> {

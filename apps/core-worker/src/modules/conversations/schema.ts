@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm"
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
 
 export const users = sqliteTable("users", {
@@ -105,21 +106,80 @@ export const inboundEvents = sqliteTable(
   ]
 )
 
+export const conversationTurns = sqliteTable(
+  "conversation_turns",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    status: text("status", {
+      enum: ["collecting", "running", "settling", "committing", "replied"]
+    }).notNull(),
+    revision: integer("revision").notNull(),
+    latestInboundEventId: text("latest_inbound_event_id").notNull(),
+    latestMessageId: text("latest_message_id").notNull(),
+    activeRunId: text("active_run_id"),
+    activeRunRevision: integer("active_run_revision"),
+    claimedRevision: integer("claimed_revision"),
+    claimedAt: text("claimed_at"),
+    claimExpiresAt: text("claim_expires_at"),
+    quietUntil: text("quiet_until").notNull(),
+    burstExpiresAt: text("burst_expires_at").notNull(),
+    replyOutboxId: text("reply_outbox_id"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    repliedAt: text("replied_at")
+  },
+  (table) => [
+    uniqueIndex("conversation_turns_open_uq")
+      .on(table.userId, table.channelId)
+      .where(sql`${table.status} <> 'replied'`),
+    index("conversation_turns_channel_status_idx").on(
+      table.userId,
+      table.channelId,
+      table.status,
+      table.updatedAt
+    )
+  ]
+)
+
+export const conversationTurnMessages = sqliteTable(
+  "conversation_turn_messages",
+  {
+    turnId: text("turn_id").notNull(),
+    inboundEventId: text("inbound_event_id").notNull(),
+    messageId: text("message_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    revision: integer("revision").notNull(),
+    traceparent: text("traceparent"),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    uniqueIndex("conversation_turn_messages_event_uq").on(table.inboundEventId),
+    uniqueIndex("conversation_turn_messages_ordinal_uq").on(table.turnId, table.ordinal),
+    index("conversation_turn_messages_order_idx").on(table.turnId, table.ordinal)
+  ]
+)
+
 export const agentRuns = sqliteTable(
   "agent_runs",
   {
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
     inboundEventId: text("inbound_event_id").notNull(),
+    conversationTurnId: text("turn_id"),
+    conversationTurnRevision: integer("turn_revision"),
+    targetMessageId: text("target_message_id"),
     correlationId: text("correlation_id").notNull(),
     inputSnapshotJson: text("input_snapshot_json").notNull(),
     inputHash: text("input_hash").notNull(),
     status: text("status", {
-      enum: ["pending", "claimed", "executing", "completed", "failed", "unknown"]
+      enum: ["pending", "claimed", "executing", "completed", "failed", "unknown", "superseded"]
     }).notNull(),
     model: text("model").notNull(),
     claimedAt: text("claimed_at"),
     claimExpiresAt: text("claim_expires_at"),
+    activeAttemptId: text("active_attempt_id"),
     completedAt: text("completed_at"),
     createdAt: text("created_at").notNull()
   },

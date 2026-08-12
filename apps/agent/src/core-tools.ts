@@ -1,4 +1,4 @@
-import { ToolResult, type ToolCommand } from "@bob/contracts/tools"
+import { isReadOnlyToolName, ToolResult, type ToolCommand } from "@bob/contracts/tools"
 import { currentBobCorrelationId, Telemetry } from "@bob/observability/effect"
 import { injectCurrentTraceparent } from "@bob/observability/propagation"
 import { Context, Effect, Layer, Option, Schema } from "effect"
@@ -40,14 +40,16 @@ export function createCoreToolClient(options: {
           })
           const result = yield* Effect.tryPromise({
             try: async () => {
+              const requestSignal = isReadOnlyToolName(command.name)
+                ? signal === undefined
+                  ? AbortSignal.timeout(15_000)
+                  : AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+                : (signal ?? AbortSignal.timeout(65_000))
               const response = await request(`${options.coreUrl}/internal/tools`, {
                 method: "POST",
                 headers,
                 body: JSON.stringify(command),
-                signal:
-                  signal === undefined
-                    ? AbortSignal.timeout(15_000)
-                    : AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+                signal: requestSignal
               })
               if (!response.ok) throw new Error(`Core tool request failed: ${response.status}`)
               return Schema.decodeUnknownSync(ToolResult)(await response.json())

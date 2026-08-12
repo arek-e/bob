@@ -12,6 +12,7 @@ afterEach(() => {
 
 describe("core model failure fallback", () => {
   it("uses approved context without another tool action", async () => {
+    const attemptId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db96"
     const completeWithResponse = vi.fn(async () => "018e6f65-4d55-7a1b-8df4-4ee15ea1db95")
     const toolExecute = vi.fn()
     vi.stubGlobal(
@@ -72,7 +73,7 @@ describe("core model failure fallback", () => {
             runId: request.runId,
             duplicate: false
           })),
-          claim: vi.fn(async () => true),
+          claim: vi.fn(async () => attemptId),
           completeWithResponse
         },
         tools: { execute: toolExecute },
@@ -92,7 +93,9 @@ describe("core model failure fallback", () => {
         channelId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db92",
         text: "I could not use the assistant. From your saved records: Routine Full Body A: 1. Leg press (3 sets × 10 reps). [routine 2026-08-09]",
         reasonCode: "agent_degraded_recall"
-      }
+      },
+      undefined,
+      attemptId
     )
     expect(toolExecute).not.toHaveBeenCalled()
   })

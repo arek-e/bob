@@ -1,5 +1,5 @@
 import { AgentRunRequest, type AgentRunResult } from "@bob/contracts/agent"
-import { and, eq, isNull, lt, or } from "drizzle-orm"
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
@@ -10,8 +10,20 @@ import { agentRunAttempts, agentRuns, inboundEvents, messages, users } from "./s
 
 export interface StoredAgentRun {
   readonly request: AgentRunRequest
-  readonly status: "pending" | "claimed" | "executing" | "completed" | "failed" | "unknown"
+  readonly status:
+    | "pending"
+    | "claimed"
+    | "executing"
+    | "completed"
+    | "failed"
+    | "unknown"
+    | "superseded"
   readonly outboxId?: string
+}
+
+export interface ConversationRunCompletion {
+  readonly conversationTurnId: string
+  readonly conversationTurnRevision: number
 }
 
 export interface AgentRunStore {
@@ -20,7 +32,7 @@ export interface AgentRunStore {
     inboundEventId: string
   ): Promise<{ runId: string; duplicate: boolean }>
   loadForInbound(inboundEventId: string): Promise<StoredAgentRun | undefined>
-  claim(runId: string, leaseMs: number): Promise<boolean>
+  claim(runId: string, leaseMs: number): Promise<string | undefined>
   completeWithResponse(
     result: AgentRunResult,
     response: {
@@ -28,8 +40,11 @@ export interface AgentRunStore {
       readonly text: string
       readonly reasonCode: string
       readonly replyToMessageHandle?: string
-    }
-  ): Promise<string>
+    },
+    conversation?: ConversationRunCompletion,
+    attemptId?: string
+  ): Promise<string | undefined>
+  completeWithoutResponse(result: AgentRunResult, attemptId: string): Promise<boolean>
   channelForRun(runId: string): Promise<string | undefined>
 }
 
@@ -89,6 +104,9 @@ export function makeAgentRunStore(
         id: request.runId,
         userId: request.ownerId,
         inboundEventId,
+        conversationTurnId: request.conversationTurnId,
+        conversationTurnRevision: request.conversationTurnRevision,
+        targetMessageId: request.sourceMessageId,
         correlationId: request.correlationId,
         inputSnapshotJson: envelope,
         inputHash: hash,
@@ -134,12 +152,14 @@ export function makeAgentRunStore(
 
     async claim(runId, leaseMs) {
       const at = now()
+      const attemptId = randomUuid()
       const [claimed] = await database
         .update(agentRuns)
         .set({
           status: "claimed",
           claimedAt: at.toISOString(),
-          claimExpiresAt: new Date(at.getTime() + leaseMs).toISOString()
+          claimExpiresAt: new Date(at.getTime() + leaseMs).toISOString(),
+          activeAttemptId: attemptId
         })
         .where(
           and(
@@ -152,7 +172,7 @@ export function makeAgentRunStore(
           )
         )
         .returning({ id: agentRuns.id })
-      if (claimed === undefined) return false
+      if (claimed === undefined) return undefined
       const attempts = await database
         .select({ id: agentRunAttempts.id })
         .from(agentRunAttempts)
@@ -161,19 +181,25 @@ export function makeAgentRunStore(
         database
           .update(agentRuns)
           .set({ status: "executing" })
-          .where(and(eq(agentRuns.id, runId), eq(agentRuns.status, "claimed"))),
+          .where(
+            and(
+              eq(agentRuns.id, runId),
+              eq(agentRuns.status, "claimed"),
+              eq(agentRuns.activeAttemptId, attemptId)
+            )
+          ),
         database.insert(agentRunAttempts).values({
-          id: randomUuid(),
+          id: attemptId,
           runId,
           attemptNumber: attempts.length + 1,
           status: "executing",
           startedAt: at.toISOString()
         })
       ])
-      return true
+      return attemptId
     },
 
-    async completeWithResponse(result, response) {
+    async completeWithResponse(result, response, conversation, attemptId) {
       const at = now().toISOString()
       const idempotencyKey = `run:${result.runId}:reply`
       const [existingOutbox] = await database
@@ -181,68 +207,184 @@ export function makeAgentRunStore(
         .from(outboxMessages)
         .where(eq(outboxMessages.idempotencyKey, idempotencyKey))
         .limit(1)
-      if (existingOutbox !== undefined) return existingOutbox.id
-      const [run] = await database
-        .select({ ownerId: agentRuns.userId, inboundEventId: agentRuns.inboundEventId })
+      if (existingOutbox !== undefined) {
+        return attemptId === undefined ? existingOutbox.id : undefined
+      }
+      const [loadedRun] = await database
+        .select({
+          ownerId: agentRuns.userId,
+          inboundEventId: agentRuns.inboundEventId,
+          status: agentRuns.status
+        })
         .from(agentRuns)
         .where(eq(agentRuns.id, result.runId))
         .limit(1)
-      if (run === undefined) throw new Error("Agent run not found")
-      const owner = await ownerKey(run.ownerId)
+      if (loadedRun === undefined) throw new Error("Agent run not found")
+      const status = result.status === "completed" ? "completed" : "failed"
+      if (
+        attemptId === undefined &&
+        loadedRun.status !== "completed" &&
+        loadedRun.status !== "failed"
+      ) {
+        return undefined
+      }
+      const owner = await ownerKey(loadedRun.ownerId)
       const encrypted = await protection.encryptText(owner.key, response.text)
       const messageId = randomUuid()
       const outboxId = randomUuid()
-      const [attempt] = await database
-        .select({ id: agentRunAttempts.id })
-        .from(agentRunAttempts)
-        .where(and(eq(agentRunAttempts.runId, result.runId), isNull(agentRunAttempts.finishedAt)))
-        .limit(1)
-      const status = result.status === "completed" ? "completed" : "failed"
-      const statements = [
-        database
-          .update(agentRuns)
-          .set({ status, completedAt: at, claimExpiresAt: null, model: result.model })
-          .where(eq(agentRuns.id, result.runId)),
-        database.insert(messages).values({
-          id: messageId,
-          userId: run.ownerId,
-          channelId: response.channelId,
-          direction: "outbound",
-          textCiphertext: encrypted.ciphertext,
-          textIv: encrypted.iv,
-          dataKeyVersion: owner.version,
-          occurredAt: at,
-          createdAt: at
-        }),
-        database.insert(outboxMessages).values({
-          id: outboxId,
-          userId: run.ownerId,
-          channelId: response.channelId,
-          messageId,
-          reasonCode: response.reasonCode,
-          correlationId: result.correlationId,
-          idempotencyKey,
-          replyToProviderMessageHandle: response.replyToMessageHandle,
-          state: "pending",
-          createdAt: at
-        }),
-        database
-          .update(inboundEvents)
-          .set({ processedAt: at, claimExpiresAt: null })
-          .where(eq(inboundEvents.id, run.inboundEventId))
-      ] as const
-      if (attempt !== undefined) {
+      const activeAttempt =
+        attemptId === undefined
+          ? undefined
+          : and(
+              eq(agentRuns.id, result.runId),
+              eq(agentRuns.status, "executing"),
+              eq(agentRuns.activeAttemptId, attemptId)
+            )
+      const messageInsert =
+        activeAttempt === undefined
+          ? database.insert(messages).values({
+              id: messageId,
+              userId: loadedRun.ownerId,
+              channelId: response.channelId,
+              direction: "outbound",
+              textCiphertext: encrypted.ciphertext,
+              textIv: encrypted.iv,
+              dataKeyVersion: owner.version,
+              occurredAt: at,
+              createdAt: at
+            })
+          : database.insert(messages).select(sql`
+              SELECT
+                ${messageId},
+                ${agentRuns.userId},
+                ${response.channelId},
+                ${"outbound"},
+                ${encrypted.ciphertext},
+                ${encrypted.iv},
+                ${owner.version},
+                ${at},
+                ${at}
+              FROM ${agentRuns}
+              WHERE ${activeAttempt}
+            `)
+      const outboxInsert =
+        activeAttempt === undefined
+          ? database.insert(outboxMessages).values({
+              id: outboxId,
+              userId: loadedRun.ownerId,
+              channelId: response.channelId,
+              messageId,
+              reasonCode: response.reasonCode,
+              correlationId: result.correlationId,
+              idempotencyKey,
+              replyToProviderMessageHandle: response.replyToMessageHandle,
+              conversationTurnId: conversation?.conversationTurnId,
+              conversationTurnRevision: conversation?.conversationTurnRevision,
+              state: "pending",
+              createdAt: at
+            })
+          : database.insert(outboxMessages).select(sql`
+              SELECT
+                ${outboxId},
+                ${agentRuns.userId},
+                ${response.channelId},
+                ${messageId},
+                ${response.reasonCode},
+                ${result.correlationId},
+                ${idempotencyKey},
+                NULL,
+                NULL,
+                ${response.replyToMessageHandle ?? null},
+                ${conversation?.conversationTurnId ?? null},
+                ${conversation?.conversationTurnRevision ?? null},
+                ${"pending"},
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                ${at}
+              FROM ${agentRuns}
+              WHERE ${activeAttempt}
+            `)
+      const statements = [messageInsert, outboxInsert] as const
+      const legacyStatements =
+        conversation === undefined
+          ? [
+              database
+                .update(inboundEvents)
+                .set({ processedAt: at, claimExpiresAt: null })
+                .where(eq(inboundEvents.id, loadedRun.inboundEventId))
+            ]
+          : []
+      if (attemptId !== undefined) {
         await database.batch([
           ...statements,
+          ...legacyStatements,
+          database
+            .update(agentRuns)
+            .set({
+              status,
+              completedAt: at,
+              claimExpiresAt: null,
+              activeAttemptId: null,
+              model: result.model
+            })
+            .where(activeAttempt!),
           database
             .update(agentRunAttempts)
             .set({ status, errorCode: result.errorCode, finishedAt: at })
-            .where(eq(agentRunAttempts.id, attempt.id))
+            .where(
+              and(
+                eq(agentRunAttempts.id, attemptId),
+                eq(agentRunAttempts.runId, result.runId),
+                isNull(agentRunAttempts.finishedAt)
+              )
+            )
         ])
       } else {
-        await database.batch(statements)
+        await database.batch([...statements, ...legacyStatements])
       }
-      return outboxId
+      const [committedOutbox] = await database
+        .select({ id: outboxMessages.id })
+        .from(outboxMessages)
+        .where(eq(outboxMessages.idempotencyKey, idempotencyKey))
+        .limit(1)
+      return committedOutbox?.id
+    },
+
+    async completeWithoutResponse(result, attemptId) {
+      const at = now().toISOString()
+      const [superseded] = await database
+        .update(agentRuns)
+        .set({
+          status: "superseded",
+          completedAt: at,
+          claimExpiresAt: null,
+          activeAttemptId: null,
+          model: result.model
+        })
+        .where(
+          and(
+            eq(agentRuns.id, result.runId),
+            eq(agentRuns.status, "executing"),
+            eq(agentRuns.activeAttemptId, attemptId)
+          )
+        )
+        .returning({ id: agentRuns.id })
+      if (superseded === undefined) return false
+      await database.batch([
+        database
+          .update(agentRunAttempts)
+          .set({ status: "superseded", errorCode: result.errorCode, finishedAt: at })
+          .where(
+            and(
+              eq(agentRunAttempts.id, attemptId),
+              eq(agentRunAttempts.runId, result.runId),
+              isNull(agentRunAttempts.finishedAt)
+            )
+          )
+      ])
+      return true
     },
 
     async channelForRun(runId) {

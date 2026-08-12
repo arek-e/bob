@@ -18,6 +18,11 @@ export interface AgentResponseDecision {
     | "agent_failure"
 }
 
+function requestRequiresPersonalGrounding(request: AgentRunRequest): boolean {
+  const orderedTurnText = request.currentTurnMessages?.map((message) => message.text).join("\n")
+  return requiresPersonalGrounding(orderedTurnText ?? request.userText)
+}
+
 function safeBoundaryText(text: string | undefined, maximum: number): string | undefined {
   if (
     text === undefined ||
@@ -53,7 +58,7 @@ function groundedBoundaryText(
       approved.set(source.sourceId, { label: source.sourceLabel, conflict: false })
     }
   }
-  if (requiresPersonalGrounding(request.userText) && result.sourceIds.length === 0) {
+  if (requestRequiresPersonalGrounding(request) && result.sourceIds.length === 0) {
     return undefined
   }
   const selected = result.sourceIds.map((sourceId) => approved.get(sourceId))
@@ -82,14 +87,14 @@ export function selectAgentResponse(
     if (
       usesLegacyResultContract &&
       result.toolCalls === 0 &&
-      !requiresPersonalGrounding(request.userText)
+      !requestRequiresPersonalGrounding(request)
     ) {
       const legacyText = safeBoundaryText(result.responseText, request.limits.maxResponseCharacters)
       if (legacyText !== undefined) {
         return { text: legacyText, reasonCode: "agent_boundary_fallback" }
       }
     }
-    if (requiresPersonalGrounding(request.userText)) {
+    if (requestRequiresPersonalGrounding(request)) {
       return {
         text: noSupportedRecordFallback(request.locale),
         reasonCode: "agent_boundary_fallback"

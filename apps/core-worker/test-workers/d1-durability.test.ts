@@ -409,7 +409,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const settings = makeOwnerSettingsStore(database, protection, {
       defaultTimeZone: "Europe/Stockholm"
     })
@@ -553,12 +553,89 @@ describe("D1 migrations and durability", () => {
       limits: { maxTurns: 4, maxToolCalls: 4, maxDurationMs: 60_000, maxResponseCharacters: 1_200 }
     }
     await store.create(request, inboundId)
-    expect(await store.claim(runId, 1_000)).toBe(true)
+    const firstAttemptId = await store.claim(runId, 1_000)
+    expect(firstAttemptId).toMatch(/^[0-9a-f-]{36}$/)
     current = new Date("2026-08-11T10:00:02.000Z")
-    expect(await store.claim(runId, 1_000)).toBe(true)
+    const secondAttemptId = await store.claim(runId, 1_000)
+    expect(secondAttemptId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(secondAttemptId).not.toBe(firstAttemptId)
     expect((await store.loadForInbound(inboundId))?.request).toEqual(request)
     const [run] = await database.select().from(agentRuns)
     expect(run?.status).toBe("executing")
+  })
+
+  it("does not let an expired agent attempt commit after its replacement", async () => {
+    const { database, protection } = await seedRunData()
+    let current = new Date("2026-08-11T10:00:00.000Z")
+    let next = 40
+    const store = makeAgentRunStore(database, protection, {
+      now: () => current,
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const request = {
+      protocolVersion: 1 as const,
+      runId,
+      ownerId,
+      correlationId,
+      sourceMessageId: messageId,
+      localTime: current.toISOString(),
+      timeZone: "Europe/Stockholm",
+      userText: "Hello",
+      contextItems: [],
+      allowedTools: [],
+      limits: {
+        maxTurns: 4,
+        maxToolCalls: 4,
+        maxDurationMs: 60_000,
+        maxResponseCharacters: 1_200
+      }
+    }
+    const result = {
+      protocolVersion: 1 as const,
+      runId,
+      correlationId,
+      status: "completed" as const,
+      responseText: "Current response",
+      model: "test-model",
+      durationMs: 1,
+      inputTokens: 1,
+      outputTokens: 1,
+      toolCalls: 0
+    }
+    await store.create(request, inboundId)
+    const expiredAttemptId = await store.claim(runId, 1_000)
+    expect(expiredAttemptId).toBeDefined()
+    current = new Date("2026-08-11T10:00:02.000Z")
+    const currentAttemptId = await store.claim(runId, 1_000)
+    expect(currentAttemptId).toBeDefined()
+
+    expect(
+      await store.completeWithResponse(
+        { ...result, responseText: "Stale response" },
+        { channelId, text: "Stale response", reasonCode: "agent_reply" },
+        undefined,
+        expiredAttemptId!
+      )
+    ).toBeUndefined()
+    expect(await database.select().from(outboxMessages)).toHaveLength(0)
+
+    const outboxId = await store.completeWithResponse(
+      result,
+      { channelId, text: "Current response", reasonCode: "agent_reply" },
+      undefined,
+      currentAttemptId!
+    )
+    expect(outboxId).toBeDefined()
+    expect(await database.select().from(outboxMessages)).toHaveLength(1)
+    expect(
+      await store.completeWithResponse(
+        { ...result, responseText: "Late stale response" },
+        { channelId, text: "Late stale response", reasonCode: "agent_reply" },
+        undefined,
+        expiredAttemptId!
+      )
+    ).toBeUndefined()
+    expect(await database.select().from(outboxMessages)).toHaveLength(1)
   })
 
   it("commits the completed run and response outbox in one batch", async () => {
@@ -589,7 +666,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    await store.claim(runId, 90_000)
+    const attemptId = await store.claim(runId, 90_000)
     const outboxId = await store.completeWithResponse(
       {
         protocolVersion: 1,
@@ -603,7 +680,9 @@ describe("D1 migrations and durability", () => {
         outputTokens: 1,
         toolCalls: 0
       },
-      { channelId, text: "Hello back", reasonCode: "agent_reply" }
+      { channelId, text: "Hello back", reasonCode: "agent_reply" },
+      undefined,
+      attemptId!
     )
     const [run] = await database.select().from(agentRuns)
     const [outbox] = await database.select().from(outboxMessages)
@@ -1476,7 +1555,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     let next = 2_000
     const memory = makeMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
@@ -1835,7 +1914,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const leaseCommand = {
       runId,
       toolCallId: "tool-call-1",
@@ -1911,7 +1990,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const executor = makeToolExecutor(
       database,
       protection,
@@ -2106,7 +2185,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const training = makeTrainingStore(database, {})
     const gymId = await training.createGym(ownerId, "Home gym", "lookup:gym:create")
     const exerciseId = await training.createExercise(
@@ -2216,7 +2295,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const training = makeTrainingStore(database, {})
     const executor = makeToolExecutor(
       database,
@@ -2358,7 +2437,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const training = makeTrainingStore(database, {})
     const executor = makeToolExecutor(
       database,

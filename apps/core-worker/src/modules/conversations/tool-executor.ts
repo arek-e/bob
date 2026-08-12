@@ -1,6 +1,12 @@
 import { AgentRunRequest } from "@bob/contracts/agent"
-import { ToolCommand, type ToolName, type ToolResult } from "@bob/contracts/tools"
-import { and, eq, isNull, lt, or, sql } from "drizzle-orm"
+import {
+  conversationMutationIdempotencyKey,
+  isReadOnlyToolName,
+  ToolCommand,
+  type ToolName,
+  type ToolResult
+} from "@bob/contracts/tools"
+import { and, eq, exists, isNull, lt, or, sql } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
@@ -20,7 +26,7 @@ import { makeSettingsToolAdapter } from "../settings/tool-adapter.ts"
 import { makeTrainingModule, type TrainingModule } from "../training/module.ts"
 import { makeTrainingProposalStore } from "../training/proposal-store.ts"
 import { makeTrainingToolAdapter } from "../training/tool-adapter.ts"
-import { agentRuns, inboundEvents, toolCalls, users } from "./schema.ts"
+import { agentRuns, conversationTurns, inboundEvents, toolCalls, users } from "./schema.ts"
 import {
   type ToolCommandAdapter,
   type ToolCommandAdapterContext,
@@ -109,6 +115,80 @@ function domainError(): ToolResult {
     code: "domain_error",
     message: "Bob could not complete this action safely."
   }
+}
+
+function conversationPolicyText(request: typeof AgentRunRequest.Type): string {
+  return request.currentTurnMessages?.map((message) => message.text).join("\n") ?? request.userText
+}
+
+const mutationRetractionPhrases = [
+  "never mind",
+  "nevermind",
+  "forget that",
+  "forget it",
+  "cancel that",
+  "cancel it",
+  "scratch that",
+  "ignore that",
+  "do not",
+  "don't",
+  "dont",
+  "can you not",
+  "could you not",
+  "would you not",
+  "stop",
+  "glöm det",
+  "strunta i det",
+  "skippa det",
+  "avbryt",
+  "gör inte",
+  "gör det inte",
+  "kan du inte",
+  "skulle du inte",
+  "nej"
+] as const
+
+const mutationHesitationPhrases = [
+  "wait",
+  "hold on",
+  "hang on",
+  "pause",
+  "vänta",
+  "vänta lite",
+  "håll an"
+] as const
+
+const mutationReviewQuestion =
+  /^(?:what|why|how|when|where|who|which|will|would|can|could|should|does|do|did|is|are|am|vad|varför|hur|när|var|vem|vilken|vilka|kommer|skulle|kan|bör|gör|gjorde|är)\b/u
+const directMutationRequestQuestion = /^(?:(?:can|could|would|will) you|(?:kan|skulle) du)\b/u
+
+function normalizedLatestFragment(request: typeof AgentRunRequest.Type): string {
+  return (request.currentTurnMessages?.at(-1)?.text ?? request.userText)
+    .normalize("NFKC")
+    .toLocaleLowerCase("sv-SE")
+    .replace(/[.!?,;:]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim()
+}
+
+function latestFragmentBlocksMutation(request: typeof AgentRunRequest.Type): boolean {
+  const normalized = normalizedLatestFragment(request)
+  const retracts = mutationRetractionPhrases.some(
+    (phrase) =>
+      normalized === phrase ||
+      normalized.startsWith(`${phrase} `) ||
+      normalized.endsWith(` ${phrase}`) ||
+      normalized.includes(` ${phrase} `)
+  )
+  if (retracts) return true
+  if (
+    mutationHesitationPhrases.some(
+      (phrase) => normalized === phrase || normalized.startsWith(`${phrase} `)
+    )
+  ) {
+    return true
+  }
+  return mutationReviewQuestion.test(normalized) && !directMutationRequestQuestion.test(normalized)
 }
 
 const externalMutationTools = new Set<ToolName>(["connection_link_create"])
@@ -212,6 +292,47 @@ export function makeToolExecutor(
     }
   }
 
+  function conversationTurnAuthority() {
+    return or(
+      and(isNull(agentRuns.conversationTurnId), isNull(agentRuns.conversationTurnRevision)),
+      exists(
+        database
+          .select({ id: conversationTurns.id })
+          .from(conversationTurns)
+          .where(
+            and(
+              eq(conversationTurns.id, agentRuns.conversationTurnId),
+              eq(conversationTurns.revision, agentRuns.conversationTurnRevision),
+              eq(conversationTurns.activeRunId, agentRuns.id),
+              eq(conversationTurns.activeRunRevision, agentRuns.conversationTurnRevision)
+            )
+          )
+      )
+    )
+  }
+
+  async function runCanClaimTool(runId: string): Promise<boolean> {
+    const [run] = await database
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(and(eq(agentRuns.id, runId), conversationTurnAuthority()))
+      .limit(1)
+    return run !== undefined
+  }
+
+  async function conversationTurnForRun(runId: string) {
+    const [run] = await database
+      .select({
+        conversationTurnId: agentRuns.conversationTurnId,
+        ownerId: agentRuns.userId,
+        targetMessageId: agentRuns.targetMessageId
+      })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, runId))
+      .limit(1)
+    return run
+  }
+
   async function dispatch(command: typeof ToolCommand.Type): Promise<ToolResult> {
     const context = await runContext(command.runId)
     if (
@@ -224,9 +345,12 @@ export function makeToolExecutor(
     ) {
       return denied()
     }
+    if (!isReadOnlyToolName(command.name) && latestFragmentBlocksMutation(context.request)) {
+      return denied()
+    }
 
     const run: ToolRunContext = {
-      request: context.request,
+      request: { ...context.request, userText: conversationPolicyText(context.request) },
       channelId: context.channelId,
       messageId: context.messageId
     }
@@ -279,25 +403,70 @@ export function makeToolExecutor(
       training.approveTrainingProposal(ownerId, proposalId, proposalHash, approvalIdempotencyKey),
     async execute(input) {
       const command = Schema.decodeUnknownSync(ToolCommand)(input)
+      const commandRun = await conversationTurnForRun(command.runId)
+      if (commandRun !== undefined && commandRun.ownerId !== command.ownerId) return denied()
+      const stableMutationTurnId =
+        commandRun?.conversationTurnId !== null &&
+        commandRun?.conversationTurnId !== undefined &&
+        !isReadOnlyToolName(command.name)
+          ? commandRun.conversationTurnId
+          : undefined
+      if (
+        stableMutationTurnId !== undefined &&
+        command.name === "reminder_create" &&
+        command.arguments.sourceMessageId !== commandRun?.targetMessageId
+      ) {
+        return denied()
+      }
+      if (
+        stableMutationTurnId !== undefined &&
+        command.idempotencyKey !==
+          (await conversationMutationIdempotencyKey({
+            ownerId: command.ownerId,
+            conversationTurnId: stableMutationTurnId,
+            toolName: command.name,
+            arguments: command.arguments
+          }))
+      ) {
+        return denied()
+      }
       const commandHash = await toolCommandHash(command)
       const [existing] = await database
         .select()
         .from(toolCalls)
         .where(eq(toolCalls.idempotencyKey, command.idempotencyKey))
         .limit(1)
-      const ownsCommand = (row: typeof toolCalls.$inferSelect): boolean =>
-        row.idempotencyKey === command.idempotencyKey &&
-        row.ownerId === command.ownerId &&
-        row.runId === command.runId &&
-        row.toolCallId === command.toolCallId &&
-        row.toolName === command.name &&
-        row.commandHash === commandHash
-      if (existing !== undefined && !ownsCommand(existing)) return denied()
+      const ownsCommand = (
+        row: typeof toolCalls.$inferSelect,
+        rowConversationTurnId: string | undefined
+      ): boolean => {
+        if (
+          row.idempotencyKey !== command.idempotencyKey ||
+          row.ownerId !== command.ownerId ||
+          row.toolName !== command.name
+        ) {
+          return false
+        }
+        if (stableMutationTurnId !== undefined) {
+          return rowConversationTurnId === stableMutationTurnId
+        }
+        return (
+          row.runId === command.runId &&
+          row.toolCallId === command.toolCallId &&
+          row.commandHash === commandHash
+        )
+      }
+      const existingTurnId =
+        existing === undefined
+          ? undefined
+          : ((await conversationTurnForRun(existing.runId))?.conversationTurnId ?? undefined)
+      if (existing !== undefined && !ownsCommand(existing, existingTurnId)) return denied()
       if (existing?.resultJson !== null && existing?.resultJson !== undefined) {
         return decodePrivate<ToolResult>(command.ownerId, existing.resultJson)
       }
 
       const id = randomUuid()
+      const argumentsJson = await encodePrivate(command.ownerId, command.arguments)
       await database
         .insert(toolCalls)
         .values({
@@ -308,7 +477,7 @@ export function makeToolExecutor(
           ownerId: command.ownerId,
           toolName: command.name,
           commandHash,
-          argumentsJson: await encodePrivate(command.ownerId, command.arguments),
+          argumentsJson,
           status: "pending",
           createdAt: now().toISOString()
         })
@@ -323,7 +492,11 @@ export function makeToolExecutor(
           )
         )
         .limit(1)
-      if (winner === undefined || !ownsCommand(winner)) return denied()
+      const winnerTurnId =
+        winner === undefined
+          ? undefined
+          : ((await conversationTurnForRun(winner.runId))?.conversationTurnId ?? undefined)
+      if (winner === undefined || !ownsCommand(winner, winnerTurnId)) return denied()
       if (winner.resultJson !== null) {
         return decodePrivate<ToolResult>(command.ownerId, winner.resultJson)
       }
@@ -370,9 +543,23 @@ export function makeToolExecutor(
       }
 
       const claimToken = randomUuid()
+      const commandRunAuthority = exists(
+        database
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(and(eq(agentRuns.id, command.runId), conversationTurnAuthority()))
+      )
       const [claimed] = await database
         .update(toolCalls)
         .set({
+          ...(stableMutationTurnId === undefined
+            ? {}
+            : {
+                runId: command.runId,
+                toolCallId: command.toolCallId,
+                commandHash,
+                argumentsJson
+              }),
           status: "executing",
           claimToken,
           claimedAt: claimedAt.toISOString(),
@@ -384,11 +571,23 @@ export function makeToolExecutor(
             eq(toolCalls.id, winner.id),
             eq(toolCalls.idempotencyKey, command.idempotencyKey),
             eq(toolCalls.ownerId, command.ownerId),
-            eq(toolCalls.runId, command.runId),
-            eq(toolCalls.toolCallId, command.toolCallId),
             eq(toolCalls.toolName, command.name),
-            eq(toolCalls.commandHash, commandHash),
+            ...(stableMutationTurnId === undefined
+              ? [
+                  eq(toolCalls.runId, command.runId),
+                  eq(toolCalls.toolCallId, command.toolCallId),
+                  eq(toolCalls.commandHash, commandHash)
+                ]
+              : []),
             isNull(toolCalls.resultJson),
+            stableMutationTurnId === undefined
+              ? exists(
+                  database
+                    .select({ id: agentRuns.id })
+                    .from(agentRuns)
+                    .where(and(eq(agentRuns.id, toolCalls.runId), conversationTurnAuthority()))
+                )
+              : commandRunAuthority,
             or(
               eq(toolCalls.status, "pending"),
               and(
@@ -400,12 +599,17 @@ export function makeToolExecutor(
         )
         .returning({ id: toolCalls.id })
       if (claimed === undefined) {
+        if (!(await runCanClaimTool(command.runId))) return denied()
         const [settled] = await database
           .select()
           .from(toolCalls)
           .where(eq(toolCalls.id, winner.id))
           .limit(1)
-        if (settled === undefined || !ownsCommand(settled)) return denied()
+        const settledTurnId =
+          settled === undefined
+            ? undefined
+            : ((await conversationTurnForRun(settled.runId))?.conversationTurnId ?? undefined)
+        if (settled === undefined || !ownsCommand(settled, settledTurnId)) return denied()
         if (settled.resultJson !== null) {
           return decodePrivate<ToolResult>(command.ownerId, settled.resultJson)
         }

@@ -1,7 +1,7 @@
 # Bob context
 
 Status: product and architecture context  
-Updated: 2026-08-11
+Updated: 2026-08-12
 
 ## Product
 
@@ -33,6 +33,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Owner settings:** The owner's time zone, locale, time format, and connection summaries.
 - **Channel event:** One normalized provider event from Sendblue.
 - **Conversation:** Ordered messages for one owner and channel session.
+- **Conversation turn:** One revisioned message burst with one latest response target.
 - **Agent run:** One bounded Bob-owned Pi turn over an immutable input snapshot.
 - **External action attempt:** One durable attempt to change state or call an external system.
 - **Context pack:** Confirmed and policy-cleared data supplied to one agent run.
@@ -68,6 +69,9 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Bob's Pi loop owns the single model and tool loop policy.
 - Pi permanently owns provider streaming, model normalization, and OAuth support.
 - One agent run uses one immutable context pack.
+- One agent run uses one immutable conversation-turn revision.
+- The latest message in a conversation-turn revision is its response target.
+- Only the current turn revision can commit and deliver its reply.
 - The core Worker enforces every domain invariant.
 - The agent never calls Sendblue directly.
 - The Sendblue modules never receive Pi OAuth credentials.
@@ -91,6 +95,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Only confirmed and model-eligible facts enter context packs.
 - Each recalled personal fact includes a source label.
 - Raw journal text does not enter Pi in the first release.
+- Recent conversation context contains only bounded delivered same-channel turns.
+- Journal-intent turns do not enter recent conversation context.
 - Memory extraction creates candidates. It never confirms them.
 - Skills require review and cannot grant new tools.
 - Reminders run outside the model.
@@ -107,3 +113,4 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - [ADR 0005: Varlock environment contracts](docs/adr/0005-varlock-environment-contracts.md)
 - [ADR 0007: Bob-owned Pi AI loop](docs/adr/0007-bob-owned-pi-ai-loop.md)
 - [ADR 0009: Coolify private runtime](docs/adr/0009-coolify-private-runtime.md)
+- [ADR 0010: Revisioned conversation turns](docs/adr/0010-revisioned-conversation-turns.md)

@@ -179,6 +179,287 @@ describe("Bob's direct pi-ai loop", () => {
     modelHarness.reset()
   })
 
+  it("preserves ordered current-turn messages in the model transcript", async () => {
+    modelHarness.state.responses.push(
+      structuredResponse({ responseText: "You have no active reminders." })
+    )
+    const agent = makeAgent(async () => okResult())
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          sourceMessageId: "00000000-0000-4000-8000-000000000005",
+          userText: "List them.",
+          currentTurnMessages: [
+            {
+              sourceMessageId: "00000000-0000-4000-8000-000000000004",
+              text: "I lost my reminders."
+            },
+            {
+              sourceMessageId: "00000000-0000-4000-8000-000000000005",
+              text: "List them."
+            }
+          ],
+          allowedTools: []
+        })
+      )
+    ).resolves.toMatchObject({ status: "completed" })
+
+    const context = modelHarness.state.contexts[0] as Context
+    expect(context.messages).toMatchObject([
+      { role: "user", content: "I lost my reminders." },
+      { role: "user", content: "List them." }
+    ])
+  })
+
+  it("keeps one opaque mutation identity across revisions of the same conversation turn", async () => {
+    const privateLocale = "private-locale-5532"
+    modelHarness.state.responses.push(
+      toolResponse(
+        fauxToolCall(
+          "settings_update",
+          { locale: privateLocale, hourCycle: "h23" },
+          { id: "revision-one-call" }
+        )
+      ),
+      structuredResponse({
+        responseText: "Settings updated.",
+        toolNames: ["settings_update"]
+      }),
+      toolResponse(
+        fauxToolCall(
+          "settings_update",
+          { hourCycle: "h23", locale: privateLocale },
+          { id: "revision-two-call" }
+        )
+      ),
+      structuredResponse({
+        responseText: "Settings updated.",
+        toolNames: ["settings_update"]
+      })
+    )
+    const commands: ToolCommand[] = []
+    const agent = makeAgent(async (command) => {
+      commands.push(command)
+      return okResult("owner_settings_updated", "Settings updated.")
+    })
+    const conversationTurnId = "00000000-0000-4000-8000-000000000010"
+
+    await agent.runTurn(
+      baseRequest({
+        conversationTurnId,
+        conversationTurnRevision: 1,
+        userText: "Use my private locale and 24-hour time.",
+        allowedTools: ["settings_update"]
+      })
+    )
+    await agent.runTurn(
+      baseRequest({
+        runId: "00000000-0000-4000-8000-000000000011",
+        conversationTurnId,
+        conversationTurnRevision: 2,
+        userText: "Yes, apply both settings.",
+        allowedTools: ["settings_update"]
+      })
+    )
+
+    expect(commands).toHaveLength(2)
+    expect(commands[0]?.idempotencyKey).toMatch(/^turn-mutation:sha256:[0-9a-f]{64}$/)
+    expect(commands[1]?.idempotencyKey).toBe(commands[0]?.idempotencyKey)
+    expect(commands[0]?.idempotencyKey).not.toContain(privateLocale)
+  })
+
+  it("uses per-call identities for read-only tools across conversation turn revisions", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "revision-one-read" })),
+      structuredResponse(),
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "revision-two-read" })),
+      structuredResponse()
+    )
+    const commands: ToolCommand[] = []
+    const agent = makeAgent(async (command) => {
+      commands.push(command)
+      return okResult()
+    })
+    const conversationTurnId = "00000000-0000-4000-8000-000000000010"
+
+    await agent.runTurn(
+      baseRequest({
+        conversationTurnId,
+        conversationTurnRevision: 1,
+        allowedTools: ["reminder_list"]
+      })
+    )
+    await agent.runTurn(
+      baseRequest({
+        runId: "00000000-0000-4000-8000-000000000011",
+        conversationTurnId,
+        conversationTurnRevision: 2,
+        allowedTools: ["reminder_list"]
+      })
+    )
+
+    expect(commands.map((command) => command.idempotencyKey)).toEqual([
+      "00000000-0000-4000-8000-000000000001:revision-one-read",
+      "00000000-0000-4000-8000-000000000011:revision-two-read"
+    ])
+  })
+
+  it("does not dispatch a mutation when cancellation wins after model completion", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(
+        fauxToolCall("settings_update", { timeZone: "Europe/Stockholm" }, { id: "write-call" })
+      )
+    )
+    const controller = new AbortController()
+    const originalDigest = crypto.subtle.digest.bind(crypto.subtle)
+    const digest = vi.spyOn(crypto.subtle, "digest").mockImplementation(async (...arguments_) => {
+      const result = await originalDigest(...arguments_)
+      controller.abort("newer_turn_revision")
+      return result
+    })
+    let toolCalls = 0
+    const agent = makeAgent(async () => {
+      toolCalls += 1
+      return okResult("owner_settings_updated", "Settings updated.")
+    })
+
+    try {
+      await expect(
+        agent.runTurn(
+          baseRequest({
+            conversationTurnId: "00000000-0000-4000-8000-000000000010",
+            conversationTurnRevision: 1,
+            userText: "Use Stockholm time.",
+            allowedTools: ["settings_update"]
+          }),
+          controller.signal
+        )
+      ).resolves.toMatchObject({ status: "cancelled", errorCode: "cancelled" })
+    } finally {
+      digest.mockRestore()
+    }
+    expect(toolCalls).toBe(0)
+  })
+
+  it("reports a missing steering target when no run is active", () => {
+    const agent = makeAgent(async () => okResult())
+
+    expect(agent.requestSteer(baseRequest().runId)).toEqual({ status: "missing" })
+  })
+
+  it("aborts an active model call when steering is requested", async () => {
+    let observedSignal: AbortSignal | undefined
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    modelHarness.completeSimple.mockImplementation(
+      async (_model: unknown, _context: unknown, options: unknown) => {
+        observedSignal = (options as { signal?: AbortSignal }).signal
+        markStarted()
+        return await new Promise<never>(() => undefined)
+      }
+    )
+    const agent = makeAgent(async () => okResult())
+    const request = baseRequest({
+      limits: { ...baseRequest().limits, maxDurationMs: 500 }
+    })
+    const run = agent.runTurn(request)
+
+    await started
+    expect(agent.requestSteer(request.runId)).toEqual({ status: "aborted_model" })
+    const outcome = await Promise.race([
+      run.then((result) => ({ type: "result" as const, result })),
+      new Promise<{ type: "guard" }>((resolve) => setTimeout(() => resolve({ type: "guard" }), 250))
+    ])
+
+    expect(outcome).toMatchObject({
+      type: "result",
+      result: { status: "cancelled", errorCode: "cancelled" }
+    })
+    expect(observedSignal?.aborted).toBe(true)
+  })
+
+  it("aborts active read-only Tool work when steering is requested", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "read-call" }))
+    )
+    let observedSignal: AbortSignal | undefined
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    const agent = makeAgent(async (_command, signal) => {
+      observedSignal = signal
+      markStarted()
+      return await new Promise<ToolResult>((_resolve, reject) => {
+        signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("The read was steered.", "AbortError")),
+          { once: true }
+        )
+      })
+    })
+    const request = baseRequest({
+      userText: "List my reminders.",
+      allowedTools: ["reminder_list"],
+      limits: { ...baseRequest().limits, maxDurationMs: 500 }
+    })
+    const run = agent.runTurn(request)
+
+    await started
+    expect(agent.requestSteer(request.runId)).toEqual({ status: "queued" })
+    const outcome = await Promise.race([
+      run.then((result) => ({ type: "result" as const, result })),
+      new Promise<{ type: "guard" }>((resolve) => setTimeout(() => resolve({ type: "guard" }), 250))
+    ])
+
+    expect(outcome).toMatchObject({
+      type: "result",
+      result: { status: "cancelled", errorCode: "cancelled" }
+    })
+    expect(observedSignal?.aborted).toBe(true)
+  })
+
+  it("queues steering during a Tool call and waits for its result", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(
+        fauxToolCall("settings_update", { timeZone: "Europe/Stockholm" }, { id: "write-call" })
+      )
+    )
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    let completeTool!: (result: ToolResult) => void
+    const toolResult = new Promise<ToolResult>((resolve) => {
+      completeTool = resolve
+    })
+    const agent = makeAgent(async () => {
+      markStarted()
+      return toolResult
+    })
+    const request = baseRequest({
+      userText: "Use Stockholm time.",
+      allowedTools: ["settings_update"],
+      limits: { ...baseRequest().limits, maxDurationMs: 500 }
+    })
+    const run = agent.runTurn(request)
+
+    await started
+    expect(agent.requestSteer(request.runId)).toEqual({ status: "queued" })
+    const beforeSettle = await Promise.race([
+      run.then(() => "resolved" as const),
+      new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 25))
+    ])
+
+    expect(beforeSettle).toBe("waiting")
+    completeTool(okResult("settings_updated", "Settings updated."))
+    await expect(run).resolves.toMatchObject({ status: "cancelled", errorCode: "cancelled" })
+    expect(agent.requestSteer(request.runId)).toEqual({ status: "missing" })
+  })
+
   it("runs one traceable Effect program for a Tool-assisted turn", async () => {
     modelHarness.state.responses.push(
       toolResponse(fauxToolCall("memory_search", { query: "routine" }, { id: "call-1" })),
@@ -370,6 +651,7 @@ describe("Bob's direct pi-ai loop", () => {
   })
 
   it("does not export prompts, Tool data, or assistant content", async () => {
+    const privateEarlierUser = "private-earlier-user-message-4410"
     const privateUser = "private-user-routine-8841"
     const privateArgument = "private-tool-argument-5532"
     const privateResult = "private-tool-result-9074"
@@ -406,7 +688,22 @@ describe("Bob's direct pi-ai loop", () => {
 
     const output = await Effect.runPromise(
       agent
-        .runTurnEffect(baseRequest({ userText: `What is my routine? ${privateUser}` }))
+        .runTurnEffect(
+          baseRequest({
+            sourceMessageId: "00000000-0000-4000-8000-000000000005",
+            userText: `What is my routine? ${privateUser}`,
+            currentTurnMessages: [
+              {
+                sourceMessageId: "00000000-0000-4000-8000-000000000004",
+                text: privateEarlierUser
+              },
+              {
+                sourceMessageId: "00000000-0000-4000-8000-000000000005",
+                text: `What is my routine? ${privateUser}`
+              }
+            ]
+          })
+        )
         .pipe(Effect.provide(telemetry.layer))
     )
 
@@ -414,7 +711,13 @@ describe("Bob's direct pi-ai loop", () => {
     const serialized = JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
       typeof value === "bigint" ? value.toString() : value
     )
-    for (const canary of [privateUser, privateArgument, privateResult, privateAssistant]) {
+    for (const canary of [
+      privateEarlierUser,
+      privateUser,
+      privateArgument,
+      privateResult,
+      privateAssistant
+    ]) {
       expect(serialized).not.toContain(canary)
     }
   })
@@ -936,6 +1239,70 @@ describe("Bob's direct pi-ai loop", () => {
     expect(observedSignal?.aborted).toBe(true)
   })
 
+  it("cancels active model work when the caller aborts", async () => {
+    let observedSignal: AbortSignal | undefined
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    modelHarness.completeSimple.mockImplementation(
+      async (_model: unknown, _context: unknown, options: unknown) => {
+        observedSignal = (options as { signal?: AbortSignal }).signal
+        markStarted()
+        return await new Promise<never>((_resolve, reject) => {
+          const rejectAsAborted = () => {
+            const error = new Error("Request stopped.")
+            error.name = "AbortError"
+            reject(error)
+          }
+          if (observedSignal?.aborted === true) rejectAsAborted()
+          else observedSignal?.addEventListener("abort", rejectAsAborted, { once: true })
+        })
+      }
+    )
+    const controller = new AbortController()
+    const agent = makeAgent(async () => okResult())
+    const run = agent.runTurn(
+      baseRequest({ limits: { ...baseRequest().limits, maxDurationMs: 100 } }),
+      controller.signal
+    )
+
+    await started
+    controller.abort("newer_turn_revision")
+
+    await expect(run).resolves.toMatchObject({ status: "cancelled", errorCode: "cancelled" })
+    expect(observedSignal?.aborted).toBe(true)
+  })
+
+  it("returns cancellation when an aborted model call does not settle", async () => {
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    modelHarness.completeSimple.mockImplementation(async () => {
+      markStarted()
+      return await new Promise<never>(() => undefined)
+    })
+    const controller = new AbortController()
+    const agent = makeAgent(async () => okResult())
+    const run = agent.runTurn(
+      baseRequest({ limits: { ...baseRequest().limits, maxDurationMs: 500 } }),
+      controller.signal
+    )
+
+    await started
+    controller.abort("newer_turn_revision")
+    const outcome = await Promise.race([
+      run.then((result) => ({ type: "result" as const, result })),
+      new Promise<{ type: "guard" }>((resolve) => setTimeout(() => resolve({ type: "guard" }), 250))
+    ])
+
+    expect(outcome).toMatchObject({
+      type: "result",
+      result: { status: "cancelled", errorCode: "cancelled" }
+    })
+  })
+
   it("returns timeout when a tool execution never resolves", async () => {
     modelHarness.state.responses.push(
       toolResponse(fauxToolCall("reminder_list", {}, { id: "hung-tool-call" }))
@@ -978,6 +1345,129 @@ describe("Bob's direct pi-ai loop", () => {
     expect(telemetry.finishedSpans().find((span) => span.name === "bob.tool.invoke")?.outcome).toBe(
       "failed"
     )
+  })
+
+  it("cancels active read-only Tool work when the caller aborts", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "read-call" }))
+    )
+    let observedSignal: AbortSignal | undefined
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    const agent = makeAgent(async (_command, signal) => {
+      observedSignal = signal
+      markStarted()
+      return await new Promise<ToolResult>(() => undefined)
+    })
+    const controller = new AbortController()
+    const run = agent.runTurn(
+      baseRequest({
+        userText: "List my reminders.",
+        allowedTools: ["reminder_list"],
+        limits: { ...baseRequest().limits, maxDurationMs: 500 }
+      }),
+      controller.signal
+    )
+
+    await started
+    controller.abort("newer_turn_revision")
+    const outcome = await Promise.race([
+      run.then((result) => ({ type: "result" as const, result })),
+      new Promise<{ type: "guard" }>((resolve) => setTimeout(() => resolve({ type: "guard" }), 250))
+    ])
+
+    expect(outcome).toMatchObject({
+      type: "result",
+      result: { status: "cancelled", errorCode: "cancelled" }
+    })
+    expect(observedSignal?.aborted).toBe(true)
+  })
+
+  it("lets an active mutating Tool settle before cancellation", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(
+        fauxToolCall("settings_update", { timeZone: "Europe/Stockholm" }, { id: "write-call" })
+      )
+    )
+    let observedSignal: AbortSignal | undefined
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    let completeTool!: (result: ToolResult) => void
+    const toolResult = new Promise<ToolResult>((resolve) => {
+      completeTool = resolve
+    })
+    const agent = makeAgent(async (_command, signal) => {
+      observedSignal = signal
+      markStarted()
+      return toolResult
+    })
+    const controller = new AbortController()
+    const run = agent.runTurn(
+      baseRequest({
+        userText: "Use Stockholm time.",
+        allowedTools: ["settings_update"],
+        limits: { ...baseRequest().limits, maxDurationMs: 500 }
+      }),
+      controller.signal
+    )
+
+    await started
+    controller.abort("newer_turn_revision")
+    const beforeSettle = await Promise.race([
+      run.then(() => "resolved" as const),
+      new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 25))
+    ])
+
+    expect(beforeSettle).toBe("waiting")
+    expect(observedSignal).toBeUndefined()
+    completeTool(okResult("settings_updated", "Settings updated."))
+    await expect(run).resolves.toMatchObject({ status: "cancelled", errorCode: "cancelled" })
+  })
+
+  it("lets a claimed mutation settle after the agent run timeout", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(
+        fauxToolCall("settings_update", { timeZone: "Europe/Stockholm" }, { id: "slow-write" })
+      )
+    )
+    let observedSignal: AbortSignal | undefined
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    let completeTool!: (result: ToolResult) => void
+    const toolResult = new Promise<ToolResult>((resolve) => {
+      completeTool = resolve
+    })
+    const agent = makeAgent(async (_command, signal) => {
+      observedSignal = signal
+      markStarted()
+      return toolResult
+    })
+    const run = agent.runTurn(
+      baseRequest({
+        conversationTurnId: "00000000-0000-4000-8000-000000000010",
+        conversationTurnRevision: 1,
+        userText: "Use Stockholm time.",
+        allowedTools: ["settings_update"],
+        limits: { ...baseRequest().limits, maxDurationMs: 20 }
+      })
+    )
+
+    await started
+    const beforeSettle = await Promise.race([
+      run.then(() => "resolved" as const),
+      new Promise<"waiting">((resolve) => setTimeout(() => resolve("waiting"), 40))
+    ])
+
+    expect(beforeSettle).toBe("waiting")
+    expect(observedSignal).toBeUndefined()
+    completeTool(okResult("owner_settings_updated", "Settings updated."))
+    await expect(run).resolves.toMatchObject({ status: "cancelled", errorCode: "timeout" })
   })
 
   it("returns a consistent cancelled result when Pi throws AbortError", async () => {
@@ -1074,6 +1564,44 @@ describe("Bob's direct pi-ai loop", () => {
     }))
 
     await expect(agent.runTurn(baseRequest())).resolves.toMatchObject({
+      status: "failed",
+      errorCode: "policy",
+      responseText: "I do not have a supported record for that."
+    })
+  })
+
+  it("requires grounding when an earlier turn message asks for personal recall", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("memory_search", { query: "routine" }, { id: "call-1" })),
+      structuredResponse({
+        responseText: "You train on Tuesdays.",
+        toolNames: ["memory_search"]
+      })
+    )
+    const agent = makeAgent(async () => ({
+      ok: true,
+      code: "memory_results",
+      message: "No sources found.",
+      data: { matches: [] }
+    }))
+    const targetMessageId = "00000000-0000-4000-8000-000000000004"
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          sourceMessageId: targetMessageId,
+          userText: "List",
+          currentTurnMessages: [
+            {
+              sourceMessageId: "00000000-0000-4000-8000-000000000005",
+              text: "What is my training routine?"
+            },
+            { sourceMessageId: targetMessageId, text: "List" }
+          ],
+          allowedTools: ["memory_search"]
+        })
+      )
+    ).resolves.toMatchObject({
       status: "failed",
       errorCode: "policy",
       responseText: "I do not have a supported record for that."
