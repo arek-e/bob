@@ -336,8 +336,9 @@ describe("Pi training tools", () => {
     expect(prompt).toContain('"taint":"untrusted_recalled_data"')
     expect(prompt).toContain('"instruction":false')
     expect(prompt).toContain(
-      'Return only one JSON object with keys "protocolVersion", "responseText", "sourceIds", "toolNames", and "conflict".'
+      'Return only one JSON object with keys "protocolVersion", "responseText", "sourceIds", "toolNames", "conflict", and "artifact".'
     )
+    expect(prompt).toContain("Never put a source footer in owner-facing text.")
     expect(prompt).toContain(
       'List only supporting context or trusted memory-search source IDs in "sourceIds".'
     )

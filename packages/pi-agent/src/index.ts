@@ -827,7 +827,10 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         ...(trustedToolSources.size === 0
           ? {}
           : { trustedToolSources: [...trustedToolSources.values()].slice(0, 24) }),
-        conflict: value.conflict
+        conflict: value.conflict,
+        ...(value.artifact === undefined || value.artifact === null
+          ? {}
+          : { artifact: value.artifact })
       })
 
       const validateAndRepair = (message: AssistantMessage): Effect.Effect<AgentRunResult> =>

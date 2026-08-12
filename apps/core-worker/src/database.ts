@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/d1"
 
+import * as artifactSchema from "./modules/artifacts/schema.ts"
 import * as connectionSchema from "./modules/connections/schema.ts"
 import * as conversationSchema from "./modules/conversations/schema.ts"
 import * as deliverySchema from "./modules/delivery/schema.ts"
@@ -10,6 +11,7 @@ import * as reminderSchema from "./modules/reminders/schema.ts"
 import * as trainingSchema from "./modules/training/schema.ts"
 
 export const coreSchema = {
+  ...artifactSchema,
   ...connectionSchema,
   ...conversationSchema,
   ...deliverySchema,

@@ -19,6 +19,7 @@ import type { CoreBindings } from "../bindings.ts"
 
 import { composeCore } from "../composition.ts"
 import { createOwnerAuth, ownerSession } from "../modules/auth/service.ts"
+import { publishDeliveryFollowups } from "../modules/delivery/followups.ts"
 import {
   authorizeCoreRequest,
   authorizeSetupRequest,
@@ -258,7 +259,7 @@ export async function handleHttp(
 
     if (request.method === "POST" && url.pathname === "/internal/status") {
       const event = Schema.decodeUnknownSync(NormalizedStatusEvent)(await readJson(request))
-      await runTelemetry(
+      const readyFollowups = await runTelemetry(
         withRequestParent(
           request,
           withBobSpan(
@@ -281,6 +282,12 @@ export async function handleHttp(
             )
           )
         )
+      )
+      await publishDeliveryFollowups(
+        bindings,
+        composition.services.delivery,
+        readyFollowups,
+        event.correlationId
       )
       return json({ ok: true })
     }
@@ -325,7 +332,7 @@ export async function handleHttp(
       const result = Schema.decodeUnknownSync(DeliveryResult)(await readJson(request))
       if (result.outboxId !== decodeURIComponent(outboxResult[1]!))
         return json({ code: "id_mismatch" }, 400)
-      await runTelemetry(
+      const readyFollowups = await runTelemetry(
         withRequestParent(
           request,
           withBobSpan(
@@ -348,6 +355,12 @@ export async function handleHttp(
             )
           )
         )
+      )
+      await publishDeliveryFollowups(
+        bindings,
+        composition.services.delivery,
+        readyFollowups,
+        result.correlationId ?? result.outboxId
       )
       return json({ ok: true })
     }

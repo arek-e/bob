@@ -20,6 +20,7 @@ import { Context, Layer, Schema } from "effect"
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
 
+import { artifactRevisions, artifacts } from "../artifacts/schema.ts"
 import {
   agentRuns,
   conversationTurnMessages,
@@ -481,7 +482,11 @@ export function makeContextStore(
     )
   }
 
-  async function trainingContext(ownerId: string): Promise<ContextItem[]> {
+  async function trainingContext(
+    ownerId: string,
+    channelId: string,
+    key: CryptoKey
+  ): Promise<ContextItem[]> {
     const routineRows = await database
       .select({ routine: routines, step: routineSteps, exercise: exercises })
       .from(routines)
@@ -508,7 +513,7 @@ export function makeContextStore(
       byRoutine.set(row.routine.id, value)
     }
 
-    const items = [...byRoutine.values()].slice(0, 3).map(({ routine, steps }) => ({
+    const items: ContextItem[] = [...byRoutine.values()].slice(0, 3).map(({ routine, steps }) => ({
       kind: "training" as const,
       text: `Routine ${routine.name}: ${steps.length === 0 ? "no steps" : steps.join("; ")}.`,
       instruction: false as const,
@@ -521,6 +526,39 @@ export function makeContextStore(
         }
       ]
     }))
+
+    const [latestArtifact] = await database
+      .select({ artifact: artifacts, revision: artifactRevisions })
+      .from(artifacts)
+      .innerJoin(
+        artifactRevisions,
+        and(
+          eq(artifactRevisions.artifactId, artifacts.id),
+          eq(artifactRevisions.revision, artifacts.currentRevision)
+        )
+      )
+      .where(and(eq(artifacts.userId, ownerId), eq(artifacts.channelId, channelId)))
+      .orderBy(desc(artifacts.updatedAt))
+      .limit(1)
+    if (latestArtifact !== undefined) {
+      const text = await protection.decryptText(key, {
+        ciphertext: latestArtifact.revision.renderedTextCiphertext,
+        iv: latestArtifact.revision.renderedTextIv
+      })
+      items.unshift({
+        kind: "training",
+        text: `Current draft training plan:\n${text}`,
+        instruction: false,
+        conflict: false,
+        sources: [
+          {
+            sourceId: `${latestArtifact.artifact.id}:revision:${latestArtifact.revision.revision}`,
+            sourceLabel: `training plan revision ${latestArtifact.revision.revision}`,
+            occurredAt: latestArtifact.revision.createdAt
+          }
+        ]
+      })
+    }
 
     const [active] = await database
       .select({ session: workoutSessions, routine: routines })
@@ -751,7 +789,7 @@ export function makeContextStore(
       const taskItems = isReminderTask(input.currentUserText)
         ? await reminderContext(input.ownerId, key)
         : isTrainingTask(input.currentUserText)
-          ? await trainingContext(input.ownerId)
+          ? await trainingContext(input.ownerId, input.channelId, key)
           : []
       const lexical = await lexicalContext(input.ownerId, input.currentUserText)
       const seenSources = new Set(

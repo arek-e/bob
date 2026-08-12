@@ -12,11 +12,13 @@ const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
 
 function localizedComposition(text: string) {
   const createOutbox = vi.fn(async () => "018e6f65-4d55-7a1b-8df4-4ee15ea1db95")
+  const latestArtifact = vi.fn(async (): Promise<unknown> => undefined)
   const command = text.toLowerCase() === "klart" ? "done" : "seen"
   const composition = {
     config: { UI_BASE_URL: "https://bob.example" },
     services: {
       events: captureEvents(),
+      artifacts: { latest: latestArtifact },
       conversations: {
         claimInbound: vi.fn(async () => ({
           eventId,
@@ -48,7 +50,7 @@ function localizedComposition(text: string) {
       }
     }
   } as unknown as CoreComposition
-  return { composition, createOutbox }
+  return { composition, createOutbox, latestArtifact }
 }
 
 describe("deterministic Swedish replies", () => {
@@ -92,5 +94,30 @@ describe("deterministic Swedish replies", () => {
     expect(createOutbox).toHaveBeenCalledWith(
       expect.objectContaining({ text: expect.stringContaining(expectedText) })
     )
+  })
+
+  it("resends the latest artifact without regenerating it", async () => {
+    const { composition, createOutbox, latestArtifact } =
+      localizedComposition("Send the plan again")
+    const renderedText = "Biceps · Thursday, August 13\n\nWorkout\n1. Hammer curl — 3 × 10–12"
+    latestArtifact.mockResolvedValue({
+      id: "018e6f65-4d55-7a1b-8df4-4ee15ea1db97",
+      revision: 2,
+      artifact: {
+        kind: "training_plan",
+        title: "Biceps · Thursday, August 13",
+        durationMinutes: null,
+        sections: [{ heading: "Workout", items: ["Hammer curl — 3 × 10–12"] }]
+      },
+      renderedText
+    })
+    const bindings = {
+      OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) }
+    } as unknown as CoreBindings
+
+    await processInbound(eventId, bindings, composition)
+
+    expect(createOutbox).toHaveBeenCalledWith(expect.objectContaining({ text: renderedText }))
+    expect(latestArtifact).toHaveBeenCalledWith(ownerId, channelId)
   })
 })

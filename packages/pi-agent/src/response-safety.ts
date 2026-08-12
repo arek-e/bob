@@ -1,3 +1,4 @@
+import { AgentArtifact } from "@bob/contracts/agent"
 import {
   internalToolReferences,
   noSupportedRecordFallback,
@@ -17,7 +18,8 @@ export const StructuredAssistantResponse = Schema.Struct({
   responseText: ShortText,
   sourceIds: Schema.Array(NonEmptyText).check(Schema.isMaxLength(maximumResponseSources)),
   toolNames: Schema.Array(ToolName),
-  conflict: Schema.Literals(["none", "disclosed"])
+  conflict: Schema.Literals(["none", "disclosed"]),
+  artifact: Schema.optionalKey(Schema.NullOr(AgentArtifact))
 })
 
 export type StructuredAssistantResponse = typeof StructuredAssistantResponse.Type
@@ -354,9 +356,14 @@ export function validateAssistantResponse(
     }
     const keys = Object.keys(decoded).toSorted()
     const expectedKeys = ["conflict", "protocolVersion", "responseText", "sourceIds", "toolNames"]
+    const expectedKeysWithArtifact = [...expectedKeys, "artifact"].toSorted()
     if (
-      keys.length !== expectedKeys.length ||
-      keys.some((key, index) => key !== expectedKeys[index])
+      !(
+        (keys.length === expectedKeys.length &&
+          keys.every((key, index) => key === expectedKeys[index])) ||
+        (keys.length === expectedKeysWithArtifact.length &&
+          keys.every((key, index) => key === expectedKeysWithArtifact[index]))
+      )
     ) {
       return { ok: false, code: "malformed_response" }
     }
@@ -366,6 +373,18 @@ export function validateAssistantResponse(
     }
     const unsafeOutput = scanUnsafeOutput(value.responseText)
     if (unsafeOutput !== undefined) return { ok: false, code: unsafeOutput }
+    if (value.artifact !== undefined && value.artifact !== null) {
+      const artifactText = [
+        value.artifact.title,
+        ...value.artifact.sections.flatMap((section) => [section.heading, ...section.items])
+      ].join("\n")
+      if (artifactText.length > 2_400) return { ok: false, code: "response_too_long" }
+      const unsafeArtifact = scanUnsafeOutput(artifactText)
+      if (unsafeArtifact !== undefined) return { ok: false, code: unsafeArtifact }
+      if (internalToolReferences(artifactText).length > 0) {
+        return { ok: false, code: "invalid_tool_reference" }
+      }
+    }
     if (policy.requiresSource === true && value.sourceIds.length === 0) {
       return { ok: false, code: "source_required" }
     }

@@ -12,6 +12,7 @@ import type { CoreBindings } from "../bindings.ts"
 import type { CoreWorkflowTelemetryRunner } from "../process-inbound.ts"
 
 import { composeCore } from "../composition.ts"
+import { publishDeliveryFollowups } from "../modules/delivery/followups.ts"
 import { outboxMessages } from "../modules/delivery/schema.ts"
 
 function promiseEffect<A>(operation: (signal: AbortSignal) => PromiseLike<A>) {
@@ -78,7 +79,7 @@ export async function handleInboundQueue(
                   )
                 }
               }
-              yield* withBobSpan(
+              const readyFollowups = yield* withBobSpan(
                 {
                   name: "bob.delivery_result.record",
                   correlationId,
@@ -87,6 +88,14 @@ export async function handleInboundQueue(
                   feature: "delivery"
                 },
                 promiseEffect(() => composition.services.delivery.recordResult(result))
+              )
+              yield* promiseEffect(() =>
+                publishDeliveryFollowups(
+                  bindings,
+                  composition.services.delivery,
+                  readyFollowups,
+                  correlationId
+                )
               )
             })
           )

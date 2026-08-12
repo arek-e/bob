@@ -149,6 +149,52 @@ describe("delivery conversation turn fence", () => {
     })
   })
 
+  it("releases an artifact follow-up only after the reply is accepted", async () => {
+    const { database, delivery } = await seedOwnerChannelAndTurn()
+    const primaryOutboxId = await delivery.createOutbox({
+      ownerId,
+      channelId,
+      text: "No problem. Here is the updated plan.",
+      reasonCode: "agent_reply",
+      correlationId: "00000000-0000-4000-8000-000000000015",
+      idempotencyKey: "turn:artifact:reply",
+      conversationTurnId: turnId,
+      conversationTurnRevision: 1
+    })
+    const artifactOutboxId = await delivery.createOutbox({
+      ownerId,
+      channelId,
+      text: "Biceps · Thursday, August 13\n\nWorkout\n1. Hammer curl — 3 × 10–12",
+      reasonCode: "agent_artifact",
+      correlationId: "00000000-0000-4000-8000-000000000015",
+      idempotencyKey: "turn:artifact:follow-up",
+      dependsOnOutboxId: primaryOutboxId
+    })
+    await database
+      .update(conversationTurns)
+      .set({ replyOutboxId: primaryOutboxId, updatedAt: "2026-08-12T10:00:02.000Z" })
+
+    await expect(delivery.claimOutbox(artifactOutboxId, 60_000)).resolves.toBeUndefined()
+    await expect(delivery.outboxDisposition(artifactOutboxId)).resolves.toBe("active")
+
+    const primaryClaim = await delivery.claimOutbox(primaryOutboxId, 60_000)
+    expect(primaryClaim).toBeDefined()
+    await expect(
+      delivery.recordResult({
+        outboxId: primaryOutboxId,
+        attemptId: primaryClaim!.attemptId,
+        correlationId: "00000000-0000-4000-8000-000000000015",
+        state: "accepted",
+        providerMessageHandle: "provider-primary",
+        occurredAt: "2026-08-12T10:00:03.000Z"
+      })
+    ).resolves.toEqual([artifactOutboxId])
+    await expect(delivery.claimOutbox(artifactOutboxId, 60_000)).resolves.toMatchObject({
+      outboxId: artifactOutboxId,
+      smsSafeText: "Biceps · Thursday, August 13\n\nWorkout\n1. Hammer curl — 3 × 10–12"
+    })
+  })
+
   it("closes the turn before post-claim work can fail", async () => {
     const { database, delivery } = await seedOwnerChannelAndTurn()
     const outboxId = await delivery.createOutbox({

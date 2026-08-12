@@ -174,7 +174,7 @@ describe("core workflow telemetry", () => {
       expect.objectContaining({ sourceIds: [messageId], conflict: "none" }),
       {
         channelId,
-        text: `${privateResponse}\nSource: message 2026-08-11`,
+        text: privateResponse,
         reasonCode: "agent_reply"
       },
       undefined,

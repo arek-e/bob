@@ -22,7 +22,7 @@ const request = {
 }
 
 describe("agent response selection", () => {
-  it("renders approved source labels from the request boundary", () => {
+  it("keeps approved source labels internal at the request boundary", () => {
     const groundedRequest = {
       ...request,
       contextItems: [
@@ -55,12 +55,12 @@ describe("agent response selection", () => {
         groundedRequest
       )
     ).toEqual({
-      text: "Your training day is Tuesday.\nSource: Owner message linked on 11 Aug 2026",
+      text: "Your training day is Tuesday.",
       reasonCode: "agent_reply"
     })
   })
 
-  it("renders a trusted source returned by memory search", () => {
+  it("keeps a trusted source returned by memory search internal", () => {
     expect(
       selectAgentResponse(
         {
@@ -87,7 +87,7 @@ describe("agent response selection", () => {
         request
       )
     ).toEqual({
-      text: "You prefer morning training.\nSource: Owner message linked on 11 Aug 2026",
+      text: "You prefer morning training.",
       reasonCode: "agent_reply"
     })
   })
@@ -123,7 +123,7 @@ describe("agent response selection", () => {
         }
       )
     ).toEqual({
-      text: "You have no active reminders.\nSource: Bob active reminders",
+      text: "You have no active reminders.",
       reasonCode: "agent_reply"
     })
   })

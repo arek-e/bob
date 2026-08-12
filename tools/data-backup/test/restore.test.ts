@@ -40,6 +40,8 @@ describe("isolated D1 restore drill", () => {
       "auth_rate_limit",
       "external_connections",
       "channels",
+      "artifacts",
+      "artifact_revisions",
       "messages",
       "message_events",
       "inbound_events",
@@ -79,12 +81,13 @@ describe("isolated D1 restore drill", () => {
       "operational_alerts"
     ]
 
-    expect(schemaTables).toHaveLength(45)
+    expect(schemaTables).toHaveLength(47)
     expect(new Set(expectedOrder)).toEqual(new Set(schemaTables))
     expect(ordered).toEqual(expectedOrder)
     expect(ordered.indexOf("auth_user")).toBeLessThan(ordered.indexOf("auth_account"))
     expect(ordered.indexOf("auth_user")).toBeLessThan(ordered.indexOf("auth_session"))
     expect(ordered.indexOf("journal_handoffs")).toBeLessThan(ordered.indexOf("journal_entries"))
+    expect(ordered.indexOf("artifacts")).toBeLessThan(ordered.indexOf("artifact_revisions"))
     expect(ordered.indexOf("workout_sessions")).toBeLessThan(ordered.indexOf("workout_sets"))
   })
 

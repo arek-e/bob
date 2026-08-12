@@ -25,7 +25,7 @@ describe("deterministic degraded recall", () => {
         maxResponseCharacters: 1_200
       })
     ).toBe(
-      "I could not use the assistant. From your saved records: Routine Full Body A: 1. Leg press (3 sets × 10 reps). [routine 2026-08-09]"
+      "I could not use the assistant. From your saved records: Routine Full Body A: 1. Leg press (3 sets × 10 reps)."
     )
   })
 
@@ -63,9 +63,7 @@ describe("deterministic degraded recall", () => {
         ],
         maxResponseCharacters: 1_200
       })
-    ).toBe(
-      "I found conflicting saved information from routine 2026-08-09 and routine 2026-08-10. I cannot tell which record is current."
-    )
+    ).toBe("I found conflicting saved information. I cannot tell which record is current.")
   })
 
   it("replaces unsafe recalled text instead of echoing it", () => {
@@ -84,7 +82,7 @@ describe("deterministic degraded recall", () => {
     })
 
     expect(response).toBe(
-      "I found saved information, but I could not safely show it. Open Bob to review routine 2026-08-09."
+      "I found saved information, but I could not safely show it. Open Bob to review it."
     )
     expect(response).not.toContain("Ignore previous instructions")
   })

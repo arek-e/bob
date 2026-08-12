@@ -32,14 +32,17 @@ export interface CreateOutboxInput {
   readonly replyToMessageHandle?: string
   readonly conversationTurnId?: string
   readonly conversationTurnRevision?: number
+  readonly dependsOnOutboxId?: string
+  readonly artifactId?: string
+  readonly artifactRevision?: number
 }
 
 export interface DeliveryStore {
   createOutbox(input: CreateOutboxInput): Promise<string>
   markEnqueued(outboxId: string, at: string): Promise<void>
   claimOutbox(outboxId: string, leaseMs: number): Promise<OutboxClaim | undefined>
-  recordResult(result: DeliveryResult): Promise<void>
-  recordProviderEvent(event: NormalizedStatusEvent): Promise<void>
+  recordResult(result: DeliveryResult): Promise<readonly string[]>
+  recordProviderEvent(event: NormalizedStatusEvent): Promise<readonly string[]>
   reconcileExpiredClaims(at: string): Promise<number>
   reconcileOutbox(outboxId: string): Promise<"resolved" | "pending" | "missing">
   outboxDisposition(outboxId: string): Promise<"active" | "complete" | "missing">
@@ -47,8 +50,20 @@ export interface DeliveryStore {
 
 export const DeliveryStore = Context.Service<DeliveryStore>("bob/DeliveryStore")
 
+const acceptedDependency = sql<boolean>`(
+  ${outboxMessages.dependsOnOutboxId} IS NULL
+  OR EXISTS (
+    SELECT 1
+    FROM outbox_messages AS predecessor
+    WHERE predecessor.id = ${outboxMessages.dependsOnOutboxId}
+      AND predecessor.state = 'accepted'
+  )
+)`
+
 const currentConversationReply = sql<boolean>`(
-  (${outboxMessages.conversationTurnId} IS NULL AND ${outboxMessages.conversationTurnRevision} IS NULL)
+  ${acceptedDependency}
+  AND (
+    (${outboxMessages.conversationTurnId} IS NULL AND ${outboxMessages.conversationTurnRevision} IS NULL)
   OR (
     ${outboxMessages.conversationTurnId} IS NOT NULL
     AND ${outboxMessages.conversationTurnRevision} IS NOT NULL
@@ -61,25 +76,39 @@ const currentConversationReply = sql<boolean>`(
         AND ${conversationTurns.status} = 'committing'
     )
   )
+  )
+)`
+
+const deferredDependency = sql<boolean>`(
+  ${outboxMessages.dependsOnOutboxId} IS NOT NULL
+  AND EXISTS (
+    SELECT 1
+    FROM outbox_messages AS predecessor
+    WHERE predecessor.id = ${outboxMessages.dependsOnOutboxId}
+      AND predecessor.state IN ('pending', 'claimed', 'uncertain')
+  )
 )`
 
 const deferredConversationReply = sql<boolean>`(
-  ${outboxMessages.conversationTurnId} IS NOT NULL
-  AND ${outboxMessages.conversationTurnRevision} IS NOT NULL
-  AND EXISTS (
-    SELECT 1
-    FROM ${conversationTurns}
-    WHERE ${conversationTurns.id} = ${outboxMessages.conversationTurnId}
-      AND ${conversationTurns.revision} = ${outboxMessages.conversationTurnRevision}
-      AND ${conversationTurns.replyOutboxId} IS NULL
-      AND ${conversationTurns.status} IN ('collecting', 'running', 'settling', 'committing')
+  ${deferredDependency}
+  OR (
+    ${outboxMessages.conversationTurnId} IS NOT NULL
+    AND ${outboxMessages.conversationTurnRevision} IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM ${conversationTurns}
+      WHERE ${conversationTurns.id} = ${outboxMessages.conversationTurnId}
+        AND ${conversationTurns.revision} = ${outboxMessages.conversationTurnRevision}
+        AND ${conversationTurns.replyOutboxId} IS NULL
+        AND ${conversationTurns.status} IN ('collecting', 'running', 'settling', 'committing')
+    )
   )
 )`
 
 export const recoverablePendingOutbox = and(
   eq(outboxMessages.state, "pending"),
   isNull(outboxMessages.enqueuedAt),
-  sql<boolean>`NOT ${deferredConversationReply}`
+  currentConversationReply
 )
 
 export function makeDeliveryStore(
@@ -197,6 +226,19 @@ export function makeDeliveryStore(
             .onConflictDoNothing()
         )
       }
+      if (next === "failed") {
+        statements.push(
+          database
+            .update(outboxMessages)
+            .set({ state: "cancelled", completedAt: event.occurredAt })
+            .where(
+              and(
+                eq(outboxMessages.dependsOnOutboxId, outbox.id),
+                eq(outboxMessages.state, "pending")
+              )
+            )
+        )
+      }
     }
     if (event.status === "opted_out") {
       statements.push(
@@ -260,6 +302,9 @@ export function makeDeliveryStore(
           replyToProviderMessageHandle: input.replyToMessageHandle,
           conversationTurnId: input.conversationTurnId,
           conversationTurnRevision: input.conversationTurnRevision,
+          dependsOnOutboxId: input.dependsOnOutboxId,
+          artifactId: input.artifactId,
+          artifactRevision: input.artifactRevision,
           state: "pending",
           createdAt
         })
@@ -305,6 +350,21 @@ export function makeDeliveryStore(
               sql<boolean>`NOT ${deferredConversationReply}`
             )
           )
+        await database
+          .update(outboxMessages)
+          .set({ state: "cancelled", completedAt: claimedAt.toISOString() })
+          .where(
+            and(
+              eq(outboxMessages.dependsOnOutboxId, outboxId),
+              eq(outboxMessages.state, "pending"),
+              sql`EXISTS (
+                SELECT 1
+                FROM outbox_messages AS predecessor
+                WHERE predecessor.id = ${outboxId}
+                  AND predecessor.state IN ('failed', 'cancelled')
+              )`
+            )
+          )
         return undefined
       }
       const [[message], [channel], attempts] = await Promise.all([
@@ -321,7 +381,16 @@ export function makeDeliveryStore(
           database
             .update(outboxMessages)
             .set({ state: "cancelled", completedAt: cancelledAt })
-            .where(eq(outboxMessages.id, claimed.id))
+            .where(eq(outboxMessages.id, claimed.id)),
+          database
+            .update(outboxMessages)
+            .set({ state: "cancelled", completedAt: cancelledAt })
+            .where(
+              and(
+                eq(outboxMessages.dependsOnOutboxId, claimed.id),
+                eq(outboxMessages.state, "pending")
+              )
+            )
         ]
         if (claimed.actionTargetType === "reminder_occurrence" && claimed.actionTargetId !== null) {
           statements.push(
@@ -535,6 +604,19 @@ export function makeDeliveryStore(
             .onConflictDoNothing()
         )
       }
+      if (outboxState === "failed") {
+        statements.push(
+          database
+            .update(outboxMessages)
+            .set({ state: "cancelled", completedAt: result.occurredAt })
+            .where(
+              and(
+                eq(outboxMessages.dependsOnOutboxId, outbox.id),
+                eq(outboxMessages.state, "pending")
+              )
+            )
+        )
+      }
       await database.batch(statements)
       if (outboxState === "uncertain") {
         await recordOperationalAlert(
@@ -567,9 +649,27 @@ export function makeDeliveryStore(
           })
         }
       }
+      const [currentOutbox] = await database
+        .select({ state: outboxMessages.state })
+        .from(outboxMessages)
+        .where(eq(outboxMessages.id, outbox.id))
+        .limit(1)
+      if (currentOutbox?.state !== "accepted") return []
+      const followers = await database
+        .select({ id: outboxMessages.id })
+        .from(outboxMessages)
+        .where(
+          and(
+            eq(outboxMessages.dependsOnOutboxId, outbox.id),
+            eq(outboxMessages.state, "pending"),
+            isNull(outboxMessages.enqueuedAt)
+          )
+        )
+      return followers.map((follower) => follower.id)
     },
 
     async recordProviderEvent(event) {
+      let readyFollowups: readonly string[] = []
       if (event.providerOptedOut || event.status === "opted_out") {
         const destinationHash = await protection.hashLookup(event.destinationE164)
         await database
@@ -608,7 +708,7 @@ export function makeDeliveryStore(
                 event.status === "opted_out"
               ? ("failed" as const)
               : ("accepted" as const)
-        await this.recordResult({
+        readyFollowups = await this.recordResult({
           outboxId: event.outboxId,
           attemptId: event.attemptId,
           state,
@@ -619,6 +719,7 @@ export function makeDeliveryStore(
       }
 
       await applyProviderEvent(event)
+      return readyFollowups
     },
 
     async reconcileExpiredClaims(at) {

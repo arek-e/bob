@@ -71,6 +71,8 @@ const RESTORE_ORDER = [
   "verification",
   "rateLimit",
   "channels",
+  "artifacts",
+  "artifact_revisions",
   "messages",
   "message_events",
   "inbound_events",

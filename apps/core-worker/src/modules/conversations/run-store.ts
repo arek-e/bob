@@ -1,10 +1,14 @@
-import { AgentRunRequest, type AgentRunResult } from "@bob/contracts/agent"
+import type { BatchItem } from "drizzle-orm/batch"
+
+import { AgentRunRequest, type AgentArtifact, type AgentRunResult } from "@bob/contracts/agent"
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
 
+import { renderArtifact } from "../artifacts/render.ts"
+import { artifactRevisions, artifacts } from "../artifacts/schema.ts"
 import { outboxMessages } from "../delivery/schema.ts"
 import {
   agentRunAttempts,
@@ -60,6 +64,7 @@ export interface AgentRunStore {
       readonly text: string
       readonly reasonCode: string
       readonly replyToMessageHandle?: string
+      readonly artifact?: AgentArtifact
     },
     conversation?: ConversationRunCompletion,
     attemptId?: string
@@ -349,8 +354,167 @@ export function makeAgentRunStore(
                 NULL,
                 NULL,
                 ${response.replyToMessageHandle ?? null},
-                ${conversation?.conversationTurnId ?? null},
-                ${conversation?.conversationTurnRevision ?? null},
+              ${conversation?.conversationTurnId ?? null},
+              ${conversation?.conversationTurnRevision ?? null},
+              NULL,
+              NULL,
+              NULL,
+              ${"pending"},
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+              ${at}
+              FROM ${agentRuns}
+              WHERE ${activeAttempt}
+            `)
+      const artifactStatements: BatchItem<"sqlite">[] = []
+      if (response.artifact !== undefined) {
+        const [currentArtifact] = await database
+          .select({ id: artifacts.id, currentRevision: artifacts.currentRevision })
+          .from(artifacts)
+          .where(
+            and(
+              eq(artifacts.userId, loadedRun.ownerId),
+              eq(artifacts.channelId, response.channelId),
+              eq(artifacts.kind, response.artifact.kind)
+            )
+          )
+          .limit(1)
+        const artifactId = currentArtifact?.id ?? randomUuid()
+        const artifactRevision = (currentArtifact?.currentRevision ?? 0) + 1
+        const artifactMessageId = randomUuid()
+        const artifactOutboxId = randomUuid()
+        const renderedText = renderArtifact(response.artifact)
+        const [encryptedContent, encryptedRenderedText] = await Promise.all([
+          protection.encryptText(owner.key, JSON.stringify(response.artifact)),
+          protection.encryptText(owner.key, renderedText)
+        ])
+        const sourceIdsJson = JSON.stringify(result.sourceIds ?? [])
+        if (activeAttempt === undefined) {
+          artifactStatements.push(
+            currentArtifact === undefined
+              ? database.insert(artifacts).values({
+                  id: artifactId,
+                  userId: loadedRun.ownerId,
+                  channelId: response.channelId,
+                  kind: response.artifact.kind,
+                  currentRevision: artifactRevision,
+                  createdAt: at,
+                  updatedAt: at
+                })
+              : database
+                  .update(artifacts)
+                  .set({ currentRevision: artifactRevision, updatedAt: at })
+                  .where(eq(artifacts.id, artifactId)),
+            database.insert(artifactRevisions).values({
+              artifactId,
+              revision: artifactRevision,
+              contentCiphertext: encryptedContent.ciphertext,
+              contentIv: encryptedContent.iv,
+              renderedTextCiphertext: encryptedRenderedText.ciphertext,
+              renderedTextIv: encryptedRenderedText.iv,
+              dataKeyVersion: owner.version,
+              sourceIdsJson,
+              createdByRunId: result.runId,
+              createdAt: at
+            }),
+            database.insert(messages).values({
+              id: artifactMessageId,
+              userId: loadedRun.ownerId,
+              channelId: response.channelId,
+              direction: "outbound",
+              textCiphertext: encryptedRenderedText.ciphertext,
+              textIv: encryptedRenderedText.iv,
+              dataKeyVersion: owner.version,
+              occurredAt: at,
+              createdAt: at
+            }),
+            database.insert(outboxMessages).values({
+              id: artifactOutboxId,
+              userId: loadedRun.ownerId,
+              channelId: response.channelId,
+              messageId: artifactMessageId,
+              reasonCode: "agent_artifact",
+              correlationId: result.correlationId,
+              idempotencyKey: `run:${result.runId}:artifact:${response.artifact.kind}`,
+              dependsOnOutboxId: outboxId,
+              artifactId,
+              artifactRevision,
+              state: "pending",
+              createdAt: at
+            })
+          )
+        } else {
+          artifactStatements.push(
+            currentArtifact === undefined
+              ? database.insert(artifacts).select(sql`
+                  SELECT
+                    ${artifactId},
+                    ${agentRuns.userId},
+                    ${response.channelId},
+                    ${response.artifact.kind},
+                    ${artifactRevision},
+                    ${at},
+                    ${at}
+                  FROM ${agentRuns}
+                  WHERE ${activeAttempt}
+                `)
+              : database
+                  .update(artifacts)
+                  .set({ currentRevision: artifactRevision, updatedAt: at })
+                  .where(
+                    and(
+                      eq(artifacts.id, artifactId),
+                      sql`EXISTS (SELECT 1 FROM ${agentRuns} WHERE ${activeAttempt})`
+                    )
+                  ),
+            database.insert(artifactRevisions).select(sql`
+              SELECT
+                ${artifactId},
+                ${artifactRevision},
+                ${encryptedContent.ciphertext},
+                ${encryptedContent.iv},
+                ${encryptedRenderedText.ciphertext},
+                ${encryptedRenderedText.iv},
+                ${owner.version},
+                ${sourceIdsJson},
+                ${result.runId},
+                ${at}
+              FROM ${agentRuns}
+              WHERE ${activeAttempt}
+            `),
+            database.insert(messages).select(sql`
+              SELECT
+                ${artifactMessageId},
+                ${agentRuns.userId},
+                ${response.channelId},
+                ${"outbound"},
+                ${encryptedRenderedText.ciphertext},
+                ${encryptedRenderedText.iv},
+                ${owner.version},
+                ${at},
+                ${at}
+              FROM ${agentRuns}
+              WHERE ${activeAttempt}
+            `),
+            database.insert(outboxMessages).select(sql`
+              SELECT
+                ${artifactOutboxId},
+                ${agentRuns.userId},
+                ${response.channelId},
+                ${artifactMessageId},
+                ${"agent_artifact"},
+                ${result.correlationId},
+                ${`run:${result.runId}:artifact:${response.artifact.kind}`},
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                ${outboxId},
+                ${artifactId},
+                ${artifactRevision},
                 ${"pending"},
                 NULL,
                 NULL,
@@ -360,7 +524,14 @@ export function makeAgentRunStore(
               FROM ${agentRuns}
               WHERE ${activeAttempt}
             `)
-      const statements = [messageInsert, outboxInsert] as const
+          )
+        }
+      }
+      const statements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
+        messageInsert,
+        outboxInsert,
+        ...artifactStatements
+      ]
       const legacyStatements =
         conversation === undefined
           ? [
