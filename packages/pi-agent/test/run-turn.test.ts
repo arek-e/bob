@@ -1320,6 +1320,97 @@ describe("Bob's direct pi-ai loop", () => {
     })
   })
 
+  it("turns a domain clarification result into one owner question", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(
+        fauxToolCall(
+          "reminder_create",
+          {
+            displayText: "Call the clinic",
+            smsSafeText: "Call the clinic",
+            localDate: "2026-08-12",
+            localTime: "13:00",
+            timeZone: "Europe/Stockholm",
+            dueAt: "2026-08-12T11:00:00.000Z",
+            sourceMessageId: "00000000-0000-4000-8000-000000000004",
+            requiresAcknowledgment: false
+          },
+          { id: "ambiguous-reminder" }
+        )
+      ),
+      structuredResponse({
+        responseText: "What time should I use after lunch?",
+        toolNames: ["reminder_create"]
+      })
+    )
+    const executeTool = vi.fn(async () => ({
+      ok: false as const,
+      code: "confirmation_required",
+      message: "Confirm the exact local date and time before Bob creates this reminder."
+    }))
+    const agent = makeAgent(executeTool)
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          userText: "Remind me after lunch to call the clinic.",
+          allowedTools: ["reminder_create"]
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "What time should I use after lunch?",
+      toolCalls: 1
+    })
+    expect(executeTool).toHaveBeenCalledTimes(1)
+    expect(modelHarness.completeSimple).toHaveBeenCalledTimes(2)
+    const clarificationContext = modelHarness.state.contexts[1] as Context
+    expect(clarificationContext.tools).toEqual([])
+    expect(clarificationContext.messages.at(-1)).toMatchObject({
+      role: "toolResult",
+      toolName: "reminder_create",
+      isError: true
+    })
+  })
+
+  it("discloses an unknown external outcome without retrying the action", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(
+        fauxToolCall(
+          "connection_link_create",
+          { provider: "google_calendar" },
+          { id: "calendar-link" }
+        )
+      ),
+      structuredResponse({
+        responseText: "I cannot confirm whether the calendar connection link was created.",
+        toolNames: ["connection_link_create"]
+      })
+    )
+    const executeTool = vi.fn(async () => ({
+      ok: false as const,
+      code: "external_outcome_unknown",
+      message: "The external action result is unknown. Open Bob before trying again."
+    }))
+    const agent = makeAgent(executeTool)
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          userText: "Create a Google Calendar connection link.",
+          allowedTools: ["connection_link_create"]
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "I cannot confirm whether the calendar connection link was created.",
+      toolCalls: 1
+    })
+    expect(executeTool).toHaveBeenCalledTimes(1)
+    const reflectionContext = modelHarness.state.contexts[1] as Context
+    expect(reflectionContext.tools).toEqual([])
+  })
+
   it("does not execute malformed tool arguments", async () => {
     modelHarness.state.responses.push(
       toolResponse(fauxToolCall("memory_search", {}, { id: "bad-call" }))

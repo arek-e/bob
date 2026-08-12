@@ -364,5 +364,24 @@ describe("deterministic domain rules", () => {
     expect(selectTools("Spara det här om mig.")).toContain("memory_propose")
     expect(selectTools("Do not remember this.")).not.toContain("memory_propose")
     expect(selectTools("Spara inte det här.")).not.toContain("memory_propose")
+    expect(selectTools("Remember that I prefer morning workouts.")).toEqual([
+      "memory_search",
+      "memory_propose",
+      "memory_correct"
+    ])
+    expect(selectTools("Remember to start my workout at 18:00.")).not.toContain("memory_propose")
+    expect(selectTools("Save this workout routine.")).toContain("routine_save")
+    expect(selectTools("Save this workout routine.")).not.toContain("memory_propose")
+  })
+
+  it("offers a reviewable memory proposal for explicit preference feedback", () => {
+    expect(selectTools("I now prefer evening workouts.")).toEqual(
+      expect.arrayContaining(["workout_history", "memory_propose"])
+    )
+    expect(selectTools("From now on, remind me 30 minutes before events.")).toEqual(
+      expect.arrayContaining(["reminder_create", "memory_propose"])
+    )
+    expect(selectTools("Framöver föredrar jag kvällsträning.")).toContain("memory_propose")
+    expect(selectTools("Morning workouts went well today.")).not.toContain("memory_propose")
   })
 })

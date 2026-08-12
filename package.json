@@ -12,7 +12,7 @@
     "env:check": "pnpm -r --if-present env:check",
     "env:audit": "node scripts/audit-env-schemas.mjs",
     "env:schema": "node scripts/validate-env-schemas.mjs",
-    "eval:offline": "pnpm --filter @bob/agent-evals eval:offline",
+    "eval:offline": "pnpm --filter @bob/agent-evals eval:offline && pnpm --filter @bob/agent-evals eval:interaction && pnpm --filter @bob/agent-evals eval:benchmarks",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "hooks:install": "lefthook install",

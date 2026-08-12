@@ -15,13 +15,53 @@ Bob helps a person who can have memory impairment.
 
 Bob must stay simple, predictable, source-based, and easy to correct.
 
+## Long-term vision
+
+Bob aims to become a general personal continuity agent for one owner.
+
+Bob is general in understanding and planning across day-to-day life.
+
+Bob gains broad capability through reviewed domain tools and approved service connections.
+
+Bob keeps explicit and bounded authority as its capability grows.
+
+Bob uses iMessage as the stable conversation interface.
+
+Bob uses the private UI for setup, review, recovery, and consequential approvals.
+
+Bob learns owner preferences from explicit statements and corrections.
+
+Bob does not silently promote inferred preferences into confirmed memory.
+
+Bob can become proactive when a grounded signal shows a likely owner need.
+
+Bob must limit unnecessary questions, actions, and interruptions.
+
+Bob improves through measured outcomes, synthetic evaluations, reviewed changes, and controlled releases.
+
+Bob does not rewrite its production policy or grant itself new authority.
+
+The authority model follows these rules:
+
+- Read approved data only when a request or approved proactive policy requires it.
+- Execute a reversible change when owner intent and the target are clear.
+- Ask before a consequential, ambiguous, externally visible, or hard-to-reverse change.
+- Record the result of each external action and disclose an unknown result.
+- Provide correction, cancellation, or undo when the domain supports it.
+- Stop access when the owner revokes a connection or capability.
+
+[Personal agent interaction research](docs/research/personal-agent-interaction.md) records the
+research basis, public benchmarks, and proposed evaluation plan.
+
 ## Non-goals
 
 Bob is not an emergency system.
 
 Bob is not a medication-safety system.
 
-Bob is not a general computer-control agent.
+Bob is not an unbounded computer-control agent.
+
+Bob does not receive arbitrary access or authorize new capabilities for itself.
 
 Bob is not a multi-user assistant in the first release.
 
@@ -111,6 +151,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 ## Decision index
 
 - [Project plan](docs/PROJECT_PLAN.md)
+- [Personal agent interaction research](docs/research/personal-agent-interaction.md)
 - [ADR 0001: Pi OpenAI Codex authentication](docs/adr/0001-pi-openai-codex-auth.md)
 - [ADR 0002: Durable Sendblue channel](docs/adr/0002-sendblue-agent-channel.md)
 - [ADR 0003: Agent runtime and repository seams](docs/adr/0003-agent-runtime-and-repository-seams.md)
