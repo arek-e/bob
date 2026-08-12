@@ -9,9 +9,21 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  checks:
+    name: checks (${{ matrix.name }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        include:
+          - name: quality
+            command: pnpm check:static && pnpm eval:offline && pnpm build:artifacts && pnpm ui:safety
+          - name: typecheck
+            command: pnpm typecheck
+          - name: unit-tests
+            command: pnpm test:unit
+          - name: worker-tests
+            command: pnpm test:workers
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -22,7 +34,8 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm check
+      - name: Run ${{ matrix.name }}
+        run: ${{ matrix.command }}
 
   alchemy-compatibility:
     runs-on: ubuntu-latest
@@ -39,6 +52,20 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Probe pinned Alchemy and Effect runtime
         run: pnpm infra:load
+
+  verify:
+    if: always()
+    needs: [checks, alchemy-compatibility]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require successful checks
+        env:
+          ALCHEMY_RESULT: ${{ needs.alchemy-compatibility.result }}
+          CHECKS_RESULT: ${{ needs.checks.result }}
+        run: |
+          test "$CHECKS_RESULT" = success
+          test "$ALCHEMY_RESULT" = success
 
   trusted-infra-plan:
     if: github.event_name == 'push'
@@ -72,6 +99,7 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      - name: Build production artifacts
+        run: pnpm build:artifacts
       - run: pnpm secrets:scan:trusted
       - run: pnpm infra:plan
