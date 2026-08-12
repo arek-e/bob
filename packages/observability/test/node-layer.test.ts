@@ -1,13 +1,73 @@
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
-import { flushTelemetry, withBobSpan } from "../src/effect.ts"
+import { emitHealth, flushTelemetry, withBobSpan } from "../src/effect.ts"
 import { nodeTelemetryLayer } from "../src/node.ts"
 
 const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
 const releaseSha = "0123456789abcdef0123456789abcdef01234567"
 
 describe("Node Effect telemetry", () => {
+  it("exports validated health events as OTLP logs", async () => {
+    const requests: Array<{ readonly url: string; readonly body: string }> = []
+    const lines: string[] = []
+    const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ url: String(input), body: String(init?.body) })
+      return new Response(null, { status: 200 })
+    }) as typeof fetch
+    const event = {
+      type: "agent_run" as const,
+      correlationId,
+      runId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0",
+      status: "completed" as const,
+      model: "gpt-5.6-luna",
+      durationMs: 25,
+      inputTokens: 10,
+      outputTokens: 5
+    }
+    const layer = nodeTelemetryLayer({
+      endpoint: "http://collector.example.invalid:4318",
+      serviceName: "bob-agent",
+      serviceVersion: releaseSha,
+      deploymentEnvironment: "prod",
+      fetch: request,
+      writeHealth: (health) => lines.push(JSON.stringify(health))
+    })
+
+    await Effect.runPromise(emitHealth(event).pipe(Effect.provide(layer)))
+
+    expect(lines).toEqual([JSON.stringify(event)])
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.url).toBe("http://collector.example.invalid:4318/v1/logs")
+    expect(JSON.parse(requests[0]!.body)).toMatchObject({
+      resourceLogs: [
+        {
+          resource: {
+            attributes: expect.arrayContaining([
+              { key: "service.name", value: { stringValue: "bob-agent" } },
+              { key: "service.version", value: { stringValue: releaseSha } }
+            ])
+          },
+          scopeLogs: [
+            {
+              scope: { name: "@bob/observability" },
+              logRecords: [
+                expect.objectContaining({
+                  severityText: "INFO",
+                  body: { stringValue: JSON.stringify(event) },
+                  attributes: expect.arrayContaining([
+                    { key: "bob.correlation.id", value: { stringValue: correlationId } },
+                    { key: "bob.event.type", value: { stringValue: "agent_run" } }
+                  ])
+                })
+              ]
+            }
+          ]
+        }
+      ]
+    })
+  })
+
   it("flushes safe Effect spans as one OTLP HTTP batch", async () => {
     const token = "collector-private-token"
     const requests: Array<{
