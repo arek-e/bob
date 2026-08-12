@@ -1,0 +1,184 @@
+# ADR 0009: Use Coolify for the private application runtime
+
+- Status: Accepted
+- Date: 2026-08-12
+- Scope: Agent, Nango, backups, private ingress, and deployment control
+- Supersedes: The Kubernetes runtime ownership in ADR 0005
+
+## Context
+
+Bob runs its private services on one Kubernetes node.
+
+Argo CD, External Secrets, Cilium, and Kubernetes add control-plane work.
+
+The current database and Bob backups also depend on that node.
+
+Bob needs simple deployments that agents can inspect safely.
+
+Coolify supports Git-based Compose deployments and an MCP server.
+
+Coolify does not replace Cloudflare, OpenBao, or Bob's data authorities.
+
+## Decision
+
+Use Coolify as the deployment authority for Bob's private application runtime.
+
+Keep Cloudflare as the public edge and application data plane.
+
+Keep OpenBao as the production secret authority.
+
+Keep Alchemy as the owner of declared Cloudflare resources.
+
+### Runtime ownership
+
+Coolify owns these resources:
+
+- the Bob agent application;
+- the runtime Cloudflare Tunnel connector;
+- Nango and its ephemeral Redis service;
+- the Bob backup runner and schedule;
+- the Nango PostgreSQL database and its backup schedule.
+
+Use `infra/coolify/compose.yaml` as the application stack source.
+
+Create Nango PostgreSQL as a separate Coolify database resource.
+
+This makes its S3 backup state visible through Coolify and MCP.
+
+Do not publish container ports on the host.
+
+The Tunnel connector is the only public application ingress.
+
+Use immutable image digests for every production container.
+
+### Secret delivery
+
+Use OpenBao AppRole when a Kubernetes service-account token is unavailable.
+
+Mount the AppRole secret ID as a Docker secret file.
+
+Never put the secret ID in a command argument or committed file.
+
+Give the agent AppRole only the Pi credential policy.
+
+Coolify holds runtime copies of the other required secrets.
+
+OpenBao remains authoritative for those values.
+
+An administrator synchronizes secret copies during bootstrap and rotation.
+
+Regular deployment agents cannot read or change secret values.
+
+### Agent access
+
+Enable Coolify API and MCP access.
+
+Run Coolify in a KVM guest on the existing Hetzner server.
+
+Do not install Docker in the Kubernetes host operating system.
+
+Bind guest forwards only to the host loopback address.
+
+Publish the Coolify dashboard to the Tailnet with Tailscale Serve.
+
+Give regular agents a team-scoped token with `read` and `deploy` permissions.
+
+Do not give regular agents `read:sensitive`, `write`, or `root` permissions.
+
+Load every token from an environment variable.
+
+Use Codex write approvals for Coolify lifecycle tools.
+
+Use the `deploy-bob-coolify` skill for deployment and rollback work.
+
+The skill adds process rules. It does not add permissions.
+
+### Backup ownership
+
+Store Nango database backups in independent S3-compatible storage.
+
+Copy every encrypted D1 and R2 archive to independent S3-compatible storage.
+
+Keep the age identity outside the Coolify host.
+
+Keep a local encrypted copy for fast recovery.
+
+Test both restore paths before cutover.
+
+### Migration stages
+
+Use a dedicated virtual machine on the existing Hetzner server.
+
+Give the guest 4 vCPUs, 12 GiB of memory, and a 50 GiB thin disk.
+
+Keep Docker, its firewall rules, and its address pools inside the guest.
+
+Forward OpenBao and OTLP traffic to their Kubernetes ClusterIPs through QEMU.
+
+Do not expose Coolify ports on the server's public interfaces.
+
+Keep the Kubernetes runtime available during acceptance.
+
+Use a separate canary Tunnel and canary hostnames for acceptance.
+
+Do not connect both runtimes to the production Tunnel at the same time.
+
+Move the production Tunnel only after canary acceptance succeeds.
+
+Keep OpenBao and the telemetry backend on the current private host initially.
+
+Reach them over the private network during the first migration stage.
+
+Move those platform services in a separate reviewed change.
+
+Remove Kubernetes only after no production resource depends on it.
+
+## Verification
+
+Run the complete repository gate before each release.
+
+Verify both Bob image attestations against the release commit.
+
+Validate the resolved Compose model without printing its environment.
+
+Require healthy agent, Nango, Redis, Tunnel, and database resources.
+
+Require one fresh Nango database backup in independent storage.
+
+Require one fresh encrypted Bob backup with an independent copy.
+
+Run one canary owner request before cutover.
+
+Run `List my reminders.` after cutover.
+
+Verify the same request in D1, Tempo, and Loki.
+
+## Consequences
+
+Agents get a narrow and observable deployment interface.
+
+Compose replaces most Kubernetes application manifests.
+
+The platform still needs one Linux host, Docker, SSH, KVM, and storage monitoring.
+
+Coolify remains a beta product and needs controlled upgrades.
+
+The first stage still depends on Kubernetes for OpenBao and telemetry.
+
+Kubernetes and Coolify share one physical failure domain.
+
+The KVM boundary prevents Docker from changing Kubernetes networking.
+
+The server needs strict disk alerts because the guest uses the same RAID volume.
+
+Secret synchronization remains an administrator task.
+
+Coolify is not a secret authority or an application data authority.
+
+## Sources
+
+- [Coolify Docker Compose](https://coolify.io/docs/knowledge-base/docker/compose)
+- [Coolify MCP server](https://coolify.io/docs/integrations/mcp)
+- [Coolify API authorization](https://coolify.io/docs/api-reference/authorization)
+- [Coolify database backups](https://coolify.io/docs/databases/backups)
+- [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)

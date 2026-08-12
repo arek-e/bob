@@ -11,5 +11,6 @@ data:
   BOB_RELEASE_SHA: "${BOB_RELEASE_SHA}"
   OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
   BAO_ADDR: "${OPENBAO_ADDR}"
+  BAO_AUTH_METHOD: kubernetes
   BAO_KUBERNETES_ROLE: bob-agent
   BAO_KUBERNETES_JWT_PATH: /var/run/secrets/kubernetes.io/serviceaccount/token

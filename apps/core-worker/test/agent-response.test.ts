@@ -167,6 +167,59 @@ describe("agent response selection", () => {
     ).toEqual({ text: "Hello. How can I help?", reasonCode: "agent_reply" })
   })
 
+  it("accepts a safe no-Tool reply from the rollout-compatible agent contract", () => {
+    expect(
+      selectAgentResponse(
+        {
+          protocolVersion: 1,
+          runId: request.runId,
+          correlationId: request.correlationId,
+          status: "completed",
+          responseText: "Hello. How can I help?",
+          model: "test-model",
+          durationMs: 10,
+          inputTokens: 10,
+          outputTokens: 5,
+          toolCalls: 0
+        },
+        {
+          ...request,
+          userText: "Hello Bob",
+          allowedTools: []
+        }
+      )
+    ).toEqual({
+      text: "Hello. How can I help?",
+      reasonCode: "agent_boundary_fallback"
+    })
+  })
+
+  it("does not trust a legacy completed reply after a Tool call", () => {
+    expect(
+      selectAgentResponse(
+        {
+          protocolVersion: 1,
+          runId: request.runId,
+          correlationId: request.correlationId,
+          status: "completed",
+          responseText: "Your reminder is active.",
+          model: "test-model",
+          durationMs: 10,
+          inputTokens: 10,
+          outputTokens: 5,
+          toolCalls: 1
+        },
+        {
+          ...request,
+          userText: "Create a reminder for tomorrow at 09:00."
+        }
+      )
+    ).toEqual({
+      text: "I could not complete that request. Please try again in Bob.",
+      reasonCode: "agent_failure"
+    })
+  })
+
   it("allows an uncited action response despite loaded personal context", () => {
     const groundedRequest = {
       ...request,

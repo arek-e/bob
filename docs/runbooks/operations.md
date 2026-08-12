@@ -42,13 +42,28 @@ The exporter becomes production evidence only after the matching agent image is 
 
 Set `BOB_RELEASE_SHA` to the exact source commit for that image.
 
-Cloudflare Worker telemetry stays in Cloudflare until both OTLP destinations are configured.
+Cloudflare Workers send native OTLP spans to `https://bob-otel.<BOB_DOMAIN>/v1/traces`.
 
-Filter logs by `correlationId` or `traceId`. Both values are opaque identifiers.
+Cloudflare Access accepts only the dedicated Worker OTLP service token.
 
-Use these event types for the operations dashboard:
+The existing Tunnel sends that host to collector port 4318. The collector has no public service.
 
-- `workflow_span` measures each workflow boundary.
+Core, Sendblue ingress, and Sendblue egress use the same reviewed release SHA.
+
+Alchemy binds the Worker OTLP token directly to those three Workers.
+
+The Node agent sends OTLP to the in-cluster collector address. The Node agent does not use this Access token.
+
+All exporters fail open. An export failure does not change a user workflow result.
+
+Filter Loki logs by `correlationId`. Filter Tempo spans by `bob.correlation.id`.
+
+Use the Tempo trace ID only after Tempo returns the matching trace.
+
+All identifiers are opaque values.
+
+Use these JSON event types for Loki and the operations dashboard:
+
 - `agent_run` measures model status and latency.
 - `token_usage` attributes tokens to one feature and workflow.
 - `token_budget` shows the run and UTC-day budget state.
@@ -56,7 +71,19 @@ Use these event types for the operations dashboard:
 - `tool_call` shows the tool name, status, and duration.
 - `delivery` shows the provider result and duration.
 
-Create latency charts from `workflow_span.durationMs`. Group the charts by `name` and `status`.
+Use native OTLP spans for workflow latency and parent-child analysis.
+
+Group Tempo spans by `service.name`, span name, and status.
+
+Use these span names for the agent loop:
+
+- `bob.agent.run`
+- `bob.agent.loop`
+- `bob.agent.turn`
+- `bob.model.complete`
+- `bob.tool.invoke`
+- `bob.output.validate`
+- `bob.output.repair`
 
 Create token charts from `token_usage`. Group the charts by `feature`, `workflow`, and `model`.
 
@@ -79,7 +106,7 @@ ORDER BY utc_day DESC, total_tokens DESC;
 
 The ChatGPT subscription does not give Bob a per-token price. Treat tokens as quota units, not money.
 
-Alert on failed `model.run`, `tool.execute`, and `provider.send` spans.
+Alert on failed `bob.model.complete`, `bob.tool.execute`, and `bob.provider.send` spans.
 
 Alert when a `token_budget` event has a `warning` or `exceeded` state.
 

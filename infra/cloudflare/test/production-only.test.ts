@@ -97,7 +97,34 @@ describe("production-only deployment contract", () => {
 
     expect(validation).toContain('BAO_ADDR: "https://openbao.fixture.invalid"')
     expect(validation).toContain('DATA_KEK_KEYRING_JSON: \'{"fixture-v1":"fixture-key"}\'')
+    expect(validation).toContain('OTEL_ACCESS_CLIENT_ID: "fixture-otel-access-client"')
+    expect(validation).toContain('OTEL_ACCESS_CLIENT_SECRET: "fixture-otel-access-secret"')
     expect(validation).not.toContain("BOB_STAGE")
+  })
+
+  it("keeps the release SHA reviewed and outside persistent OpenBao configuration", async () => {
+    const schema = await repositoryFile("infra/cloudflare/.env.schema")
+
+    expect(schema).toMatch(/^BOB_RELEASE_SHA=$/mu)
+    expect(schema).toContain("matches=/^[a-f0-9]{40}$/")
+    expect(schema).not.toContain('BOB_RELEASE_SHA=vaultSecret("config")')
+  })
+
+  it("declares optional Core telemetry inputs for local and test runtimes", async () => {
+    const [schema, generated] = await Promise.all([
+      repositoryFile("apps/core-worker/.env.schema"),
+      repositoryFile("apps/core-worker/src/environment.generated.ts")
+    ])
+
+    for (const field of [
+      "BOB_RELEASE_SHA",
+      "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "OTEL_ACCESS_CLIENT_ID",
+      "OTEL_ACCESS_CLIENT_SECRET"
+    ]) {
+      expect(schema).toMatch(new RegExp(`@optional[^\\n]*\\n${field}=`, "u"))
+      expect(generated).toContain(`${field}?: string`)
+    }
   })
 
   it("loads persistent production configuration from one OpenBao record", async () => {
@@ -121,7 +148,10 @@ describe("production-only deployment contract", () => {
       "RUNTIME_CREDENTIAL_HANDOFF_ENABLED",
       "ACCESS_SERVICE_TOKEN_ROTATION_VERSION",
       "ACCESS_SERVICE_TOKEN_ROTATE_BY",
-      "AGENT_ORIGIN_URL"
+      "AGENT_ORIGIN_URL",
+      "OTEL_ORIGIN_URL",
+      "NANGO_ORIGIN_URL",
+      "NANGO_CONNECT_ORIGIN_URL"
     ]
 
     for (const field of fields) {

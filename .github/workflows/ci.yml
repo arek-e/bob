@@ -54,6 +54,7 @@ jobs:
       BAO_JWT_ROLE: ${{ vars.BAO_JWT_ROLE }}
       SENDBLUE_ACCOUNT_ID: ${{ secrets.SENDBLUE_ACCOUNT_ID }}
       SENDBLUE_LINE_ID: ${{ secrets.SENDBLUE_LINE_ID }}
+      BOB_RELEASE_SHA: ${{ github.sha }}
       ALCHEMY_TELEMETRY_DISABLED: "true"
       # This trusted production job declares the handoff action. A plan does not apply it.
       RUNTIME_CREDENTIAL_HANDOFF_ENABLED: "true"

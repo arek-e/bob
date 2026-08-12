@@ -1,44 +1,97 @@
 import { DeliveryResult } from "@bob/contracts/delivery"
 import { InboundJob } from "@bob/contracts/jobs"
+import { recordDecision, withBobSpan } from "@bob/observability/effect"
+import {
+  externalParentFromTraceparent,
+  injectCurrentTraceparent
+} from "@bob/observability/propagation"
 import { eq } from "drizzle-orm"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 
 import type { CoreBindings } from "../bindings.ts"
+import type { CoreWorkflowTelemetryRunner } from "../process-inbound.ts"
 
 import { composeCore } from "../composition.ts"
 import { outboxMessages } from "../modules/delivery/schema.ts"
 
+function promiseEffect<A>(operation: (signal: AbortSignal) => PromiseLike<A>) {
+  return Effect.tryPromise({
+    try: (signal) => Promise.resolve(operation(signal)),
+    catch: (error) => error
+  })
+}
+
+function withTraceparentParent<A, E>(
+  traceparent: string | undefined,
+  effect: Effect.Effect<A, E>
+): Effect.Effect<A, E> {
+  const parent = externalParentFromTraceparent(traceparent)
+  return parent === undefined ? effect : Effect.withParentSpan(effect, parent)
+}
+
 export async function handleInboundQueue(
   batch: MessageBatch<unknown>,
-  bindings: CoreBindings
+  bindings: CoreBindings,
+  telemetry?: CoreWorkflowTelemetryRunner
 ): Promise<void> {
   const composition = composeCore(bindings)
+  const runTelemetry = telemetry?.runPromise ?? Effect.runPromise
   const isDeliveryResult =
     batch.queue === bindings.DELIVERY_RESULT_QUEUE_NAME ||
     batch.queue === bindings.DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME
+
   if (isDeliveryResult) {
     const isDeliveryResultDeadLetter =
       batch.queue === bindings.DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME
     for (const message of batch.messages) {
       try {
         const result = Schema.decodeUnknownSync(DeliveryResult)(message.body)
-        if (isDeliveryResultDeadLetter) {
-          const [outbox] = await composition.database
-            .select({ userId: outboxMessages.userId })
-            .from(outboxMessages)
-            .where(eq(outboxMessages.id, result.outboxId))
-            .limit(1)
-          if (outbox !== undefined) {
-            await composition.services.alerts.record({
-              ownerId: outbox.userId,
-              code: "delivery_result_exhausted",
-              objectType: "outbox_message",
-              objectId: result.outboxId,
-              idempotencyKey: `alert:delivery-result-exhausted:${result.attemptId}`
+        const correlationId = result.correlationId ?? result.outboxId
+        const program = withTraceparentParent(
+          result.traceparent,
+          withBobSpan(
+            {
+              name: "bob.delivery_result.consume",
+              correlationId,
+              outboxId: result.outboxId,
+              deliveryAttemptId: result.attemptId,
+              feature: "delivery"
+            },
+            Effect.gen(function* () {
+              if (isDeliveryResultDeadLetter) {
+                const [outbox] = yield* promiseEffect(() =>
+                  composition.database
+                    .select({ userId: outboxMessages.userId })
+                    .from(outboxMessages)
+                    .where(eq(outboxMessages.id, result.outboxId))
+                    .limit(1)
+                )
+                if (outbox !== undefined) {
+                  yield* promiseEffect(() =>
+                    composition.services.alerts.record({
+                      ownerId: outbox.userId,
+                      code: "delivery_result_exhausted",
+                      objectType: "outbox_message",
+                      objectId: result.outboxId,
+                      idempotencyKey: `alert:delivery-result-exhausted:${result.attemptId}`
+                    })
+                  )
+                }
+              }
+              yield* withBobSpan(
+                {
+                  name: "bob.delivery_result.record",
+                  correlationId,
+                  outboxId: result.outboxId,
+                  deliveryAttemptId: result.attemptId,
+                  feature: "delivery"
+                },
+                promiseEffect(() => composition.services.delivery.recordResult(result))
+              )
             })
-          }
-        }
-        await composition.services.delivery.recordResult(result)
+          )
+        )
+        await runTelemetry(program)
         message.ack()
       } catch {
         message.retry({ delaySeconds: 60 })
@@ -46,6 +99,7 @@ export async function handleInboundQueue(
     }
     return
   }
+
   const isDeadLetter = batch.queue === bindings.INBOUND_DEAD_LETTER_QUEUE_NAME
   for (const message of batch.messages) {
     if (isDeadLetter) {
@@ -57,48 +111,138 @@ export async function handleInboundQueue(
         continue
       }
       try {
-        const ownerId = await composition.services.conversations.getInboundOwner(job.eventId)
-        if (ownerId !== undefined) {
-          await composition.services.alerts.record({
-            ownerId,
-            code: "inbound_exhausted",
-            objectType: "inbound_event",
-            objectId: job.eventId,
-            idempotencyKey: `alert:inbound-exhausted:${job.eventId}`
-          })
-        }
-        const decision = await composition.services.conversations.prepareInboundRecovery(
-          job.eventId,
-          3
-        )
-        if (decision === "recover") {
-          await bindings.INBOUND_QUEUE.send(job, { delaySeconds: 300 })
-          await composition.services.conversations.markEnqueued(
-            job.eventId,
-            new Date().toISOString()
+        const correlationId = job.correlationId ?? job.eventId
+        const program = withTraceparentParent(
+          job.traceparent,
+          withBobSpan(
+            {
+              name: "bob.inbound.consume",
+              correlationId,
+              feature: "assistant"
+            },
+            Effect.gen(function* () {
+              const ownerId = yield* promiseEffect(() =>
+                composition.services.conversations.getInboundOwner(job.eventId)
+              )
+              if (ownerId !== undefined) {
+                yield* promiseEffect(() =>
+                  composition.services.alerts.record({
+                    ownerId,
+                    code: "inbound_exhausted",
+                    objectType: "inbound_event",
+                    objectId: job.eventId,
+                    idempotencyKey: `alert:inbound-exhausted:${job.eventId}`
+                  })
+                )
+              }
+              const decision = yield* promiseEffect(() =>
+                composition.services.conversations.prepareInboundRecovery(job.eventId, 3)
+              )
+              yield* recordDecision({
+                name: "bob.decision.idempotency",
+                code: decision === "recover" ? "allowed" : "limit",
+                outcome: decision === "recover" ? "allowed" : "skipped"
+              })
+              if (decision === "recover") {
+                yield* withBobSpan(
+                  {
+                    name: "bob.inbound.publish",
+                    correlationId,
+                    feature: "assistant"
+                  },
+                  Effect.gen(function* () {
+                    const headers = yield* injectCurrentTraceparent()
+                    const traceparent = headers.get("traceparent")
+                    yield* promiseEffect(() =>
+                      bindings.INBOUND_QUEUE.send(
+                        {
+                          ...job,
+                          correlationId,
+                          ...(traceparent === null ? {} : { traceparent })
+                        },
+                        { delaySeconds: 300 }
+                      )
+                    )
+                  })
+                )
+                yield* promiseEffect(() =>
+                  composition.services.conversations.markEnqueued(
+                    job.eventId,
+                    new Date().toISOString()
+                  )
+                )
+              }
+            })
           )
-        }
+        )
+        await runTelemetry(program)
         message.ack()
       } catch {
         message.retry({ delaySeconds: 60 })
       }
       continue
     }
+
     try {
       const job = Schema.decodeUnknownSync(InboundJob)(message.body)
-      const ownerId = await composition.services.conversations.getInboundOwner(job.eventId)
-      if (ownerId === undefined) {
-        message.ack()
-        continue
-      }
-      const euCoordinator = bindings.OWNER_RUN_COORDINATOR.jurisdiction("eu")
-      const coordinator = euCoordinator.get(euCoordinator.idFromName(ownerId))
-      const response = await coordinator.fetch("https://coordinator.internal/run", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(job)
-      })
-      if (!response.ok) throw new Error("owner_coordinator_failed")
+      const correlationId = job.correlationId ?? job.eventId
+      const program = withTraceparentParent(
+        job.traceparent,
+        withBobSpan(
+          {
+            name: "bob.inbound.consume",
+            correlationId,
+            feature: "assistant"
+          },
+          Effect.gen(function* () {
+            const ownerId = yield* promiseEffect(() =>
+              composition.services.conversations.getInboundOwner(job.eventId)
+            )
+            if (ownerId === undefined) {
+              yield* recordDecision({
+                name: "bob.decision.route",
+                code: "external_unknown",
+                outcome: "skipped"
+              })
+              return
+            }
+            yield* recordDecision({
+              name: "bob.decision.route",
+              code: "allowed",
+              outcome: "selected"
+            })
+            const euCoordinator = bindings.OWNER_RUN_COORDINATOR.jurisdiction("eu")
+            const coordinator = euCoordinator.get(euCoordinator.idFromName(ownerId))
+            const response = yield* withBobSpan(
+              {
+                name: "bob.coordinator.invoke",
+                correlationId,
+                feature: "assistant"
+              },
+              Effect.gen(function* () {
+                const headers = yield* injectCurrentTraceparent({
+                  "content-type": "application/json",
+                  "x-bob-correlation-id": correlationId
+                })
+                const traceparent = headers.get("traceparent")
+                return yield* promiseEffect(() =>
+                  coordinator.fetch("https://coordinator.internal/run", {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify({
+                      ...job,
+                      correlationId,
+                      ...(traceparent === null ? {} : { traceparent })
+                    })
+                  })
+                )
+              })
+            )
+            if (!response.ok) return yield* Effect.fail(new Error("owner_coordinator_failed"))
+          })
+        )
+      )
+      await runTelemetry(program)
       message.ack()
     } catch {
       message.retry({ delaySeconds: 30 })

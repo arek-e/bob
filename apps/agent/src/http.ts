@@ -5,17 +5,14 @@ import {
   DeviceLoginEvent,
   DeviceLoginState
 } from "@bob/contracts/agent"
-import { agentRunSpanCode, featureForTools } from "@bob/observability/attribution"
-import { observeNodeSpan, runWithNodeTelemetryContext } from "@bob/observability/node"
-import {
-  formatTraceparent,
-  parseTraceparent,
-  traceContextFromCorrelationId,
-  type TraceContext
-} from "@bob/observability/trace"
-import { Schema } from "effect"
+import { featureForTools } from "@bob/observability/attribution"
+import { emitHealth, withBobSpan } from "@bob/observability/effect"
+import { externalParentFromTraceparent, formatTraceparent } from "@bob/observability/propagation"
+import { Effect, Schema } from "effect"
 
 import type { AgentComposition } from "./composition.ts"
+
+import { AccessVerifier } from "./access.ts"
 
 const MAX_BODY_BYTES = 64 * 1024
 const securityHeaders = {
@@ -31,17 +28,6 @@ function json(
   extraHeaders: Readonly<Record<string, string>> = {}
 ): Response {
   return Response.json(value, { status, headers: { ...securityHeaders, ...extraHeaders } })
-}
-
-async function emitSafely(
-  composition: AgentComposition,
-  event: Parameters<AgentComposition["services"]["events"]["emit"]>[0]
-) {
-  try {
-    await composition.services.events.emit(event)
-  } catch {
-    // Telemetry must not change an agent result.
-  }
 }
 
 async function readJson(request: Request): Promise<unknown> {
@@ -84,9 +70,14 @@ export async function handleAgentHttp(
   }
 
   try {
-    await composition.services.access.verify(
-      request,
-      url.pathname.startsWith("/v1/admin/") ? "admin" : "run"
+    await composition.runtime.runPromise(
+      AccessVerifier.use((access) =>
+        Effect.tryPromise({
+          try: () =>
+            access.verify(request, url.pathname.startsWith("/v1/admin/") ? "admin" : "run"),
+          catch: (error) => error
+        })
+      )
     )
   } catch {
     return json({ code: "unauthorized" }, 401)
@@ -96,62 +87,49 @@ export async function handleAgentHttp(
     if (request.method === "POST" && url.pathname === "/v1/run") {
       const input = Schema.decodeUnknownSync(AgentRunRequest)(await readJson(request))
       const feature = featureForTools(input.allowedTools)
-      const parent =
-        parseTraceparent(request.headers.get("traceparent")) ??
-        traceContextFromCorrelationId(input.correlationId)
-      let responseTrace: TraceContext | undefined
-      const output = await runWithNodeTelemetryContext(
+      const parent = externalParentFromTraceparent(request.headers.get("traceparent"))
+      const run = withBobSpan(
         {
+          name: "bob.agent.run",
           correlationId: input.correlationId,
-          trace: parent,
-          feature,
-          workflow: "agent_turn"
+          runId: input.runId,
+          feature
         },
-        () =>
-          observeNodeSpan<AgentRunResult>(
-            {
-              sink: composition.services.events,
-              name: "model.run",
-              failureCode: "provider",
-              resultCode: (result) => agentRunSpanCode(result.status, result.errorCode)
-            },
-            async (trace) => {
-              responseTrace = trace
-              return Schema.decodeUnknownSync(AgentRunResult)(
-                await composition.services.agent.runTurn(input)
-              )
-            }
+        Effect.gen(function* () {
+          const span = yield* Effect.currentSpan
+          const output = Schema.decodeUnknownSync(AgentRunResult)(
+            yield* composition.services.agent.runTurnEffect(input)
           )
+          yield* emitHealth({
+            type: "agent_run",
+            correlationId: output.correlationId,
+            runId: output.runId,
+            status: output.status,
+            model: output.model,
+            durationMs: output.durationMs,
+            inputTokens: output.inputTokens,
+            outputTokens: output.outputTokens
+          })
+          yield* emitHealth({
+            type: "token_usage",
+            correlationId: output.correlationId,
+            runId: output.runId,
+            feature,
+            workflow: "agent_turn",
+            provider: "openai-codex",
+            model: output.model,
+            status: output.status,
+            inputTokens: output.inputTokens,
+            outputTokens: output.outputTokens,
+            toolCalls: output.toolCalls,
+            durationMs: output.durationMs
+          })
+          return { output, traceparent: formatTraceparent(span) }
+        })
       )
-      await emitSafely(composition, {
-        type: "agent_run",
-        correlationId: output.correlationId,
-        runId: output.runId,
-        status: output.status,
-        model: output.model,
-        durationMs: output.durationMs,
-        inputTokens: output.inputTokens,
-        outputTokens: output.outputTokens
-      })
-      await emitSafely(composition, {
-        type: "token_usage",
-        correlationId: output.correlationId,
-        runId: output.runId,
-        feature,
-        workflow: "agent_turn",
-        provider: "openai-codex",
-        model: output.model,
-        status: output.status,
-        inputTokens: output.inputTokens,
-        outputTokens: output.outputTokens,
-        toolCalls: output.toolCalls,
-        durationMs: output.durationMs
-      })
-      return json(
-        output,
-        200,
-        responseTrace === undefined ? {} : { traceparent: formatTraceparent(responseTrace) }
-      )
+      const tracedRun = parent === undefined ? run : Effect.withParentSpan(run, parent)
+      const result = await composition.runtime.runPromise(tracedRun)
+      return json(result.output, 200, { traceparent: result.traceparent })
     }
     if (request.method === "GET" && url.pathname === "/v1/admin/auth/status") {
       return json(

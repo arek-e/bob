@@ -1,8 +1,22 @@
+import { ToolName } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
 const OpaqueId = Schema.String.check(Schema.isUUID())
 const Status = Schema.Literals(["started", "completed", "failed", "cancelled", "unknown"])
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+const ModelName = Schema.String.check(Schema.isPattern(/^gpt-[a-z0-9][a-z0-9.-]{0,90}$/))
+const WebhookCode = Schema.Literals([
+  "accepted",
+  "duplicate",
+  "durable_store_failed",
+  "queue_publish_failed",
+  "enqueue_record_failed",
+  "unknown"
+])
+const DeliveryCode = Schema.Union([
+  Schema.Literals(["accepted", "invalid_success_response", "timeout", "network"]),
+  Schema.String.check(Schema.isPattern(/^http_[1-5][0-9]{2}$/))
+])
 
 export const TelemetryFeature = Schema.Literals([
   "assistant",
@@ -63,7 +77,7 @@ export const HealthEvent = Schema.Union([
     type: Schema.Literal("webhook"),
     correlationId: OpaqueId,
     status: Schema.Literals(["accepted", "duplicate", "rejected", "failed"]),
-    code: Schema.String,
+    code: WebhookCode,
     durationMs: NonNegativeInt
   }),
   Schema.Struct({
@@ -71,7 +85,7 @@ export const HealthEvent = Schema.Union([
     correlationId: OpaqueId,
     runId: OpaqueId,
     status: Status,
-    model: Schema.String,
+    model: ModelName,
     durationMs: NonNegativeInt,
     inputTokens: NonNegativeInt,
     outputTokens: NonNegativeInt
@@ -80,8 +94,7 @@ export const HealthEvent = Schema.Union([
     type: Schema.Literal("tool_call"),
     correlationId: OpaqueId,
     runId: OpaqueId,
-    toolCallId: Schema.String,
-    toolName: Schema.String,
+    toolName: ToolName,
     status: Status,
     durationMs: NonNegativeInt
   }),
@@ -91,7 +104,7 @@ export const HealthEvent = Schema.Union([
     outboxId: OpaqueId,
     attemptId: OpaqueId,
     status: Schema.Literals(["accepted", "delivered", "failed", "uncertain"]),
-    code: Schema.String,
+    code: DeliveryCode,
     durationMs: NonNegativeInt
   }),
   Schema.Struct({
@@ -106,7 +119,7 @@ export const HealthEvent = Schema.Union([
     type: Schema.Literal("provider_auth"),
     correlationId: OpaqueId,
     status: Schema.Literals(["configured", "missing", "failed"]),
-    code: Schema.String
+    code: Schema.Literals(["configured", "missing", "failed"])
   }),
   Schema.Struct({
     type: Schema.Literal("workflow_span"),
@@ -128,7 +141,7 @@ export const HealthEvent = Schema.Union([
     feature: TelemetryFeature,
     workflow: TelemetryWorkflow,
     provider: Schema.Literal("openai-codex"),
-    model: Schema.String,
+    model: ModelName,
     status: Schema.Literals(["completed", "failed", "cancelled"]),
     inputTokens: NonNegativeInt,
     outputTokens: NonNegativeInt,
@@ -182,7 +195,7 @@ export function parseHealthEvent(value: unknown): HealthEvent {
   const allowedByType: Readonly<Record<string, readonly string[]>> = {
     webhook: [...common, "code", "durationMs"],
     agent_run: [...common, "runId", "model", "durationMs", "inputTokens", "outputTokens"],
-    tool_call: [...common, "runId", "toolCallId", "toolName", "durationMs"],
+    tool_call: [...common, "runId", "toolName", "durationMs"],
     delivery: [...common, "outboxId", "attemptId", "code", "durationMs"],
     reminder_clock: [...common, "ownerId", "dueCount", "durationMs"],
     provider_auth: [...common, "code"],

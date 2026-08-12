@@ -7,7 +7,11 @@ export default {
   fetch(request: Request, bindings: EgressBindings): Promise<Response> {
     return handleEgressHttp(request, bindings)
   },
-  queue(batch: MessageBatch<unknown>, bindings: EgressBindings): Promise<void> {
-    return handleOutboundQueue(batch, bindings)
+  queue(
+    batch: MessageBatch<unknown>,
+    bindings: EgressBindings,
+    context: ExecutionContext
+  ): Promise<void> {
+    return handleOutboundQueue(batch, bindings, context)
   }
 } satisfies ExportedHandler<EgressBindings>

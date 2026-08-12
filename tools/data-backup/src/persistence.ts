@@ -1,3 +1,4 @@
+import { AwsClient } from "aws4fetch"
 import { randomUUID } from "node:crypto"
 import { mkdir, open, rename, unlink } from "node:fs/promises"
 import { join } from "node:path"
@@ -7,6 +8,17 @@ export interface WriteEncryptedBackupOptions {
   readonly filename: string
   readonly ciphertext: Uint8Array
   readonly randomUuid?: () => string
+}
+
+export interface UploadEncryptedBackupOptions {
+  readonly endpoint: string
+  readonly region: string
+  readonly bucket: string
+  readonly prefix: string
+  readonly filename: string
+  readonly ciphertext: Uint8Array
+  readonly accessKeyId: string
+  readonly secretAccessKey: string
 }
 
 function directorySyncIsUnsupported(error: unknown): boolean {
@@ -65,4 +77,33 @@ export async function writeEncryptedBackup(options: WriteEncryptedBackupOptions)
     }
     throw error
   }
+}
+
+export async function uploadEncryptedBackup(options: UploadEncryptedBackupOptions): Promise<void> {
+  const endpoint = new URL(options.endpoint)
+  if (!endpoint.pathname.endsWith("/")) endpoint.pathname += "/"
+  const prefix = options.prefix
+    .split("/")
+    .filter((part) => part.length > 0)
+    .map(encodeURIComponent)
+    .join("/")
+  const key = [prefix, encodeURIComponent(options.filename)]
+    .filter((part) => part.length > 0)
+    .join("/")
+  const target = new URL(`${encodeURIComponent(options.bucket)}/${key}`, endpoint)
+  const client = new AwsClient({
+    accessKeyId: options.accessKeyId,
+    secretAccessKey: options.secretAccessKey,
+    service: "s3",
+    region: options.region,
+    retries: 3
+  })
+  const body = new ArrayBuffer(options.ciphertext.byteLength)
+  new Uint8Array(body).set(options.ciphertext)
+  const response = await client.fetch(target, {
+    method: "PUT",
+    headers: { "content-type": "application/octet-stream" },
+    body
+  })
+  if (!response.ok) throw new Error(`Independent backup upload failed: ${response.status}`)
 }

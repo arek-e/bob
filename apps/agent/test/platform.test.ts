@@ -153,12 +153,14 @@ describe("agent platform contract", () => {
     expect(deliveryPolicy).not.toContain("pi-auth/openai-codex")
   })
 
-  it("keeps Pi OAuth in the Kubernetes-aware Node credential store", async () => {
+  it("keeps Pi OAuth in the workload-aware Node credential store", async () => {
     const composition = await readFile("apps/agent/src/composition.ts", "utf8")
 
     expect(composition).toContain("new OpenBaoCredentialStore")
     expect(composition).toContain("getKubernetesJwt")
-    expect(composition).toContain("baoKubernetesJwtPath")
+    expect(composition).toContain("getAppRoleSecretId")
+    expect(composition).toContain("config.baoAuthentication.jwtPath")
+    expect(composition).toContain("config.baoAuthentication.secretIdPath")
   })
 
   it("does not inject deployment stage values into the agent", async () => {

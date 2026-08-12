@@ -96,6 +96,7 @@ export function createBobStack(options: BobStackOptions) {
       const coreHost = `bob.${domain}`
       const agentHost = `bob-agent.${domain}`
       const agentAdminHost = `bob-agent-admin.${domain}`
+      const otlpHost = `bob-otel.${domain}`
       const nangoHost = `nango.${domain}`
       const nangoConnectHost = `nango-connect.${domain}`
       const ingressHost = `bob-sendblue.${domain}`
@@ -152,6 +153,11 @@ export function createBobStack(options: BobStackOptions) {
         duration: "168h",
         clientSecretVersion: ENV.ACCESS_SERVICE_TOKEN_ROTATION_VERSION
       })
+      const workerToOtlp = yield* Cloudflare.Access.ServiceToken("WorkerToOtlp", {
+        name: `bob-worker-to-otlp-${PRODUCTION_STAGE}-v${ENV.ACCESS_SERVICE_TOKEN_ROTATION_VERSION}`,
+        duration: "168h",
+        clientSecretVersion: ENV.ACCESS_SERVICE_TOKEN_ROTATION_VERSION
+      })
 
       const agentServicePolicy = yield* Cloudflare.Access.Policy("AgentRunServicePolicy", {
         name: `bob-agent-run-service-${PRODUCTION_STAGE}`,
@@ -177,6 +183,18 @@ export function createBobStack(options: BobStackOptions) {
         sessionDuration: "15m",
         policies: [agentAdminServicePolicy.policyId]
       })
+      const workerOtlpServicePolicy = yield* Cloudflare.Access.Policy("WorkerOtlpServicePolicy", {
+        name: `bob-worker-otlp-service-${PRODUCTION_STAGE}`,
+        decision: "non_identity",
+        include: [{ serviceToken: { tokenId: workerToOtlp.serviceTokenId } }]
+      })
+      const workerOtlpApplication = yield* Cloudflare.Access.Application("WorkerOtlpApplication", {
+        type: "self_hosted",
+        name: `Bob Worker OTLP (${PRODUCTION_STAGE})`,
+        domain: otlpHost,
+        sessionDuration: "1h",
+        policies: [workerOtlpServicePolicy.policyId]
+      })
 
       const agentTunnel = yield* Cloudflare.Tunnel.Tunnel("AgentTunnel", {
         name: `bob-agent-${PRODUCTION_STAGE}`,
@@ -184,8 +202,9 @@ export function createBobStack(options: BobStackOptions) {
         ingress: [
           { hostname: agentHost, service: ENV.AGENT_ORIGIN_URL },
           { hostname: agentAdminHost, service: ENV.AGENT_ORIGIN_URL },
-          { hostname: nangoHost, service: "http://bob-nango.bob.svc.cluster.local:3003" },
-          { hostname: nangoConnectHost, service: "http://bob-nango.bob.svc.cluster.local:3009" },
+          { hostname: otlpHost, service: ENV.OTEL_ORIGIN_URL },
+          { hostname: nangoHost, service: ENV.NANGO_ORIGIN_URL },
+          { hostname: nangoConnectHost, service: ENV.NANGO_CONNECT_ORIGIN_URL },
           { service: "http_status:404" }
         ]
       })
@@ -204,6 +223,14 @@ export function createBobStack(options: BobStackOptions) {
         content: Output.interpolate`${agentTunnel.tunnelId}.cfargotunnel.com`,
         proxied: true,
         comment: "Bob private agent administration host"
+      })
+      yield* Cloudflare.DNS.Record("OtlpTunnelDns", {
+        zoneId: ENV.CLOUDFLARE_ZONE_ID,
+        name: otlpHost,
+        type: "CNAME",
+        content: Output.interpolate`${agentTunnel.tunnelId}.cfargotunnel.com`,
+        proxied: true,
+        comment: "Bob Access-protected Worker OTLP host"
       })
       yield* Cloudflare.DNS.Record("NangoTunnelDns", {
         zoneId: ENV.CLOUDFLARE_ZONE_ID,
@@ -313,7 +340,13 @@ export function createBobStack(options: BobStackOptions) {
           BOB_MODEL: ENV.BOB_MODEL,
           BOB_PROVIDER: ENV.BOB_PROVIDER,
           BOB_RUN_TOKEN_BUDGET: ENV.BOB_RUN_TOKEN_BUDGET,
-          BOB_DAILY_TOKEN_BUDGET: ENV.BOB_DAILY_TOKEN_BUDGET
+          BOB_DAILY_TOKEN_BUDGET: ENV.BOB_DAILY_TOKEN_BUDGET,
+          BOB_RELEASE_SHA: ENV.BOB_RELEASE_SHA,
+          OTEL_EXPORTER_OTLP_ENDPOINT: `https://${otlpHost}`,
+          OTEL_ACCESS_CLIENT_ID: Output.map(workerToOtlp.clientId, Redacted.make),
+          OTEL_ACCESS_CLIENT_SECRET: Output.map(workerToOtlp.clientSecret, (value) =>
+            requiredGeneratedSecret(value, "WorkerToOtlp client secret")
+          )
         }
       })
 
@@ -372,7 +405,13 @@ export function createBobStack(options: BobStackOptions) {
             SENDBLUE_WEBHOOK_SIGNING_SECRET: Redacted.make(webhookSecret),
             SENDBLUE_FROM_NUMBER: Redacted.make(fromNumber),
             SENDBLUE_ALLOWED_USER_NUMBER: Redacted.make(ownerNumber),
-            CORE_CALLER_SECRET: ingressCallerSecret
+            CORE_CALLER_SECRET: ingressCallerSecret,
+            BOB_RELEASE_SHA: ENV.BOB_RELEASE_SHA,
+            OTEL_EXPORTER_OTLP_ENDPOINT: `https://${otlpHost}`,
+            OTEL_ACCESS_CLIENT_ID: Output.map(workerToOtlp.clientId, Redacted.make),
+            OTEL_ACCESS_CLIENT_SECRET: Output.map(workerToOtlp.clientSecret, (value) =>
+              requiredGeneratedSecret(value, "WorkerToOtlp client secret")
+            )
           }
         })
         ingressUrl = ingress.url
@@ -397,7 +436,13 @@ export function createBobStack(options: BobStackOptions) {
               requiredSendblue(ENV.SENDBLUE_API_SECRET_KEY, "SENDBLUE_API_SECRET_KEY")
             ),
             SENDBLUE_STATUS_CALLBACK_URL: `https://${ingressHost}/webhooks/outbound`,
-            CORE_CALLER_SECRET: egressCallerSecret
+            CORE_CALLER_SECRET: egressCallerSecret,
+            BOB_RELEASE_SHA: ENV.BOB_RELEASE_SHA,
+            OTEL_EXPORTER_OTLP_ENDPOINT: `https://${otlpHost}`,
+            OTEL_ACCESS_CLIENT_ID: Output.map(workerToOtlp.clientId, Redacted.make),
+            OTEL_ACCESS_CLIENT_SECRET: Output.map(workerToOtlp.clientSecret, (value) =>
+              requiredGeneratedSecret(value, "WorkerToOtlp client secret")
+            )
           }
         })
         egressUrl = egress.url
@@ -437,11 +482,14 @@ export function createBobStack(options: BobStackOptions) {
         coreAccessAudience: coreApplication.aud,
         agentAccessAudience: agentApplication.aud,
         agentAdminAccessAudience: agentAdminApplication.aud,
+        workerOtlpAccessAudience: workerOtlpApplication.aud,
+        otlpUrl: `https://${otlpHost}`,
         accessTeamDomain: ENV.ACCESS_TEAM_DOMAIN,
         agentTunnelId: agentTunnel.tunnelId,
         agentToCoreClientId: agentToCore.clientId,
         coreToAgentClientId: coreToAgent.clientId,
-        coreToAgentAdminClientId: coreToAgentAdmin.clientId
+        coreToAgentAdminClientId: coreToAgentAdmin.clientId,
+        workerToOtlpClientId: workerToOtlp.clientId
       }
     })
   )

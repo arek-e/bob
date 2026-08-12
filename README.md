@@ -23,6 +23,22 @@ pnpm install --frozen-lockfile
 pnpm check
 ```
 
+Use the shorter agent gate during agent work:
+
+```sh
+pnpm agent:check
+```
+
+After a candidate agent is reachable through Cloudflare Access, run the live predeploy suite:
+
+```sh
+pnpm agent:smoke:predeploy
+```
+
+The predeploy suite checks real Codex authentication, structured output, repair, conflict handling, and training safety. It does not prove the Sendblue channel.
+
+Complete acceptance starts with `List my reminders.` from the allowlisted owner. It must finish with a completed run, `reminder_list`, an `agent_reply` outbox, and delivered Sendblue status. Follow [deployment.md](docs/runbooks/deployment.md).
+
 Do not put secrets in local environment files. Use Varlock and OpenBao.
 
 See [deployment.md](docs/runbooks/deployment.md) before any cloud change.

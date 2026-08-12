@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 const execFileAsync = promisify(execFile)
 
 describe("Sendblue reconciler launcher", () => {
-  it("initializes varlock/env for the package command", async () => {
+  it("initializes varlock/env for the package command", { timeout: 30_000 }, async () => {
     const repositoryRoot = new URL("../../../", import.meta.url)
     const fetchStub = new URL("./fetch-stub.mjs", import.meta.url)
     const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm"

@@ -7,4 +7,8 @@ export interface EgressBindings {
   SENDBLUE_API_SECRET_KEY: string
   SENDBLUE_STATUS_CALLBACK_URL: string
   CORE_CALLER_SECRET: string
+  OTEL_EXPORTER_OTLP_ENDPOINT: string
+  OTEL_ACCESS_CLIENT_ID: string
+  OTEL_ACCESS_CLIENT_SECRET: string
+  BOB_RELEASE_SHA: string
 }

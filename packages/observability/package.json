@@ -6,8 +6,11 @@
   "exports": {
     "./attribution": "./src/attribution.ts",
     "./cloudflare": "./src/cloudflare.ts",
+    "./effect": "./src/effect.ts",
     "./events": "./src/events.ts",
     "./node": "./src/node.ts",
+    "./otlp": "./src/otlp.ts",
+    "./propagation": "./src/propagation.ts",
     "./testing": "./src/testing.ts",
     "./trace": "./src/trace.ts"
   },
@@ -16,6 +19,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@bob/contracts": "workspace:*",
     "effect": "4.0.0-beta.107"
   }
 }

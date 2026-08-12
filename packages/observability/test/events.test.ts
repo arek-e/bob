@@ -17,7 +17,7 @@ describe("content-free telemetry", () => {
         type: "webhook",
         correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
         status: "accepted",
-        code: "ok",
+        code: "accepted",
         durationMs: 3,
         messageText: "private"
       })
@@ -59,6 +59,41 @@ describe("content-free telemetry", () => {
         toolCalls: 0,
         durationMs: 1,
         userText: "private"
+      })
+    ).toThrow()
+  })
+
+  it("rejects private values in legacy health labels", () => {
+    const common = {
+      correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
+      runId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0",
+      status: "completed" as const,
+      durationMs: 1
+    }
+    expect(() =>
+      parseHealthEvent({
+        type: "tool_call",
+        ...common,
+        toolCallId: "private-phone-46700000000",
+        toolName: "reminder_list"
+      })
+    ).toThrow()
+    expect(() =>
+      parseHealthEvent({
+        type: "agent_run",
+        ...common,
+        model: "private-phone-46700000000",
+        inputTokens: 1,
+        outputTokens: 1
+      })
+    ).toThrow()
+    expect(() =>
+      parseHealthEvent({
+        type: "webhook",
+        correlationId: common.correlationId,
+        status: "failed",
+        code: "private-phone-46700000000",
+        durationMs: 1
       })
     ).toThrow()
   })

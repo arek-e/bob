@@ -1,7 +1,7 @@
 # Bob context
 
 Status: product and architecture context  
-Updated: 2026-08-11
+Updated: 2026-08-12
 
 ## Product
 
@@ -81,7 +81,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Alchemy owns each Bob Cloudflare resource that it declares.
 - Alchemy creates Access service tokens and Tunnel credentials before OpenBao receives their runtime copies.
 - No Cloudflare resource has two infrastructure owners.
-- Kubernetes and OpenBao stay outside Alchemy in the first release.
+- Coolify and OpenBao stay outside Alchemy.
 - Effect composes I/O. Pure domain rules stay as normal TypeScript.
 - Drizzle owns application schemas and queries. Better Auth uses its built-in D1 adapter for auth tables.
 - Drizzle schemas and queries stay with their owning domain modules.
@@ -106,3 +106,4 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - [ADR 0004: Alchemy, Effect v4, and Drizzle v1 RC](docs/adr/0004-alchemy-effect-drizzle.md)
 - [ADR 0005: Varlock environment contracts](docs/adr/0005-varlock-environment-contracts.md)
 - [ADR 0007: Bob-owned Pi AI loop](docs/adr/0007-bob-owned-pi-ai-loop.md)
+- [ADR 0009: Coolify private runtime](docs/adr/0009-coolify-private-runtime.md)
