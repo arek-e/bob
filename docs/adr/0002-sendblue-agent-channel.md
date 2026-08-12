@@ -176,11 +176,29 @@ Ask for a choice when more than one action can match.
 
 ### Typing behavior
 
-Send a typing indicator only after a worker claims the agent job.
+Use native interactions only for direct iMessage events.
 
-Refresh it during long model work.
+Do not use them for SMS, RCS, groups, or events with an unknown service.
+
+Claim one `like` reaction before calling the provider.
+
+Do not retry that reaction after an uncertain result.
+
+Send the reaction and typing start after the durable inbound claim.
+
+Start agent or deterministic work after both provider calls return.
+
+Set `max_duration_ms` to cover the bounded agent run.
 
 Stop it after success, failure, or timeout.
+
+Use `reply_to.message_handle` for the final direct iMessage reply.
+
+Send a standard message after a safe client rejection of the inline reply.
+
+Do not send that fallback after a timeout, rate limit, or server error.
+
+Do not call `mark-read`. Sendblue must enable that endpoint first.
 
 Do not enable Sendblue auto-typing before the live path passes tests.
 
@@ -275,6 +293,10 @@ The first slice must pass these tests:
 12. A secret mismatch causes no configuration change.
 13. A Pi OAuth failure starts no API-key provider.
 14. Logs contain no secrets, phone numbers, or message text.
+15. One direct iMessage gets one reaction before its action starts.
+16. Typing stops after success and failure.
+17. SMS, RCS, and group messages use no native interactions.
+18. An unsupported inline reply falls back to one standard message.
 
 ## Consequences
 

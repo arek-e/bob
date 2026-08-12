@@ -14,6 +14,7 @@ export const ProviderDeliveryStatus = Schema.Literals([
   "error",
   "opted_out"
 ])
+export const ProviderMessageService = Schema.Literals(["imessage", "sms", "rcs", "unknown"])
 
 export const NormalizedInboundEvent = Schema.Struct({
   id: Uuid,
@@ -23,6 +24,8 @@ export const NormalizedInboundEvent = Schema.Struct({
   senderE164: E164,
   destinationE164: E164,
   text: NonEmptyText,
+  service: ProviderMessageService,
+  isGroup: Schema.Boolean,
   providerOptedOut: Schema.Boolean,
   receivedAt: IsoDateTime,
   correlationId: Uuid
@@ -49,5 +52,6 @@ export const InboundAcceptance = Schema.Struct({
 })
 
 export type NormalizedInboundEvent = typeof NormalizedInboundEvent.Type
+export type ProviderMessageService = typeof ProviderMessageService.Type
 export type NormalizedStatusEvent = typeof NormalizedStatusEvent.Type
 export type InboundAcceptance = typeof InboundAcceptance.Type

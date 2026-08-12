@@ -100,6 +100,7 @@ export function createBobStack(options: BobStackOptions) {
       const nangoHost = `nango.${domain}`
       const nangoConnectHost = `nango-connect.${domain}`
       const ingressHost = `bob-sendblue.${domain}`
+      const egressHost = `bob-sendblue-egress.${domain}`
       const sendblueActive = ENV.SENDBLUE_ENABLED
 
       const database = yield* Cloudflare.D1.Database("Database", {
@@ -319,6 +320,7 @@ export function createBobStack(options: BobStackOptions) {
           BETTER_AUTH_SECRET: Redacted.make(ENV.BETTER_AUTH_SECRET),
           INGRESS_CALLER_SECRET: ingressCallerSecret,
           EGRESS_CALLER_SECRET: egressCallerSecret,
+          SENDBLUE_EGRESS_URL: `https://${egressHost}`,
           ACCESS_TEAM_DOMAIN: ENV.ACCESS_TEAM_DOMAIN,
           CORE_ACCESS_AUDIENCE: coreApplication.aud,
           SETUP_ACCESS_AUDIENCE: setupApplication.aud,
@@ -420,6 +422,7 @@ export function createBobStack(options: BobStackOptions) {
         const egress = yield* Cloudflare.Worker("SendblueEgress", {
           main: "../../apps/sendblue-egress/src/index.ts",
           workersDev: false,
+          domain: egressHost,
           compatibility: { date: "2026-08-10" },
           observability: {
             enabled: true,

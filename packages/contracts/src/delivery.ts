@@ -18,6 +18,7 @@ export const OutboxClaim = Schema.Struct({
   number: E164,
   fromNumber: E164,
   smsSafeText: ShortText,
+  replyToMessageHandle: Schema.optionalKey(Schema.String),
   correlationId: Uuid,
   claimedAt: IsoDateTime
 })

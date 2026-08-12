@@ -15,6 +15,11 @@ export interface ClaimedInbound {
   readonly channelId: string
   readonly messageId: string
   readonly text: string
+  readonly providerMessageHandle: string
+  readonly service: NormalizedInboundEvent["service"]
+  readonly isGroup: boolean
+  readonly number: string
+  readonly fromNumber: string
   readonly correlationId: string
 }
 
@@ -23,6 +28,7 @@ export interface ConversationStore {
   markEnqueued(eventId: string, at: string): Promise<void>
   getInboundOwner(eventId: string): Promise<string | undefined>
   claimInbound(eventId: string, leaseMs: number): Promise<ClaimedInbound | undefined>
+  claimReaction(eventId: string, at: string): Promise<boolean>
   completeInbound(eventId: string, at: string): Promise<void>
   prepareInboundRecovery(
     eventId: string,
@@ -216,6 +222,8 @@ export function makeConversationStore(
           accountId: event.accountId,
           lineId: event.lineId,
           providerMessageHandle: event.messageHandle,
+          service: event.service,
+          isGroup: event.isGroup,
           correlationId: event.correlationId,
           ...(consumedControl ? { processedAt: createdAt } : {}),
           createdAt
@@ -302,24 +310,50 @@ export function makeConversationStore(
         )
         .returning()
       if (claimed === undefined) return undefined
-      const [message] = await database
-        .select()
-        .from(messages)
-        .where(eq(messages.id, claimed.messageId))
-        .limit(1)
-      if (message === undefined) throw new Error("Inbound message is missing")
-      const text = await protection.decryptText(await ownerKey(), {
-        ciphertext: message.textCiphertext,
-        iv: message.textIv
-      })
+      const [[message], [channel]] = await Promise.all([
+        database.select().from(messages).where(eq(messages.id, claimed.messageId)).limit(1),
+        database.select().from(channels).where(eq(channels.id, claimed.channelId)).limit(1)
+      ])
+      if (message === undefined || channel === undefined) {
+        throw new Error("Inbound message or channel is missing")
+      }
+      const key = await ownerKey()
+      const [text, number, fromNumber] = await Promise.all([
+        protection.decryptText(key, {
+          ciphertext: message.textCiphertext,
+          iv: message.textIv
+        }),
+        protection.decryptText(key, {
+          ciphertext: channel.senderCiphertext,
+          iv: channel.senderIv
+        }),
+        protection.decryptText(key, {
+          ciphertext: channel.destinationCiphertext,
+          iv: channel.destinationIv
+        })
+      ])
       return {
         eventId: claimed.id,
         ownerId: claimed.userId,
         channelId: claimed.channelId,
         messageId: claimed.messageId,
         text,
+        providerMessageHandle: claimed.providerMessageHandle,
+        service: claimed.service,
+        isGroup: claimed.isGroup,
+        number,
+        fromNumber,
         correlationId: claimed.correlationId
       }
+    },
+
+    async claimReaction(eventId, at) {
+      const [claimed] = await database
+        .update(inboundEvents)
+        .set({ reactionClaimedAt: at })
+        .where(and(eq(inboundEvents.id, eventId), isNull(inboundEvents.reactionClaimedAt)))
+        .returning({ id: inboundEvents.id })
+      return claimed !== undefined
     },
 
     async completeInbound(eventId, at) {

@@ -95,6 +95,19 @@ export interface NormalizationContext {
   readonly randomUuid?: () => string
 }
 
+function normalizeMessageService(service: string): NormalizedInboundEvent["service"] {
+  switch (service.trim().toLowerCase()) {
+    case "imessage":
+      return "imessage"
+    case "sms":
+      return "sms"
+    case "rcs":
+      return "rcs"
+    default:
+      return "unknown"
+  }
+}
+
 export function normalizeInbound(
   payload: SendblueWebhookPayload,
   context: NormalizationContext
@@ -114,6 +127,9 @@ export function normalizeInbound(
     senderE164: payload.from_number,
     destinationE164: payload.to_number,
     text: payload.content,
+    service: normalizeMessageService(payload.service),
+    isGroup:
+      payload.group_id.trim().length > 0 || payload.message_type.toLowerCase().includes("group"),
     providerOptedOut: payload.opted_out,
     receivedAt: new Date(payload.date_sent).toISOString(),
     correlationId: context.correlationId ?? randomUuid()

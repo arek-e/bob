@@ -27,6 +27,7 @@ export interface AgentRunStore {
       readonly channelId: string
       readonly text: string
       readonly reasonCode: string
+      readonly replyToMessageHandle?: string
     }
   ): Promise<string>
   channelForRun(runId: string): Promise<string | undefined>
@@ -221,6 +222,7 @@ export function makeAgentRunStore(
           reasonCode: response.reasonCode,
           correlationId: result.correlationId,
           idempotencyKey,
+          replyToProviderMessageHandle: response.replyToMessageHandle,
           state: "pending",
           createdAt: at
         }),

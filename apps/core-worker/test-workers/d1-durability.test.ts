@@ -177,6 +177,51 @@ describe("D1 migrations and durability", () => {
     expect(row?.count).toBe(0)
   })
 
+  it("claims one reaction and carries the native reply target into delivery", async () => {
+    const { database, protection } = await seedRunData()
+    await database
+      .update(inboundEvents)
+      .set({ service: "imessage", isGroup: false })
+      .where(eq(inboundEvents.id, inboundId))
+    const conversations = makeConversationStore(database, protection, {
+      ownerId,
+      ownerTimeZone: "Europe/Stockholm",
+      dataKeyVersion: 1,
+      now: () => new Date("2026-08-11T10:01:00.000Z")
+    })
+
+    const claimed = await conversations.claimInbound(inboundId, 90_000)
+    expect(claimed).toMatchObject({
+      providerMessageHandle: "provider-handle",
+      service: "imessage",
+      isGroup: false,
+      number: "+46700000000",
+      fromNumber: "+46711111111"
+    })
+    await expect(conversations.claimReaction(inboundId, "2026-08-11T10:01:00.000Z")).resolves.toBe(
+      true
+    )
+    await expect(conversations.claimReaction(inboundId, "2026-08-11T10:01:01.000Z")).resolves.toBe(
+      false
+    )
+
+    const delivery = makeDeliveryStore(database, protection, {
+      now: () => new Date("2026-08-11T10:01:02.000Z")
+    })
+    const outboxId = await delivery.createOutbox({
+      ownerId,
+      channelId,
+      text: "Done",
+      reasonCode: "test",
+      correlationId,
+      idempotencyKey: "native-reply",
+      replyToMessageHandle: claimed!.providerMessageHandle
+    })
+    await expect(delivery.claimOutbox(outboxId, 90_000)).resolves.toMatchObject({
+      replyToMessageHandle: "provider-handle"
+    })
+  })
+
   it("accepts the first encrypted inbound with production hex keys", async () => {
     const telemetry = makeCaptureTelemetry({
       serviceName: "bob-core-worker",
@@ -196,6 +241,8 @@ describe("D1 migrations and durability", () => {
       senderE164: "+46700000000",
       destinationE164: "+46711111111",
       text: "HELP",
+      service: "imessage" as const,
+      isGroup: false,
       providerOptedOut: false,
       receivedAt: "2026-08-11T10:00:00.000Z",
       correlationId: "00000000-0000-4000-8000-000000000102"
@@ -461,6 +508,8 @@ describe("D1 migrations and durability", () => {
       senderE164: "+46700000000",
       destinationE164: "+46711111111",
       text: "CANCEL",
+      service: "sms",
+      isGroup: false,
       providerOptedOut: true,
       receivedAt: "2026-08-11T10:02:00.000Z",
       correlationId: "00000000-0000-4000-8000-000000000262"
@@ -1080,6 +1129,9 @@ describe("D1 migrations and durability", () => {
       lineId: "line",
       senderE164: "+46700000000",
       destinationE164: "+46711111111",
+      service: "sms" as const,
+      isGroup: false,
+      providerOptedOut: false,
       receivedAt: "2026-08-11T10:00:00.000Z",
       correlationId
     }
