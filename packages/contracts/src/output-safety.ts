@@ -10,6 +10,7 @@ export const OutputValidationCode = Schema.Literals([
   "invalid_source_reference",
   "invalid_tool_reference",
   "unverified_action_claim",
+  "unknown_action_claim",
   "unsupported_conflict",
   "conflict_not_disclosed"
 ])

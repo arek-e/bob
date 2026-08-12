@@ -285,11 +285,11 @@ export function makeConversationStore(
 
     async getInboundOwner(eventId) {
       const [event] = await database
-        .select({ ownerId: inboundEvents.userId })
+        .select({ ownerId: inboundEvents.userId, processedAt: inboundEvents.processedAt })
         .from(inboundEvents)
         .where(eq(inboundEvents.id, eventId))
         .limit(1)
-      return event?.ownerId
+      return event?.processedAt === null ? event.ownerId : undefined
     },
 
     async claimInbound(eventId, leaseMs) {

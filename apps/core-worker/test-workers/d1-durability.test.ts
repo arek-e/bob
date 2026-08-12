@@ -24,6 +24,7 @@ import { makeAgentRunStore } from "../src/modules/conversations/run-store.ts"
 import {
   agentRuns,
   channels,
+  conversationTurns,
   effectAttempts,
   inboundEvents,
   messages,
@@ -409,7 +410,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const settings = makeOwnerSettingsStore(database, protection, {
       defaultTimeZone: "Europe/Stockholm"
     })
@@ -490,6 +491,67 @@ describe("D1 migrations and durability", () => {
     expect(event?.deadLetteredAt).not.toBeNull()
   })
 
+  it("ignores a Queue retry after the legacy inbound is already complete", async () => {
+    const { database, protection } = await seedRunData()
+    const conversations = makeConversationStore(database, protection, {
+      ownerId,
+      ownerTimeZone: "Europe/Stockholm",
+      dataKeyVersion: 1,
+      now: () => new Date("2026-08-11T10:02:00.000Z")
+    })
+    await conversations.completeInbound(inboundId, "2026-08-11T10:01:00.000Z")
+    const delivery = makeDeliveryStore(database, protection, {
+      now: () => new Date("2026-08-11T10:01:00.000Z")
+    })
+    await delivery.createOutbox({
+      ownerId,
+      channelId,
+      text: "Existing response",
+      reasonCode: "agent_reply",
+      correlationId,
+      idempotencyKey: "processed-inbound-existing-response"
+    })
+    await expect(conversations.getInboundOwner(inboundId)).resolves.toBeUndefined()
+
+    const coordinatorFetch = async () => Response.json({ ok: true })
+    let coordinatorCalls = 0
+    const coordinatorNamespace = {
+      idFromName: () => ({ toString: () => ownerId }),
+      get: () => ({
+        fetch: async () => {
+          coordinatorCalls += 1
+          return coordinatorFetch()
+        }
+      })
+    }
+    const bindings = {
+      ...(env as unknown as CoreBindings),
+      INBOUND_DEAD_LETTER_QUEUE_NAME: "bob-inbound-dead-letter-test",
+      DELIVERY_RESULT_QUEUE_NAME: "bob-delivery-result-test",
+      DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: "bob-delivery-result-dead-letter-test",
+      OWNER_RUN_COORDINATOR: {
+        jurisdiction: () => coordinatorNamespace
+      } as unknown as DurableObjectNamespace
+    } satisfies CoreBindings
+    const batch = createMessageBatch("bob-inbound-test", [
+      {
+        id: "processed-inbound-retry",
+        timestamp: new Date("2026-08-11T10:02:00.000Z"),
+        attempts: 2,
+        body: { eventId: inboundId }
+      }
+    ])
+    const context = createExecutionContext()
+
+    await handleInboundQueue(batch, bindings)
+
+    const result = await getQueueResult(batch, context)
+    expect(result.explicitAcks).toEqual(["processed-inbound-retry"])
+    expect(coordinatorCalls).toBe(0)
+    await expect(database.select().from(conversationTurns)).resolves.toHaveLength(0)
+    await expect(database.select().from(outboxMessages)).resolves.toHaveLength(1)
+  })
+
   it("persists trusted opt-out controls without enqueueing a conversation", async () => {
     const { database, protection } = await seedRunData()
     const conversations = makeConversationStore(database, protection, {
@@ -553,12 +615,168 @@ describe("D1 migrations and durability", () => {
       limits: { maxTurns: 4, maxToolCalls: 4, maxDurationMs: 60_000, maxResponseCharacters: 1_200 }
     }
     await store.create(request, inboundId)
-    expect(await store.claim(runId, 1_000)).toBe(true)
+    const firstAttemptId = await store.claim(runId, 1_000)
+    expect(firstAttemptId).toMatch(/^[0-9a-f-]{36}$/)
     current = new Date("2026-08-11T10:00:02.000Z")
-    expect(await store.claim(runId, 1_000)).toBe(true)
+    const secondAttemptId = await store.claim(runId, 1_000)
+    expect(secondAttemptId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(secondAttemptId).not.toBe(firstAttemptId)
     expect((await store.loadForInbound(inboundId))?.request).toEqual(request)
     const [run] = await database.select().from(agentRuns)
     expect(run?.status).toBe("executing")
+  })
+
+  it("keeps versioned runs separate when two revisions use the same response target", async () => {
+    const { protection } = await seedRunData()
+    const database = createCoreDatabase(env.DB)
+    const store = makeAgentRunStore(database, protection, {
+      now: () => new Date("2026-08-11T10:00:00.000Z")
+    })
+    const turnId = "00000000-0000-4000-8000-000000000270"
+    const firstRunId = "00000000-0000-4000-8000-000000000271"
+    const secondRunId = "00000000-0000-4000-8000-000000000272"
+    const firstRequest = {
+      protocolVersion: 1 as const,
+      runId: firstRunId,
+      ownerId,
+      correlationId,
+      conversationTurnId: turnId,
+      conversationTurnRevision: 1,
+      sourceMessageId: messageId,
+      localTime: "2026-08-11T10:00:00.000Z",
+      timeZone: "Europe/Stockholm",
+      userText: "Hello",
+      currentTurnMessages: [{ sourceMessageId: messageId, text: "Hello" }],
+      contextItems: [],
+      allowedTools: [],
+      limits: {
+        maxTurns: 4,
+        maxToolCalls: 4,
+        maxDurationMs: 60_000,
+        maxResponseCharacters: 1_200
+      }
+    }
+    const secondRequest = {
+      ...firstRequest,
+      runId: secondRunId,
+      conversationTurnRevision: 2
+    }
+
+    await expect(store.create(firstRequest, inboundId)).resolves.toEqual({
+      runId: firstRunId,
+      duplicate: false
+    })
+    await expect(store.create(secondRequest, inboundId)).resolves.toEqual({
+      runId: secondRunId,
+      duplicate: false
+    })
+
+    await expect(store.loadForTurn(turnId, 1)).resolves.toMatchObject({ request: firstRequest })
+    await expect(store.loadForTurn(turnId, 2)).resolves.toMatchObject({ request: secondRequest })
+    await expect(store.loadForInbound(inboundId)).resolves.toBeUndefined()
+
+    const legacyRunId = "00000000-0000-4000-8000-000000000273"
+    const legacyRequest = {
+      protocolVersion: 1 as const,
+      runId: legacyRunId,
+      ownerId,
+      correlationId,
+      sourceMessageId: messageId,
+      localTime: "2026-08-11T10:00:00.000Z",
+      timeZone: "Europe/Stockholm",
+      userText: "Hello",
+      contextItems: [],
+      allowedTools: [],
+      limits: {
+        maxTurns: 4,
+        maxToolCalls: 4,
+        maxDurationMs: 60_000,
+        maxResponseCharacters: 1_200
+      }
+    }
+    await expect(store.create(legacyRequest, inboundId)).resolves.toEqual({
+      runId: legacyRunId,
+      duplicate: false
+    })
+    await expect(store.loadForInbound(inboundId)).resolves.toMatchObject({
+      request: legacyRequest
+    })
+    await expect(store.loadForTurn(turnId, 1)).resolves.toMatchObject({ request: firstRequest })
+    await expect(store.loadForTurn(turnId, 2)).resolves.toMatchObject({ request: secondRequest })
+  })
+
+  it("does not let an expired agent attempt commit after its replacement", async () => {
+    const { database, protection } = await seedRunData()
+    let current = new Date("2026-08-11T10:00:00.000Z")
+    let next = 40
+    const store = makeAgentRunStore(database, protection, {
+      now: () => current,
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const request = {
+      protocolVersion: 1 as const,
+      runId,
+      ownerId,
+      correlationId,
+      sourceMessageId: messageId,
+      localTime: current.toISOString(),
+      timeZone: "Europe/Stockholm",
+      userText: "Hello",
+      contextItems: [],
+      allowedTools: [],
+      limits: {
+        maxTurns: 4,
+        maxToolCalls: 4,
+        maxDurationMs: 60_000,
+        maxResponseCharacters: 1_200
+      }
+    }
+    const result = {
+      protocolVersion: 1 as const,
+      runId,
+      correlationId,
+      status: "completed" as const,
+      responseText: "Current response",
+      model: "test-model",
+      durationMs: 1,
+      inputTokens: 1,
+      outputTokens: 1,
+      toolCalls: 0
+    }
+    await store.create(request, inboundId)
+    const expiredAttemptId = await store.claim(runId, 1_000)
+    expect(expiredAttemptId).toBeDefined()
+    current = new Date("2026-08-11T10:00:02.000Z")
+    const currentAttemptId = await store.claim(runId, 1_000)
+    expect(currentAttemptId).toBeDefined()
+
+    expect(
+      await store.completeWithResponse(
+        { ...result, responseText: "Stale response" },
+        { channelId, text: "Stale response", reasonCode: "agent_reply" },
+        undefined,
+        expiredAttemptId!
+      )
+    ).toBeUndefined()
+    expect(await database.select().from(outboxMessages)).toHaveLength(0)
+
+    const outboxId = await store.completeWithResponse(
+      result,
+      { channelId, text: "Current response", reasonCode: "agent_reply" },
+      undefined,
+      currentAttemptId!
+    )
+    expect(outboxId).toBeDefined()
+    expect(await database.select().from(outboxMessages)).toHaveLength(1)
+    expect(
+      await store.completeWithResponse(
+        { ...result, responseText: "Late stale response" },
+        { channelId, text: "Late stale response", reasonCode: "agent_reply" },
+        undefined,
+        expiredAttemptId!
+      )
+    ).toBeUndefined()
+    expect(await database.select().from(outboxMessages)).toHaveLength(1)
   })
 
   it("commits the completed run and response outbox in one batch", async () => {
@@ -589,7 +807,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    await store.claim(runId, 90_000)
+    const attemptId = await store.claim(runId, 90_000)
     const outboxId = await store.completeWithResponse(
       {
         protocolVersion: 1,
@@ -603,7 +821,9 @@ describe("D1 migrations and durability", () => {
         outputTokens: 1,
         toolCalls: 0
       },
-      { channelId, text: "Hello back", reasonCode: "agent_reply" }
+      { channelId, text: "Hello back", reasonCode: "agent_reply" },
+      undefined,
+      attemptId!
     )
     const [run] = await database.select().from(agentRuns)
     const [outbox] = await database.select().from(outboxMessages)
@@ -1476,7 +1696,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     let next = 2_000
     const memory = makeMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
@@ -1835,7 +2055,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const leaseCommand = {
       runId,
       toolCallId: "tool-call-1",
@@ -1911,7 +2131,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const executor = makeToolExecutor(
       database,
       protection,
@@ -2106,7 +2326,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const training = makeTrainingStore(database, {})
     const gymId = await training.createGym(ownerId, "Home gym", "lookup:gym:create")
     const exerciseId = await training.createExercise(
@@ -2216,7 +2436,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const training = makeTrainingStore(database, {})
     const executor = makeToolExecutor(
       database,
@@ -2358,7 +2578,7 @@ describe("D1 migrations and durability", () => {
       },
       inboundId
     )
-    expect(await runStore.claim(runId, 90_000)).toBe(true)
+    expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const training = makeTrainingStore(database, {})
     const executor = makeToolExecutor(
       database,

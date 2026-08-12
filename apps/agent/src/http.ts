@@ -1,6 +1,12 @@
-import { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/contracts/agent"
+import {
+  AgentRunRequest,
+  AgentRunResult,
+  AgentSteerRequest,
+  AgentSteerResult,
+  DeviceLoginEvent
+} from "@bob/contracts/agent"
 import { featureForTools } from "@bob/observability/attribution"
-import { emitHealth, withBobSpan } from "@bob/observability/effect"
+import { emitHealth, recordDecision, withBobSpan } from "@bob/observability/effect"
 import { externalParentFromTraceparent, formatTraceparent } from "@bob/observability/propagation"
 import { Effect, Schema } from "effect"
 
@@ -92,7 +98,7 @@ export async function handleAgentHttp(
         Effect.gen(function* () {
           const span = yield* Effect.currentSpan
           const output = Schema.decodeUnknownSync(AgentRunResult)(
-            yield* composition.services.agent.runTurnEffect(input)
+            yield* composition.services.agent.runTurnEffect(input, request.signal)
           )
           yield* emitHealth({
             type: "agent_run",
@@ -124,6 +130,42 @@ export async function handleAgentHttp(
       const tracedRun = parent === undefined ? run : Effect.withParentSpan(run, parent)
       const result = await composition.runtime.runPromise(tracedRun)
       return json(result.output, 200, { traceparent: result.traceparent })
+    }
+    if (request.method === "POST" && url.pathname === "/v1/steer") {
+      const input = Schema.decodeUnknownSync(AgentSteerRequest)(await readJson(request))
+      const correlationId = Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
+        request.headers.get("x-bob-correlation-id") ?? input.runId
+      )
+      const parent = externalParentFromTraceparent(request.headers.get("traceparent"))
+      const abort = withBobSpan(
+        {
+          name: "bob.agent.abort",
+          correlationId,
+          runId: input.runId,
+          feature: "assistant"
+        },
+        Effect.gen(function* () {
+          const output = Schema.decodeUnknownSync(AgentSteerResult)(
+            composition.services.agent.requestSteer(input.runId)
+          )
+          yield* recordDecision({
+            name: "bob.decision.steering",
+            code:
+              output.status === "aborted_model"
+                ? "abort_model"
+                : output.status === "queued"
+                  ? "wait_effect"
+                  : "stale_reply_suppressed",
+            outcome: output.status === "missing" ? "skipped" : "applied"
+          })
+          return output
+        })
+      )
+      return json(
+        await composition.runtime.runPromise(
+          parent === undefined ? abort : Effect.withParentSpan(abort, parent)
+        )
+      )
     }
     if (request.method === "GET" && url.pathname === "/v1/admin/auth/status") {
       return json(await composition.services.agent.getAuthStatus())

@@ -25,6 +25,25 @@ import {
   type AccessTokenVerifier
 } from "../modules/policy/access.ts"
 
+async function wakeSettledConversationRun(
+  bindings: CoreBindings,
+  composition: ReturnType<typeof composeCore>,
+  runId: string
+): Promise<void> {
+  try {
+    const activity = await composition.services.tools.mutationActivity(runId)
+    if (activity.status === "active") return
+    const released = await composition.services.turns.releaseSettlingForRun(runId)
+    if (released === undefined) return
+    const coordinators = bindings.OWNER_RUN_COORDINATOR.jurisdiction("eu")
+    await coordinators
+      .get(coordinators.idFromName(released.ownerId))
+      .fetch("https://coordinator.internal/wake", { method: "POST" })
+  } catch {
+    // The released turn remains recoverable after a lost live wake-up.
+  }
+}
+
 const MAX_BODY_BYTES = 64 * 1024
 const securityHeaders = {
   "cache-control": "no-store",
@@ -371,6 +390,9 @@ export async function handleHttp(
                     name: "bob.decision.policy",
                     code: result.ok ? "allowed" : "confirmation_required",
                     outcome: result.ok ? "allowed" : "denied"
+                  })
+                  yield* promiseEffect(async () => {
+                    await wakeSettledConversationRun(bindings, composition, command.runId)
                   })
                   return result
                 })

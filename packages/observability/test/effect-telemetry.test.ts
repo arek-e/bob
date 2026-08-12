@@ -18,6 +18,54 @@ const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
 const runId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0"
 
 describe("Effect telemetry", () => {
+  it("records closed conversation steering metadata without message content", async () => {
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-core-worker",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const conversationTurnId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba2"
+
+    await Effect.runPromise(
+      withBobSpan(
+        {
+          name: "bob.run.cancel_request",
+          correlationId,
+          runId,
+          conversationTurnId,
+          conversationRevision: 2,
+          feature: "assistant"
+        },
+        recordDecision({
+          name: "bob.decision.steering",
+          code: "abort_model",
+          outcome: "applied",
+          conversationRevision: 2
+        })
+      ).pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(telemetry.finishedSpans()).toEqual([
+      expect.objectContaining({
+        name: "bob.run.cancel_request",
+        attributes: expect.objectContaining({
+          "bob.conversation.turn_id": conversationTurnId,
+          "bob.conversation.revision": 2
+        }),
+        events: [
+          expect.objectContaining({
+            name: "bob.decision.steering",
+            attributes: {
+              "bob.decision.code": "abort_model",
+              "bob.decision.outcome": "applied",
+              "bob.conversation.revision": 2
+            }
+          })
+        ]
+      })
+    ])
+  })
+
   it("starts an explicit Bob root without the current parent", async () => {
     const telemetry = makeCaptureTelemetry({
       serviceName: "bob-core-worker",

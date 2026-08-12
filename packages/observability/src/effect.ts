@@ -20,6 +20,12 @@ export const BobSpanName = Schema.Literals([
   "bob.inbound.consume",
   "bob.coordinator.invoke",
   "bob.coordinator.run",
+  "bob.turn.collect",
+  "bob.turn.reflect",
+  "bob.run.cancel_request",
+  "bob.agent.abort",
+  "bob.reply.commit",
+  "bob.reply.suppress",
   "bob.inbound.process",
   "bob.inbound.claim",
   "bob.context.build",
@@ -66,6 +72,7 @@ export const BobDecisionName = Schema.Literals([
   "bob.decision.policy",
   "bob.decision.grounding",
   "bob.decision.output",
+  "bob.decision.steering",
   "bob.state.transition"
 ])
 
@@ -75,6 +82,8 @@ export const BobDecisionCode = Schema.Literals([
   "allowed",
   "agent_turn",
   "arguments_invalid",
+  "abort_model",
+  "burst_append",
   "confirmation_required",
   "deterministic_command",
   "external_unknown",
@@ -91,15 +100,18 @@ export const BobDecisionCode = Schema.Literals([
   "not_registered",
   "provider_control",
   "provider_failure",
+  "restart_with_receipts",
   "reminder_intent",
   "repair_failed",
   "repair_required",
   "repair_succeeded",
   "replay",
   "timeout",
+  "stale_reply_suppressed",
   "tool_calls",
   "training_safety",
   "turn_limit",
+  "wait_effect",
   "urgent_safety",
   "valid_output"
 ])
@@ -115,6 +127,7 @@ export interface BobDecision {
   readonly selectedCount?: number
   readonly toolName?: string
   readonly validationCode?: typeof OutputValidationCode.Type
+  readonly conversationRevision?: number
 }
 
 export interface BobSpan {
@@ -124,6 +137,8 @@ export interface BobSpan {
   readonly outboxId?: string
   readonly deliveryAttemptId?: string
   readonly reminderOccurrenceId?: string
+  readonly conversationTurnId?: string
+  readonly conversationRevision?: number
   readonly feature: TelemetryFeature
   readonly turnIndex?: number
   readonly turnPhase?: BobTurnPhase
@@ -194,6 +209,12 @@ const spanSemantics: Readonly<
   "bob.inbound.consume": { kind: "consumer", workflow: "inbound_message" },
   "bob.coordinator.invoke": { kind: "client", workflow: "inbound_message" },
   "bob.coordinator.run": { kind: "server", workflow: "inbound_message" },
+  "bob.turn.collect": { kind: "internal", workflow: "inbound_message" },
+  "bob.turn.reflect": { kind: "internal", workflow: "agent_turn" },
+  "bob.run.cancel_request": { kind: "client", workflow: "agent_turn" },
+  "bob.agent.abort": { kind: "server", workflow: "agent_turn" },
+  "bob.reply.commit": { kind: "internal", workflow: "outbound_delivery" },
+  "bob.reply.suppress": { kind: "internal", workflow: "outbound_delivery" },
   "bob.inbound.process": { kind: "internal", workflow: "inbound_message" },
   "bob.inbound.claim": { kind: "internal", workflow: "inbound_message" },
   "bob.context.build": { kind: "internal", workflow: "agent_turn" },
@@ -250,6 +271,10 @@ function validateSpan(input: BobSpan): void {
   if (input.reminderOccurrenceId !== undefined && !uuidPattern.test(input.reminderOccurrenceId)) {
     throw new TypeError("Reminder occurrence ID is invalid")
   }
+  if (input.conversationTurnId !== undefined && !uuidPattern.test(input.conversationTurnId)) {
+    throw new TypeError("Conversation turn ID is invalid")
+  }
+  assertNatural(input.conversationRevision, "Conversation revision")
   if (input.toolName !== undefined) {
     Schema.decodeUnknownSync(ToolName)(input.toolName)
   }
@@ -262,6 +287,7 @@ function validateDecision(input: BobDecision): void {
   Schema.decodeUnknownSync(BobDecisionCode)(input.code)
   if (!decisionOutcomes.has(input.outcome)) throw new TypeError("Decision outcome is invalid")
   assertNatural(input.selectedCount, "Selected count")
+  assertNatural(input.conversationRevision, "Conversation revision")
   if (input.toolName !== undefined) Schema.decodeUnknownSync(ToolName)(input.toolName)
   if (input.validationCode !== undefined) {
     if (input.name !== "bob.decision.output" || input.code !== "repair_required") {
@@ -285,6 +311,12 @@ function spanAttributes(input: BobSpan): Record<string, string | number> {
     ...(input.reminderOccurrenceId === undefined
       ? {}
       : { "bob.reminder.occurrence_id": input.reminderOccurrenceId }),
+    ...(input.conversationTurnId === undefined
+      ? {}
+      : { "bob.conversation.turn_id": input.conversationTurnId }),
+    ...(input.conversationRevision === undefined
+      ? {}
+      : { "bob.conversation.revision": input.conversationRevision }),
     ...(input.turnIndex === undefined ? {} : { "bob.turn.index": input.turnIndex }),
     ...(input.turnPhase === undefined ? {} : { "bob.turn.phase": input.turnPhase }),
     ...(input.toolName === undefined ? {} : { "bob.tool.name": input.toolName }),
@@ -338,6 +370,14 @@ function safeSpanAttributes(
   if (typeof reminderOccurrenceId === "string" && uuidPattern.test(reminderOccurrenceId)) {
     output["bob.reminder.occurrence_id"] = reminderOccurrenceId
   }
+  const conversationTurnId = attributes.get("bob.conversation.turn_id")
+  if (typeof conversationTurnId === "string" && uuidPattern.test(conversationTurnId)) {
+    output["bob.conversation.turn_id"] = conversationTurnId
+  }
+  const conversationRevision = attributes.get("bob.conversation.revision")
+  if (safeNatural(conversationRevision, 10_000)) {
+    output["bob.conversation.revision"] = conversationRevision
+  }
   const turnIndex = attributes.get("bob.turn.index")
   if (safeNatural(turnIndex, 64)) output["bob.turn.index"] = turnIndex
   const turnPhase = attributes.get("bob.turn.phase")
@@ -389,6 +429,7 @@ function safeDecisionEvent(
   const selectedCount = event[2]["bob.selected.count"]
   const toolName = event[2]["bob.tool.name"]
   const validationCode = event[2]["bob.output.validation_code"]
+  const conversationRevision = event[2]["bob.conversation.revision"]
   let safeToolName: string | undefined
   if (typeof toolName === "string") {
     try {
@@ -419,7 +460,10 @@ function safeDecisionEvent(
       ...(safeToolName === undefined ? {} : { "bob.tool.name": safeToolName }),
       ...(safeValidationCode === undefined
         ? {}
-        : { "bob.output.validation_code": safeValidationCode })
+        : { "bob.output.validation_code": safeValidationCode }),
+      ...(safeNatural(conversationRevision, 10_000)
+        ? { "bob.conversation.revision": conversationRevision }
+        : {})
     }
   }
 }
@@ -554,7 +598,10 @@ export function recordDecision(input: BobDecision): Effect.Effect<void> {
       ...(input.toolName === undefined ? {} : { "bob.tool.name": input.toolName }),
       ...(input.validationCode === undefined
         ? {}
-        : { "bob.output.validation_code": input.validationCode })
+        : { "bob.output.validation_code": input.validationCode }),
+      ...(input.conversationRevision === undefined
+        ? {}
+        : { "bob.conversation.revision": input.conversationRevision })
     })
   }).pipe(Effect.catchTag("NoSuchElementError", () => Effect.void))
 }

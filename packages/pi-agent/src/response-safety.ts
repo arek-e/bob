@@ -31,6 +31,7 @@ export interface AssistantResponsePolicy {
   readonly conflictingSourceIds: ReadonlySet<string>
   readonly executedToolNames: ReadonlySet<string>
   readonly confirmedActionToolNames: ReadonlySet<string>
+  readonly unknownActionToolNames: ReadonlySet<typeof ToolName.Type>
 }
 
 export type AssistantResponseValidation =
@@ -186,6 +187,11 @@ const actionClaims: readonly {
   },
   {
     pattern:
+      /\bconfirmed\b[^.]{0,80}\bmemory\b|\bmemory\b[^.]{0,80}\bconfirmed\b|\b(?:bekräftade|bekräftat)\b[^.]{0,80}\bminne(?:t)?\b|\bminne(?:t)?\b[^.]{0,80}\bbekräftat\b/iu,
+    requiredTools: ["memory_confirm"]
+  },
+  {
+    pattern:
       /\b(?:saved|updated)\b[^.]{0,80}\broutine\b|\broutine\b[^.]{0,80}\b(?:saved|updated)\b|\b(?:sparade|sparat|uppdaterade|uppdaterat)\b[^.]{0,80}\b(?:rutin(?:en)?|träningsplan(?:en)?|träningsprogram(?:met)?)\b|\b(?:rutin(?:en)?|träningsplan(?:en)?|träningsprogram(?:met)?)\b[^.]{0,80}\b(?:sparad|uppdaterad)\b/iu,
     requiredTools: ["routine_save"]
   },
@@ -210,6 +216,131 @@ const actionClaims: readonly {
     requiredTools: ["settings_update"]
   }
 ]
+
+function bidirectionalActionScope(subject: RegExp, action: RegExp): RegExp {
+  const gap = String.raw`[^.!?;\n]{0,80}`
+  return new RegExp(
+    `(?:${action.source})${gap}(?:${subject.source})|(?:${subject.source})${gap}(?:${action.source})`,
+    "iu"
+  )
+}
+
+const actionScopeByTool: Readonly<Partial<Record<typeof ToolName.Type, RegExp>>> = {
+  reminder_create: bidirectionalActionScope(
+    /\b(?:reminders?|påminnelse(?:n|r|rna)?)\b/u,
+    /\b(?:creat(?:e|ed|ion)|set|made|skapa(?:de|t|nde)?|ställde?\s+in|ställt\s+in|lade\s+till|lagt\s+till)\b/u
+  ),
+  reminder_acknowledge: bidirectionalActionScope(
+    /\b(?:reminders?|påminnelse(?:n|r|rna)?)\b/u,
+    /\b(?:acknowledg(?:e|ed|ement|ment)|seen|mark(?:ed)?\s+(?:it\s+|that\s+)?as\s+seen|sedd|sett|bekräfta(?:d|de|t)?)\b/u
+  ),
+  reminder_complete: bidirectionalActionScope(
+    /\b(?:reminders?|påminnelse(?:n|r|rna)?)\b/u,
+    /\b(?:complet(?:e|ed|ion)|done|mark(?:ed)?\s+(?:it\s+|that\s+)?(?:done|complete)|klar|färdig|slutför(?:d|de|t)?)\b/u
+  ),
+  reminder_snooze: bidirectionalActionScope(
+    /\b(?:reminders?|påminnelse(?:n|r|rna)?)\b/u,
+    /\b(?:snooz(?:e|ed)|reschedul(?:e|ed|ing)|uppskjuten|senarelagd|flyttad)\b/u
+  ),
+  reminder_cancel: bidirectionalActionScope(
+    /\b(?:reminders?|påminnelse(?:n|r|rna)?)\b/u,
+    /\b(?:cancel(?:led|ed|lation)?|remov(?:e|ed)|delet(?:e|ed)|avbruten|borttagen|raderad)\b/u
+  ),
+  memory_propose: bidirectionalActionScope(
+    /\b(?:memor(?:y|ies)|minne(?:t|n)?)\b/u,
+    /\b(?:propos(?:e|ed|al)|föresl(?:å|og|agit|agen))\b/u
+  ),
+  memory_confirm: bidirectionalActionScope(
+    /\b(?:memor(?:y|ies)|minne(?:t|n)?)\b/u,
+    /\b(?:confirm(?:ed|ation)?|bekräfta(?:d|de|t)?)\b/u
+  ),
+  memory_correct: bidirectionalActionScope(
+    /\b(?:memor(?:y|ies)|minne(?:t|n)?)\b/u,
+    /\b(?:correct(?:ed|ion)?|korrigera(?:d|de|t)?|rätta(?:d|de|t)?)\b/u
+  ),
+  journal_link_create: bidirectionalActionScope(
+    /\b(?:journal\s+links?|(?:journal|dagboks)länk(?:en)?)\b/u,
+    /\b(?:creat(?:e|ed|ion)|made|skapa(?:d|de|t|nde)?)\b/u
+  ),
+  gym_create: bidirectionalActionScope(
+    /\bgyms?\b/u,
+    /\b(?:creat(?:e|ed|ion)|sav(?:e|ed|ing)|skapa(?:d|de|t|nde)?|spara(?:d|de|t|nde)?)\b/u
+  ),
+  exercise_create: bidirectionalActionScope(
+    /\b(?:exercises?|övning(?:en|ar|arna)?)\b/u,
+    /\b(?:creat(?:e|ed|ion)|propos(?:e|ed|al)|skapa(?:d|de|t|nde)?|föresl(?:å|og|agit|agen))\b/u
+  ),
+  gym_add_equipment: bidirectionalActionScope(
+    /\b(?:equipment|utrustning(?:en)?)\b/u,
+    /\b(?:add(?:ed|ition)?|sav(?:e|ed|ing)|tillagd|sparad)\b/u
+  ),
+  equipment_map_exercise: bidirectionalActionScope(
+    /\b(?:equipment|exercises?|utrustning(?:en)?|övning(?:en|ar|arna)?)\b/u,
+    /\b(?:map(?:ped|ping)?|link(?:ed|ing)?|mappa(?:d|de|t)?|koppla(?:d|de|t)?)\b/u
+  ),
+  routine_save: bidirectionalActionScope(
+    /\b(?:routines?|rutin(?:en|er|erna)?)\b/u,
+    /\b(?:sav(?:e|ed|ing)|updat(?:e|ed|ing)|spara(?:d|de|t|nde)?|uppdatera(?:d|de|t|nde)?)\b/u
+  ),
+  workout_start: bidirectionalActionScope(
+    /\b(?:workouts?|träningspass(?:et)?)\b/u,
+    /\bstart(?:ed|ing|at)?\b/u
+  ),
+  workout_log_set: bidirectionalActionScope(
+    /\b(?:sets?|exercise\s+sets?|setet|övningsset(?:et)?)\b/u,
+    /\b(?:log(?:ged|ging)?|record(?:ed|ing)?|logga(?:d|de|t)?|registrera(?:d|de|t)?)\b/u
+  ),
+  workout_finish: bidirectionalActionScope(
+    /\b(?:workouts?|träningspass(?:et)?)\b/u,
+    /\b(?:finish(?:ed|ing)?|complet(?:e|ed|ion)|avsluta(?:d|de|t)?|slutför(?:d|de|t)?)\b/u
+  ),
+  settings_update: bidirectionalActionScope(
+    /\b(?:settings?|time\s+zone|locale|time\s+format|inställning(?:en|ar|arna)?|tidszon(?:en)?|språk(?:et)?|tidsformat(?:et)?)\b/u,
+    /\b(?:updat(?:e|ed|ing)|sav(?:e|ed|ing)|chang(?:e|ed|ing)|uppdatera(?:d|de|t|nde)?|spara(?:d|de|t|nde)?|ändra(?:d|de|t|nde)?)\b/u
+  ),
+  connection_link_create: bidirectionalActionScope(
+    /\b(?:(?:calendar|account|connection)\s+links?|(?:kalender|konto|anslutnings)länk(?:en)?)\b/u,
+    /\b(?:creat(?:e|ed|ion)|made|skapa(?:d|de|t|nde)?)\b/u
+  )
+}
+
+const uncertainOutcomePattern =
+  /\b(?:cannot|can't|could not|couldn't)\s+(?:confirm|determine|tell|verify|know)\b[^.]{0,120}\b(?:whether|if)\b|\bkan\s+inte\s+(?:bekräfta|avgöra|säga|verifiera|veta)\b[^.]{0,120}\b(?:om|huruvida)\b/iu
+
+const categoricalFailurePattern =
+  /\b(?:failed|failure|unsuccessful|did not (?:finish|complete|work|apply|save|update|create|start)|was not (?:finished|completed|applied|saved|updated|created|started)|could not (?:finish|complete|apply|save|update|create|start)|misslyckades|misslyckad|fungerade inte|kunde inte (?:slutföra|spara|uppdatera|skapa|starta)|blev inte (?:slutförd|sparad|uppdaterad|skapad|startad))\b/iu
+
+const categoricalSuccessPattern =
+  /\b(?:succeeded|successful|worked|finished|completed|applied|saved|updated|created|started|cancelled|canceled|snoozed|confirmed|corrected|acknowledged|logged|removed|deleted|set|lyckades|fungerade|slutförd|klar|sparad|uppdaterad|skapad|startad|avbruten|uppskjuten|bekräftad|rättad|loggad|borttagen|inställd)\b/iu
+
+function responseClauses(text: string): readonly string[] {
+  return text
+    .split(
+      /(?:[.!?;\n]+|\s+—\s+|,\s*(?:and|but|however|yet|och|men|däremot)\s+|\s+(?:but|however|yet|men|däremot)\s+|\s+(?:and|och)\s+(?=(?:I|we|the|a|an|it|they|jag|vi|den|det|de)\b))/iu
+    )
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.length > 0)
+}
+
+function uncertainOutcomeScope(clause: string): string | undefined {
+  const match = uncertainOutcomePattern.exec(clause)
+  return match?.index === undefined ? undefined : clause.slice(match.index)
+}
+
+function toolScopeMatches(toolName: typeof ToolName.Type, text: string): boolean {
+  return (
+    actionScopeByTool[toolName]?.test(text) === true ||
+    actionClaims.some((claim) => claim.requiredTools.includes(toolName) && claim.pattern.test(text))
+  )
+}
+
+function toolOutcomeIsUncertain(clause: string, toolName: typeof ToolName.Type): boolean {
+  const scope = uncertainOutcomeScope(clause)
+  return scope !== undefined && toolScopeMatches(toolName, scope)
+}
+
+const genericActionClaimPattern =
+  /\bI\s+(?:created|saved|updated|changed|started|finished|logged|cancelled|canceled|snoozed|completed|marked|added|deleted|removed|set|proposed|confirmed|corrected|acknowledged)\b|\bjag\s+(?:har\s+)?(?:skapade|skapat|ställde\s+in|ställt\s+in|lade\s+till|lagt\s+till|sparade|sparat|uppdaterade|uppdaterat|ändrade|ändrat|startade|startat|avslutade|avslutat|slutförde|slutfört|loggade|loggat|registrerade|registrerat|avbröt|avbrutit|tog\s+bort|tagit\s+bort|raderade|raderat|sköt\s+upp|skjutit\s+upp|senarelade|senarelagt|flyttade|flyttat|markerade|markerat|föreslog|föreslagit|bekräftade|bekräftat|rättade|rättat|korrigerade|korrigerat)\b/iu
 
 export function validateAssistantResponse(
   raw: string,
@@ -253,24 +384,43 @@ export function validateAssistantResponse(
     if (textToolReferences.some((toolName) => !policy.executedToolNames.has(toolName))) {
       return { ok: false, code: "invalid_tool_reference" }
     }
-    const matchedActionClaims = actionClaims.filter((claim) =>
-      claim.pattern.test(value.responseText)
+    const clauses = responseClauses(value.responseText)
+    const matchedActionClaims = clauses.flatMap((clause) =>
+      actionClaims.filter((claim) => claim.pattern.test(clause)).map((claim) => ({ claim, clause }))
     )
+    const hasCategoricalUnknownActionClaim = clauses.some((clause) =>
+      [...policy.unknownActionToolNames].some((toolName) => {
+        if (!toolScopeMatches(toolName, clause)) return false
+        if (toolOutcomeIsUncertain(clause, toolName)) return false
+        const hasKnownSuccessClaim = matchedActionClaims.some(
+          (match) => match.clause === clause && match.claim.requiredTools.includes(toolName)
+        )
+        return (
+          hasKnownSuccessClaim ||
+          categoricalFailurePattern.test(clause) ||
+          categoricalSuccessPattern.test(clause)
+        )
+      })
+    )
+    if (hasCategoricalUnknownActionClaim) {
+      return { ok: false, code: "unknown_action_claim" }
+    }
     if (
-      matchedActionClaims.some((claim) =>
-        claim.requiredTools.every((toolName) => !policy.confirmedActionToolNames.has(toolName))
+      matchedActionClaims.some(
+        ({ claim, clause }) =>
+          !claim.requiredTools.some((toolName) => toolOutcomeIsUncertain(clause, toolName)) &&
+          claim.requiredTools.every((toolName) => !policy.confirmedActionToolNames.has(toolName))
       )
     ) {
       return { ok: false, code: "unverified_action_claim" }
     }
-    const genericActionClaim =
-      /\bI\s+(?:created|saved|updated|changed|started|finished|logged|cancelled|canceled|snoozed|completed|marked|added|deleted|removed|set|proposed|confirmed|corrected|acknowledged)\b/iu.test(
-        value.responseText
-      ) ||
-      /\bjag\s+(?:har\s+)?(?:skapade|skapat|ställde\s+in|ställt\s+in|lade\s+till|lagt\s+till|sparade|sparat|uppdaterade|uppdaterat|ändrade|ändrat|startade|startat|avslutade|avslutat|slutförde|slutfört|loggade|loggat|registrerade|registrerat|avbröt|avbrutit|tog\s+bort|tagit\s+bort|raderade|raderat|sköt\s+upp|skjutit\s+upp|senarelade|senarelagt|flyttade|flyttat|markerade|markerat|föreslog|föreslagit|bekräftade|bekräftat|rättade|rättat|korrigerade|korrigerat)\b/iu.test(
-        value.responseText
-      )
-    if (genericActionClaim && matchedActionClaims.length === 0) {
+    const hasUnmatchedGenericActionClaim = clauses.some(
+      (clause) =>
+        uncertainOutcomeScope(clause) === undefined &&
+        genericActionClaimPattern.test(clause) &&
+        !matchedActionClaims.some((match) => match.clause === clause)
+    )
+    if (hasUnmatchedGenericActionClaim) {
       return { ok: false, code: "unverified_action_claim" }
     }
     const citesConflict = value.sourceIds.some((sourceId) =>

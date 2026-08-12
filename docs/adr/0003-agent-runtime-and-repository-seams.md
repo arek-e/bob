@@ -112,7 +112,9 @@ Do not send D1 rows directly to Pi.
 
 The current request supplies the current user text separately.
 
-Never send stored raw messages or journal text to Pi.
+ADR 0010 permits one bounded current turn and recent delivered same-channel turns.
+
+Outside that contract, never send stored raw messages or journal text to Pi.
 
 Do not send journal summaries to Pi in the first release.
 

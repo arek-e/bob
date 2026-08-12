@@ -10,7 +10,13 @@ import type { DataProtection } from "../policy/data-protection.ts"
 
 import { operationalAlerts } from "../alerts/schema.ts"
 import { recordOperationalAlert } from "../alerts/store.ts"
-import { channels, messages, shortReplyBindings, users } from "../conversations/schema.ts"
+import {
+  channels,
+  conversationTurns,
+  messages,
+  shortReplyBindings,
+  users
+} from "../conversations/schema.ts"
 import { reminderOccurrences } from "../reminders/schema.ts"
 import { deliveryAttempts, outboxMessages, providerEvents } from "./schema.ts"
 
@@ -24,6 +30,8 @@ export interface CreateOutboxInput {
   readonly actionTargetType?: "reminder_occurrence"
   readonly actionTargetId?: string
   readonly replyToMessageHandle?: string
+  readonly conversationTurnId?: string
+  readonly conversationTurnRevision?: number
 }
 
 export interface DeliveryStore {
@@ -39,6 +47,41 @@ export interface DeliveryStore {
 
 export const DeliveryStore = Context.Service<DeliveryStore>("bob/DeliveryStore")
 
+const currentConversationReply = sql<boolean>`(
+  (${outboxMessages.conversationTurnId} IS NULL AND ${outboxMessages.conversationTurnRevision} IS NULL)
+  OR (
+    ${outboxMessages.conversationTurnId} IS NOT NULL
+    AND ${outboxMessages.conversationTurnRevision} IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM ${conversationTurns}
+      WHERE ${conversationTurns.id} = ${outboxMessages.conversationTurnId}
+        AND ${conversationTurns.revision} = ${outboxMessages.conversationTurnRevision}
+        AND ${conversationTurns.replyOutboxId} = ${outboxMessages.id}
+        AND ${conversationTurns.status} = 'committing'
+    )
+  )
+)`
+
+const deferredConversationReply = sql<boolean>`(
+  ${outboxMessages.conversationTurnId} IS NOT NULL
+  AND ${outboxMessages.conversationTurnRevision} IS NOT NULL
+  AND EXISTS (
+    SELECT 1
+    FROM ${conversationTurns}
+    WHERE ${conversationTurns.id} = ${outboxMessages.conversationTurnId}
+      AND ${conversationTurns.revision} = ${outboxMessages.conversationTurnRevision}
+      AND ${conversationTurns.replyOutboxId} IS NULL
+      AND ${conversationTurns.status} IN ('collecting', 'running', 'settling', 'committing')
+  )
+)`
+
+export const recoverablePendingOutbox = and(
+  eq(outboxMessages.state, "pending"),
+  isNull(outboxMessages.enqueuedAt),
+  sql<boolean>`NOT ${deferredConversationReply}`
+)
+
 export function makeDeliveryStore(
   database: CoreDatabase,
   protection: DataProtection,
@@ -46,7 +89,6 @@ export function makeDeliveryStore(
 ): DeliveryStore {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
-
   async function ownerKey(ownerId: string): Promise<CryptoKey> {
     const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
     if (
@@ -169,6 +211,12 @@ export function makeDeliveryStore(
 
   return {
     async createOutbox(input) {
+      if (
+        (input.conversationTurnId === undefined) !==
+        (input.conversationTurnRevision === undefined)
+      ) {
+        throw new Error("Conversation turn delivery metadata is incomplete")
+      }
       const [existing] = await database
         .select({ id: outboxMessages.id })
         .from(outboxMessages)
@@ -210,6 +258,8 @@ export function makeDeliveryStore(
           actionTargetType: input.actionTargetType,
           actionTargetId: input.actionTargetId,
           replyToProviderMessageHandle: input.replyToMessageHandle,
+          conversationTurnId: input.conversationTurnId,
+          conversationTurnRevision: input.conversationTurnRevision,
           state: "pending",
           createdAt
         })
@@ -227,6 +277,7 @@ export function makeDeliveryStore(
     async claimOutbox(outboxId, leaseMs) {
       const claimedAt = now()
       await this.reconcileExpiredClaims(claimedAt.toISOString())
+      // The claim trigger closes an exact conversation turn in this SQLite statement.
       const [claimed] = await database
         .update(outboxMessages)
         .set({
@@ -234,10 +285,28 @@ export function makeDeliveryStore(
           claimedAt: claimedAt.toISOString(),
           claimExpiresAt: new Date(claimedAt.getTime() + leaseMs).toISOString()
         })
-        .where(and(eq(outboxMessages.id, outboxId), eq(outboxMessages.state, "pending")))
+        .where(
+          and(
+            eq(outboxMessages.id, outboxId),
+            eq(outboxMessages.state, "pending"),
+            currentConversationReply
+          )
+        )
         .returning()
-      if (claimed === undefined) return undefined
-
+      if (claimed === undefined) {
+        await database
+          .update(outboxMessages)
+          .set({ state: "cancelled", completedAt: claimedAt.toISOString() })
+          .where(
+            and(
+              eq(outboxMessages.id, outboxId),
+              eq(outboxMessages.state, "pending"),
+              sql<boolean>`NOT ${currentConversationReply}`,
+              sql<boolean>`NOT ${deferredConversationReply}`
+            )
+          )
+        return undefined
+      }
       const [[message], [channel], attempts] = await Promise.all([
         database.select().from(messages).where(eq(messages.id, claimed.messageId)).limit(1),
         database.select().from(channels).where(eq(channels.id, claimed.channelId)).limit(1),

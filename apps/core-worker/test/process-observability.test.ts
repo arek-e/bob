@@ -19,6 +19,7 @@ const channelId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db92"
 const messageId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db93"
 const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db94"
 const outboxId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db95"
+const attemptId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db99"
 const inboundTraceId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const inboundParentSpanId = "1111111111111111"
 const inboundTraceparent = `00-${inboundTraceId}-${inboundParentSpanId}-01`
@@ -114,7 +115,7 @@ describe("core workflow telemetry", () => {
             runId: request.runId,
             duplicate: false
           })),
-          claim: vi.fn(async () => true),
+          claim: vi.fn(async () => attemptId),
           completeWithResponse: vi.fn(async () => outboxId)
         },
         alerts: { record: vi.fn() },
@@ -175,7 +176,9 @@ describe("core workflow telemetry", () => {
         channelId,
         text: `${privateResponse}\nSource: message 2026-08-11`,
         reasonCode: "agent_reply"
-      }
+      },
+      undefined,
+      attemptId
     )
 
     const spans = telemetry.finishedSpans()

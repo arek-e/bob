@@ -12,7 +12,7 @@ const harness = vi.hoisted(() => ({
   handleHttp: vi.fn(),
   handleInboundQueue: vi.fn(),
   handleScheduled: vi.fn(),
-  processInbound: vi.fn(),
+  processConversationTurn: vi.fn(),
   telemetryOverride: undefined as CoreTelemetryInvocation | undefined,
   telemetryInvocations: [] as unknown[]
 }))
@@ -34,7 +34,7 @@ vi.mock("../src/entrypoints/scheduled.ts", () => ({
 }))
 
 vi.mock("../src/process-inbound.ts", () => ({
-  processInbound: harness.processInbound
+  processConversationTurn: harness.processConversationTurn
 }))
 
 vi.mock("../src/telemetry.ts", async (importOriginal) => {
@@ -177,7 +177,18 @@ describe("Core telemetry composition", () => {
 
   it("continues the coordinator client span through one server span", async () => {
     const bindings = {} as CoreBindings
-    const composition = {} as CoreComposition
+    const turnId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db95"
+    const quietUntil = "2026-08-12T10:00:01.500Z"
+    const turns = {
+      offer: vi.fn(async (_eventId: string, _traceparent?: string) => ({
+        turnId,
+        revision: 1,
+        status: "collecting" as const,
+        quietUntil,
+        appended: true
+      }))
+    }
+    const composition = { services: { turns } } as unknown as CoreComposition
     const waits = makeWaitUntilHarness()
     const capture = makeCaptureTelemetry({
       serviceName: "bob-core-worker",
@@ -191,19 +202,14 @@ describe("Core telemetry composition", () => {
       flush
     }
     const state = {
+      storage: {
+        getAlarm: vi.fn(async () => null),
+        setAlarm: vi.fn(async () => undefined)
+      },
       blockConcurrencyWhile: vi.fn((callback: () => Promise<unknown>) => callback()),
       waitUntil: waits.waitUntil
     } as unknown as DurableObjectState
     harness.composeCore.mockReturnValue(composition)
-    harness.processInbound.mockImplementation(
-      (
-        _eventId: string,
-        _bindings: CoreBindings,
-        _composition: CoreComposition,
-        _traceparent: string,
-        telemetry: CoreTelemetryInvocation
-      ) => telemetry.runPromise(Effect.void)
-    )
     const coordinator = new OwnerRunCoordinator(state, bindings)
     const callerTraceId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     const callerSpanId = "2222222222222222"
@@ -223,31 +229,144 @@ describe("Core telemetry composition", () => {
     await Promise.all(waits.pending)
 
     const telemetry = currentTelemetry()
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(202)
     expect(harness.telemetryInvocations).toHaveLength(1)
     const run = capture.finishedSpans().find((span) => span.name === "bob.coordinator.run")
+    const collect = capture.finishedSpans().find((span) => span.name === "bob.turn.collect")
     expect(run).toMatchObject({
       traceId: callerTraceId,
       parentSpanId: callerSpanId,
       kind: "server",
       attributes: expect.objectContaining({ "bob.correlation.id": correlationId })
     })
-    const forwardedTraceparent = harness.processInbound.mock.calls[0]?.[3] as string | undefined
+    expect(collect).toMatchObject({
+      traceId: callerTraceId,
+      parentSpanId: run?.spanId,
+      attributes: expect.objectContaining({ "bob.correlation.id": correlationId }),
+      events: [
+        expect.objectContaining({
+          name: "bob.state.transition",
+          attributes: {
+            "bob.decision.code": "new",
+            "bob.decision.outcome": "applied",
+            "bob.conversation.revision": 1
+          }
+        })
+      ]
+    })
+    const forwardedTraceparent = turns.offer.mock.calls[0]?.[1]
     expect(parseTraceparent(forwardedTraceparent)).toEqual({
-      traceId: run?.traceId,
-      spanId: run?.spanId,
+      traceId: collect?.traceId,
+      spanId: collect?.spanId,
       sampled: true
     })
-    expect(harness.processInbound.mock.calls[0]?.slice(0, 3)).toEqual([
-      eventId,
-      bindings,
-      composition
-    ])
-    expect(harness.processInbound.mock.calls[0]?.[4]).toBe(telemetry)
-    expect(harness.processInbound.mock.calls[0]?.[5]).toBe(correlationId)
+    expect(turns.offer).toHaveBeenCalledWith(eventId, forwardedTraceparent)
     expect(state.blockConcurrencyWhile).toHaveBeenCalledOnce()
     expect(waits.waitUntil).toHaveBeenCalledOnce()
     expect(telemetry.flush).toHaveBeenCalledOnce()
+  })
+
+  it("continues the Core cancel span into the Agent abort request", async () => {
+    const bindings = {} as CoreBindings
+    const turnId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db95"
+    const runId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db96"
+    const quietUntil = "2026-08-12T10:00:01.500Z"
+    const turns = {
+      offer: vi.fn(async () => ({
+        turnId,
+        revision: 2,
+        status: "collecting" as const,
+        quietUntil,
+        appended: true,
+        activeRunId: runId
+      })),
+      markSettling: vi.fn(async () => ({
+        claimExpiresAt: "2026-08-12T10:01:30.000Z"
+      }))
+    }
+    harness.composeCore.mockReturnValue({
+      config: {
+        AGENT_URL: "https://agent.example.invalid",
+        AGENT_ACCESS_CLIENT_ID: "client",
+        AGENT_ACCESS_CLIENT_SECRET: "secret"
+      },
+      services: { turns }
+    } as unknown as CoreComposition)
+    const capture = makeCaptureTelemetry({
+      serviceName: "bob-core-worker",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    harness.telemetryOverride = {
+      layer: capture.layer,
+      runPromise: (effect) => Effect.runPromise(effect.pipe(Effect.provide(capture.layer))),
+      flush: vi.fn(async () => undefined)
+    }
+    let steerHeaders: Headers | undefined
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        steerHeaders = new Headers(init?.headers)
+        return Response.json({ status: "aborted_model" })
+      })
+    )
+    const waits = makeWaitUntilHarness()
+    const state = {
+      storage: {
+        getAlarm: vi.fn(async () => null),
+        setAlarm: vi.fn(async () => undefined)
+      },
+      blockConcurrencyWhile: vi.fn((callback: () => Promise<unknown>) => callback()),
+      waitUntil: waits.waitUntil
+    } as unknown as DurableObjectState
+    const coordinator = new OwnerRunCoordinator(state, bindings)
+
+    const response = await coordinator.fetch(
+      new Request("https://coordinator.internal/run", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-bob-correlation-id": correlationId
+        },
+        body: JSON.stringify({ eventId, correlationId })
+      })
+    )
+    await Promise.all(waits.pending)
+
+    expect(response.status).toBe(202)
+    const spans = capture.finishedSpans()
+    const collect = spans.find((span) => span.name === "bob.turn.collect")
+    const cancel = spans.find((span) => span.name === "bob.run.cancel_request")
+    expect(collect?.events).toContainEqual(
+      expect.objectContaining({
+        name: "bob.state.transition",
+        attributes: {
+          "bob.decision.code": "burst_append",
+          "bob.decision.outcome": "applied",
+          "bob.conversation.revision": 2
+        }
+      })
+    )
+    expect(collect?.attributes).toMatchObject({
+      "bob.conversation.turn_id": turnId,
+      "bob.conversation.revision": 2
+    })
+    expect(cancel).toMatchObject({
+      traceId: collect?.traceId,
+      parentSpanId: collect?.spanId
+    })
+    expect(cancel?.attributes).toMatchObject({
+      "bob.correlation.id": correlationId,
+      "bob.run.id": runId,
+      "bob.conversation.turn_id": turnId,
+      "bob.conversation.revision": 2
+    })
+    expect(parseTraceparent(steerHeaders?.get("traceparent"))).toEqual({
+      traceId: cancel?.traceId,
+      spanId: cancel?.spanId,
+      sampled: true
+    })
+    expect(steerHeaders?.get("x-bob-correlation-id")).toBe(correlationId)
   })
 
   it("accepts the clock request and starts one isolated root per durable outbox", async () => {
@@ -368,23 +487,28 @@ describe("Core telemetry composition", () => {
 
   it("keeps the owner run result when telemetry scheduling throws", async () => {
     const bindings = {} as CoreBindings
-    const composition = {} as CoreComposition
+    const turnId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db95"
+    const turns = {
+      offer: vi.fn(async (_eventId: string, _traceparent?: string) => ({
+        turnId,
+        revision: 1,
+        status: "collecting" as const,
+        quietUntil: "2026-08-12T10:00:01.500Z",
+        appended: true
+      }))
+    }
+    const composition = { services: { turns } } as unknown as CoreComposition
     const state = {
+      storage: {
+        getAlarm: vi.fn(async () => null),
+        setAlarm: vi.fn(async () => undefined)
+      },
       blockConcurrencyWhile: vi.fn((callback: () => Promise<unknown>) => callback()),
       waitUntil: vi.fn(() => {
         throw new Error("wait_until_unavailable")
       })
     } as unknown as DurableObjectState
     harness.composeCore.mockReturnValue(composition)
-    harness.processInbound.mockImplementation(
-      (
-        _eventId: string,
-        _bindings: CoreBindings,
-        _composition: CoreComposition,
-        _traceparent: string,
-        telemetry: CoreTelemetryInvocation
-      ) => telemetry.runPromise(Effect.void)
-    )
     const coordinator = new OwnerRunCoordinator(state, bindings)
 
     const response = await coordinator.fetch(
@@ -395,8 +519,8 @@ describe("Core telemetry composition", () => {
       })
     )
 
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ ok: true })
+    expect(response.status).toBe(202)
+    expect(await response.json()).toEqual({ ok: true, turnId, revision: 1 })
     await vi.waitFor(() => expect(currentTelemetry().flush).toHaveBeenCalledOnce())
   })
 

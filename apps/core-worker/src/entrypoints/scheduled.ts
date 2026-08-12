@@ -10,6 +10,7 @@ import type { CoreBindings } from "../bindings.ts"
 
 import { composeCore } from "../composition.ts"
 import { outboxMessages } from "../modules/delivery/schema.ts"
+import { recoverablePendingOutbox } from "../modules/delivery/store.ts"
 import { schedulerOutbox } from "../modules/reminders/schema.ts"
 
 export interface ScheduledTraceContext {
@@ -145,7 +146,7 @@ export async function handleScheduled(
       actionTargetId: outboxMessages.actionTargetId
     })
     .from(outboxMessages)
-    .where(and(eq(outboxMessages.state, "pending"), isNull(outboxMessages.enqueuedAt)))
+    .where(recoverablePendingOutbox)
     .limit(100)
   for (const item of pendingOutbox) {
     const occurrenceId = reminderOccurrence(item)

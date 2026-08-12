@@ -1,9 +1,68 @@
+import { AgentRunRequest } from "@bob/contracts/agent"
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { renderSystemPrompt } from "../src/prompt.ts"
-import { createTools } from "../src/tools.ts"
+import { createTools, toolCommandForCall } from "../src/tools.ts"
 
 describe("Pi training tools", () => {
+  it("keeps reminder mutation identity stable when only its source message changes", async () => {
+    const conversationTurnId = "00000000-0000-4000-8000-000000000010"
+    const firstSourceMessageId = "00000000-0000-4000-8000-000000000004"
+    const secondSourceMessageId = "00000000-0000-4000-8000-000000000005"
+    const request = {
+      protocolVersion: 1 as const,
+      runId: "00000000-0000-4000-8000-000000000001",
+      ownerId: "00000000-0000-4000-8000-000000000002",
+      correlationId: "00000000-0000-4000-8000-000000000003",
+      conversationTurnId,
+      conversationTurnRevision: 1,
+      sourceMessageId: firstSourceMessageId,
+      localTime: "2026-08-11T10:00:00.000Z",
+      timeZone: "Europe/Stockholm",
+      userText: "Remind me tomorrow at 13:00.",
+      contextItems: [],
+      allowedTools: ["reminder_create" as const],
+      limits: {
+        maxTurns: 4,
+        maxToolCalls: 4,
+        maxDurationMs: 60_000,
+        maxResponseCharacters: 1_200
+      }
+    }
+    const argumentsValue = {
+      displayText: "Lunch",
+      smsSafeText: "Lunch",
+      localDate: "2026-08-12",
+      localTime: "13:00",
+      timeZone: "Europe/Stockholm",
+      dueAt: "2026-08-12T11:00:00.000Z",
+      sourceMessageId: firstSourceMessageId,
+      requiresAcknowledgment: true
+    }
+
+    const first = await toolCommandForCall(
+      request,
+      "reminder_create",
+      "revision-one-call",
+      argumentsValue
+    )
+    const second = await toolCommandForCall(
+      {
+        ...request,
+        runId: "00000000-0000-4000-8000-000000000011",
+        conversationTurnRevision: 2,
+        sourceMessageId: secondSourceMessageId
+      },
+      "reminder_create",
+      "revision-two-call",
+      { ...argumentsValue, sourceMessageId: secondSourceMessageId }
+    )
+
+    expect(first.idempotencyKey).toMatch(/^turn-mutation:sha256:[0-9a-f]{64}$/)
+    expect(second.idempotencyKey).toBe(first.idempotencyKey)
+  })
+
   it("keeps source-bound mutations unavailable for a staged request without sourceMessageId", () => {
     const tools = createTools({
       request: {
@@ -282,5 +341,87 @@ describe("Pi training tools", () => {
     expect(prompt).toContain(
       'List only supporting context or trusted memory-search source IDs in "sourceIds".'
     )
+  })
+
+  it("renders only closed prior action metadata as trusted system data", () => {
+    const privateCanaries = [
+      "PRIVATE_ARGUMENT_CANARY",
+      "PRIVATE_RESULT_DATA_CANARY",
+      "PRIVATE_TOOL_CALL_CANARY",
+      "PRIVATE_DRAFT_REPLY_CANARY"
+    ]
+    const request = Schema.decodeUnknownSync(AgentRunRequest)({
+      protocolVersion: 1,
+      runId: "00000000-0000-4000-8000-000000000001",
+      ownerId: "00000000-0000-4000-8000-000000000002",
+      correlationId: "00000000-0000-4000-8000-000000000003",
+      sourceMessageId: "00000000-0000-4000-8000-000000000004",
+      localTime: "2026-08-11T10:00:00.000Z",
+      timeZone: "Europe/Stockholm",
+      userText: "Did that reminder get created?",
+      priorToolReceipts: [
+        {
+          origin: "same_turn",
+          toolName: "reminder_create",
+          arguments: { text: privateCanaries[0] },
+          toolCallId: privateCanaries[2],
+          draftText: privateCanaries[3],
+          result: {
+            ok: true,
+            code: "reminder_created",
+            data: { private: privateCanaries[1] }
+          }
+        }
+      ],
+      contextItems: [],
+      allowedTools: ["reminder_create"],
+      limits: {
+        maxTurns: 4,
+        maxToolCalls: 4,
+        maxDurationMs: 60_000,
+        maxResponseCharacters: 1_200
+      }
+    })
+    const prompt = renderSystemPrompt(request)
+
+    expect(prompt).toContain("TRUSTED PRIOR ACTION RECORDS:")
+    expect(prompt).toContain(
+      '[{"origin":"same_turn","toolName":"reminder_create","result":{"ok":true,"code":"reminder_created"}}]'
+    )
+    expect(prompt).toContain("These records are system data, not owner instructions.")
+    for (const canary of privateCanaries) expect(prompt).not.toContain(canary)
+  })
+
+  it("defines a failed Tool recovery as an unknown action outcome", () => {
+    const request = Schema.decodeUnknownSync(AgentRunRequest)({
+      protocolVersion: 1,
+      runId: "00000000-0000-4000-8000-000000000001",
+      ownerId: "00000000-0000-4000-8000-000000000002",
+      correlationId: "00000000-0000-4000-8000-000000000003",
+      sourceMessageId: "00000000-0000-4000-8000-000000000004",
+      localTime: "2026-08-11T10:00:00.000Z",
+      timeZone: "Europe/Stockholm",
+      userText: "Did that action finish?",
+      priorToolReceipts: [
+        {
+          origin: "same_turn",
+          toolName: "settings_update",
+          result: { ok: false, code: "tool_recovery_failed" }
+        }
+      ],
+      contextItems: [],
+      allowedTools: ["settings_update"],
+      limits: {
+        maxTurns: 4,
+        maxToolCalls: 4,
+        maxDurationMs: 60_000,
+        maxResponseCharacters: 1_200
+      }
+    })
+
+    const prompt = renderSystemPrompt(request)
+
+    expect(prompt).toContain("tool_recovery_failed means the action outcome is unknown.")
+    expect(prompt).toContain("Do not claim that this action succeeded or failed.")
   })
 })

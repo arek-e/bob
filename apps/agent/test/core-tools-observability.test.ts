@@ -10,6 +10,90 @@ const runId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
 const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0"
 
 describe("agent tool telemetry", () => {
+  it("keeps one mutation request attached past the read timeout", async () => {
+    vi.useFakeTimers()
+    let requestSignal: AbortSignal | null | undefined
+    let markStarted!: () => void
+    let finishRequest!: (response: Response) => void
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    const response = new Promise<Response>((resolve) => {
+      finishRequest = resolve
+    })
+    const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestSignal = init?.signal
+      markStarted()
+      return response
+    })
+    const client = createCoreToolClient({
+      coreUrl: "https://core.example.invalid",
+      accessClientId: "client",
+      accessClientSecret: "secret",
+      fetch: request as typeof fetch
+    })
+    const controller = new AbortController()
+    const execution = client.execute(
+      {
+        runId,
+        toolCallId: "slow-mutation",
+        idempotencyKey: "tool:test:slow-mutation",
+        ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
+        name: "settings_update",
+        arguments: { timeZone: "Europe/Stockholm" }
+      },
+      controller.signal
+    )
+
+    await started
+    let settled = false
+    void execution.finally(() => {
+      settled = true
+    })
+    await vi.advanceTimersByTimeAsync(15_001)
+    const pendingAfterReadTimeout = !settled
+    const usesRunSignal = requestSignal === controller.signal
+    finishRequest(Response.json({ ok: true, code: "owner_settings_updated", message: "Done" }))
+
+    try {
+      await expect(execution).resolves.toMatchObject({ ok: true })
+      expect(pendingAfterReadTimeout).toBe(true)
+      expect(usesRunSignal).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("bounds a mutation without a run signal at 65 seconds", async () => {
+    let timeoutMs: number | undefined
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+      timeoutMs = milliseconds
+      return new AbortController().signal
+    })
+    const client = createCoreToolClient({
+      coreUrl: "https://core.example.invalid",
+      accessClientId: "client",
+      accessClientSecret: "secret",
+      fetch: vi.fn(async () =>
+        Response.json({ ok: true, code: "owner_settings_updated", message: "Done" })
+      ) as typeof fetch
+    })
+
+    try {
+      await client.execute({
+        runId,
+        toolCallId: "bounded-mutation",
+        idempotencyKey: "tool:test:bounded-mutation",
+        ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
+        name: "settings_update",
+        arguments: { timeZone: "Europe/Stockholm" }
+      })
+      expect(timeoutMs).toBe(65_000)
+    } finally {
+      timeout.mockRestore()
+    }
+  })
+
   it("forwards the agent run abort signal to Core", async () => {
     let requestSignal: AbortSignal | null | undefined
     const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

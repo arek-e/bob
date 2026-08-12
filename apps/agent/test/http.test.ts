@@ -90,6 +90,7 @@ function composition(
           )
         ),
         runTurn: vi.fn(async () => runResult),
+        requestSteer: vi.fn(() => ({ status: "missing" as const })),
         getAuthStatus: vi.fn(async () => ({
           configured: false,
           provider: "openai-codex" as const
@@ -152,7 +153,10 @@ describe("agent HTTP boundary", () => {
     expect(
       target.telemetry.finishedSpans().find((span) => span.name === "bob.agent.loop")?.parentSpanId
     ).toBe(runSpan?.spanId)
-    expect(target.services.agent.runTurnEffect).toHaveBeenCalledWith(runRequest)
+    expect(target.services.agent.runTurnEffect).toHaveBeenCalledWith(
+      runRequest,
+      expect.any(AbortSignal)
+    )
     expect(target.services.agent.runTurn).not.toHaveBeenCalled()
     expect(target.services.access.verify).toHaveBeenCalledWith(expect.any(Request), "run")
     expect(target.telemetry.healthEvents()).toContainEqual(
@@ -163,6 +167,74 @@ describe("agent HTTP boundary", () => {
         outputTokens: 9
       })
     )
+  })
+
+  it("passes request cancellation to the agent run", async () => {
+    const controller = new AbortController()
+    controller.abort("client_disconnected")
+    const target = composition(true)
+    target.services.agent.runTurnEffect = vi.fn((_input, signal) => {
+      const output: AgentRunResult =
+        signal?.aborted === true
+          ? { ...runResult, status: "cancelled", errorCode: "cancelled" }
+          : runResult
+      return Effect.succeed(output)
+    })
+
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(runRequest),
+        signal: controller.signal
+      }),
+      target
+    )
+
+    expect(await response.json()).toMatchObject({ status: "cancelled", errorCode: "cancelled" })
+  })
+
+  it("steers one active run through the authenticated run scope", async () => {
+    const target = composition(true)
+    target.services.agent.requestSteer = vi.fn(() => ({ status: "aborted_model" as const }))
+    const traceparent = "00-33333333333333333333333333333333-4444444444444444-01"
+
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/steer", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          traceparent,
+          "x-bob-correlation-id": runRequest.correlationId
+        },
+        body: JSON.stringify({ runId: runRequest.runId })
+      }),
+      target
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status: "aborted_model" })
+    expect(target.services.agent.requestSteer).toHaveBeenCalledWith(runRequest.runId)
+    expect(target.services.access.verify).toHaveBeenCalledWith(expect.any(Request), "run")
+    const abort = target.telemetry.finishedSpans().find((span) => span.name === "bob.agent.abort")
+    expect(abort).toMatchObject({
+      traceId: "33333333333333333333333333333333",
+      parentSpanId: "4444444444444444",
+      kind: "server",
+      attributes: expect.objectContaining({
+        "bob.correlation.id": runRequest.correlationId,
+        "bob.run.id": runRequest.runId
+      }),
+      events: [
+        {
+          name: "bob.decision.steering",
+          attributes: expect.objectContaining({
+            "bob.decision.code": "abort_model",
+            "bob.decision.outcome": "applied"
+          })
+        }
+      ]
+    })
   })
 
   it("returns a device code only through the private admin route", async () => {

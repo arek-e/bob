@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest"
 
 import { boundContextItems } from "../src/modules/context/store.ts"
-import { selectTools } from "../src/modules/context/tool-selection.ts"
+import {
+  selectTools,
+  selectToolsWithPriorCapabilities
+} from "../src/modules/context/tool-selection.ts"
 import { journalAgentMetadata, journalModelContext } from "../src/modules/journal/rules.ts"
 import { decideCandidate, deriveMemoryPolicy } from "../src/modules/memory/rules.ts"
 import {
@@ -308,6 +311,21 @@ describe("deterministic domain rules", () => {
       "reminder_snooze",
       "reminder_cancel"
     ])
+  })
+
+  it("uses a safe prior capability only for an explicit short follow-up", () => {
+    expect(selectToolsWithPriorCapabilities("List", ["reminder_list", "reminder_create"])).toEqual(
+      expect.arrayContaining(["memory_search", "memory_correct", "reminder_list"])
+    )
+    expect(selectToolsWithPriorCapabilities("List", ["reminder_create"])).not.toContain(
+      "reminder_create"
+    )
+    expect(selectToolsWithPriorCapabilities("Do not list them", ["reminder_list"])).not.toContain(
+      "reminder_list"
+    )
+    expect(selectToolsWithPriorCapabilities("List workouts", ["reminder_list"])).not.toContain(
+      "reminder_list"
+    )
   })
 
   it("routes Swedish journal and training requests to their bounded tools", () => {

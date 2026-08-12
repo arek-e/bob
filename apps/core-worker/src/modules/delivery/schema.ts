@@ -13,6 +13,8 @@ export const outboxMessages = sqliteTable(
     actionTargetType: text("action_target_type"),
     actionTargetId: text("action_target_id"),
     replyToProviderMessageHandle: text("reply_to_provider_message_handle"),
+    conversationTurnId: text("conversation_turn_id"),
+    conversationTurnRevision: integer("conversation_turn_revision"),
     state: text("state", {
       enum: ["pending", "claimed", "accepted", "failed", "uncertain", "cancelled"]
     }).notNull(),

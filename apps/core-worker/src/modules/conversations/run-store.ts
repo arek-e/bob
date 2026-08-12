@@ -1,18 +1,49 @@
 import { AgentRunRequest, type AgentRunResult } from "@bob/contracts/agent"
-import { and, eq, isNull, lt, or } from "drizzle-orm"
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
 
 import { outboxMessages } from "../delivery/schema.ts"
-import { agentRunAttempts, agentRuns, inboundEvents, messages, users } from "./schema.ts"
+import {
+  agentRunAttempts,
+  agentRuns,
+  conversationTurns,
+  inboundEvents,
+  messages,
+  users
+} from "./schema.ts"
 
 export interface StoredAgentRun {
   readonly request: AgentRunRequest
-  readonly status: "pending" | "claimed" | "executing" | "completed" | "failed" | "unknown"
+  readonly status:
+    | "pending"
+    | "claimed"
+    | "executing"
+    | "completed"
+    | "failed"
+    | "unknown"
+    | "superseded"
   readonly outboxId?: string
 }
+
+export interface ConversationRunCompletion {
+  readonly conversationTurnId: string
+  readonly conversationTurnRevision: number
+}
+
+export interface ConversationReflectionCompletion extends ConversationRunCompletion {
+  readonly settleUntil?: string
+}
+
+export type ConversationReflectionTransition =
+  | { readonly status: "lost" }
+  | {
+      readonly status: "released" | "settling"
+      readonly revision: number
+      readonly wakeAt: string
+    }
 
 export interface AgentRunStore {
   create(
@@ -20,7 +51,8 @@ export interface AgentRunStore {
     inboundEventId: string
   ): Promise<{ runId: string; duplicate: boolean }>
   loadForInbound(inboundEventId: string): Promise<StoredAgentRun | undefined>
-  claim(runId: string, leaseMs: number): Promise<boolean>
+  loadForTurn(turnId: string, revision: number): Promise<StoredAgentRun | undefined>
+  claim(runId: string, leaseMs: number): Promise<string | undefined>
   completeWithResponse(
     result: AgentRunResult,
     response: {
@@ -28,8 +60,16 @@ export interface AgentRunStore {
       readonly text: string
       readonly reasonCode: string
       readonly replyToMessageHandle?: string
-    }
-  ): Promise<string>
+    },
+    conversation?: ConversationRunCompletion,
+    attemptId?: string
+  ): Promise<string | undefined>
+  completeWithoutResponse(result: AgentRunResult, attemptId: string): Promise<boolean>
+  completeForReflection(
+    result: AgentRunResult,
+    attemptId: string,
+    conversation: ConversationReflectionCompletion
+  ): Promise<ConversationReflectionTransition>
   channelForRun(runId: string): Promise<string | undefined>
 }
 
@@ -65,12 +105,49 @@ export function makeAgentRunStore(
     }
   }
 
+  async function loadStoredRun(row: typeof agentRuns.$inferSelect): Promise<StoredAgentRun> {
+    const envelope = JSON.parse(row.inputSnapshotJson) as {
+      ciphertext: string
+      iv: string
+      keyVersion: number
+    }
+    const owner = await ownerKey(row.userId)
+    const request = Schema.decodeUnknownSync(AgentRunRequest)(
+      JSON.parse(
+        await protection.decryptText(owner.key, {
+          ciphertext: envelope.ciphertext,
+          iv: envelope.iv
+        })
+      ) as unknown
+    )
+    const [outbox] = await database
+      .select({ id: outboxMessages.id })
+      .from(outboxMessages)
+      .where(eq(outboxMessages.idempotencyKey, `run:${row.id}:reply`))
+      .limit(1)
+    return {
+      request,
+      status: row.status,
+      ...(outbox === undefined ? {} : { outboxId: outbox.id })
+    }
+  }
+
   return {
     async create(request, inboundEventId) {
       const [existing] = await database
         .select({ id: agentRuns.id, inputHash: agentRuns.inputHash })
         .from(agentRuns)
-        .where(eq(agentRuns.inboundEventId, inboundEventId))
+        .where(
+          request.conversationTurnId === undefined || request.conversationTurnRevision === undefined
+            ? and(
+                eq(agentRuns.inboundEventId, inboundEventId),
+                isNull(agentRuns.conversationTurnId)
+              )
+            : and(
+                eq(agentRuns.conversationTurnId, request.conversationTurnId),
+                eq(agentRuns.conversationTurnRevision, request.conversationTurnRevision)
+              )
+        )
         .limit(1)
       const serialized = JSON.stringify(request)
       const hash = await protection.contentHash(serialized)
@@ -89,6 +166,9 @@ export function makeAgentRunStore(
         id: request.runId,
         userId: request.ownerId,
         inboundEventId,
+        conversationTurnId: request.conversationTurnId,
+        conversationTurnRevision: request.conversationTurnRevision,
+        targetMessageId: request.sourceMessageId,
         correlationId: request.correlationId,
         inputSnapshotJson: envelope,
         inputHash: hash,
@@ -103,43 +183,37 @@ export function makeAgentRunStore(
       const [row] = await database
         .select()
         .from(agentRuns)
-        .where(eq(agentRuns.inboundEventId, inboundEventId))
+        .where(
+          and(eq(agentRuns.inboundEventId, inboundEventId), isNull(agentRuns.conversationTurnId))
+        )
         .limit(1)
-      if (row === undefined) return undefined
-      const envelope = JSON.parse(row.inputSnapshotJson) as {
-        ciphertext: string
-        iv: string
-        keyVersion: number
-      }
-      const owner = await ownerKey(row.userId)
-      const request = Schema.decodeUnknownSync(AgentRunRequest)(
-        JSON.parse(
-          await protection.decryptText(owner.key, {
-            ciphertext: envelope.ciphertext,
-            iv: envelope.iv
-          })
-        ) as unknown
-      )
-      const [outbox] = await database
-        .select({ id: outboxMessages.id })
-        .from(outboxMessages)
-        .where(eq(outboxMessages.idempotencyKey, `run:${row.id}:reply`))
+      return row === undefined ? undefined : loadStoredRun(row)
+    },
+
+    async loadForTurn(turnId, revision) {
+      const [row] = await database
+        .select()
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.conversationTurnId, turnId),
+            eq(agentRuns.conversationTurnRevision, revision)
+          )
+        )
         .limit(1)
-      return {
-        request,
-        status: row.status,
-        ...(outbox === undefined ? {} : { outboxId: outbox.id })
-      }
+      return row === undefined ? undefined : loadStoredRun(row)
     },
 
     async claim(runId, leaseMs) {
       const at = now()
+      const attemptId = randomUuid()
       const [claimed] = await database
         .update(agentRuns)
         .set({
           status: "claimed",
           claimedAt: at.toISOString(),
-          claimExpiresAt: new Date(at.getTime() + leaseMs).toISOString()
+          claimExpiresAt: new Date(at.getTime() + leaseMs).toISOString(),
+          activeAttemptId: attemptId
         })
         .where(
           and(
@@ -152,7 +226,7 @@ export function makeAgentRunStore(
           )
         )
         .returning({ id: agentRuns.id })
-      if (claimed === undefined) return false
+      if (claimed === undefined) return undefined
       const attempts = await database
         .select({ id: agentRunAttempts.id })
         .from(agentRunAttempts)
@@ -161,19 +235,25 @@ export function makeAgentRunStore(
         database
           .update(agentRuns)
           .set({ status: "executing" })
-          .where(and(eq(agentRuns.id, runId), eq(agentRuns.status, "claimed"))),
+          .where(
+            and(
+              eq(agentRuns.id, runId),
+              eq(agentRuns.status, "claimed"),
+              eq(agentRuns.activeAttemptId, attemptId)
+            )
+          ),
         database.insert(agentRunAttempts).values({
-          id: randomUuid(),
+          id: attemptId,
           runId,
           attemptNumber: attempts.length + 1,
           status: "executing",
           startedAt: at.toISOString()
         })
       ])
-      return true
+      return attemptId
     },
 
-    async completeWithResponse(result, response) {
+    async completeWithResponse(result, response, conversation, attemptId) {
       const at = now().toISOString()
       const idempotencyKey = `run:${result.runId}:reply`
       const [existingOutbox] = await database
@@ -181,68 +261,302 @@ export function makeAgentRunStore(
         .from(outboxMessages)
         .where(eq(outboxMessages.idempotencyKey, idempotencyKey))
         .limit(1)
-      if (existingOutbox !== undefined) return existingOutbox.id
-      const [run] = await database
-        .select({ ownerId: agentRuns.userId, inboundEventId: agentRuns.inboundEventId })
+      if (existingOutbox !== undefined) {
+        return attemptId === undefined ? existingOutbox.id : undefined
+      }
+      const [loadedRun] = await database
+        .select({
+          ownerId: agentRuns.userId,
+          inboundEventId: agentRuns.inboundEventId,
+          status: agentRuns.status
+        })
         .from(agentRuns)
         .where(eq(agentRuns.id, result.runId))
         .limit(1)
-      if (run === undefined) throw new Error("Agent run not found")
-      const owner = await ownerKey(run.ownerId)
+      if (loadedRun === undefined) throw new Error("Agent run not found")
+      const status = result.status === "completed" ? "completed" : "failed"
+      if (
+        attemptId === undefined &&
+        loadedRun.status !== "completed" &&
+        loadedRun.status !== "failed"
+      ) {
+        return undefined
+      }
+      const owner = await ownerKey(loadedRun.ownerId)
       const encrypted = await protection.encryptText(owner.key, response.text)
       const messageId = randomUuid()
       const outboxId = randomUuid()
-      const [attempt] = await database
-        .select({ id: agentRunAttempts.id })
-        .from(agentRunAttempts)
-        .where(and(eq(agentRunAttempts.runId, result.runId), isNull(agentRunAttempts.finishedAt)))
-        .limit(1)
-      const status = result.status === "completed" ? "completed" : "failed"
-      const statements = [
-        database
-          .update(agentRuns)
-          .set({ status, completedAt: at, claimExpiresAt: null, model: result.model })
-          .where(eq(agentRuns.id, result.runId)),
-        database.insert(messages).values({
-          id: messageId,
-          userId: run.ownerId,
-          channelId: response.channelId,
-          direction: "outbound",
-          textCiphertext: encrypted.ciphertext,
-          textIv: encrypted.iv,
-          dataKeyVersion: owner.version,
-          occurredAt: at,
-          createdAt: at
-        }),
-        database.insert(outboxMessages).values({
-          id: outboxId,
-          userId: run.ownerId,
-          channelId: response.channelId,
-          messageId,
-          reasonCode: response.reasonCode,
-          correlationId: result.correlationId,
-          idempotencyKey,
-          replyToProviderMessageHandle: response.replyToMessageHandle,
-          state: "pending",
-          createdAt: at
-        }),
-        database
-          .update(inboundEvents)
-          .set({ processedAt: at, claimExpiresAt: null })
-          .where(eq(inboundEvents.id, run.inboundEventId))
-      ] as const
-      if (attempt !== undefined) {
+      const activeAttempt =
+        attemptId === undefined
+          ? undefined
+          : and(
+              eq(agentRuns.id, result.runId),
+              eq(agentRuns.status, "executing"),
+              eq(agentRuns.activeAttemptId, attemptId)
+            )
+      const messageInsert =
+        activeAttempt === undefined
+          ? database.insert(messages).values({
+              id: messageId,
+              userId: loadedRun.ownerId,
+              channelId: response.channelId,
+              direction: "outbound",
+              textCiphertext: encrypted.ciphertext,
+              textIv: encrypted.iv,
+              dataKeyVersion: owner.version,
+              occurredAt: at,
+              createdAt: at
+            })
+          : database.insert(messages).select(sql`
+              SELECT
+                ${messageId},
+                ${agentRuns.userId},
+                ${response.channelId},
+                ${"outbound"},
+                ${encrypted.ciphertext},
+                ${encrypted.iv},
+                ${owner.version},
+                ${at},
+                ${at}
+              FROM ${agentRuns}
+              WHERE ${activeAttempt}
+            `)
+      const outboxInsert =
+        activeAttempt === undefined
+          ? database.insert(outboxMessages).values({
+              id: outboxId,
+              userId: loadedRun.ownerId,
+              channelId: response.channelId,
+              messageId,
+              reasonCode: response.reasonCode,
+              correlationId: result.correlationId,
+              idempotencyKey,
+              replyToProviderMessageHandle: response.replyToMessageHandle,
+              conversationTurnId: conversation?.conversationTurnId,
+              conversationTurnRevision: conversation?.conversationTurnRevision,
+              state: "pending",
+              createdAt: at
+            })
+          : database.insert(outboxMessages).select(sql`
+              SELECT
+                ${outboxId},
+                ${agentRuns.userId},
+                ${response.channelId},
+                ${messageId},
+                ${response.reasonCode},
+                ${result.correlationId},
+                ${idempotencyKey},
+                NULL,
+                NULL,
+                ${response.replyToMessageHandle ?? null},
+                ${conversation?.conversationTurnId ?? null},
+                ${conversation?.conversationTurnRevision ?? null},
+                ${"pending"},
+                NULL,
+                NULL,
+                NULL,
+                NULL,
+                ${at}
+              FROM ${agentRuns}
+              WHERE ${activeAttempt}
+            `)
+      const statements = [messageInsert, outboxInsert] as const
+      const legacyStatements =
+        conversation === undefined
+          ? [
+              database
+                .update(inboundEvents)
+                .set({ processedAt: at, claimExpiresAt: null })
+                .where(eq(inboundEvents.id, loadedRun.inboundEventId))
+            ]
+          : []
+      if (attemptId !== undefined) {
         await database.batch([
           ...statements,
+          ...legacyStatements,
+          database
+            .update(agentRuns)
+            .set({
+              status,
+              completedAt: at,
+              claimExpiresAt: null,
+              activeAttemptId: null,
+              model: result.model
+            })
+            .where(activeAttempt!),
           database
             .update(agentRunAttempts)
             .set({ status, errorCode: result.errorCode, finishedAt: at })
-            .where(eq(agentRunAttempts.id, attempt.id))
+            .where(
+              and(
+                eq(agentRunAttempts.id, attemptId),
+                eq(agentRunAttempts.runId, result.runId),
+                isNull(agentRunAttempts.finishedAt)
+              )
+            )
         ])
       } else {
-        await database.batch(statements)
+        await database.batch([...statements, ...legacyStatements])
       }
-      return outboxId
+      const [committedOutbox] = await database
+        .select({ id: outboxMessages.id })
+        .from(outboxMessages)
+        .where(eq(outboxMessages.idempotencyKey, idempotencyKey))
+        .limit(1)
+      return committedOutbox?.id
+    },
+
+    async completeWithoutResponse(result, attemptId) {
+      const at = now().toISOString()
+      const [superseded] = await database
+        .update(agentRuns)
+        .set({
+          status: "superseded",
+          completedAt: at,
+          claimExpiresAt: null,
+          activeAttemptId: null,
+          model: result.model
+        })
+        .where(
+          and(
+            eq(agentRuns.id, result.runId),
+            eq(agentRuns.status, "executing"),
+            eq(agentRuns.activeAttemptId, attemptId)
+          )
+        )
+        .returning({ id: agentRuns.id })
+      if (superseded === undefined) return false
+      await database.batch([
+        database
+          .update(agentRunAttempts)
+          .set({ status: "superseded", errorCode: result.errorCode, finishedAt: at })
+          .where(
+            and(
+              eq(agentRunAttempts.id, attemptId),
+              eq(agentRunAttempts.runId, result.runId),
+              isNull(agentRunAttempts.finishedAt)
+            )
+          )
+      ])
+      return true
+    },
+
+    async completeForReflection(result, attemptId, conversation) {
+      const currentTime = now()
+      const at = currentTime.toISOString()
+      const settleUntil = conversation.settleUntil
+      const settling = settleUntil !== undefined && Date.parse(settleUntil) > currentTime.getTime()
+      const wakeAt =
+        settling && settleUntil !== undefined
+          ? sql<string>`max(${conversationTurns.quietUntil}, ${settleUntil})`
+          : sql<string>`max(${conversationTurns.quietUntil}, ${at})`
+      const [, transitioned] = await database.batch([
+        database
+          .update(agentRuns)
+          .set({
+            status: "superseded",
+            completedAt: at,
+            claimExpiresAt: null,
+            activeAttemptId: null,
+            model: result.model
+          })
+          .where(
+            and(
+              eq(agentRuns.id, result.runId),
+              eq(agentRuns.status, "executing"),
+              eq(agentRuns.activeAttemptId, attemptId),
+              eq(agentRuns.conversationTurnId, conversation.conversationTurnId),
+              eq(agentRuns.conversationTurnRevision, conversation.conversationTurnRevision)
+            )
+          ),
+        database
+          .update(conversationTurns)
+          .set({
+            status: settling ? "settling" : "collecting",
+            revision: sql`CASE
+              WHEN ${conversationTurns.revision} = ${conversation.conversationTurnRevision}
+              THEN ${conversationTurns.revision} + 1
+              ELSE ${conversationTurns.revision}
+            END`,
+            activeRunId: settling ? result.runId : null,
+            activeRunRevision: settling ? conversation.conversationTurnRevision : null,
+            ...(settling
+              ? { claimExpiresAt: wakeAt }
+              : {
+                  claimedRevision: null,
+                  claimedAt: null,
+                  claimExpiresAt: null,
+                  quietUntil: wakeAt
+                }),
+            updatedAt: at
+          })
+          .where(
+            and(
+              eq(conversationTurns.id, conversation.conversationTurnId),
+              eq(conversationTurns.activeRunId, result.runId),
+              eq(conversationTurns.activeRunRevision, conversation.conversationTurnRevision),
+              isNull(conversationTurns.replyOutboxId),
+              sql`${conversationTurns.revision} >= ${conversation.conversationTurnRevision}`,
+              or(eq(conversationTurns.status, "running"), eq(conversationTurns.status, "settling")),
+              sql`EXISTS (
+                SELECT 1
+                FROM agent_runs AS reflected_run
+                WHERE reflected_run.id = ${result.runId}
+                  AND reflected_run.status = 'superseded'
+                  AND reflected_run.completed_at = ${at}
+                  AND reflected_run.turn_id = ${conversation.conversationTurnId}
+                  AND reflected_run.turn_revision = ${conversation.conversationTurnRevision}
+              )`,
+              sql`EXISTS (
+                SELECT 1
+                FROM agent_run_attempts AS reflected_attempt
+                WHERE reflected_attempt.id = ${attemptId}
+                  AND reflected_attempt.run_id = ${result.runId}
+                  AND reflected_attempt.status = 'executing'
+                  AND reflected_attempt.finished_at IS NULL
+              )`
+            )
+          )
+          .returning({
+            status: conversationTurns.status,
+            revision: conversationTurns.revision,
+            quietUntil: conversationTurns.quietUntil,
+            claimExpiresAt: conversationTurns.claimExpiresAt
+          }),
+        database
+          .update(agentRunAttempts)
+          .set({ status: "superseded", errorCode: result.errorCode, finishedAt: at })
+          .where(
+            and(
+              eq(agentRunAttempts.id, attemptId),
+              eq(agentRunAttempts.runId, result.runId),
+              eq(agentRunAttempts.status, "executing"),
+              isNull(agentRunAttempts.finishedAt),
+              sql`EXISTS (
+                SELECT 1
+                FROM agent_runs AS reflected_run
+                WHERE reflected_run.id = ${result.runId}
+                  AND reflected_run.status = 'superseded'
+                  AND reflected_run.completed_at = ${at}
+              )`
+            )
+          )
+      ])
+      const transition = transitioned[0]
+      if (transition === undefined) return { status: "lost" }
+      if (transition.status === "settling") {
+        if (transition.claimExpiresAt === null) return { status: "lost" }
+        return {
+          status: "settling",
+          revision: transition.revision,
+          wakeAt: transition.claimExpiresAt
+        }
+      }
+      return {
+        status: "released",
+        revision: transition.revision,
+        wakeAt: transition.quietUntil
+      }
     },
 
     async channelForRun(runId) {
