@@ -1,10 +1,10 @@
 # Bob engineering checklist
 
-Updated: 2026-08-11
+Updated: 2026-08-12
 
-Repository baseline: `ba91b0b`
+Production source baseline: `894dbfb9bd233b39eaca165ccfd1731fc2689244`
 
-Working-tree review: pending commit and production release
+Production GitOps revision: `7e89d038ed7c04709724324d79d4c1e23e6a89cf`
 Source: [Production LLM engineering checklist](https://x.com/divaagurlxw/status/2086501951387422991)
 
 This document tracks Bob's production agent engineering work.
@@ -30,34 +30,34 @@ Current summary:
 
 ## Engineering checklist
 
-| ID  | Area                                    | Status               | What Bob has                                                                                                                     | Missing or next proof                                                                  |
-| --- | --------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| 01  | Agent harness                           | **Strong**           | Durable runs, encrypted snapshots, queues, leases, outbox records, retries, and dead-letter queues.                              | Keep fault tests in the release gate.                                                  |
-| 02  | Context engineering                     | **Partial**          | A bounded pack has confirmed facts, lexical matches, active reminders, routines, and workout state.                              | Prove selection quality with live requests. Stored raw conversation stays excluded.    |
-| 03  | Prompt and semantic caching             | **Missing**          | ADR 0006 defines safe keys, privacy rules, invalidation, and required measurements.                                              | Measure repeated eligible reads. Implement only when the measured benefit is material. |
-| 04  | KV-cache management                     | **Provider-managed** | OpenAI operates the hosted model cache.                                                                                          | Reassess only if Bob self-hosts inference.                                             |
-| 05  | Prefill and decode latency              | **Provider-managed** | Bob records total model latency.                                                                                                 | OpenAI owns separate prefill and decode behavior.                                      |
-| 06  | Continuous batching and paged attention | **Provider-managed** | OpenAI operates the serving infrastructure.                                                                                      | Reassess only if Bob self-hosts inference.                                             |
-| 07  | Speculative decoding and distillation   | **Provider-managed** | These controls are unavailable through the hosted Codex path.                                                                    | Reassess only if the inference platform changes.                                       |
-| 08  | Quantization                            | **Provider-managed** | OpenAI selects inference formats.                                                                                                | Evaluate INT8, INT4, FP8, AWQ, or GPTQ only for self-hosted models.                    |
-| 09  | Structured outputs and repair           | **Partial**          | Effect validates strict assistant JSON. Bob permits one repair and rejects unsafe action claims.                                 | Prove repair and rejection behavior with the production model.                         |
-| 10  | Function-call reliability               | **Strong**           | Bob validates tools twice. It uses command hashes, leases, approvals, and durable idempotency.                                   | Prove each domain tool in production.                                                  |
-| 11  | Agent guardrails                        | **Strong**           | Bob limits turns, tools, time, output, run tokens, and daily tokens.                                                             | Verify soft token-budget alerts in production.                                         |
-| 12  | Model routing and fallback              | **Partial**          | Bob uses one approved Codex model. It can return safe, source-labelled, read-only degraded recall.                               | Measure failures before adding a second model route.                                   |
-| 13  | Retrieval-augmented generation          | **Partial**          | Owner-scoped FTS5 adds sources, task state, diversity, and bounded event recency.                                                | Measure live quality. Add embeddings only after privacy review and a proven gain.      |
-| 14  | Retrieval evaluation                    | **Partial**          | A synthetic gate measures recall, precision, grounding, citations, conflicts, and stale leakage.                                 | Connect observations to the real retrieval path and run a private acceptance set.      |
-| 15  | Agent evaluations                       | **Partial**          | The root check runs 11 versioned cases and 13 strict metrics. A bounded live runner is opt-in.                                   | Add production shadow results and drift history without storing private text.          |
-| 16  | LLM observability                       | **Partial**          | Reusable Effect Layers trace Workers, Pi turns, model calls, tools, repairs, reminders, and delivery. Loki and Grafana are live. | Release the exporters. Prove one full trace, SLO queries, and alert delivery.          |
-| 17  | Cost and quota attribution              | **Partial**          | Durable usage records attribute tokens by feature, workflow, model, run, and UTC day.                                            | Verify live quota alerts. Codex subscription use has no per-token cost value.          |
-| 18  | Safety and permissions                  | **Strong**           | Bob taints recalled data and tool results. It scans output and verifies sources, tools, and actions.                             | Keep adversarial output tests in the release gate.                                     |
-| 19  | Tenant isolation                        | **Covered**          | Bob is a single-owner system. Stored data and actions still require the owner identity.                                          | Reopen this item before adding a helper or another owner.                              |
-| 20  | Fine-tuning, prompting, and RAG choice  | **Partial**          | Prompting and lexical retrieval fit private changing data. The synthetic gate records a baseline.                                | Record live evidence. Do not fine-tune on personal records.                            |
-| 21  | Latency, quality, cost, and reliability | **Partial**          | Bob has spans, strict quality gates, run limits, feature quotas, and defined service objectives.                                 | Verify objective queries, alerts, and dashboards with production data.                 |
-| 22  | Production failure modes                | **Partial**          | Tests cover invalid tools, stale recall, prompt injection, unsafe output, repair, and safe fallback.                             | Add model-drift history and production fault drills.                                   |
+| ID  | Area                                    | Status               | What Bob has                                                                                                                                   | Missing or next proof                                                                  |
+| --- | --------------------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 01  | Agent harness                           | **Strong**           | Durable runs, encrypted snapshots, queues, leases, outbox records, retries, and dead-letter queues.                                            | Keep fault tests in the release gate.                                                  |
+| 02  | Context engineering                     | **Partial**          | A bounded pack has confirmed facts, lexical matches, active reminders, routines, and workout state.                                            | Prove selection quality with live requests. Stored raw conversation stays excluded.    |
+| 03  | Prompt and semantic caching             | **Missing**          | ADR 0006 defines safe keys, privacy rules, invalidation, and required measurements.                                                            | Measure repeated eligible reads. Implement only when the measured benefit is material. |
+| 04  | KV-cache management                     | **Provider-managed** | OpenAI operates the hosted model cache.                                                                                                        | Reassess only if Bob self-hosts inference.                                             |
+| 05  | Prefill and decode latency              | **Provider-managed** | Bob records total model latency.                                                                                                               | OpenAI owns separate prefill and decode behavior.                                      |
+| 06  | Continuous batching and paged attention | **Provider-managed** | OpenAI operates the serving infrastructure.                                                                                                    | Reassess only if Bob self-hosts inference.                                             |
+| 07  | Speculative decoding and distillation   | **Provider-managed** | These controls are unavailable through the hosted Codex path.                                                                                  | Reassess only if the inference platform changes.                                       |
+| 08  | Quantization                            | **Provider-managed** | OpenAI selects inference formats.                                                                                                              | Evaluate INT8, INT4, FP8, AWQ, or GPTQ only for self-hosted models.                    |
+| 09  | Structured outputs and repair           | **Partial**          | Effect validates strict assistant JSON. Bob permits one repair and rejects unsafe action claims.                                               | Prove repair and rejection behavior with the production model.                         |
+| 10  | Function-call reliability               | **Strong**           | Bob validates tools twice. It uses command hashes, leases, approvals, and durable idempotency.                                                 | Prove each domain tool in production.                                                  |
+| 11  | Agent guardrails                        | **Strong**           | Bob limits turns, tools, time, output, run tokens, and daily tokens.                                                                           | Verify soft token-budget alerts in production.                                         |
+| 12  | Model routing and fallback              | **Partial**          | Bob uses one approved Codex model. It can return safe, source-labelled, read-only degraded recall.                                             | Measure failures before adding a second model route.                                   |
+| 13  | Retrieval-augmented generation          | **Partial**          | Owner-scoped FTS5 adds sources, task state, diversity, and bounded event recency.                                                              | Measure live quality. Add embeddings only after privacy review and a proven gain.      |
+| 14  | Retrieval evaluation                    | **Partial**          | A synthetic gate measures recall, precision, grounding, citations, conflicts, and stale leakage.                                               | Connect observations to the real retrieval path and run a private acceptance set.      |
+| 15  | Agent evaluations                       | **Partial**          | The root check runs 11 versioned cases and 13 strict metrics. A bounded live runner is opt-in.                                                 | Add production shadow results and drift history without storing private text.          |
+| 16  | LLM observability                       | **Partial**          | Reusable Effect Layers trace Workers, Pi turns, model calls, tools, repairs, reminders, and delivery. One live trace covers all four services. | Add SLO queries, alert delivery, and Worker log export to LGTM.                        |
+| 17  | Cost and quota attribution              | **Partial**          | Durable usage records attribute tokens by feature, workflow, model, run, and UTC day.                                                          | Verify live quota alerts. Codex subscription use has no per-token cost value.          |
+| 18  | Safety and permissions                  | **Strong**           | Bob taints recalled data and tool results. It scans output and verifies sources, tools, and actions.                                           | Keep adversarial output tests in the release gate.                                     |
+| 19  | Tenant isolation                        | **Covered**          | Bob is a single-owner system. Stored data and actions still require the owner identity.                                                        | Reopen this item before adding a helper or another owner.                              |
+| 20  | Fine-tuning, prompting, and RAG choice  | **Partial**          | Prompting and lexical retrieval fit private changing data. The synthetic gate records a baseline.                                              | Record live evidence. Do not fine-tune on personal records.                            |
+| 21  | Latency, quality, cost, and reliability | **Partial**          | Bob has spans, strict quality gates, run limits, feature quotas, and defined service objectives.                                               | Verify objective queries, alerts, and dashboards with production data.                 |
+| 22  | Production failure modes                | **Partial**          | Tests cover invalid tools, stale recall, prompt injection, unsafe output, repair, and safe fallback.                                           | Add model-drift history and production fault drills.                                   |
 
 ## Current production evidence
 
-Snapshot date: 2026-08-11
+Snapshot date: 2026-08-12
 
 - [x] The Kubernetes agent is healthy.
 - [x] The Cloudflare tunnel is healthy.
@@ -71,30 +71,33 @@ Snapshot date: 2026-08-11
 - [x] Redacted production agent logs reach Loki.
 - [x] The Bob production dashboard shows pod health, logs, failures, and Tempo searches.
 - [x] The native agent OTLP exporter sent a content-free live test trace to Tempo.
-- [ ] The running production agent image exports native traces.
-- [ ] Cloudflare Worker logs and traces export to the private LGTM stack.
-- [ ] A domain tool has run in production.
+- [x] The running production agent image exports native traces.
+- [x] Cloudflare Worker traces export to the private LGTM stack.
+- [ ] Cloudflare Worker logs export to the private LGTM stack.
+- [x] A domain tool has run in production.
 - [ ] A reminder has completed its full production lifecycle.
 - [ ] A confirmed memory has been recalled with its source.
 - [ ] A journal entry has passed create, retrieve, and delete checks.
 - [ ] A gym, routine, workout, and set have completed their full workflow.
 - [ ] An independent encrypted backup has completed.
 - [x] A primary-data restore drill measured recovery time and recovery point loss.
-- [ ] End-to-end production traces, SLOs, and alert delivery have been verified.
+- [x] An end-to-end production trace has been verified against D1 and Loki.
+- [ ] Production SLO queries and alert delivery have been verified.
 
 ## Current release gate
 
-- [ ] Commit and push the complete source, migrations, manifests, and tests.
-- [ ] Publish the agent and backup images from that release SHA.
-- [ ] Verify both image attestations, then pin both immutable digests.
-- [ ] Run the trusted production Cloudflare plan for the release SHA.
-- [ ] Reject any unexpected Worker, D1, R2, Queue, Durable Object, or Access replacement.
-- [ ] Deploy the backward-compatible agent before the new Core Worker.
-- [ ] Drain old agent runs before the Core Worker update.
-- [ ] Keep the stable `bob.tpops.dev` Core address through the cutover.
-- [ ] Wait for External Secrets, then restart and verify the agent after the handoff.
-- [ ] Pin Argo CD to the reviewed release SHA and verify a healthy sync.
-- [ ] Run one manual encrypted backup and verify its archive manifest.
+- [x] Commit and push the complete source, migrations, manifests, and tests.
+- [x] Publish the agent and backup images from that release SHA.
+- [x] Verify both image attestations, then pin both immutable digests.
+- [x] Run the trusted production Cloudflare plan for the release SHA.
+- [x] Reject any unexpected Worker, D1, R2, Queue, Durable Object, or Access replacement.
+- [x] Deploy the backward-compatible agent before the new Core Worker.
+- [x] Drain old agent runs before the Core Worker update.
+- [x] Keep the stable `bob.tpops.dev` Core address through the cutover.
+- [x] Wait for External Secrets, then restart and verify the agent after the handoff.
+- [x] Pin Argo CD to the reviewed release SHA and verify a healthy sync.
+- [x] Run one manual encrypted backup and validate its content-free completion record.
+- [ ] Verify the archive manifest with the isolated recovery identity.
 - [ ] Complete Better Auth owner setup and a new sign-in.
 - [ ] Complete one harmless live acceptance check for each domain.
 - [ ] Copy encrypted backup archives to node-independent storage.
@@ -188,8 +191,9 @@ Snapshot date: 2026-08-11
 - [x] Add a fail-open native OTLP exporter for agent spans.
 - [x] Add reusable, content-free Effect telemetry Layers for Node and Workers.
 - [x] Trace the Pi loop, model turns, Tool calls, validation, repair, reminders, and Sendblue delivery.
-- [ ] Release the agent exporter and verify one real end-to-end Tempo trace.
-- [ ] Export Cloudflare Worker logs and traces through authenticated OTLP destinations.
+- [x] Release the agent exporter and verify one real end-to-end Tempo trace.
+- [x] Export Cloudflare Worker traces through the authenticated OTLP destination.
+- [ ] Export Cloudflare Worker logs through the authenticated OTLP destination.
 - [ ] Add an owner-only durable run timeline with explicit content reveal and audit records.
 - [ ] Add model fallback only after measured failure data justifies it.
 

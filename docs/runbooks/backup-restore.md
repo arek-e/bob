@@ -271,9 +271,9 @@ Never record credentials, private text, object bytes, or decrypted data.
 
 ## Production acceptance
 
-- [ ] The ExternalSecret is ready with the scoped runtime policy.
-- [ ] The backup claim is bound.
-- [ ] One manual encrypted backup completed.
+- [x] The ExternalSecret is ready with the scoped runtime policy.
+- [x] The backup claim is bound.
+- [x] One manual encrypted backup completed.
 - [ ] One scheduled encrypted backup completed.
 - [ ] The 42-copy retention rule ran without deleting unrelated files.
 - [ ] One ciphertext copy exists on node-independent storage outside Cloudflare.
