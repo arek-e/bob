@@ -1282,7 +1282,9 @@ Never expose OAuth data to prompts, context, logs, health responses, or tools.
 - Use private R2 buckets only.
 - Store content hashes and provenance for memory changes.
 - Add export and deletion workflows.
-- Keep one encrypted backup outside the Cloudflare account.
+- Keep one encrypted backup in a separate locked R2 bucket.
+- Use separate bucket-scoped credentials for the backup process.
+- Accept that this copy does not protect against Cloudflare account loss.
 - Define recovery point and recovery time objectives.
 - Test key recovery and backup restoration.
 
@@ -1701,7 +1703,7 @@ Resolve these items before production:
 25. Test D1 success followed by Queue failure.
 26. Test six failed Durable Object alarm attempts.
 27. Test Node timeout, restart, and Queue lease recovery.
-28. Complete an independent encrypted backup and restore.
+28. Complete a secondary encrypted backup and restore.
 29. Test encryption-key rotation and disaster recovery.
 30. Define retention for every data and backup category.
 31. Confirm model-provider retention and training controls.

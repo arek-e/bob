@@ -79,7 +79,7 @@ Snapshot date: 2026-08-12
 - [ ] A confirmed memory has been recalled with its source.
 - [ ] A journal entry has passed create, retrieve, and delete checks.
 - [ ] A gym, routine, workout, and set have completed their full workflow.
-- [ ] An independent encrypted backup has completed.
+- [ ] A secondary encrypted backup has reached the locked R2 bucket.
 - [x] A primary-data restore drill measured recovery time and recovery point loss.
 - [x] An end-to-end production trace has been verified against D1 and Loki.
 - [ ] Production SLO queries and alert delivery have been verified.

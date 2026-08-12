@@ -169,7 +169,7 @@ Copy runtime secret values from OpenBao through a trusted administrator path.
 
 Use the existing `access/*`, `nango/runtime`, `backup/runtime`, and `tunnel/agent-host` records.
 
-Store the independent backup copy fields in `ops/apps/prod/bob/backup/runtime`.
+Store the `BACKUP_COPY_*` fields in `ops/apps/prod/bob/backup/runtime`.
 
 Set `NANGO_RECORDS_DATABASE_URL` to the internal Coolify database URL.
 
