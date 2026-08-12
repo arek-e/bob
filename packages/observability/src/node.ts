@@ -49,6 +49,89 @@ function otlpTraceEndpoint(endpoint: string): string {
   return new URL("v1/traces", base).toString()
 }
 
+function otlpLogEndpoint(endpoint: string): string | undefined {
+  try {
+    const base = endpoint.endsWith("/") ? endpoint : `${endpoint}/`
+    return new URL("v1/logs", base).toString()
+  } catch {
+    return undefined
+  }
+}
+
+function otlpLogPayload(
+  event: HealthEvent,
+  options: Pick<
+    NodeTelemetryLayerOptions,
+    "serviceName" | "serviceVersion" | "deploymentEnvironment"
+  >,
+  observedAtMs: number
+) {
+  const observedTimeUnixNano = BigInt(Math.max(0, Math.round(observedAtMs))) * 1_000_000n
+  return {
+    resourceLogs: [
+      {
+        resource: {
+          attributes: [
+            stringAttribute("service.name", options.serviceName),
+            stringAttribute("service.version", options.serviceVersion),
+            stringAttribute("deployment.environment", options.deploymentEnvironment),
+            stringAttribute("deployment.environment.name", options.deploymentEnvironment),
+            stringAttribute("bob.release.sha", options.serviceVersion)
+          ]
+        },
+        scopeLogs: [
+          {
+            scope: { name: "@bob/observability" },
+            logRecords: [
+              {
+                timeUnixNano: observedTimeUnixNano.toString(),
+                observedTimeUnixNano: observedTimeUnixNano.toString(),
+                severityNumber: 9,
+                severityText: "INFO",
+                body: { stringValue: JSON.stringify(event) },
+                attributes: [
+                  stringAttribute("bob.correlation.id", event.correlationId),
+                  stringAttribute("bob.event.type", event.type)
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+
+function nodeHealthLogWriter(options: NodeTelemetryLayerOptions): (event: HealthEvent) => void {
+  const request = options.fetch ?? fetch
+  const endpoint = otlpLogEndpoint(options.endpoint)
+  const timeoutMs = options.exportTimeoutMs ?? 1_000
+  return (input) => {
+    const event = parseHealthEvent(input)
+    try {
+      if (options.writeHealth === undefined) console.log(JSON.stringify(event))
+      else options.writeHealth(event)
+    } catch {
+      // Health output must not change an agent result.
+    }
+    if (endpoint === undefined) return
+    try {
+      const headers = new Headers(options.headers)
+      headers.set("content-type", "application/json")
+      void request(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(otlpLogPayload(event, options, Date.now())),
+        signal: AbortSignal.timeout(timeoutMs)
+      })
+        .then((response) => response.body?.cancel())
+        .catch(() => undefined)
+    } catch {
+      // Log export must not change an agent result.
+    }
+  }
+}
+
 function otlpTracePayload(
   event: WorkflowSpanEvent,
   options: Pick<NodeTelemetrySinkOptions, "serviceName" | "deploymentEnvironment" | "releaseSha">,
@@ -132,7 +215,7 @@ export function nodeTelemetryLayer(options: NodeTelemetryLayerOptions): Layer.La
         ...(options.maxQueueSize === undefined ? {} : { maxQueueSize: options.maxQueueSize }),
         ...(options.maxBatchSize === undefined ? {} : { maxBatchSize: options.maxBatchSize })
       }),
-      ...(options.writeHealth === undefined ? {} : { writeHealth: options.writeHealth })
+      writeHealth: nodeHealthLogWriter(options)
     })
   )
 }
