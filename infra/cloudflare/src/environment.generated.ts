@@ -68,10 +68,30 @@ export type CoercedEnvSchema = {
   
   /**
    * **AGENT_ORIGIN_URL**  
-   * Kubernetes service reached by the Cloudflare Tunnel.  
+   * Agent service reached by the Cloudflare Tunnel connector.  
    * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M24%2021V9h-2v14h8v-2zm-4-6v-4c0-1.103-.897-2-2-2h-6v14h2v-6h1.48l2.335%206h2.145l-2.333-6H18c1.103%200%202-.897%202-2m-6-4h4v4h-4zM8%2023H4c-1.103%200-2-.897-2-2V9h2v12h4V9h2v12c0%201.103-.897%202-2%202%22%2F%3E%3C%2Fsvg%3E)   
    */
   AGENT_ORIGIN_URL: string;
+  
+  /**
+   * **OTEL_ORIGIN_URL**  
+   * OTLP service reached by the Cloudflare Tunnel connector.  
+   * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M24%2021V9h-2v14h8v-2zm-4-6v-4c0-1.103-.897-2-2-2h-6v14h2v-6h1.48l2.335%206h2.145l-2.333-6H18c1.103%200%202-.897%202-2m-6-4h4v4h-4zM8%2023H4c-1.103%200-2-.897-2-2V9h2v12h4V9h2v12c0%201.103-.897%202-2%202%22%2F%3E%3C%2Fsvg%3E)   
+   */
+  OTEL_ORIGIN_URL: string;
+  
+  /**
+   * **NANGO_ORIGIN_URL**  
+   * Nango services reached by the Cloudflare Tunnel connector.  
+   * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M24%2021V9h-2v14h8v-2zm-4-6v-4c0-1.103-.897-2-2-2h-6v14h2v-6h1.48l2.335%206h2.145l-2.333-6H18c1.103%200%202-.897%202-2m-6-4h4v4h-4zM8%2023H4c-1.103%200-2-.897-2-2V9h2v12h4V9h2v12c0%201.103-.897%202-2%202%22%2F%3E%3C%2Fsvg%3E)   
+   */
+  NANGO_ORIGIN_URL: string;
+  
+  /**
+   * **NANGO_CONNECT_ORIGIN_URL**  
+   * ![icon](data:image/svg+xml;utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2220%22%20height%3D%2220%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20fill%3D%22%23808080%22%20d%3D%22M24%2021V9h-2v14h8v-2zm-4-6v-4c0-1.103-.897-2-2-2h-6v14h2v-6h1.48l2.335%206h2.145l-2.333-6H18c1.103%200%202-.897%202-2m-6-4h4v4h-4zM8%2023H4c-1.103%200-2-.897-2-2V9h2v12h4V9h2v12c0%201.103-.897%202-2%202%22%2F%3E%3C%2Fsvg%3E)   
+   */
+  NANGO_CONNECT_ORIGIN_URL: string;
   
   /**
    * **OWNER_ID** 🔐 _sensitive_  
@@ -286,7 +306,7 @@ export type CoercedEnvSchema = {
   
 };
 
-type _CoercedEnvSchema_05adbd7b = CoercedEnvSchema;
+type _CoercedEnvSchema_f9912b8c = CoercedEnvSchema;
 
 export type EnvSchemaAsStrings = {
   [Property in keyof CoercedEnvSchema]:
@@ -294,9 +314,9 @@ export type EnvSchemaAsStrings = {
       : (CoercedEnvSchema[Property] extends boolean ? ('true' | 'false') : string)
 };
 
-type _EnvSchemaAsStrings_05adbd7b = EnvSchemaAsStrings;
+type _EnvSchemaAsStrings_f9912b8c = EnvSchemaAsStrings;
 
-export type PublicCoercedEnvSchema = Readonly<Pick<CoercedEnvSchema, 'CLOUDFLARE_WORKERS_SUBDOMAIN' | 'CLOUDFLARE_CORE_WORKER_NAME' | 'BOB_DOMAIN' | 'BOB_RELEASE_SHA' | 'ACCESS_TEAM_DOMAIN' | 'AGENT_ORIGIN_URL' | 'OWNER_TIME_ZONE' | 'REMINDER_QUIET_HOURS_START' | 'REMINDER_QUIET_HOURS_END' | 'REMINDER_DAILY_LIMIT' | 'BOB_MODEL' | 'BOB_PROVIDER' | 'BOB_RUN_TOKEN_BUDGET' | 'BOB_DAILY_TOKEN_BUDGET' | 'SENDBLUE_ENABLED' | 'ALCHEMY_PRODUCTION_STATE_APPROVED' | 'ALCHEMY_TELEMETRY_DISABLED' | 'RUNTIME_CREDENTIAL_HANDOFF_ENABLED' | 'ACTIONS_ID_TOKEN_REQUEST_URL' | 'ACCESS_SERVICE_TOKEN_ROTATION_VERSION' | 'ACCESS_SERVICE_TOKEN_ROTATE_BY' | 'BAO_ADDR' | 'BAO_JWT_ROLE'>>;
+export type PublicCoercedEnvSchema = Readonly<Pick<CoercedEnvSchema, 'CLOUDFLARE_WORKERS_SUBDOMAIN' | 'CLOUDFLARE_CORE_WORKER_NAME' | 'BOB_DOMAIN' | 'BOB_RELEASE_SHA' | 'ACCESS_TEAM_DOMAIN' | 'AGENT_ORIGIN_URL' | 'OTEL_ORIGIN_URL' | 'NANGO_ORIGIN_URL' | 'NANGO_CONNECT_ORIGIN_URL' | 'OWNER_TIME_ZONE' | 'REMINDER_QUIET_HOURS_START' | 'REMINDER_QUIET_HOURS_END' | 'REMINDER_DAILY_LIMIT' | 'BOB_MODEL' | 'BOB_PROVIDER' | 'BOB_RUN_TOKEN_BUDGET' | 'BOB_DAILY_TOKEN_BUDGET' | 'SENDBLUE_ENABLED' | 'ALCHEMY_PRODUCTION_STATE_APPROVED' | 'ALCHEMY_TELEMETRY_DISABLED' | 'RUNTIME_CREDENTIAL_HANDOFF_ENABLED' | 'ACTIONS_ID_TOKEN_REQUEST_URL' | 'ACCESS_SERVICE_TOKEN_ROTATION_VERSION' | 'ACCESS_SERVICE_TOKEN_ROTATE_BY' | 'BAO_ADDR' | 'BAO_JWT_ROLE'>>;
 
 // re-export of the runtime ENV proxy, typed to this package's schema
 export const ENV = _ENV as unknown as Readonly<CoercedEnvSchema>;

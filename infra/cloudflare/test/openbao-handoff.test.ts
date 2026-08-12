@@ -13,13 +13,16 @@ const runtimeCredentials: RuntimeCredentials = {
   coreUrl: "https://bob.example.invalid",
   runAudience: "run-audience",
   adminAudience: "admin-audience",
+  canaryRunAudience: "canary-run-audience",
+  canaryAdminAudience: "canary-admin-audience",
   coreToAgentClientId: "run-client",
   coreToAgentClientSecret: "run-secret",
   coreToAgentAdminClientId: "admin-client",
   coreToAgentAdminClientSecret: "admin-secret",
   agentToCoreClientId: "core-client",
   agentToCoreClientSecret: "core-secret",
-  tunnelToken: "tunnel-secret"
+  tunnelToken: "tunnel-secret",
+  canaryTunnelToken: "canary-tunnel-secret"
 }
 
 describe("OpenBao runtime credential handoff", () => {
@@ -58,12 +61,15 @@ describe("OpenBao runtime credential handoff", () => {
       fetch
     )
 
-    expect(result).toEqual({ recordsWritten: 4 })
-    expect(requests.slice(2, 6).map((request) => request.url)).toEqual([
+    expect(result).toEqual({ recordsWritten: 7 })
+    expect(requests.slice(2, 9).map((request) => request.url)).toEqual([
       "https://bao.example.invalid/v1/ops/data/apps/prod/bob/access/core-to-agent",
       "https://bao.example.invalid/v1/ops/data/apps/prod/bob/access/core-to-agent-admin",
+      "https://bao.example.invalid/v1/ops/data/apps/prod/bob/access/core-to-agent-canary",
+      "https://bao.example.invalid/v1/ops/data/apps/prod/bob/access/core-to-agent-admin-canary",
       "https://bao.example.invalid/v1/ops/data/apps/prod/bob/access/agent-to-core",
-      "https://bao.example.invalid/v1/ops/data/apps/prod/bob/tunnel/agent-host"
+      "https://bao.example.invalid/v1/ops/data/apps/prod/bob/tunnel/agent-host",
+      "https://bao.example.invalid/v1/ops/data/apps/prod/bob/tunnel/agent-host-canary"
     ])
     expect(requests.at(-1)?.url).toBe("https://bao.example.invalid/v1/auth/token/revoke-self")
     expect(JSON.stringify(result)).not.toContain("secret")
@@ -87,10 +93,10 @@ describe("OpenBao runtime credential handoff", () => {
         },
         fetch
       )
-    ).resolves.toEqual({ recordsWritten: 4 })
+    ).resolves.toEqual({ recordsWritten: 7 })
 
-    expect(requests).toHaveLength(5)
-    expect(requests.slice(0, 4).every(({ url }) => url.includes("/ops/data/apps/prod/bob/"))).toBe(
+    expect(requests).toHaveLength(8)
+    expect(requests.slice(0, 7).every(({ url }) => url.includes("/ops/data/apps/prod/bob/"))).toBe(
       true
     )
     expect(requests.at(-1)?.url).toBe("https://bao.example.invalid/v1/auth/token/revoke-self")

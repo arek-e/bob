@@ -5,8 +5,11 @@ const Environment = Schema.Struct({
     Schema.check(Schema.isBetween({ minimum: 1, maximum: 65_535 }))
   ),
   BAO_ADDR: Schema.URLFromString,
-  BAO_KUBERNETES_ROLE: Schema.String.check(Schema.isMinLength(1)),
-  BAO_KUBERNETES_JWT_PATH: Schema.String.check(Schema.isMinLength(1)),
+  BAO_AUTH_METHOD: Schema.Literals(["kubernetes", "approle"]),
+  BAO_KUBERNETES_ROLE: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  BAO_KUBERNETES_JWT_PATH: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  BAO_APPROLE_ROLE_ID: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  BAO_APPROLE_SECRET_ID_PATH: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
   BOB_PROVIDER: Schema.Literal("openai-codex"),
   BOB_MODEL: Schema.String.check(Schema.isMinLength(1)),
   BOB_ALLOWED_MODELS: Schema.String.check(Schema.isMinLength(1)),
@@ -25,8 +28,17 @@ const Environment = Schema.Struct({
 export interface AgentConfiguration {
   readonly port: number
   readonly baoAddress: string
-  readonly baoKubernetesRole: string
-  readonly baoKubernetesJwtPath: string
+  readonly baoAuthentication:
+    | {
+        readonly method: "kubernetes"
+        readonly role: string
+        readonly jwtPath: string
+      }
+    | {
+        readonly method: "approle"
+        readonly roleId: string
+        readonly secretIdPath: string
+      }
   readonly provider: "openai-codex"
   readonly model: string
   readonly allowedModels: readonly string[]
@@ -48,11 +60,25 @@ export function readAgentConfiguration(environment: NodeJS.ProcessEnv): AgentCon
     .map((value) => value.trim())
     .filter((value) => value.length > 0)
   if (allowedModels.length === 0) throw new Error("BOB_ALLOWED_MODELS must contain one model")
+  const baoAuthentication =
+    decoded.BAO_AUTH_METHOD === "kubernetes"
+      ? {
+          method: "kubernetes" as const,
+          role: requireValue("BAO_KUBERNETES_ROLE", decoded.BAO_KUBERNETES_ROLE),
+          jwtPath: requireValue("BAO_KUBERNETES_JWT_PATH", decoded.BAO_KUBERNETES_JWT_PATH)
+        }
+      : {
+          method: "approle" as const,
+          roleId: requireValue("BAO_APPROLE_ROLE_ID", decoded.BAO_APPROLE_ROLE_ID),
+          secretIdPath: requireValue(
+            "BAO_APPROLE_SECRET_ID_PATH",
+            decoded.BAO_APPROLE_SECRET_ID_PATH
+          )
+        }
   return {
     port: decoded.PORT,
     baoAddress: decoded.BAO_ADDR.toString().replace(/\/$/, ""),
-    baoKubernetesRole: decoded.BAO_KUBERNETES_ROLE,
-    baoKubernetesJwtPath: decoded.BAO_KUBERNETES_JWT_PATH,
+    baoAuthentication,
     provider: decoded.BOB_PROVIDER,
     model: decoded.BOB_MODEL,
     allowedModels,
@@ -67,4 +93,9 @@ export function readAgentConfiguration(environment: NodeJS.ProcessEnv): AgentCon
     adminAccessAudience: decoded.ADMIN_ACCESS_AUDIENCE,
     adminAccessSubject: decoded.ADMIN_ACCESS_SUBJECT
   }
+}
+
+function requireValue(name: string, value: string | undefined): string {
+  if (value === undefined) throw new Error(`${name} is required for the selected BAO_AUTH_METHOD`)
+  return value
 }

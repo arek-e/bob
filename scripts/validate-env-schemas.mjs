@@ -57,6 +57,10 @@ const safeValidationEnvironment = {
   ALCHEMY_PRODUCTION_STATE_APPROVED: "true",
   ALCHEMY_TELEMETRY_DISABLED: "true",
   AGENT_ORIGIN_URL: "http://bob-agent.bob.svc.cluster.local:8787",
+  OTEL_ORIGIN_URL:
+    "http://prod-otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4318",
+  NANGO_ORIGIN_URL: "http://bob-nango.bob.svc.cluster.local:3003",
+  NANGO_CONNECT_ORIGIN_URL: "http://bob-nango.bob.svc.cluster.local:3009",
   BOB_MODEL: "gpt-5.6-luna",
   BOB_PROVIDER: "openai-codex",
   BOB_RELEASE_SHA: "0000000000000000000000000000000000000000",

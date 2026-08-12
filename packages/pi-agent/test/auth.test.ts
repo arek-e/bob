@@ -33,6 +33,33 @@ describe("OpenBao Pi credential store", () => {
     )
   })
 
+  it("authenticates with AppRole without putting the secret ID in the URL", async () => {
+    const request = vi.fn<typeof fetch>(async (input) => {
+      if (String(input).includes("/auth/approle/login")) {
+        return Response.json({ auth: { client_token: "vault-token", lease_duration: 300 } })
+      }
+      return Response.json({ data: { data: credential, metadata: { version: 4 } } })
+    })
+    const store = new OpenBaoCredentialStore({
+      address: "https://bao.example",
+      authMethod: "approle",
+      appRoleId: "role-id",
+      getAppRoleSecretId: async () => "secret-id",
+      fetch: request
+    })
+
+    await expect(store.read("openai-codex")).resolves.toMatchObject(credential)
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      "https://bao.example/v1/auth/approle/login",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ role_id: "role-id", secret_id: "secret-id" })
+      })
+    )
+    expect(String(request.mock.calls[0]?.[0])).not.toContain("secret-id")
+  })
+
   it("writes both rotated tokens with KV v2 compare-and-set", async () => {
     const bodies: unknown[] = []
     const request = vi.fn<typeof fetch>(async (input, init) => {

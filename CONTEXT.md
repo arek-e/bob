@@ -106,3 +106,4 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - [ADR 0004: Alchemy, Effect v4, and Drizzle v1 RC](docs/adr/0004-alchemy-effect-drizzle.md)
 - [ADR 0005: Varlock environment contracts](docs/adr/0005-varlock-environment-contracts.md)
 - [ADR 0007: Bob-owned Pi AI loop](docs/adr/0007-bob-owned-pi-ai-loop.md)
+- [ADR 0009: Coolify private runtime](docs/adr/0009-coolify-private-runtime.md)

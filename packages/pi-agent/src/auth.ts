@@ -15,7 +15,7 @@ const OAuthRecord = Schema.Struct({
   accountId: Schema.String
 })
 
-const KubernetesLoginResponse = Schema.Struct({
+const LoginResponse = Schema.Struct({
   auth: Schema.Struct({
     client_token: Schema.String,
     lease_duration: Schema.Number
@@ -37,16 +37,29 @@ export class CredentialConflictError extends Error {
   }
 }
 
-export interface OpenBaoCredentialStoreOptions {
+interface OpenBaoCredentialStoreBaseOptions {
   readonly address: string
-  readonly kubernetesRole: string
-  readonly getKubernetesJwt: (signal?: AbortSignal) => Promise<string>
   readonly mount?: string
   readonly authMount?: string
   readonly allowDelete?: boolean
   readonly fetch?: typeof fetch
   readonly now?: () => number
 }
+
+interface OpenBaoKubernetesCredentialStoreOptions {
+  readonly authMethod?: "kubernetes"
+  readonly kubernetesRole: string
+  readonly getKubernetesJwt: (signal?: AbortSignal) => Promise<string>
+}
+
+interface OpenBaoAppRoleCredentialStoreOptions {
+  readonly authMethod: "approle"
+  readonly appRoleId: string
+  readonly getAppRoleSecretId: (signal?: AbortSignal) => Promise<string>
+}
+
+export type OpenBaoCredentialStoreOptions = OpenBaoCredentialStoreBaseOptions &
+  (OpenBaoKubernetesCredentialStoreOptions | OpenBaoAppRoleCredentialStoreOptions)
 
 interface VersionedCredential {
   readonly credential: Credential
@@ -69,7 +82,7 @@ export class OpenBaoCredentialStore implements CredentialStore {
   constructor(private readonly options: OpenBaoCredentialStoreOptions) {
     this.request = options.fetch ?? fetch
     this.mount = options.mount ?? "ops"
-    this.authMount = options.authMount ?? "kubernetes"
+    this.authMount = options.authMount ?? options.authMethod ?? "kubernetes"
     this.now = options.now ?? Date.now
   }
 
@@ -101,20 +114,30 @@ export class OpenBaoCredentialStore implements CredentialStore {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 15_000)
     try {
-      const jwt = await this.options.getKubernetesJwt(signal)
+      const body =
+        this.options.authMethod === "approle"
+          ? {
+              role_id: this.options.appRoleId,
+              secret_id: await this.options.getAppRoleSecretId(signal)
+            }
+          : {
+              role: this.options.kubernetesRole,
+              jwt: await this.options.getKubernetesJwt(signal)
+            }
+      const authMethod = this.options.authMethod ?? "kubernetes"
       const requestSignal = combineSignals(signal, controller.signal)
       const response = await this.request(
         `${this.options.address}/v1/auth/${this.authMount}/login`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ role: this.options.kubernetesRole, jwt }),
+          body: JSON.stringify(body),
           ...(requestSignal === undefined ? {} : { signal: requestSignal })
         }
       )
       if (!response.ok)
-        throw new Error(`OpenBao Kubernetes authentication failed: ${response.status}`)
-      const login = Schema.decodeUnknownSync(KubernetesLoginResponse)(await response.json())
+        throw new Error(`OpenBao ${authMethod} authentication failed: ${response.status}`)
+      const login = Schema.decodeUnknownSync(LoginResponse)(await response.json())
       this.token = {
         value: login.auth.client_token,
         expiresAt: this.now() + login.auth.lease_duration * 1_000

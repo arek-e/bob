@@ -1,0 +1,209 @@
+name: bob-private-runtime
+
+x-coolify-required:
+  BAO_APPROLE_SECRET_ID: ${BAO_APPROLE_SECRET_ID:?}
+
+x-runtime-security: &runtime-security
+  cap_drop: [ALL]
+  read_only: true
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+
+services:
+  agent:
+    <<: *runtime-security
+    image: ghcr.io/arek-e/bob-agent@${BOB_AGENT_IMAGE_DIGEST:?}
+    environment:
+      ACCESS_TEAM_DOMAIN: ${ACCESS_TEAM_DOMAIN:?}
+      ADMIN_ACCESS_AUDIENCE: ${ADMIN_ACCESS_AUDIENCE:?}
+      ADMIN_ACCESS_SUBJECT: ${ADMIN_ACCESS_SUBJECT:?}
+      BAO_ADDR: ${BAO_ADDR:?}
+      BAO_APPROLE_ROLE_ID: ${BAO_APPROLE_ROLE_ID:?}
+      BAO_APPROLE_SECRET_ID_PATH: /run/secrets/openbao_approle_secret_id
+      BAO_AUTH_METHOD: approle
+      BOB_ALLOWED_MODELS: ${BOB_ALLOWED_MODELS:?}
+      BOB_MODEL: ${BOB_MODEL:?}
+      BOB_PROVIDER: openai-codex
+      BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
+      CORE_ACCESS_CLIENT_ID: ${CORE_ACCESS_CLIENT_ID:?}
+      CORE_ACCESS_CLIENT_SECRET: ${CORE_ACCESS_CLIENT_SECRET:?}
+      CORE_URL: ${CORE_URL:?}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?}
+      PORT: "8787"
+      RUN_ACCESS_AUDIENCE: ${RUN_ACCESS_AUDIENCE:?}
+      RUN_ACCESS_SUBJECT: ${RUN_ACCESS_SUBJECT:?}
+    expose: ["8787"]
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks: [runtime]
+    secrets:
+      - source: openbao_approle_secret_id
+        target: openbao_approle_secret_id
+        mode: 0440
+    tmpfs:
+      - /tmp:mode=1777,uid=1000,gid=1000
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+        reservations:
+          cpus: "0.1"
+          memory: 256M
+
+  tunnel:
+    <<: *runtime-security
+    image: docker.io/cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
+    command: [tunnel, --no-autoupdate, --protocol, http2, run]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARED_TUNNEL_TOKEN:?}
+    depends_on:
+      agent:
+        condition: service_healthy
+      nango:
+        condition: service_healthy
+    networks: [runtime]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  nango:
+    <<: *runtime-security
+    image: docker.io/nangohq/nango-server@sha256:a52964a41b5ff5d113e45d8ae76a6ffeb2b76ed6e147bc5078288d0f0c79f0c6
+    user: "1000:1000"
+    environment:
+      FLAG_AUTH_ENABLED: "false"
+      FLAG_SERVE_CONNECT_UI: "true"
+      LOG_LEVEL: info
+      NANGO_ADMIN_KEY: ${NANGO_ADMIN_KEY:?}
+      NANGO_CONNECT_UI_PORT: "3009"
+      NANGO_DASHBOARD_PASSWORD: ${NANGO_DASHBOARD_PASSWORD:?}
+      NANGO_DASHBOARD_USERNAME: ${NANGO_DASHBOARD_USERNAME:?}
+      NANGO_DB_HOST: ${NANGO_DB_HOST:?}
+      NANGO_DB_NAME: nango
+      NANGO_DB_PASSWORD: ${NANGO_DB_PASSWORD:?}
+      NANGO_DB_POOL_MAX: "10"
+      NANGO_DB_POOL_MIN: "0"
+      NANGO_DB_PORT: ${NANGO_DB_PORT:-5432}
+      NANGO_DB_SSL: "false"
+      NANGO_DB_USER: ${NANGO_DB_USER:-nango}
+      NANGO_ENCRYPTION_KEY: ${NANGO_ENCRYPTION_KEY:?}
+      NANGO_LOGS_ENABLED: "false"
+      NANGO_MIGRATE_AT_START: "true"
+      NANGO_PROXY_BASE_URL_OVERRIDE_ENABLED: "false"
+      NANGO_PUBLIC_CONNECT_URL: ${NANGO_PUBLIC_CONNECT_URL:?}
+      NANGO_PUBLIC_SERVER_URL: ${NANGO_PUBLIC_SERVER_URL:?}
+      NANGO_REDIS_URL: redis://nango-redis:6379
+      NANGO_SECRET_KEY_DEV: ${NANGO_SECRET_KEY_DEV:?}
+      NANGO_SERVER_URL: ${NANGO_SERVER_URL:?}
+      NANGO_TELEMETRY_SDK: "false"
+      RECORDS_DATABASE_URL: ${NANGO_RECORDS_DATABASE_URL:?}
+      SERVER_PORT: "3003"
+      TELEMETRY: "false"
+    expose: ["3003", "3009"]
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3003/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      nango-redis:
+        condition: service_healthy
+    networks: [runtime, coolify]
+    tmpfs:
+      - /tmp:mode=1777,uid=1000,gid=1000
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.25"
+          memory: 512M
+
+  nango-redis:
+    <<: *runtime-security
+    image: docker.io/library/redis@sha256:05a97a479bc73de66f087dc05b569010772880f778cc8671fa6b8aadee32e5c6
+    user: "999:999"
+    command: [redis-server, --save, "", --appendonly, "no"]
+    expose: ["6379"]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [runtime]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+        reservations:
+          cpus: "0.025"
+          memory: 64M
+
+  backup-runner:
+    <<: *runtime-security
+    image: ghcr.io/arek-e/bob-data-backup@${BOB_BACKUP_IMAGE_DIGEST:?}
+    command: [sh, -c, "trap 'exit 0' TERM INT; while :; do sleep 86400; done"]
+    environment:
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:?}
+      BACKUP_COPY_ACCESS_KEY_ID: ${BACKUP_COPY_ACCESS_KEY_ID:?}
+      BACKUP_COPY_BUCKET: ${BACKUP_COPY_BUCKET:?}
+      BACKUP_COPY_ENDPOINT: ${BACKUP_COPY_ENDPOINT:?}
+      BACKUP_COPY_PREFIX: ${BACKUP_COPY_PREFIX:-bob}
+      BACKUP_COPY_REGION: ${BACKUP_COPY_REGION:?}
+      BACKUP_COPY_SECRET_ACCESS_KEY: ${BACKUP_COPY_SECRET_ACCESS_KEY:?}
+      BACKUP_MAX_BYTES: "268435456"
+      BACKUP_MIGRATIONS_DIRECTORY: ../../apps/core-worker/migrations
+      BACKUP_OUTPUT_DIRECTORY: /backups
+      BACKUP_RESTORE_BUCKET_PREFIX: bob-restore-drill
+      BACKUP_RESTORE_DATABASE_PREFIX: bob-restore-drill
+      BACKUP_RETENTION_COUNT: "42"
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:?}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_BACKUP_API_TOKEN:?}
+      CLOUDFLARE_D1_DATABASE_ID: ${CLOUDFLARE_D1_DATABASE_ID:?}
+      R2_ACCESS_KEY_ID: ${R2_BACKUP_ACCESS_KEY_ID:?}
+      R2_BUCKET: ${R2_BUCKET:?}
+      R2_ENDPOINT: ${R2_ENDPOINT:?}
+      R2_SECRET_ACCESS_KEY: ${R2_BACKUP_SECRET_ACCESS_KEY:?}
+    networks: [runtime]
+    tmpfs:
+      - /tmp:mode=1777,uid=1000,gid=1000
+    volumes:
+      - bob-backups:/backups
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.05"
+          memory: 128M
+
+networks:
+  runtime:
+  coolify:
+    external: true
+
+secrets:
+  openbao_approle_secret_id:
+    environment: BAO_APPROLE_SECRET_ID
+
+volumes:
+  bob-backups:

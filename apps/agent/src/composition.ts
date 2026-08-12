@@ -39,11 +39,17 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
   })
   const credentials = new OpenBaoCredentialStore({
     address: config.baoAddress,
-    kubernetesRole: config.baoKubernetesRole,
-    getKubernetesJwt: async (signal) => {
-      if (signal?.aborted === true) throw signal.reason
-      return (await readFile(config.baoKubernetesJwtPath, "utf8")).trim()
-    }
+    ...(config.baoAuthentication.method === "kubernetes"
+      ? {
+          authMethod: "kubernetes" as const,
+          kubernetesRole: config.baoAuthentication.role,
+          getKubernetesJwt: readSecretFile(config.baoAuthentication.jwtPath)
+        }
+      : {
+          authMethod: "approle" as const,
+          appRoleId: config.baoAuthentication.roleId,
+          getAppRoleSecretId: readSecretFile(config.baoAuthentication.secretIdPath)
+        })
   })
   const agent = createBobPiAgent({
     credentials,
@@ -69,5 +75,14 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
     config,
     runtime,
     services: { access, agent, coreTools }
+  }
+}
+
+function readSecretFile(path: string): (signal?: AbortSignal) => Promise<string> {
+  return async (signal) => {
+    if (signal?.aborted === true) throw signal.reason
+    const value = (await readFile(path, "utf8")).trim()
+    if (value.length === 0) throw new Error(`OpenBao credential file is empty: ${path}`)
+    return value
   }
 }
