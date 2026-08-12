@@ -39,11 +39,9 @@ describe("Alchemy compatibility stack", () => {
     })
 
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain("Plan: 42 to create")
+    expect(result.stdout).toContain("Plan: 40 to create")
     for (const resource of [
       "[BackupArchives] create",
-      "[EvalArtifacts] create",
-      "[EvalDatabase] create",
       "[NangoBackups] create",
       "[WorkerToOtlp] create",
       "[WorkerOtlpServicePolicy] create",
@@ -77,14 +75,33 @@ describe("Alchemy compatibility stack", () => {
     expect(stack.match(/maxAge: 15_552_000/gu)).toHaveLength(2)
   })
 
-  it("isolates evaluation records and artifacts from the production Worker", async () => {
-    const stack = await readFile(new URL("../src/bob-stack.ts", import.meta.url), "utf8")
+  it("plans evaluation storage as an isolated stack", () => {
+    const result = spawnSync("pnpm", ["run", "evals:load"], {
+      cwd: fileURLToPath(new URL("../", import.meta.url)),
+      encoding: "utf8"
+    })
 
-    expect(stack).toContain('Cloudflare.D1.Database("EvalDatabase"')
-    expect(stack).toContain("name: `bob-evals-${PRODUCTION_STAGE}`")
-    expect(stack).toContain('migrationsDir: "../../tools/agent-evals/migrations"')
-    expect(stack).toContain('Cloudflare.R2.Bucket("EvalArtifacts"')
-    expect(stack).toContain("name: `bob-eval-artifacts-${PRODUCTION_STAGE}`")
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain("Plan: 2 to create")
+    expect(result.stdout).toContain("[EvalDatabase] create")
+    expect(result.stdout).toContain("[EvalArtifacts] create")
+    expect(result.stdout).not.toContain("[CoreWorker]")
+    expect(result.stdout).not.toContain("[Database]")
+  }, 30_000)
+
+  it("isolates evaluation records and artifacts from production Workers", async () => {
+    const [stack, evalStack] = await Promise.all([
+      readFile(new URL("../src/bob-stack.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/eval-storage-stack.ts", import.meta.url), "utf8")
+    ])
+
+    expect(evalStack).toContain('Cloudflare.D1.Database("EvalDatabase"')
+    expect(evalStack).toContain('name: "bob-evals-prod"')
+    expect(evalStack).toContain('migrationsDir: "../../tools/agent-evals/migrations"')
+    expect(evalStack).toContain('Cloudflare.R2.Bucket("EvalArtifacts"')
+    expect(evalStack).toContain('name: "bob-eval-artifacts-prod"')
+    expect(stack).not.toContain("EvalDatabase")
+    expect(stack).not.toContain("EvalArtifacts")
 
     const coreWorkerEnvironment = stack.slice(
       stack.indexOf("const coreWorker ="),

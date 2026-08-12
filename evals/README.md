@@ -61,6 +61,10 @@ Cloudflare stores continuous evaluation data in two private resources.
 - D1 database `bob-evals-prod` stores run state, scores, and artifact metadata.
 - R2 bucket `bob-eval-artifacts-prod` stores raw and evaluator artifacts.
 
+The isolated Alchemy `bob-evals` stack owns both resources.
+
+Run `pnpm infra:evals:plan` to review its production changes.
+
 Git remains authoritative for reviewed benchmark definitions and milestone scores.
 
 Use `runs/<benchmark>/<run>/<sha256>/<file>` for R2 object keys.
