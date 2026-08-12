@@ -35,13 +35,18 @@ describe("Coolify production stack", () => {
   })
 
   it("exports content-free host, container, service, and backup metrics", () => {
-    const collector = readFileSync(
-      new URL("infra/coolify/otel-collector.yaml", repositoryRoot),
-      "utf8"
-    )
+    const model = JSON.parse(
+      execFileSync("docker", ["compose", "-f", composeUrl.pathname, "config", "--format", "json"], {
+        env: fixtureEnvironment(),
+        encoding: "utf8"
+      })
+    ) as { services: { observer: { environment: { OTEL_CONFIG: string } } } }
+    const collector = model.services.observer.environment.OTEL_CONFIG
 
     expect(compose).toContain("otel/opentelemetry-collector-contrib@sha256:")
-    expect(compose).toContain("./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro")
+    expect(compose).toContain("command: [--config=env:OTEL_CONFIG]")
+    expect(compose).toContain("OTEL_CONFIG: *observer-config")
+    expect(compose).not.toContain("otel-collector.yaml:/etc/otelcol-contrib/config.yaml")
     expect(compose).toContain("/:/hostfs:ro")
     expect(compose).toContain("/var/run/docker.sock:/var/run/docker.sock:ro")
     expect(compose).toContain("bob-backups:/backups:ro")
@@ -54,6 +59,9 @@ describe("Coolify production stack", () => {
     expect(collector).toContain("file_stats/nango_backup:")
     expect(collector).toContain('set(attributes["backup_type"], "bob")')
     expect(collector).toContain('set(attributes["backup_type"], "nango")')
+    expect(collector).toContain('endpoint: "fixture:5432"')
+    expect(collector).toContain("endpoint: fixture")
+    expect(collector).not.toContain("${env:")
     expect(collector).not.toContain("pipelines:\n    logs:")
   })
 })
