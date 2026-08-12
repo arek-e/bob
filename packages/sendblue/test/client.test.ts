@@ -33,4 +33,72 @@ describe("Sendblue client", () => {
       providerMessageHandle: "provider-1"
     })
   })
+
+  it("sends a reaction with the documented provider fields", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 200 }))
+    const client = createSendblueClient({ apiKeyId: "id", apiSecretKey: "secret", fetch: request })
+
+    await expect(
+      client.sendReaction({
+        fromNumber: "+46711111111",
+        messageHandle: "inbound-1",
+        reaction: "like"
+      })
+    ).resolves.toEqual({ state: "accepted" })
+
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({
+      from_number: "+46711111111",
+      message_handle: "inbound-1",
+      reaction: "like"
+    })
+  })
+
+  it("starts and stops the typing indicator", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 200 }))
+    const client = createSendblueClient({ apiKeyId: "id", apiSecretKey: "secret", fetch: request })
+
+    await client.sendTypingIndicator({
+      number: "+46700000000",
+      fromNumber: "+46711111111",
+      state: "start",
+      maxDurationMs: 90_000
+    })
+    await client.sendTypingIndicator({
+      number: "+46700000000",
+      fromNumber: "+46711111111",
+      state: "stop"
+    })
+
+    expect(request.mock.calls.map((call) => JSON.parse(String(call[1]?.body)))).toEqual([
+      {
+        number: "+46700000000",
+        from_number: "+46711111111",
+        state: "start",
+        max_duration_ms: 90_000
+      },
+      {
+        number: "+46700000000",
+        from_number: "+46711111111",
+        state: "stop"
+      }
+    ])
+  })
+
+  it("falls back to a standard message after a safe inline reply rejection", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 400 }))
+      .mockResolvedValueOnce(Response.json({ message_handle: "provider-2", status: "QUEUED" }))
+    const client = createSendblueClient({ apiKeyId: "id", apiSecretKey: "secret", fetch: request })
+
+    await expect(
+      client.sendMessage({ ...claim, replyToMessageHandle: "inbound-1" })
+    ).resolves.toEqual({ state: "accepted", providerMessageHandle: "provider-2" })
+
+    const bodies = request.mock.calls.map((call) => JSON.parse(String(call[1]?.body)))
+    expect(bodies[0]).toEqual(
+      expect.objectContaining({ reply_to: { message_handle: "inbound-1" } })
+    )
+    expect(bodies[1]).not.toHaveProperty("reply_to")
+  })
 })

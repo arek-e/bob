@@ -155,6 +155,7 @@ function enqueueOutbox(
     reasonCode: string
     correlationId: string
     idempotencyKey: string
+    replyToMessageHandle?: string
   },
   runId?: string
 ) {
@@ -174,11 +175,69 @@ type ClaimedInbound = NonNullable<
   Awaited<ReturnType<CoreComposition["services"]["conversations"]["claimInbound"]>>
 >
 
+function nativeReplyTarget(claimed: ClaimedInbound): string | undefined {
+  return claimed.service === "imessage" && !claimed.isGroup
+    ? claimed.providerMessageHandle
+    : undefined
+}
+
+function messageInteractionLifecycle(composition: CoreComposition, claimed: ClaimedInbound) {
+  const eligible = nativeReplyTarget(claimed) !== undefined
+  const egressUrl = composition.config.SENDBLUE_EGRESS_URL
+  if (!eligible || typeof egressUrl !== "string" || egressUrl.length === 0) {
+    return { start: Effect.void, stop: Effect.void }
+  }
+
+  const post = (body: unknown) =>
+    Effect.promise(async () => {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort("message_interaction_timeout"), 3_000)
+      try {
+        await fetch(`${egressUrl}/internal/message-interaction`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-bob-caller-token": composition.config.EGRESS_CALLER_SECRET,
+            "x-bob-correlation-id": claimed.correlationId
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal
+        })
+      } catch {
+        // Native message cues are best effort. They never block the durable action.
+      } finally {
+        clearTimeout(timeout)
+      }
+    })
+
+  return {
+    start: Effect.gen(function* () {
+      const react = yield* promiseEffect(() =>
+        composition.services.conversations.claimReaction(claimed.eventId, new Date().toISOString())
+      ).pipe(Effect.catch(() => Effect.succeed(false)))
+      yield* post({
+        action: "start",
+        number: claimed.number,
+        fromNumber: claimed.fromNumber,
+        messageHandle: claimed.providerMessageHandle,
+        react,
+        maxDurationMs: 90_000
+      })
+    }),
+    stop: post({
+      action: "stop",
+      number: claimed.number,
+      fromNumber: claimed.fromNumber
+    })
+  }
+}
+
 function deterministicReply(
   bindings: CoreBindings,
   composition: CoreComposition,
   claimed: ClaimedInbound
 ) {
+  const replyToMessageHandle = nativeReplyTarget(claimed)
   return Effect.gen(function* () {
     const urgent = urgentSafetyResponse(claimed.text)
     if (urgent !== undefined) {
@@ -193,7 +252,8 @@ function deterministicReply(
         text: urgent,
         reasonCode: "urgent_safety",
         correlationId: claimed.correlationId,
-        idempotencyKey: `inbound:${claimed.eventId}:urgent`
+        idempotencyKey: `inbound:${claimed.eventId}:urgent`,
+        ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
       })
       return true
     }
@@ -218,7 +278,8 @@ function deterministicReply(
         text: trainingSafetyResponse(claimed.text)!,
         reasonCode: "training_safety_stop",
         correlationId: claimed.correlationId,
-        idempotencyKey: `inbound:${claimed.eventId}:training-safety-reply`
+        idempotencyKey: `inbound:${claimed.eventId}:training-safety-reply`,
+        ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
       })
       return true
     }
@@ -338,7 +399,8 @@ function deterministicReply(
       text: response,
       reasonCode: `command_${command}`,
       correlationId: claimed.correlationId,
-      idempotencyKey: `inbound:${claimed.eventId}:command`
+      idempotencyKey: `inbound:${claimed.eventId}:command`,
+      ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
     })
     return true
   })
@@ -462,6 +524,7 @@ export async function processInbound(
   correlationId = eventId
 ): Promise<void> {
   const runTelemetry = telemetry?.runPromise ?? Effect.runPromise
+  let interactionStop: Effect.Effect<void> = Effect.void
   const program = withTraceparentParent(
     traceparent,
     withBobSpan(
@@ -487,6 +550,11 @@ export async function processInbound(
           })
           return
         }
+
+        const interaction = messageInteractionLifecycle(composition, claimed)
+        const replyToMessageHandle = nativeReplyTarget(claimed)
+        interactionStop = interaction.stop
+        yield* interaction.start
 
         if (yield* deterministicReply(bindings, composition, claimed)) {
           yield* promiseEffect(() =>
@@ -640,7 +708,8 @@ export async function processInbound(
               composition.services.runs.completeWithResponse(recovered, {
                 channelId: claimed.channelId,
                 text: "I recovered your request, but its prior response was unavailable. I made no automatic provider change.",
-                reasonCode: "agent_recovery"
+                reasonCode: "agent_recovery",
+                ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
               })
           )
           return
@@ -702,12 +771,13 @@ export async function processInbound(
             composition.services.runs.completeWithResponse(result, {
               channelId: claimed.channelId,
               text: response.text,
-              reasonCode: response.reasonCode
+              reasonCode: response.reasonCode,
+              ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
             })
         )
       })
     )
   )
 
-  await runTelemetry(program)
+  await runTelemetry(program.pipe(Effect.ensuring(Effect.suspend(() => interactionStop))))
 }

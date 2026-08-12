@@ -59,6 +59,7 @@ const Configuration = Schema.Struct({
   DATA_LOOKUP_KEY: Schema.String.check(Schema.isMinLength(40)),
   INGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   EGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  SENDBLUE_EGRESS_URL: Schema.String,
   BETTER_AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
   ACCESS_TEAM_DOMAIN: Schema.String.check(Schema.isPattern(/^[a-z0-9-]+\.cloudflareaccess\.com$/)),
   CORE_ACCESS_AUDIENCE: Schema.String.check(Schema.isMinLength(1)),

@@ -22,6 +22,16 @@ Do not retry an uncertain send automatically.
 
 Test `STOP`, `START`, `CANCEL`, and provider `opted_out` events.
 
+Send one direct iMessage. Confirm Bob reacts before work starts.
+
+Confirm the typing indicator stops when the reply is ready.
+
+Replay the inbound job. Confirm Bob does not send a second reaction.
+
+Send one SMS fallback. Confirm Bob sends no reaction or typing request.
+
+Reject one inline reply in a test environment. Confirm one standard fallback message.
+
 ## Owner recovery
 
 If the owner opted out, stop every outbound message.

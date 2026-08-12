@@ -22,6 +22,7 @@ export interface CoreBindings {
   DATA_LOOKUP_KEY: string
   INGRESS_CALLER_SECRET: string
   EGRESS_CALLER_SECRET: string
+  SENDBLUE_EGRESS_URL: string
   BETTER_AUTH_SECRET: string
   ACCESS_TEAM_DOMAIN: string
   CORE_ACCESS_AUDIENCE: string

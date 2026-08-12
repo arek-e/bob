@@ -12,6 +12,7 @@ export const outboxMessages = sqliteTable(
     idempotencyKey: text("idempotency_key").notNull(),
     actionTargetType: text("action_target_type"),
     actionTargetId: text("action_target_id"),
+    replyToProviderMessageHandle: text("reply_to_provider_message_handle"),
     state: text("state", {
       enum: ["pending", "claimed", "accepted", "failed", "uncertain", "cancelled"]
     }).notNull(),

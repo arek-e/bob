@@ -50,8 +50,23 @@ describe("Sendblue webhook handling", () => {
     })
     expect(event.text).toBe("PING")
     expect(event.messageHandle).toBe("handle-1")
+    expect(event.service).toBe("imessage")
+    expect(event.isGroup).toBe(false)
     expect(event.providerOptedOut).toBe(false)
     expect(event.destinationE164).toBe("+46711111111")
+  })
+
+  it("marks group messages and unknown services as ineligible for native interactions", () => {
+    const event = normalizeInbound(
+      decodeWebhookPayload({ ...payload, group_id: "group-1", service: "carrier-pigeon" }),
+      {
+        accountId: "account-1",
+        lineId: "line-1",
+        randomUuid: () => "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
+      }
+    )
+    expect(event.service).toBe("unknown")
+    expect(event.isGroup).toBe(true)
   })
 
   it.each([

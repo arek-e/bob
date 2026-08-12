@@ -81,6 +81,11 @@ export const inboundEvents = sqliteTable(
     accountId: text("account_id").notNull(),
     lineId: text("line_id").notNull(),
     providerMessageHandle: text("provider_message_handle").notNull(),
+    service: text("service", { enum: ["imessage", "sms", "rcs", "unknown"] })
+      .notNull()
+      .default("unknown"),
+    isGroup: integer("is_group", { mode: "boolean" }).notNull().default(false),
+    reactionClaimedAt: text("reaction_claimed_at"),
     correlationId: text("correlation_id").notNull(),
     enqueuedAt: text("enqueued_at"),
     claimedAt: text("claimed_at"),

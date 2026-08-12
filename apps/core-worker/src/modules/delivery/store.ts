@@ -23,6 +23,7 @@ export interface CreateOutboxInput {
   readonly idempotencyKey: string
   readonly actionTargetType?: "reminder_occurrence"
   readonly actionTargetId?: string
+  readonly replyToMessageHandle?: string
 }
 
 export interface DeliveryStore {
@@ -208,6 +209,7 @@ export function makeDeliveryStore(
           idempotencyKey: input.idempotencyKey,
           actionTargetType: input.actionTargetType,
           actionTargetId: input.actionTargetId,
+          replyToProviderMessageHandle: input.replyToMessageHandle,
           state: "pending",
           createdAt
         })
@@ -306,6 +308,9 @@ export function makeDeliveryStore(
         number,
         fromNumber,
         smsSafeText,
+        ...(claimed.replyToProviderMessageHandle === null
+          ? {}
+          : { replyToMessageHandle: claimed.replyToProviderMessageHandle }),
         correlationId: claimed.correlationId,
         claimedAt: claimedAt.toISOString()
       } as OutboxClaim
