@@ -39,8 +39,10 @@ describe("Alchemy compatibility stack", () => {
     })
 
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain("Plan: 45 to create")
+    expect(result.stdout).toContain("Plan: 47 to create")
     for (const resource of [
+      "[BackupArchives] create",
+      "[NangoBackups] create",
       "[WorkerToOtlp] create",
       "[WorkerOtlpServicePolicy] create",
       "[WorkerOtlpApplication] create",
@@ -61,6 +63,17 @@ describe("Alchemy compatibility stack", () => {
       expect(result.stdout).toContain(resource)
     }
   }, 30_000)
+
+  it("declares separate R2 buckets for Bob and Nango backups", async () => {
+    const stack = await readFile(new URL("../src/bob-stack.ts", import.meta.url), "utf8")
+
+    expect(stack).toContain('Cloudflare.R2.Bucket("BackupArchives"')
+    expect(stack).toContain("name: `bob-backup-${PRODUCTION_STAGE}`")
+    expect(stack).toContain('Cloudflare.R2.Bucket("NangoBackups"')
+    expect(stack).toContain("name: `bob-nango-backup-${PRODUCTION_STAGE}`")
+    expect(stack.match(/expire-backups-after-180-days/gu)).toHaveLength(2)
+    expect(stack.match(/maxAge: 15_552_000/gu)).toHaveLength(2)
+  })
 
   it("keeps production Worker logs and traces enabled", async () => {
     const stack = await readFile(new URL("../src/bob-stack.ts", import.meta.url), "utf8")

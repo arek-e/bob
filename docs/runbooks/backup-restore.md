@@ -13,7 +13,7 @@ Use the production evidence checklist before you claim recovery readiness.
 - Target a four-hour recovery point objective.
 - Target a one-day recovery time objective initially.
 - Keep 42 encrypted copies. This equals seven days at six successful backups each day.
-- Keep a second copy on node-independent storage outside Cloudflare.
+- Keep a second copy in the locked `bob-backup-prod` R2 bucket.
 
 D1 Time Travel is useful recovery support. It is not an independent backup.
 
@@ -29,7 +29,13 @@ A node or disk failure can remove every retained copy.
 
 The `Prune=false` annotation prevents normal Argo CD pruning. It does not prevent disk loss.
 
-Copy each encrypted archive to node-independent storage. Do not close the backup gate before this exists.
+Copy each encrypted archive to the locked backup bucket. Do not close the backup gate before this exists.
+
+The backup bucket uses the existing Cloudflare account.
+
+It protects against node loss and runtime-token compromise.
+
+It does not protect against Cloudflare account loss or a Cloudflare-wide failure.
 
 ## Backup data contract
 
@@ -87,13 +93,15 @@ The scheduled job receives these secret classes:
 
 - A read-only Cloudflare D1 token.
 - A read-only R2 S3 access key.
+- A backup-bucket Object Read and Write token.
 - The public age recipient.
 
 The scheduled job must never receive these recovery secrets:
 
 - The age identity.
 - A D1 write token.
-- An R2 write or delete key.
+- An R2 bucket administration key.
+- A write key for the primary private-object bucket.
 
 Store the age identity and temporary restore credentials under a separate recovery path.
 
@@ -153,7 +161,7 @@ The completion log contains counts and cutoff times only. It must not contain re
 
 Confirm one new `.json.gz.age` file exists. Confirm older matching files remain within the 42-copy limit.
 
-Copy the encrypted file to node-independent storage. Verify the copied ciphertext hash.
+Copy the encrypted file to the locked backup bucket. Verify the copied ciphertext hash.
 
 ## Archive verification
 
@@ -276,7 +284,7 @@ Never record credentials, private text, object bytes, or decrypted data.
 - [x] One manual encrypted backup completed.
 - [ ] One scheduled encrypted backup completed.
 - [ ] The 42-copy retention rule ran without deleting unrelated files.
-- [ ] One ciphertext copy exists on node-independent storage outside Cloudflare.
+- [ ] One ciphertext copy exists in the locked `bob-backup-prod` R2 bucket.
 - [ ] Archive verification passed with the isolated age identity.
 - [ ] An EU D1 and R2 restore drill completed and cleaned up.
 - [ ] The search projections were rebuilt and queried through Bob.

@@ -124,6 +124,34 @@ export function createBobStack(options: BobStackOptions) {
         locationHint: "weur"
       }).pipe(retain(true))
 
+      yield* Cloudflare.R2.Bucket("BackupArchives", {
+        name: `bob-backup-${PRODUCTION_STAGE}`,
+        jurisdiction: "eu",
+        locationHint: "weur",
+        lifecycleRules: [
+          {
+            id: "expire-backups-after-180-days",
+            deleteObjectsTransition: {
+              condition: { type: "Age", maxAge: 15_552_000 }
+            }
+          }
+        ]
+      }).pipe(retain(true))
+
+      yield* Cloudflare.R2.Bucket("NangoBackups", {
+        name: `bob-nango-backup-${PRODUCTION_STAGE}`,
+        jurisdiction: "eu",
+        locationHint: "weur",
+        lifecycleRules: [
+          {
+            id: "expire-backups-after-180-days",
+            deleteObjectsTransition: {
+              condition: { type: "Age", maxAge: 15_552_000 }
+            }
+          }
+        ]
+      }).pipe(retain(true))
+
       const inboundDeadLetter = yield* Cloudflare.Queues.Queue("InboundDeadLetter", {
         name: `bob-inbound-dead-letter-${PRODUCTION_STAGE}`
       }).pipe(retain(true))

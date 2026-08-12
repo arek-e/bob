@@ -110,6 +110,24 @@ describe("production-only deployment contract", () => {
     expect(schema).not.toContain('BOB_RELEASE_SHA=vaultSecret("config")')
   })
 
+  it("defines the R2 backup retention lock", async () => {
+    const lock = JSON.parse(await repositoryFile("infra/cloudflare/r2-backup-lock.json"))
+
+    expect(lock).toEqual({
+      rules: [
+        {
+          id: "retain-all-backups-90-days",
+          enabled: true,
+          prefix: "",
+          condition: {
+            type: "Age",
+            maxAgeSeconds: 7_776_000
+          }
+        }
+      ]
+    })
+  })
+
   it("declares optional Core telemetry inputs for local and test runtimes", async () => {
     const [schema, generated] = await Promise.all([
       repositoryFile("apps/core-worker/.env.schema"),
