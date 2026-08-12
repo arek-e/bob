@@ -143,7 +143,7 @@ Use the private `bob-nango-backup-prod` R2 bucket.
 
 Use an Object Read and Write token scoped only to this bucket.
 
-Use independent object storage and enable `backup_now`.
+Enable `backup_now` for the locked backup bucket.
 
 Require one successful backup before Nango receives production traffic.
 
