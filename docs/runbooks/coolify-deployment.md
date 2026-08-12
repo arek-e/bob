@@ -8,14 +8,14 @@ Do not deploy from a dirty worktree.
 
 ## Target topology
 
-| Resource                                           | Owner                       | Location                                    |
-| -------------------------------------------------- | --------------------------- | ------------------------------------------- |
-| Core, UI, Queues, D1, and R2                       | Alchemy                     | Cloudflare                                  |
-| Agent, Tunnel, Nango, Redis, and Bob backup runner | Coolify Compose application | `bob-coolify` KVM guest on `teampitch-prod` |
-| Nango PostgreSQL                                   | Coolify database            | `bob-coolify` KVM guest                     |
-| Production configuration and credentials           | OpenBao                     | Kubernetes on `teampitch-prod`              |
-| Tempo, Loki, and OTLP collector                    | Existing platform           | Kubernetes on `teampitch-prod`              |
-| Coolify UI, API, and MCP                           | Coolify through Tailscale   | `bob-coolify` KVM guest                     |
+| Resource                                                         | Owner                       | Location                                    |
+| ---------------------------------------------------------------- | --------------------------- | ------------------------------------------- |
+| Core, UI, Queues, D1, and R2                                     | Alchemy                     | Cloudflare                                  |
+| Agent, Tunnel, Nango, Redis, backup runner, and metrics observer | Coolify Compose application | `bob-coolify` KVM guest on `teampitch-prod` |
+| Nango PostgreSQL                                                 | Coolify database            | `bob-coolify` KVM guest                     |
+| Production configuration and credentials                         | OpenBao                     | Kubernetes on `teampitch-prod`              |
+| Tempo, Loki, and OTLP collector                                  | Existing platform           | Kubernetes on `teampitch-prod`              |
+| Coolify UI, API, and MCP                                         | Coolify through Tailscale   | `bob-coolify` KVM guest                     |
 
 ## External prerequisites
 
@@ -339,6 +339,16 @@ Confirm Nango callbacks use the production hostnames.
 Confirm the latest Nango backup exists in its locked R2 bucket.
 
 Confirm the latest Bob archive exists in its locked R2 bucket.
+
+Confirm the observer exports `host.name=bob-coolify` metrics.
+
+Confirm Docker metrics include `agent`, `nango`, `nango-redis`, `tunnel`, and `backup-runner`.
+
+Confirm HTTP checks cover the agent, Nango, Coolify, and the stable Tunnel routes.
+
+Confirm TCP checks cover Nango PostgreSQL and Redis.
+
+Confirm both backup directory modification times are less than five hours old.
 
 Keep the Kubernetes runtime ready for rollback during the observation window.
 

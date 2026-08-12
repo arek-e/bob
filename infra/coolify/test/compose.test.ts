@@ -18,7 +18,7 @@ describe("Coolify production stack", () => {
 
   it("pins every image and publishes no host ports", () => {
     const images = [...compose.matchAll(/^\s+image:\s+(.+)$/gm)].map((match) => match[1])
-    expect(images).toHaveLength(5)
+    expect(images).toHaveLength(6)
     expect(images.every((image) => image?.includes("@sha256:") || image?.includes("@${"))).toBe(
       true
     )
@@ -32,6 +32,29 @@ describe("Coolify production stack", () => {
     expect(compose).toContain("NANGO_RECORDS_DATABASE_URL")
     expect(compose).toContain("external: true")
     expect(compose).toContain("bob-backups:/backups")
+  })
+
+  it("exports content-free host, container, service, and backup metrics", () => {
+    const collector = readFileSync(
+      new URL("infra/coolify/otel-collector.yaml", repositoryRoot),
+      "utf8"
+    )
+
+    expect(compose).toContain("otel/opentelemetry-collector-contrib@sha256:")
+    expect(compose).toContain("./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro")
+    expect(compose).toContain("/:/hostfs:ro")
+    expect(compose).toContain("/var/run/docker.sock:/var/run/docker.sock:ro")
+    expect(compose).toContain("bob-backups:/backups:ro")
+    expect(collector).toContain("host_metrics:")
+    expect(collector).toContain("docker_stats:")
+    expect(collector).toContain("http_check:")
+    expect(collector).toContain("http://coolify:8080/api/health")
+    expect(collector).toContain("tcp_check:")
+    expect(collector).toContain("file_stats/bob_backup:")
+    expect(collector).toContain("file_stats/nango_backup:")
+    expect(collector).toContain('set(attributes["backup_type"], "bob")')
+    expect(collector).toContain('set(attributes["backup_type"], "nango")')
+    expect(collector).not.toContain("pipelines:\n    logs:")
   })
 })
 
