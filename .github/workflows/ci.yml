@@ -101,5 +101,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Build production artifacts
         run: pnpm build:artifacts
-      - run: pnpm secrets:scan:trusted
-      - run: pnpm infra:plan
+      - name: Scan trusted production inputs
+        run: pnpm secrets:scan:trusted
+      - name: Plan Bob application infrastructure
+        run: pnpm infra:plan
+      - name: Plan evaluation storage
+        run: pnpm infra:evals:plan

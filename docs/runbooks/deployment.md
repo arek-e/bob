@@ -101,6 +101,50 @@ Application workspaces use beta.107.
 The trusted CI plan is a release gate.
 Do not deploy when the plan job is skipped or fails.
 
+## Deploy evaluation storage
+
+The evaluation storage stack is separate from Bob's application stack.
+
+Set `BOB_RELEASE_SHA` to the full reviewed commit.
+
+Run the offline compatibility plan first.
+
+```sh
+pnpm infra:evals:load
+```
+
+Run the trusted production plan.
+
+```sh
+pnpm infra:evals:plan
+```
+
+For the first deployment, require exactly two creates.
+
+The plan must contain only `EvalDatabase` and `EvalArtifacts`.
+
+Stop for each update, replacement, or deletion.
+
+Deploy the reviewed plan.
+
+```sh
+pnpm infra:evals:deploy
+```
+
+Run `pnpm infra:evals:plan` again.
+
+Require a no-change plan.
+
+Confirm that D1 contains the three migration tables.
+
+- `benchmark_runs`
+- `benchmark_scores`
+- `benchmark_artifacts`
+
+Confirm that the R2 bucket has no public domain.
+
+Do not delete the retained resources to roll back an empty first deployment.
+
 GitHub OIDC requires a runner with network access to OpenBao.
 
 For a local handoff, mint one 10-minute orphan token.

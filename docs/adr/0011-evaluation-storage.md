@@ -17,11 +17,11 @@ Evaluation infrastructure must not gain access to that data.
 
 ## Decision
 
-Alchemy creates one dedicated D1 database named `bob-evals-prod`.
+The isolated Alchemy `bob-evals` stack creates one D1 database named `bob-evals-prod`.
 
 This database stores run state, score values, and artifact metadata.
 
-Alchemy creates one private R2 bucket named `bob-eval-artifacts-prod`.
+The same stack creates one private R2 bucket named `bob-eval-artifacts-prod`.
 
 This bucket stores content-addressed public or synthetic run artifacts.
 
@@ -30,6 +30,8 @@ Artifact keys use `runs/<benchmark>/<run>/<sha256>/<file>`.
 Git remains authoritative for benchmark definitions and reviewed milestone scores.
 
 The production assistant Workers receive no evaluation storage bindings.
+
+The main Bob Alchemy stack does not own evaluation storage.
 
 A future evaluation runner will receive scoped D1 and R2 bindings.
 
