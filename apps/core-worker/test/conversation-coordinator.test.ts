@@ -525,4 +525,52 @@ describe("owner conversation coordinator", () => {
     expect(claimReady).not.toHaveBeenCalled()
     expect(harness.processConversationTurn).not.toHaveBeenCalled()
   })
+
+  it("schedules a reflection wake at its durable mutation deadline", async () => {
+    const wakeAt = "2026-08-12T10:01:00.000Z"
+    harness.composeCore.mockReturnValue({ services: { turns: {} } } as unknown as CoreComposition)
+    const { pending, setAlarm, state } = coordinatorState(Date.parse(wakeAt) + 60_000)
+    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+
+    const response = await coordinator.fetch(
+      new Request(`https://coordinator.internal/wake?at=${encodeURIComponent(wakeAt)}`, {
+        method: "POST"
+      })
+    )
+    await Promise.all(pending)
+
+    expect(response.status).toBe(200)
+    expect(setAlarm).toHaveBeenCalledWith(new Date(wakeAt))
+    expect(harness.processConversationTurn).not.toHaveBeenCalled()
+  })
+
+  it("keeps an earlier alarm when a later reflection wake arrives", async () => {
+    const earlier = Date.parse("2026-08-12T10:00:30.000Z")
+    const later = "2026-08-12T10:01:00.000Z"
+    harness.composeCore.mockReturnValue({ services: { turns: {} } } as unknown as CoreComposition)
+    const { setAlarm, state } = coordinatorState(earlier)
+    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+
+    const response = await coordinator.fetch(
+      new Request(`https://coordinator.internal/wake?at=${encodeURIComponent(later)}`, {
+        method: "POST"
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect(setAlarm).not.toHaveBeenCalled()
+  })
+
+  it("rejects an invalid reflection wake time", async () => {
+    harness.composeCore.mockReturnValue({ services: { turns: {} } } as unknown as CoreComposition)
+    const { setAlarm, state } = coordinatorState()
+    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+
+    const response = await coordinator.fetch(
+      new Request("https://coordinator.internal/wake?at=not-a-date", { method: "POST" })
+    )
+
+    expect(response.status).toBe(400)
+    expect(setAlarm).not.toHaveBeenCalled()
+  })
 })

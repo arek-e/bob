@@ -5,7 +5,12 @@ import type {
   DeviceLoginEvent
 } from "@bob/contracts/agent"
 
-import { isReadOnlyToolName, type ToolCommand, type ToolResult } from "@bob/contracts/tools"
+import {
+  isReadOnlyToolName,
+  type ToolCommand,
+  type ToolName,
+  type ToolResult
+} from "@bob/contracts/tools"
 import { featureForToolName, featureForTools } from "@bob/observability/attribution"
 import {
   annotateModelUsage,
@@ -48,6 +53,15 @@ import {
 import { createTools, toolCommandForCall } from "./tools.ts"
 
 registerBunOAuthFlows()
+
+const pendingSteerRetentionMs = 140_000
+
+function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
+  const handle: unknown = timer
+  if (typeof handle !== "object" || handle === null) return
+  const unref = Reflect.get(handle, "unref")
+  if (typeof unref === "function") Reflect.apply(unref, handle, [])
+}
 
 export interface BobPiAgentOptions {
   readonly credentials: CredentialStore
@@ -232,6 +246,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
   const now = options.now ?? Date.now
   let activeLogin: Promise<unknown> | undefined
   const activeRuns = new Map<AgentRunRequest["runId"], ActiveRunState>()
+  const pendingSteers = new Map<AgentRunRequest["runId"], ReturnType<typeof setTimeout>>()
 
   const runTurnEffect = (
     request: AgentRunRequest,
@@ -241,6 +256,12 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
       const startedAt = now()
       const activeRun: ActiveRunState = { steerRequested: false, phase: "checkpoint" }
       activeRuns.set(request.runId, activeRun)
+      const pendingSteer = pendingSteers.get(request.runId)
+      if (pendingSteer !== undefined) {
+        clearTimeout(pendingSteer)
+        pendingSteers.delete(request.runId)
+        activeRun.steerRequested = true
+      }
       const timeoutController = new AbortController()
       const runSignal =
         externalSignal === undefined
@@ -267,6 +288,23 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
       const toolResults: ToolResult[] = []
       const executedToolNames = new Set<string>()
       const confirmedActionToolNames = new Set<string>()
+      const unknownActionToolNames = new Set<ToolName>()
+      for (const receipt of request.priorToolReceipts ?? []) {
+        if (receipt.result.code === "tool_recovery_failed") {
+          unknownActionToolNames.add(receipt.toolName)
+          continue
+        }
+        if (
+          receipt.origin === "same_turn" &&
+          toolResultConfirmsAction(receipt.toolName, {
+            ok: receipt.result.ok,
+            code: receipt.result.code,
+            message: "Prior action record."
+          })
+        ) {
+          confirmedActionToolNames.add(receipt.toolName)
+        }
+      }
       const approvedSourceIds = new Set(
         request.contextItems.flatMap((item) => item.sources.map((source) => source.sourceId))
       )
@@ -757,7 +795,8 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         requiresSource: needsPersonalGrounding,
         conflictingSourceIds,
         executedToolNames,
-        confirmedActionToolNames
+        confirmedActionToolNames,
+        unknownActionToolNames
       }
 
       const validateOutput = (raw: string) =>
@@ -1024,7 +1063,14 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
     runTurn: (request, signal) => Effect.runPromise(runTurnEffect(request, signal)),
     requestSteer: (runId) => {
       const active = activeRuns.get(runId)
-      if (active === undefined) return { status: "missing" }
+      if (active === undefined) {
+        const prior = pendingSteers.get(runId)
+        if (prior !== undefined) clearTimeout(prior)
+        const expiry = setTimeout(() => pendingSteers.delete(runId), pendingSteerRetentionMs)
+        unrefTimer(expiry)
+        pendingSteers.set(runId, expiry)
+        return { status: "missing" }
+      }
       active.steerRequested = true
       if (active.phase === "model" && active.modelCall !== undefined) {
         active.modelCall.abort()

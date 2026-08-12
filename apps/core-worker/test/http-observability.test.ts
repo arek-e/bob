@@ -72,4 +72,70 @@ describe("Core HTTP telemetry", () => {
       })
     ])
   })
+
+  it.each([
+    { label: "terminal", activity: { status: "completed", completedInRun: true }, releases: true },
+    { label: "unknown", activity: { status: "unknown" }, releases: true },
+    {
+      label: "active",
+      activity: {
+        status: "active",
+        retryAt: "2026-08-12T10:01:00.000Z",
+        recoveryRequired: false,
+        recoveryExhausted: false,
+        originRevision: 1
+      },
+      releases: false
+    }
+  ] as const)("wakes a settling turn only after $label mutation activity", async (testCase) => {
+    const runId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0"
+    const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1"
+    const releaseSettlingForRun = vi.fn(async () =>
+      testCase.releases ? { ownerId, quietUntil: "2026-08-12T10:00:00.000Z" } : undefined
+    )
+    const wake = vi.fn(async () => new Response(null, { status: 200 }))
+    compositionHarness.current = {
+      services: {
+        tools: {
+          execute: vi.fn(async () => ({ ok: true, code: "reminder_seen", message: "Seen." })),
+          mutationActivity: vi.fn(async () => testCase.activity)
+        },
+        turns: { releaseSettlingForRun },
+        events: { emit: vi.fn(async () => undefined) }
+      }
+    } as unknown as CoreComposition
+    const bindings = {
+      INGRESS_CALLER_SECRET: "i".repeat(64),
+      EGRESS_CALLER_SECRET: "e".repeat(64),
+      AGENT_CALLER_SUBJECT: "agent",
+      ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
+      CORE_ACCESS_AUDIENCE: "core",
+      OWNER_RUN_COORDINATOR: {
+        jurisdiction: vi.fn(() => ({
+          idFromName: vi.fn(() => ({ toString: () => ownerId })),
+          get: vi.fn(() => ({ fetch: wake }))
+        }))
+      }
+    } as unknown as CoreBindings
+    const response = await handleHttp(
+      new Request("https://core.test/internal/tools", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runId,
+          toolCallId: "tool-call",
+          idempotencyKey: "tool:test:http-wake",
+          ownerId,
+          name: "reminder_acknowledge",
+          arguments: { occurrenceId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba2" }
+        })
+      }),
+      bindings,
+      async () => ({ subject: "", commonName: "agent", audience: ["core"] })
+    )
+
+    expect(response.status).toBe(200)
+    expect(releaseSettlingForRun).toHaveBeenCalledTimes(testCase.releases ? 1 : 0)
+    expect(wake).toHaveBeenCalledTimes(testCase.releases ? 1 : 0)
+  })
 })

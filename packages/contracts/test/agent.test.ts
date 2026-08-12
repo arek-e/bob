@@ -5,7 +5,8 @@ import {
   AgentRunRequest,
   AgentRunResult,
   AgentSteerRequest,
-  AgentSteerResult
+  AgentSteerResult,
+  PriorToolReceipt
 } from "../src/agent.ts"
 
 describe("AgentRunRequest rollout compatibility", () => {
@@ -189,6 +190,127 @@ describe("AgentRunRequest rollout compatibility", () => {
     expect(request).toMatchObject({
       conversationTurnId: "00000000-0000-4000-8000-000000000004",
       conversationTurnRevision: 2
+    })
+  })
+
+  it("exports only closed prior tool receipt confirmation fields", () => {
+    const request = Schema.decodeUnknownSync(AgentRunRequest)({
+      protocolVersion: 1,
+      runId: "00000000-0000-4000-8000-000000000001",
+      ownerId: "00000000-0000-4000-8000-000000000002",
+      correlationId: "00000000-0000-4000-8000-000000000003",
+      conversationTurnId: "00000000-0000-4000-8000-000000000004",
+      conversationTurnRevision: 2,
+      localTime: "2026-08-11T10:00:00.000Z",
+      timeZone: "Europe/Stockholm",
+      userText: "Actually, make it eight.",
+      priorToolReceipts: [
+        {
+          origin: "same_turn",
+          toolName: "reminder_create",
+          arguments: { text: "PRIVATE_ARGUMENT_CANARY" },
+          result: {
+            ok: true,
+            code: "reminder_created",
+            message: "PRIVATE_RESULT_MESSAGE_CANARY",
+            data: { reminderId: "PRIVATE_RESULT_DATA_CANARY" }
+          }
+        }
+      ],
+      contextItems: [],
+      allowedTools: ["reminder_create"],
+      limits: {
+        maxTurns: 4,
+        maxToolCalls: 4,
+        maxDurationMs: 60_000,
+        maxResponseCharacters: 1_200
+      }
+    })
+
+    expect(request.priorToolReceipts).toEqual([
+      {
+        origin: "same_turn",
+        toolName: "reminder_create",
+        result: { ok: true, code: "reminder_created" }
+      }
+    ])
+    expect(JSON.stringify(request.priorToolReceipts)).not.toMatch(
+      /PRIVATE_|arguments|message|data/u
+    )
+  })
+
+  it("keeps one closed receipt origin and rejects an unknown origin", () => {
+    expect(
+      Schema.decodeUnknownSync(PriorToolReceipt)({
+        origin: "predecessor_turn",
+        toolName: "reminder_create",
+        result: { ok: true, code: "reminder_created" }
+      })
+    ).toEqual({
+      origin: "predecessor_turn",
+      toolName: "reminder_create",
+      result: { ok: true, code: "reminder_created" }
+    })
+
+    expect(() =>
+      Schema.decodeUnknownSync(PriorToolReceipt)({
+        origin: "private_unreviewed_origin",
+        toolName: "reminder_create",
+        result: { ok: true, code: "reminder_created" }
+      })
+    ).toThrow()
+
+    expect(() =>
+      Schema.decodeUnknownSync(PriorToolReceipt)({
+        toolName: "reminder_create",
+        result: { ok: true, code: "reminder_created" }
+      })
+    ).toThrow()
+  })
+
+  it("rejects an unknown prior tool receipt name", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(PriorToolReceipt)({
+        origin: "same_turn",
+        toolName: "private_unreviewed_tool",
+        result: { ok: true, code: "private_result" }
+      })
+    ).toThrow()
+  })
+
+  it("rejects an unknown or mismatched prior tool receipt result", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(PriorToolReceipt)({
+        origin: "same_turn",
+        toolName: "reminder_create",
+        result: { ok: true, code: "PRIVATE_RESULT_CODE_CANARY" }
+      })
+    ).toThrow()
+    expect(() =>
+      Schema.decodeUnknownSync(PriorToolReceipt)({
+        origin: "same_turn",
+        toolName: "reminder_create",
+        result: { ok: true, code: "owner_settings_updated" }
+      })
+    ).toThrow()
+  })
+
+  it("accepts one closed unknown-action recovery receipt without private result data", () => {
+    expect(
+      Schema.decodeUnknownSync(PriorToolReceipt)({
+        origin: "same_turn",
+        toolName: "settings_update",
+        result: {
+          ok: false,
+          code: "tool_recovery_failed",
+          message: "PRIVATE_MESSAGE_CANARY",
+          data: { privateId: "PRIVATE_ID_CANARY" }
+        }
+      })
+    ).toEqual({
+      origin: "same_turn",
+      toolName: "settings_update",
+      result: { ok: false, code: "tool_recovery_failed" }
     })
   })
 

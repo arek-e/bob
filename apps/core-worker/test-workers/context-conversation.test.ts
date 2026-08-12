@@ -1,18 +1,23 @@
 import { applyD1Migrations, reset } from "cloudflare:test"
 import { env } from "cloudflare:workers"
+import { eq } from "drizzle-orm"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createCoreDatabase } from "../src/database.ts"
 import { makeContextStore } from "../src/modules/context/store.ts"
 import {
   agentRuns,
+  channels,
   conversationTurnMessages,
   conversationTurns,
+  inboundEvents,
   messages,
   toolCalls,
   users
 } from "../src/modules/conversations/schema.ts"
+import { makeConversationTurnStore } from "../src/modules/conversations/turn-store.ts"
 import { deliveryAttempts, outboxMessages } from "../src/modules/delivery/schema.ts"
+import { makeDeliveryStore } from "../src/modules/delivery/store.ts"
 import { factRevisions, facts } from "../src/modules/memory/schema.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { decodeTestMigrations } from "./migrations.ts"
@@ -370,6 +375,62 @@ describe("recent conversation context", () => {
     ])
   })
 
+  it("recalls prior turn messages in provider order instead of webhook order", async () => {
+    const fixture = await seedOwner()
+    const prior = await seedPriorTurn(fixture, {
+      sequence: 635,
+      inboundTexts: [
+        "This arrived from the provider second",
+        "This arrived from the provider first"
+      ],
+      outboundText: "I used both messages.",
+      inboundAt: "2026-08-12T10:04:00.000Z",
+      deliveredAt: "2026-08-12T10:05:00.000Z",
+      attemptState: "delivered"
+    })
+    await fixture.database
+      .update(messages)
+      .set({ occurredAt: "2026-08-12T10:04:02.000Z" })
+      .where(eq(messages.id, prior.inboundIds[0]!))
+    await fixture.database
+      .update(messages)
+      .set({ occurredAt: "2026-08-12T10:04:01.000Z" })
+      .where(eq(messages.id, prior.inboundIds[1]!))
+    const context = makeContextStore(fixture.database, fixture.protection, {})
+
+    const items = await context.build({
+      ownerId,
+      channelId,
+      currentConversationTurnId: currentTurnId,
+      currentMessageId: uuid(639),
+      currentUserText: "Continue",
+      localTime: "2026-08-12T10:10:00.000Z",
+      timeZone: "Europe/Stockholm"
+    })
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        kind: "conversation",
+        text: [
+          "Owner: This arrived from the provider first",
+          "Owner: This arrived from the provider second",
+          "Bob: I used both messages."
+        ].join("\n"),
+        sources: [
+          expect.objectContaining({
+            sourceId: prior.inboundIds[1],
+            occurredAt: "2026-08-12T10:04:01.000Z"
+          }),
+          expect.objectContaining({
+            sourceId: prior.inboundIds[0],
+            occurredAt: "2026-08-12T10:04:02.000Z"
+          }),
+          expect.objectContaining({ sourceId: prior.outboundId })
+        ]
+      })
+    ])
+  })
+
   it("uses only delivered prior turns from the same channel and fifteen-minute window", async () => {
     const fixture = await seedOwner()
     const eligible = await seedPriorTurn(fixture, {
@@ -630,23 +691,262 @@ describe("recent conversation context", () => {
     expect(items).toEqual([
       {
         kind: "conversation",
-        text: `Earlier revision tool receipt. Do not repeat an identical completed mutation. ${JSON.stringify(
-          { toolName: "reminder_create", readOnly: false, result }
+        text: `Earlier revision action record. Do not repeat an identical completed mutation. ${JSON.stringify(
+          {
+            origin: "same_turn",
+            toolName: "reminder_create",
+            result: { ok: true, code: "reminder_created" }
+          }
         )}`,
         instruction: false,
         conflict: false,
-        sources: [
-          {
-            sourceId: uuid(1115),
-            sourceLabel: "reminder_create receipt 2026-08-12",
-            occurredAt: "2026-08-12T10:09:00.000Z"
-          }
-        ]
+        sources: []
       }
     ])
     expect(JSON.stringify(items)).not.toContain("PRIVATE_ARGUMENT_CANARY")
     expect(JSON.stringify(items)).not.toContain("private-idempotency-key")
     expect(JSON.stringify(items)).not.toContain("provider-call-private")
+    expect(JSON.stringify(items)).not.toContain(uuid(1115))
+    expect(JSON.stringify(items)).not.toContain("The reminder was created")
+    expect(JSON.stringify(items)).not.toContain(uuid(1110))
+  })
+
+  it("exports only closed prior-revision receipt confirmation data", async () => {
+    const fixture = await seedOwner()
+    const encryptedResult = await fixture.protection.encryptText(
+      fixture.ownerKey,
+      JSON.stringify({
+        ok: true,
+        code: "reminder_created",
+        message: "PRIVATE_RESULT_MESSAGE_CANARY",
+        data: { reminderId: uuid(1120), note: "PRIVATE_RESULT_DATA_CANARY" }
+      })
+    )
+    const encryptedUnknownResult = await fixture.protection.encryptText(
+      fixture.ownerKey,
+      JSON.stringify({
+        ok: true,
+        code: "PRIVATE_RESULT_CODE_CANARY",
+        message: "Unknown receipt result."
+      })
+    )
+    const runId = uuid(1121)
+    await fixture.database.insert(agentRuns).values({
+      id: runId,
+      userId: ownerId,
+      inboundEventId: uuid(1122),
+      conversationTurnId: currentTurnId,
+      conversationTurnRevision: 1,
+      targetMessageId: uuid(1123),
+      correlationId: uuid(1124),
+      inputSnapshotJson: "PRIVATE_INPUT_SNAPSHOT_CANARY",
+      inputHash: "sha256:private-input",
+      status: "superseded",
+      model: "gpt-test",
+      completedAt: "2026-08-12T10:09:00.000Z",
+      createdAt: "2026-08-12T10:08:00.000Z"
+    })
+    await fixture.database.insert(toolCalls).values([
+      {
+        id: uuid(1125),
+        runId,
+        toolCallId: "PRIVATE_TOOL_CALL_CANARY",
+        idempotencyKey: "PRIVATE_IDEMPOTENCY_CANARY",
+        ownerId,
+        toolName: "reminder_create",
+        commandHash: "sha256:private-command",
+        argumentsJson: "PRIVATE_ARGUMENT_CANARY",
+        resultJson: JSON.stringify(encryptedResult),
+        status: "completed",
+        createdAt: "2026-08-12T10:08:30.000Z",
+        completedAt: "2026-08-12T10:09:00.000Z"
+      },
+      {
+        id: uuid(1127),
+        runId,
+        toolCallId: "unknown-result-call",
+        idempotencyKey: "unknown-result-key",
+        ownerId,
+        toolName: "reminder_create",
+        commandHash: "sha256:unknown-result",
+        argumentsJson: "{}",
+        resultJson: JSON.stringify(encryptedUnknownResult),
+        status: "completed",
+        createdAt: "2026-08-12T10:08:31.000Z",
+        completedAt: "2026-08-12T10:09:01.000Z"
+      }
+    ])
+
+    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const receipts = await context.priorToolReceipts({
+      ownerId,
+      channelId,
+      currentConversationTurnId: currentTurnId,
+      currentConversationTurnRevision: 2,
+      currentMessageId: uuid(1126),
+      currentUserText: "Actually, make it eight.",
+      localTime: "2026-08-12T10:10:00.000Z",
+      timeZone: "Europe/Stockholm"
+    })
+
+    expect(receipts).toEqual([
+      {
+        origin: "same_turn",
+        toolName: "reminder_create",
+        result: { ok: true, code: "reminder_created" }
+      }
+    ])
+    expect(JSON.stringify(receipts)).not.toMatch(
+      /PRIVATE_|arguments|idempotency|toolCallId|message|data/u
+    )
+  })
+
+  it("exports a receipt from the immediate predecessor after its reply is claimed", async () => {
+    const fixture = await seedOwner()
+    const senderText = "+46700001140"
+    const destinationText = "+46700001141"
+    const sender = await fixture.protection.encryptText(fixture.ownerKey, senderText)
+    const destination = await fixture.protection.encryptText(fixture.ownerKey, destinationText)
+    await fixture.database.insert(channels).values({
+      id: channelId,
+      userId: ownerId,
+      provider: "sendblue",
+      accountId: "account-receipt",
+      lineId: "line-receipt",
+      senderHash: await fixture.protection.hashLookup(senderText),
+      senderCiphertext: sender.ciphertext,
+      senderIv: sender.iv,
+      destinationHash: await fixture.protection.hashLookup(destinationText),
+      destinationCiphertext: destination.ciphertext,
+      destinationIv: destination.iv,
+      createdAt: "2026-08-12T10:00:00.000Z"
+    })
+    const prior = await seedPriorTurn(fixture, {
+      sequence: 1_140,
+      inboundTexts: ["Create the reminder."],
+      outboundText: "PRIVATE_CLAIMED_REPLY_CANARY",
+      inboundAt: "2026-08-12T10:03:00.000Z",
+      deliveredAt: "2026-08-12T10:04:00.000Z",
+      turnStatus: "committing",
+      outboxState: "pending"
+    })
+    const encryptedResult = await fixture.protection.encryptText(
+      fixture.ownerKey,
+      JSON.stringify({
+        ok: true,
+        code: "reminder_created",
+        message: "PRIVATE_PREDECESSOR_RESULT_CANARY",
+        data: { reminderId: uuid(1_145) }
+      })
+    )
+    const priorRunId = uuid(1_146)
+    await fixture.database.batch([
+      fixture.database.insert(agentRuns).values({
+        id: priorRunId,
+        userId: ownerId,
+        inboundEventId: uuid(1_147),
+        conversationTurnId: prior.turnId,
+        conversationTurnRevision: 1,
+        targetMessageId: prior.inboundIds[0],
+        correlationId: uuid(1_148),
+        inputSnapshotJson: "PRIVATE_PREDECESSOR_INPUT_CANARY",
+        inputHash: "sha256:predecessor",
+        status: "completed",
+        model: "gpt-test",
+        completedAt: "2026-08-12T10:03:30.000Z",
+        createdAt: "2026-08-12T10:03:10.000Z"
+      }),
+      fixture.database.insert(toolCalls).values({
+        id: uuid(1_149),
+        runId: priorRunId,
+        toolCallId: "PRIVATE_PREDECESSOR_CALL_CANARY",
+        idempotencyKey: "PRIVATE_PREDECESSOR_KEY_CANARY",
+        ownerId,
+        toolName: "reminder_create",
+        commandHash: "sha256:predecessor-command",
+        argumentsJson: "PRIVATE_PREDECESSOR_ARGUMENT_CANARY",
+        resultJson: JSON.stringify(encryptedResult),
+        status: "completed",
+        createdAt: "2026-08-12T10:03:20.000Z",
+        completedAt: "2026-08-12T10:03:30.000Z"
+      })
+    ])
+    let nextDeliveryId = 1_150
+    const delivery = makeDeliveryStore(fixture.database, fixture.protection, {
+      now: () => new Date("2026-08-12T10:05:00.000Z"),
+      randomUuid: () => uuid(nextDeliveryId++)
+    })
+    await expect(delivery.claimOutbox(prior.outboxId, 60_000)).resolves.toMatchObject({
+      outboxId: prior.outboxId
+    })
+    const [claimedPrior] = await fixture.database
+      .select({ status: conversationTurns.status })
+      .from(conversationTurns)
+      .where(eq(conversationTurns.id, prior.turnId))
+    expect(claimedPrior?.status).toBe("replied")
+
+    const currentMessageId = uuid(1_160)
+    const currentEventId = uuid(1_161)
+    const encryptedCurrent = await fixture.protection.encryptText(
+      fixture.ownerKey,
+      "Current follow-up"
+    )
+    await fixture.database.batch([
+      fixture.database.insert(messages).values({
+        id: currentMessageId,
+        userId: ownerId,
+        channelId,
+        direction: "inbound",
+        textCiphertext: encryptedCurrent.ciphertext,
+        textIv: encryptedCurrent.iv,
+        dataKeyVersion: 1,
+        occurredAt: "2026-08-12T10:05:01.000Z",
+        createdAt: "2026-08-12T10:05:01.000Z"
+      }),
+      fixture.database.insert(inboundEvents).values({
+        id: currentEventId,
+        userId: ownerId,
+        channelId,
+        messageId: currentMessageId,
+        accountId: "account-receipt",
+        lineId: "line-receipt",
+        providerMessageHandle: "provider-current-follow-up",
+        service: "imessage",
+        isGroup: false,
+        correlationId: uuid(1_162),
+        createdAt: "2026-08-12T10:05:01.000Z"
+      })
+    ])
+    const turns = makeConversationTurnStore(fixture.database, fixture.protection, {
+      ownerId,
+      now: () => new Date("2026-08-12T10:05:01.000Z"),
+      randomUuid: () => currentTurnId
+    })
+    await expect(turns.offer(currentEventId)).resolves.toMatchObject({
+      turnId: currentTurnId,
+      revision: 1
+    })
+
+    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const receipts = await context.priorToolReceipts({
+      ownerId,
+      channelId,
+      currentConversationTurnId: currentTurnId,
+      currentConversationTurnRevision: 1,
+      currentMessageId,
+      currentUserText: "Current follow-up",
+      localTime: "2026-08-12T10:06:00.000Z",
+      timeZone: "Europe/Stockholm"
+    })
+
+    expect(receipts).toEqual([
+      {
+        origin: "predecessor_turn",
+        toolName: "reminder_create",
+        result: { ok: true, code: "reminder_created" }
+      }
+    ])
+    expect(JSON.stringify(receipts)).not.toMatch(/PRIVATE_/u)
   })
 
   it("keeps the newest terminal receipts when profile and conversation context fill the budget", async () => {
@@ -759,7 +1059,11 @@ describe("recent conversation context", () => {
 
     expect(items.reduce((total, item) => total + item.text.length, 0)).toBeLessThanOrEqual(6_000)
     expect(items.every((item) => item.text.length <= 1_200)).toBe(true)
-    expect(serialized).toContain("NEWEST_RECEIPT")
+    expect(
+      items.filter((item) => item.text.startsWith("Earlier revision action record"))
+    ).toHaveLength(6)
+    expect(items.map((item) => item.text).join("\n")).toContain('"code":"reminder_created"')
+    expect(serialized).not.toContain("NEWEST_RECEIPT")
     expect(serialized).not.toContain("OLDEST_RECEIPT")
     expect(serialized).not.toContain("PRIVATE_ARGUMENT_")
     expect(serialized).not.toContain("private-key-")

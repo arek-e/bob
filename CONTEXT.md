@@ -71,6 +71,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - One agent run uses one immutable context pack.
 - One agent run uses one immutable conversation-turn revision.
 - The latest message in a conversation-turn revision is its response target.
+- A receipt-backed reflection can add one internal revision without a new message.
+- The run attempt and reflection revision change in one D1 batch.
 - Only the current turn revision can commit and deliver its reply.
 - The core Worker enforces every domain invariant.
 - The agent never calls Sendblue directly.

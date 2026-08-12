@@ -6,7 +6,14 @@ import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
 
 import { outboxMessages } from "../delivery/schema.ts"
-import { agentRunAttempts, agentRuns, inboundEvents, messages, users } from "./schema.ts"
+import {
+  agentRunAttempts,
+  agentRuns,
+  conversationTurns,
+  inboundEvents,
+  messages,
+  users
+} from "./schema.ts"
 
 export interface StoredAgentRun {
   readonly request: AgentRunRequest
@@ -26,12 +33,25 @@ export interface ConversationRunCompletion {
   readonly conversationTurnRevision: number
 }
 
+export interface ConversationReflectionCompletion extends ConversationRunCompletion {
+  readonly settleUntil?: string
+}
+
+export type ConversationReflectionTransition =
+  | { readonly status: "lost" }
+  | {
+      readonly status: "released" | "settling"
+      readonly revision: number
+      readonly wakeAt: string
+    }
+
 export interface AgentRunStore {
   create(
     request: AgentRunRequest,
     inboundEventId: string
   ): Promise<{ runId: string; duplicate: boolean }>
   loadForInbound(inboundEventId: string): Promise<StoredAgentRun | undefined>
+  loadForTurn(turnId: string, revision: number): Promise<StoredAgentRun | undefined>
   claim(runId: string, leaseMs: number): Promise<string | undefined>
   completeWithResponse(
     result: AgentRunResult,
@@ -45,6 +65,11 @@ export interface AgentRunStore {
     attemptId?: string
   ): Promise<string | undefined>
   completeWithoutResponse(result: AgentRunResult, attemptId: string): Promise<boolean>
+  completeForReflection(
+    result: AgentRunResult,
+    attemptId: string,
+    conversation: ConversationReflectionCompletion
+  ): Promise<ConversationReflectionTransition>
   channelForRun(runId: string): Promise<string | undefined>
 }
 
@@ -80,12 +105,49 @@ export function makeAgentRunStore(
     }
   }
 
+  async function loadStoredRun(row: typeof agentRuns.$inferSelect): Promise<StoredAgentRun> {
+    const envelope = JSON.parse(row.inputSnapshotJson) as {
+      ciphertext: string
+      iv: string
+      keyVersion: number
+    }
+    const owner = await ownerKey(row.userId)
+    const request = Schema.decodeUnknownSync(AgentRunRequest)(
+      JSON.parse(
+        await protection.decryptText(owner.key, {
+          ciphertext: envelope.ciphertext,
+          iv: envelope.iv
+        })
+      ) as unknown
+    )
+    const [outbox] = await database
+      .select({ id: outboxMessages.id })
+      .from(outboxMessages)
+      .where(eq(outboxMessages.idempotencyKey, `run:${row.id}:reply`))
+      .limit(1)
+    return {
+      request,
+      status: row.status,
+      ...(outbox === undefined ? {} : { outboxId: outbox.id })
+    }
+  }
+
   return {
     async create(request, inboundEventId) {
       const [existing] = await database
         .select({ id: agentRuns.id, inputHash: agentRuns.inputHash })
         .from(agentRuns)
-        .where(eq(agentRuns.inboundEventId, inboundEventId))
+        .where(
+          request.conversationTurnId === undefined || request.conversationTurnRevision === undefined
+            ? and(
+                eq(agentRuns.inboundEventId, inboundEventId),
+                isNull(agentRuns.conversationTurnId)
+              )
+            : and(
+                eq(agentRuns.conversationTurnId, request.conversationTurnId),
+                eq(agentRuns.conversationTurnRevision, request.conversationTurnRevision)
+              )
+        )
         .limit(1)
       const serialized = JSON.stringify(request)
       const hash = await protection.contentHash(serialized)
@@ -121,33 +183,25 @@ export function makeAgentRunStore(
       const [row] = await database
         .select()
         .from(agentRuns)
-        .where(eq(agentRuns.inboundEventId, inboundEventId))
+        .where(
+          and(eq(agentRuns.inboundEventId, inboundEventId), isNull(agentRuns.conversationTurnId))
+        )
         .limit(1)
-      if (row === undefined) return undefined
-      const envelope = JSON.parse(row.inputSnapshotJson) as {
-        ciphertext: string
-        iv: string
-        keyVersion: number
-      }
-      const owner = await ownerKey(row.userId)
-      const request = Schema.decodeUnknownSync(AgentRunRequest)(
-        JSON.parse(
-          await protection.decryptText(owner.key, {
-            ciphertext: envelope.ciphertext,
-            iv: envelope.iv
-          })
-        ) as unknown
-      )
-      const [outbox] = await database
-        .select({ id: outboxMessages.id })
-        .from(outboxMessages)
-        .where(eq(outboxMessages.idempotencyKey, `run:${row.id}:reply`))
+      return row === undefined ? undefined : loadStoredRun(row)
+    },
+
+    async loadForTurn(turnId, revision) {
+      const [row] = await database
+        .select()
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.conversationTurnId, turnId),
+            eq(agentRuns.conversationTurnRevision, revision)
+          )
+        )
         .limit(1)
-      return {
-        request,
-        status: row.status,
-        ...(outbox === undefined ? {} : { outboxId: outbox.id })
-      }
+      return row === undefined ? undefined : loadStoredRun(row)
     },
 
     async claim(runId, leaseMs) {
@@ -385,6 +439,124 @@ export function makeAgentRunStore(
           )
       ])
       return true
+    },
+
+    async completeForReflection(result, attemptId, conversation) {
+      const currentTime = now()
+      const at = currentTime.toISOString()
+      const settleUntil = conversation.settleUntil
+      const settling = settleUntil !== undefined && Date.parse(settleUntil) > currentTime.getTime()
+      const wakeAt =
+        settling && settleUntil !== undefined
+          ? sql<string>`max(${conversationTurns.quietUntil}, ${settleUntil})`
+          : sql<string>`max(${conversationTurns.quietUntil}, ${at})`
+      const [, transitioned] = await database.batch([
+        database
+          .update(agentRuns)
+          .set({
+            status: "superseded",
+            completedAt: at,
+            claimExpiresAt: null,
+            activeAttemptId: null,
+            model: result.model
+          })
+          .where(
+            and(
+              eq(agentRuns.id, result.runId),
+              eq(agentRuns.status, "executing"),
+              eq(agentRuns.activeAttemptId, attemptId),
+              eq(agentRuns.conversationTurnId, conversation.conversationTurnId),
+              eq(agentRuns.conversationTurnRevision, conversation.conversationTurnRevision)
+            )
+          ),
+        database
+          .update(conversationTurns)
+          .set({
+            status: settling ? "settling" : "collecting",
+            revision: sql`CASE
+              WHEN ${conversationTurns.revision} = ${conversation.conversationTurnRevision}
+              THEN ${conversationTurns.revision} + 1
+              ELSE ${conversationTurns.revision}
+            END`,
+            activeRunId: settling ? result.runId : null,
+            activeRunRevision: settling ? conversation.conversationTurnRevision : null,
+            ...(settling
+              ? { claimExpiresAt: wakeAt }
+              : {
+                  claimedRevision: null,
+                  claimedAt: null,
+                  claimExpiresAt: null,
+                  quietUntil: wakeAt
+                }),
+            updatedAt: at
+          })
+          .where(
+            and(
+              eq(conversationTurns.id, conversation.conversationTurnId),
+              eq(conversationTurns.activeRunId, result.runId),
+              eq(conversationTurns.activeRunRevision, conversation.conversationTurnRevision),
+              isNull(conversationTurns.replyOutboxId),
+              sql`${conversationTurns.revision} >= ${conversation.conversationTurnRevision}`,
+              or(eq(conversationTurns.status, "running"), eq(conversationTurns.status, "settling")),
+              sql`EXISTS (
+                SELECT 1
+                FROM agent_runs AS reflected_run
+                WHERE reflected_run.id = ${result.runId}
+                  AND reflected_run.status = 'superseded'
+                  AND reflected_run.completed_at = ${at}
+                  AND reflected_run.turn_id = ${conversation.conversationTurnId}
+                  AND reflected_run.turn_revision = ${conversation.conversationTurnRevision}
+              )`,
+              sql`EXISTS (
+                SELECT 1
+                FROM agent_run_attempts AS reflected_attempt
+                WHERE reflected_attempt.id = ${attemptId}
+                  AND reflected_attempt.run_id = ${result.runId}
+                  AND reflected_attempt.status = 'executing'
+                  AND reflected_attempt.finished_at IS NULL
+              )`
+            )
+          )
+          .returning({
+            status: conversationTurns.status,
+            revision: conversationTurns.revision,
+            quietUntil: conversationTurns.quietUntil,
+            claimExpiresAt: conversationTurns.claimExpiresAt
+          }),
+        database
+          .update(agentRunAttempts)
+          .set({ status: "superseded", errorCode: result.errorCode, finishedAt: at })
+          .where(
+            and(
+              eq(agentRunAttempts.id, attemptId),
+              eq(agentRunAttempts.runId, result.runId),
+              eq(agentRunAttempts.status, "executing"),
+              isNull(agentRunAttempts.finishedAt),
+              sql`EXISTS (
+                SELECT 1
+                FROM agent_runs AS reflected_run
+                WHERE reflected_run.id = ${result.runId}
+                  AND reflected_run.status = 'superseded'
+                  AND reflected_run.completed_at = ${at}
+              )`
+            )
+          )
+      ])
+      const transition = transitioned[0]
+      if (transition === undefined) return { status: "lost" }
+      if (transition.status === "settling") {
+        if (transition.claimExpiresAt === null) return { status: "lost" }
+        return {
+          status: "settling",
+          revision: transition.revision,
+          wakeAt: transition.claimExpiresAt
+        }
+      }
+      return {
+        status: "released",
+        revision: transition.revision,
+        wakeAt: transition.quietUntil
+      }
     },
 
     async channelForRun(runId) {

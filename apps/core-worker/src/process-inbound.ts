@@ -106,6 +106,22 @@ function boundedTurnMessages(
   return selected.toReversed()
 }
 
+function wakeConversationTurn(
+  bindings: CoreBindings,
+  input: { readonly ownerId: string; readonly wakeAt?: string }
+) {
+  return promiseEffect(async () => {
+    try {
+      const coordinators = bindings.OWNER_RUN_COORDINATOR.jurisdiction("eu")
+      const url = new URL("https://coordinator.internal/wake")
+      if (input.wakeAt !== undefined) url.searchParams.set("at", input.wakeAt)
+      await coordinators.get(coordinators.idFromName(input.ownerId)).fetch(url, { method: "POST" })
+    } catch {
+      // The durable turn state remains recoverable after a lost live wake-up.
+    }
+  })
+}
+
 function releaseSettlingTurn(
   bindings: CoreBindings,
   composition: CoreComposition,
@@ -116,16 +132,7 @@ function releaseSettlingTurn(
       composition.services.turns.releaseSettling(input.turnId, input.activeRunId)
     )
     if (!released.ready) return released
-    yield* promiseEffect(async () => {
-      try {
-        const coordinators = bindings.OWNER_RUN_COORDINATOR.jurisdiction("eu")
-        await coordinators
-          .get(coordinators.idFromName(input.ownerId))
-          .fetch("https://coordinator.internal/wake", { method: "POST" })
-      } catch {
-        // The durable collecting state remains recoverable after a lost live wake-up.
-      }
-    })
+    yield* wakeConversationTurn(bindings, { ownerId: input.ownerId })
     return released
   })
 }
@@ -280,6 +287,7 @@ function deterministicReply(
   claimed: ClaimedInbound,
   safetyText: string,
   actionIdempotencyScope: string,
+  replyIdempotencyScope: string,
   begin: () => Effect.Effect<boolean, unknown>,
   enqueue: (input: {
     readonly ownerId: string
@@ -307,7 +315,7 @@ function deterministicReply(
         text: urgent,
         reasonCode: "urgent_safety",
         correlationId: claimed.correlationId,
-        idempotencyKey: `inbound:${claimed.eventId}:urgent`,
+        idempotencyKey: `${replyIdempotencyScope}:urgent`,
         ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
       })
       return true
@@ -334,7 +342,7 @@ function deterministicReply(
         text: trainingSafetyResponse(safetyText)!,
         reasonCode: "training_safety_stop",
         correlationId: claimed.correlationId,
-        idempotencyKey: `inbound:${claimed.eventId}:training-safety-reply`,
+        idempotencyKey: `${replyIdempotencyScope}:training-safety-reply`,
         ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
       })
       return true
@@ -456,7 +464,7 @@ function deterministicReply(
       text: response,
       reasonCode: `command_${command}`,
       correlationId: claimed.correlationId,
-      idempotencyKey: `inbound:${claimed.eventId}:command`,
+      idempotencyKey: `${replyIdempotencyScope}:command`,
       ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
     })
     return true
@@ -516,6 +524,23 @@ function cancelledAgentResult(request: AgentRunRequest, model: string): AgentRun
     inputTokens: 0,
     outputTokens: 0,
     toolCalls: 0
+  }
+}
+
+function unknownMutationAgentResult(request: AgentRunRequest, model: string): AgentRunResult {
+  return {
+    protocolVersion: 1,
+    runId: request.runId,
+    correlationId: request.correlationId,
+    status: "failed",
+    errorCode: "provider",
+    responseText:
+      "I could not confirm whether that action finished. Review the current state before you try it again.",
+    model,
+    durationMs: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    toolCalls: 1
   }
 }
 
@@ -790,12 +815,17 @@ export async function processInbound(
         turn === undefined ? claimed.text : turn.messages.map((message) => message.text).join("\n")
       const deterministicActionScope =
         turn === undefined ? `inbound:${claimed.eventId}` : `turn:${turn.turnId}`
+      const deterministicReplyScope =
+        turn === undefined
+          ? `inbound:${claimed.eventId}`
+          : `turn:${turn.turnId}:revision:${turn.revision}`
       if (
         yield* deterministicReply(
           composition,
           claimed,
           safetyText,
           deterministicActionScope,
+          deterministicReplyScope,
           beginDeterministic,
           enqueueDeterministic
         )
@@ -809,7 +839,12 @@ export async function processInbound(
       }
 
       const stored = yield* promiseEffect(() =>
-        composition.services.runs.loadForInbound(claimed.eventId)
+        conversationTurn === undefined
+          ? composition.services.runs.loadForInbound(claimed.eventId)
+          : composition.services.runs.loadForTurn(
+              conversationTurn.turnId,
+              conversationTurn.revision
+            )
       )
       if (conversationTurn === undefined && stored?.outboxId !== undefined) {
         yield* publishOutbox(bindings, composition, stored.outboxId, {
@@ -924,6 +959,23 @@ export async function processInbound(
           )
         )
         const contextItems = yield* retrieve
+        const priorToolReceipts =
+          conversationTurn === undefined
+            ? []
+            : yield* promiseEffect(
+                () => composition.services.context.priorToolReceipts?.(contextBuildRequest) ?? []
+              )
+        if (priorToolReceipts.length > 0) {
+          yield* recordDecision({
+            name: "bob.decision.steering",
+            code: "restart_with_receipts",
+            outcome: "applied",
+            selectedCount: priorToolReceipts.length,
+            ...(conversationTurn === undefined
+              ? {}
+              : { conversationRevision: conversationTurn.revision })
+          })
+        }
         request = {
           protocolVersion: 1,
           runId,
@@ -946,6 +998,7 @@ export async function processInbound(
           hourCycle: ownerSettings.hourCycle,
           userText: claimed.text,
           contextItems,
+          ...(priorToolReceipts.length === 0 ? {} : { priorToolReceipts }),
           allowedTools,
           limits: {
             maxTurns: 4,
@@ -1079,26 +1132,11 @@ export async function processInbound(
         return
       }
 
-      const result = yield* invokeAgent(agentRequest, composition, feature).pipe(
+      let result = yield* invokeAgent(agentRequest, composition, feature).pipe(
         Effect.catch((error) =>
           Effect.succeed(failedAgentResult(agentRequest, composition.config.BOB_MODEL, error))
         )
       )
-      if (
-        conversationTurn !== undefined &&
-        (yield* promiseEffect(() =>
-          composition.services.turns.currentRevision(conversationTurn.turnId)
-        )) !== conversationTurn.revision
-      ) {
-        yield* suppressStaleAgentAttempt(bindings, composition, {
-          result,
-          attemptId: runAttemptId,
-          turn: conversationTurn,
-          feature
-        })
-        return
-      }
-      const response = selectAgentResponse(result, agentRequest)
       yield* promiseEffect(() =>
         reportAgentUsage(
           composition.database,
@@ -1127,6 +1165,96 @@ export async function processInbound(
       yield* promiseEffect(() =>
         reportAgentFailure(composition.services.alerts, claimed.ownerId, result)
       )
+      let mutationActivity = yield* promiseEffect(
+        () =>
+          composition.services.tools?.mutationActivity?.(agentRequest.runId) ?? { status: "none" }
+      )
+      let mutationCompletedDuringRecovery = false
+      if (
+        mutationActivity.status === "active" &&
+        mutationActivity.recoveryRequired &&
+        agentRequest.conversationTurnRevision !== undefined &&
+        (mutationActivity.recoveryExhausted ||
+          (mutationActivity.originRevision !== undefined &&
+            agentRequest.conversationTurnRevision > mutationActivity.originRevision))
+      ) {
+        const expired = yield* promiseEffect(() =>
+          composition.services.tools.expireMutationRecovery(agentRequest.runId)
+        )
+        mutationActivity = yield* promiseEffect(() =>
+          composition.services.tools.mutationActivity(agentRequest.runId)
+        )
+        mutationCompletedDuringRecovery = mutationActivity.status === "completed"
+        if (expired && mutationActivity.status === "none") {
+          result = unknownMutationAgentResult(agentRequest, composition.config.BOB_MODEL)
+        }
+      }
+      if (mutationActivity.status === "unknown") {
+        result = unknownMutationAgentResult(agentRequest, composition.config.BOB_MODEL)
+      }
+      const receiptBackedRun =
+        agentRequest.priorToolReceipts?.some((receipt) => receipt.origin === "same_turn") === true
+      if (
+        mutationActivity.status === "active" ||
+        (mutationActivity.status === "completed" &&
+          result.status !== "completed" &&
+          (mutationActivity.completedInRun || mutationCompletedDuringRecovery) &&
+          !receiptBackedRun)
+      ) {
+        yield* recordDecision({
+          name: "bob.decision.steering",
+          code: mutationActivity.status === "active" ? "wait_effect" : "restart_with_receipts",
+          outcome: "applied",
+          selectedCount: 1,
+          ...(conversationTurn === undefined
+            ? {}
+            : { conversationRevision: conversationTurn.revision })
+        })
+        if (conversationTurn === undefined) return
+        const transition = yield* promiseEffect(() =>
+          composition.services.runs.completeForReflection(result, runAttemptId, {
+            conversationTurnId: conversationTurn.turnId,
+            conversationTurnRevision: conversationTurn.revision,
+            ...(mutationActivity.status === "active"
+              ? { settleUntil: mutationActivity.retryAt }
+              : {})
+          })
+        )
+        if (transition.status === "lost") return
+        if (transition.status === "settling") {
+          const settledActivity = yield* promiseEffect(() =>
+            composition.services.tools.mutationActivity(agentRequest.runId)
+          )
+          if (settledActivity.status !== "active") {
+            yield* releaseSettlingTurn(bindings, composition, {
+              turnId: conversationTurn.turnId,
+              activeRunId: agentRequest.runId,
+              ownerId: conversationTurn.ownerId
+            })
+            return
+          }
+        }
+        yield* wakeConversationTurn(bindings, {
+          ownerId: conversationTurn.ownerId,
+          wakeAt: transition.wakeAt
+        })
+        return
+      }
+      if (
+        conversationTurn !== undefined &&
+        (yield* promiseEffect(() =>
+          composition.services.turns.currentRevision(conversationTurn.turnId)
+        )) !== conversationTurn.revision
+      ) {
+        yield* suppressStaleAgentAttempt(bindings, composition, {
+          result,
+          attemptId: runAttemptId,
+          turn: conversationTurn,
+          feature
+        })
+        return
+      }
+      const response = selectAgentResponse(result, agentRequest)
       const outboxTelemetry = {
         correlationId: claimed.correlationId,
         feature,

@@ -98,9 +98,15 @@ export class OwnerRunCoordinator implements DurableObject {
   ) {}
 
   async fetch(request: Request): Promise<Response> {
-    const path = new URL(request.url).pathname
+    const url = new URL(request.url)
+    const path = url.pathname
     if (request.method === "POST" && path === "/wake") {
-      await scheduleEarliestAlarm(this.state.storage, new Date())
+      const requestedAt = url.searchParams.get("at")
+      const scheduled = requestedAt === null ? new Date() : new Date(requestedAt)
+      if (!Number.isFinite(scheduled.getTime())) {
+        return Response.json({ code: "invalid_wake_time" }, { status: 400 })
+      }
+      await scheduleEarliestAlarm(this.state.storage, scheduled)
       return Response.json({ ok: true })
     }
     if (request.method !== "POST" || path !== "/run") {

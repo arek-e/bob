@@ -31,6 +31,8 @@ Each turn belongs to one owner and one channel.
 
 Each accepted inbound message increases the turn revision.
 
+A completed action can add one internal reflection revision without a new message.
+
 The latest message in the current revision is the response target.
 
 Use a 1.5-second trailing collection window.
@@ -51,9 +53,29 @@ Let an external action that already started reach a durable result.
 
 Then reflect again with the new message and that result.
 
+Supersede the exact agent attempt and open its reflection revision in one D1 batch.
+
+Keep an existing newer user revision instead of adding another internal revision.
+
+If the action is complete, make the reflection ready after the collection deadline.
+
+If the action is active, keep the turn settling until its exact Tool lease deadline.
+
+Schedule that deadline as a Durable Object alarm before the process returns.
+
+An expired action lease makes the same stable action ready for recovery.
+
+Do not start repeated receipt-only reflections after one receipt-backed attempt fails.
+
 Use one opaque mutation identity for the same semantic action across turn revisions.
 
 Do not include private arguments or source-message evidence in that identity.
+
+Reserve one mutation identity atomically for each open turn.
+
+Allow the same identity to replay or recover.
+
+Require a new confirmation before a second distinct mutation can start.
 
 Load prior terminal tool results as bounded private context for the next revision.
 
@@ -107,6 +129,30 @@ Do not load raw journal text or journal summaries.
 
 Calls without a current turn ID keep the old context behavior.
 
+### Action receipt context
+
+Carry reviewed terminal action receipts into a later reflection run.
+
+Each receipt contains only one closed Tool name and one closed result code.
+
+An expired action can carry only the closed `tool_recovery_failed` result.
+
+Label each receipt with the closed origin `same_turn` or `predecessor_turn`.
+
+Do not include arguments, result data, messages, record IDs, or drafts.
+
+The current turn can use receipts from its older revisions.
+
+It can also use receipts from the immediate predecessor turn after exact reply claim.
+
+Limit predecessor receipts to the same owner and channel during the prior 15 minutes.
+
+Treat the receipt as trusted system metadata, not as an owner instruction.
+
+A same-turn receipt can confirm an action claim for the current turn.
+
+A predecessor receipt supplies context only. It cannot confirm a current action claim.
+
 ### Short follow-up tool selection
 
 Do not use recalled message text to expand the tool set.
@@ -151,9 +197,14 @@ The application must test races at run, tool, reply, and delivery boundaries.
 6. A newer revision after delivery claim stays open for follow-up.
 7. Recent context uses only delivered prior same-channel turns.
 8. Recent context excludes the current turn and journal-intent turns.
-9. Recent context stays within all time, turn, message, and character limits.
-10. Logs and traces contain no message content.
-11. An identical mutation across revisions returns one prior durable result.
-12. Reflection context contains tool results but no prior private tool arguments.
-13. A short follow-up can reuse only the latest delivered safe read capability.
-14. Recalled text, mutations, and journal metadata cannot expand the follow-up tool set.
+9. A completed mutation opens one fresh receipt-backed revision.
+10. An active mutation keeps the turn settling until its Tool lease deadline.
+11. Recent context stays within all time, turn, message, and character limits.
+12. Logs and traces contain no message content.
+13. An identical mutation across revisions returns one prior durable result.
+14. Reflection context contains tool results but no prior private tool arguments.
+15. A short follow-up can reuse only the latest delivered safe read capability.
+16. Recalled text, mutations, and journal metadata cannot expand the follow-up tool set.
+17. One turn cannot start two distinct mutations.
+18. Action receipts contain no private arguments, result data, IDs, messages, or drafts.
+19. A predecessor receipt cannot confirm an action claim for the current turn.

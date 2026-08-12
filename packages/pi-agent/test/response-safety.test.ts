@@ -15,7 +15,8 @@ const policy = {
   approvedSourceIds: new Set(["routine-current"]),
   conflictingSourceIds: new Set<string>(),
   executedToolNames: new Set(["routine_get"]),
-  confirmedActionToolNames: new Set<string>()
+  confirmedActionToolNames: new Set<string>(),
+  unknownActionToolNames: new Set<never>()
 }
 
 describe("assistant response safety", () => {
@@ -338,6 +339,300 @@ describe("assistant response safety", () => {
     ).toEqual({
       ok: false,
       code: "unverified_action_claim"
+    })
+  })
+
+  it("blocks a categorical failure claim for an action with an unknown outcome", () => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText: "The settings update failed.",
+      sourceIds: [],
+      toolNames: [],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set<string>(),
+        confirmedActionToolNames: new Set<string>(),
+        unknownActionToolNames: new Set(["settings_update" as const])
+      })
+    ).toEqual({
+      ok: false,
+      code: "unknown_action_claim"
+    })
+  })
+
+  it("blocks a categorical success claim for an action with an unknown outcome", () => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText: "I updated the settings.",
+      sourceIds: [],
+      toolNames: [],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set<string>(),
+        confirmedActionToolNames: new Set(["settings_update"]),
+        unknownActionToolNames: new Set(["settings_update" as const])
+      })
+    ).toEqual({
+      ok: false,
+      code: "unknown_action_claim"
+    })
+  })
+
+  it("allows a cautious disclosure for an action with an unknown outcome", () => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText: "I cannot confirm whether the settings update succeeded or failed.",
+      sourceIds: [],
+      toolNames: [],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set<string>(),
+        confirmedActionToolNames: new Set<string>(),
+        unknownActionToolNames: new Set(["settings_update" as const])
+      })
+    ).toMatchObject({ ok: true })
+  })
+
+  it("blocks a categorical failure claim for another closed unknown Tool", () => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText: "The gym creation failed.",
+      sourceIds: [],
+      toolNames: [],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set<string>(),
+        confirmedActionToolNames: new Set<string>(),
+        unknownActionToolNames: new Set(["gym_create" as const])
+      })
+    ).toEqual({
+      ok: false,
+      code: "unknown_action_claim"
+    })
+  })
+
+  it("blocks a categorical success claim for another closed unknown Tool", () => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText: "The gym was created.",
+      sourceIds: [],
+      toolNames: [],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set<string>(),
+        confirmedActionToolNames: new Set<string>(),
+        unknownActionToolNames: new Set(["gym_create" as const])
+      })
+    ).toEqual({
+      ok: false,
+      code: "unknown_action_claim"
+    })
+  })
+
+  it("blocks a passive success claim for an unknown memory confirmation", () => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText: "The memory was confirmed.",
+      sourceIds: [],
+      toolNames: [],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set<string>(),
+        confirmedActionToolNames: new Set<string>(),
+        unknownActionToolNames: new Set(["memory_confirm" as const])
+      })
+    ).toEqual({
+      ok: false,
+      code: "unknown_action_claim"
+    })
+  })
+
+  it("blocks a noun failure claim for an unknown routine save", () => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText: "The routine save failed.",
+      sourceIds: [],
+      toolNames: [],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set<string>(),
+        confirmedActionToolNames: new Set<string>(),
+        unknownActionToolNames: new Set(["routine_save" as const])
+      })
+    ).toEqual({
+      ok: false,
+      code: "unknown_action_claim"
+    })
+  })
+
+  it("blocks a noun failure claim for an unknown memory proposal", () => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText: "The memory proposal failed.",
+      sourceIds: [],
+      toolNames: [],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set<string>(),
+        confirmedActionToolNames: new Set<string>(),
+        unknownActionToolNames: new Set(["memory_propose" as const])
+      })
+    ).toEqual({
+      ok: false,
+      code: "unknown_action_claim"
+    })
+  })
+
+  it.each([
+    ["journal_link_create", "The journal link creation failed."],
+    ["workout_start", "The workout start failed."],
+    ["equipment_map_exercise", "The equipment mapping failed."],
+    ["connection_link_create", "The calendar link creation failed."],
+    ["exercise_create", "The exercise creation failed."],
+    ["reminder_acknowledge", "The reminder acknowledgment failed."],
+    ["reminder_complete", "The reminder completion failed."],
+    ["reminder_snooze", "The reminder snooze failed."],
+    ["reminder_cancel", "The reminder cancellation failed."],
+    ["memory_correct", "The memory correction failed."],
+    ["reminder_create", "The reminder creation failed."],
+    ["gym_add_equipment", "The equipment addition failed."],
+    ["workout_log_set", "The set logging failed."],
+    ["workout_finish", "The workout finish failed."]
+  ] as const)("blocks the representative unknown Tool claim %s", (toolName, responseText) => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText,
+      sourceIds: [],
+      toolNames: [],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set<string>(),
+        confirmedActionToolNames: new Set<string>(),
+        unknownActionToolNames: new Set([toolName])
+      })
+    ).toEqual({
+      ok: false,
+      code: "unknown_action_claim"
+    })
+  })
+
+  it("does not reject an unrelated confirmed action when another action is unknown", () => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText: "The reminder was created for 08:00.",
+      sourceIds: [],
+      toolNames: ["reminder_create"],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set(["reminder_create"]),
+        confirmedActionToolNames: new Set(["reminder_create"]),
+        unknownActionToolNames: new Set(["settings_update" as const])
+      })
+    ).toMatchObject({ ok: true })
+  })
+
+  it("allows an uncertain unknown action beside an unrelated confirmed action", () => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText:
+        "I cannot confirm whether the settings update succeeded. The reminder was created for 08:00.",
+      sourceIds: [],
+      toolNames: ["reminder_create"],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set(["reminder_create"]),
+        confirmedActionToolNames: new Set(["reminder_create"]),
+        unknownActionToolNames: new Set(["settings_update" as const])
+      })
+    ).toMatchObject({ ok: true })
+  })
+
+  it("does not let one uncertainty clause exempt another categorical unknown claim", () => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText:
+        "I cannot confirm whether the settings update succeeded. The settings were updated.",
+      sourceIds: [],
+      toolNames: [],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set<string>(),
+        confirmedActionToolNames: new Set<string>(),
+        unknownActionToolNames: new Set(["settings_update" as const])
+      })
+    ).toEqual({
+      ok: false,
+      code: "unknown_action_claim"
+    })
+  })
+
+  it("does not apply one Tool's uncertainty to another Tool's categorical claim", () => {
+    const raw = JSON.stringify({
+      protocolVersion: 1,
+      responseText: "I cannot confirm whether the settings update succeeded. The gym was created.",
+      sourceIds: [],
+      toolNames: [],
+      conflict: "none"
+    })
+
+    expect(
+      validateAssistantResponse(raw, {
+        ...policy,
+        executedToolNames: new Set<string>(),
+        confirmedActionToolNames: new Set<string>(),
+        unknownActionToolNames: new Set(["settings_update" as const, "gym_create" as const])
+      })
+    ).toEqual({
+      ok: false,
+      code: "unknown_action_claim"
     })
   })
 

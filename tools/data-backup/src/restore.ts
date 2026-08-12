@@ -74,6 +74,8 @@ const RESTORE_ORDER = [
   "messages",
   "message_events",
   "inbound_events",
+  "conversation_turns",
+  "conversation_turn_messages",
   "agent_runs",
   "agent_run_attempts",
   "tool_calls",

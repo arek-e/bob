@@ -3,10 +3,10 @@ import {
   conversationMutationIdempotencyKey,
   isReadOnlyToolName,
   ToolCommand,
-  type ToolName,
+  ToolName,
   type ToolResult
 } from "@bob/contracts/tools"
-import { and, eq, exists, isNull, lt, or, sql } from "drizzle-orm"
+import { and, eq, exists, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
@@ -68,8 +68,25 @@ function canonicalJson(value: unknown): string {
   throw new Error("Tool command contains an unsupported value")
 }
 
+export type MutationActivity =
+  | { readonly status: "none" }
+  | { readonly status: "unknown" }
+  | {
+      readonly status: "completed"
+      readonly completedInRun: boolean
+    }
+  | {
+      readonly status: "active"
+      readonly retryAt: string
+      readonly recoveryRequired: boolean
+      readonly recoveryExhausted: boolean
+      readonly originRevision?: number
+    }
+
 export interface ToolExecutor {
   execute(input: unknown): Promise<ToolResult>
+  mutationActivity(runId: string): Promise<MutationActivity>
+  expireMutationRecovery(runId: string): Promise<boolean>
 }
 
 /**
@@ -117,8 +134,22 @@ function domainError(): ToolResult {
   }
 }
 
+function additionalMutationConfirmationRequired(): ToolResult {
+  return {
+    ok: false,
+    code: "confirmation_required",
+    message:
+      "Bob already completed one change in this message burst. Confirm another change in a new message."
+  }
+}
+
 function conversationPolicyText(request: typeof AgentRunRequest.Type): string {
-  return request.currentTurnMessages?.map((message) => message.text).join("\n") ?? request.userText
+  const messages = request.currentTurnMessages
+  if (messages === undefined) return request.userText
+  if (directMutationRequestQuestion.test(normalizedLatestFragment(request))) {
+    return messages.at(-1)?.text ?? request.userText
+  }
+  return messages.map((message) => message.text).join("\n")
 }
 
 const mutationRetractionPhrases = [
@@ -160,10 +191,15 @@ const mutationHesitationPhrases = [
 
 const mutationReviewQuestion =
   /^(?:what|why|how|when|where|who|which|will|would|can|could|should|does|do|did|is|are|am|vad|varför|hur|när|var|vem|vilken|vilka|kommer|skulle|kan|bör|gör|gjorde|är)\b/u
-const directMutationRequestQuestion = /^(?:(?:can|could|would|will) you|(?:kan|skulle) du)\b/u
+const directMutationRequestQuestion =
+  /^(?:(?:(?:can|could|would|will) you(?: please)?|(?:kan|skulle) du(?: snälla)?)\s+)(?:remind|create|set|add|schedule|mark|acknowledge|complete|finish|snooze|postpone|delay|move|cancel|delete|remove|stop|update|change|switch|use|påminn|skapa|lägg|schemalägg|sätt|markera|bekräfta|slutför|snooza|senarelägg|skjut|flytta|avbryt|radera|stoppa|uppdatera|byt|använd)\b/u
+
+function latestFragmentText(request: typeof AgentRunRequest.Type): string {
+  return request.currentTurnMessages?.at(-1)?.text ?? request.userText
+}
 
 function normalizedLatestFragment(request: typeof AgentRunRequest.Type): string {
-  return (request.currentTurnMessages?.at(-1)?.text ?? request.userText)
+  return latestFragmentText(request)
     .normalize("NFKC")
     .toLocaleLowerCase("sv-SE")
     .replace(/[.!?,;:]+/gu, " ")
@@ -172,6 +208,7 @@ function normalizedLatestFragment(request: typeof AgentRunRequest.Type): string 
 }
 
 function latestFragmentBlocksMutation(request: typeof AgentRunRequest.Type): boolean {
+  if ((request.currentTurnMessages?.length ?? 1) < 2) return false
   const normalized = normalizedLatestFragment(request)
   const retracts = mutationRetractionPhrases.some(
     (phrase) =>
@@ -188,10 +225,14 @@ function latestFragmentBlocksMutation(request: typeof AgentRunRequest.Type): boo
   ) {
     return true
   }
+  if (/[?？]\s*$/u.test(latestFragmentText(request))) {
+    return !directMutationRequestQuestion.test(normalized)
+  }
   return mutationReviewQuestion.test(normalized) && !directMutationRequestQuestion.test(normalized)
 }
 
 const externalMutationTools = new Set<ToolName>(["connection_link_create"])
+const mutatingToolNames = ToolName.literals.filter((name) => !isReadOnlyToolName(name))
 
 export function expiredToolCallOutcome(name: ToolName): ToolResult | undefined {
   if (!externalMutationTools.has(name)) return undefined
@@ -324,6 +365,7 @@ export function makeToolExecutor(
     const [run] = await database
       .select({
         conversationTurnId: agentRuns.conversationTurnId,
+        conversationTurnRevision: agentRuns.conversationTurnRevision,
         ownerId: agentRuns.userId,
         targetMessageId: agentRuns.targetMessageId
       })
@@ -331,6 +373,31 @@ export function makeToolExecutor(
       .where(eq(agentRuns.id, runId))
       .limit(1)
     return run
+  }
+
+  async function reserveMutation(
+    conversationTurnId: string,
+    conversationTurnRevision: number,
+    runId: string,
+    idempotencyKey: string
+  ): Promise<boolean> {
+    const [reserved] = await database
+      .update(conversationTurns)
+      .set({ mutationIdempotencyKey: idempotencyKey })
+      .where(
+        and(
+          eq(conversationTurns.id, conversationTurnId),
+          eq(conversationTurns.revision, conversationTurnRevision),
+          eq(conversationTurns.activeRunId, runId),
+          eq(conversationTurns.activeRunRevision, conversationTurnRevision),
+          or(
+            isNull(conversationTurns.mutationIdempotencyKey),
+            eq(conversationTurns.mutationIdempotencyKey, idempotencyKey)
+          )
+        )
+      )
+      .returning({ id: conversationTurns.id })
+    return reserved !== undefined
   }
 
   async function dispatch(command: typeof ToolCommand.Type): Promise<ToolResult> {
@@ -345,10 +412,6 @@ export function makeToolExecutor(
     ) {
       return denied()
     }
-    if (!isReadOnlyToolName(command.name) && latestFragmentBlocksMutation(context.request)) {
-      return denied()
-    }
-
     const run: ToolRunContext = {
       request: { ...context.request, userText: conversationPolicyText(context.request) },
       channelId: context.channelId,
@@ -401,6 +464,135 @@ export function makeToolExecutor(
     listTrainingProposals: (ownerId) => training.listTrainingProposals(ownerId),
     approveTrainingProposal: (ownerId, proposalId, proposalHash, approvalIdempotencyKey) =>
       training.approveTrainingProposal(ownerId, proposalId, proposalHash, approvalIdempotencyKey),
+    async mutationActivity(runId) {
+      const [run] = await database
+        .select({ conversationTurnId: agentRuns.conversationTurnId })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, runId))
+        .limit(1)
+      if (run === undefined) return { status: "none" }
+      const rows = await database
+        .select({
+          runId: toolCalls.runId,
+          status: toolCalls.status,
+          resultJson: toolCalls.resultJson,
+          claimExpiresAt: toolCalls.claimExpiresAt,
+          completedAt: toolCalls.completedAt,
+          attemptNumber: toolCalls.attemptNumber,
+          runRevision: agentRuns.conversationTurnRevision
+        })
+        .from(toolCalls)
+        .innerJoin(agentRuns, eq(agentRuns.id, toolCalls.runId))
+        .where(
+          and(
+            run.conversationTurnId === null
+              ? eq(toolCalls.runId, runId)
+              : eq(agentRuns.conversationTurnId, run.conversationTurnId),
+            inArray(toolCalls.toolName, mutatingToolNames)
+          )
+        )
+      const currentTime = now()
+      const active = rows.filter(
+        (row) => (row.status === "pending" || row.status === "executing") && row.resultJson === null
+      )
+      if (active.length > 0) {
+        let recoveryRequired = false
+        const retryAt = active.reduce((latest, row) => {
+          const expired =
+            row.claimExpiresAt === null || Date.parse(row.claimExpiresAt) <= currentTime.getTime()
+          if (expired) recoveryRequired = true
+          const candidate = expired
+            ? new Date(currentTime.getTime() + toolLeaseMs).toISOString()
+            : row.claimExpiresAt!
+          return Date.parse(candidate) > Date.parse(latest) ? candidate : latest
+        }, currentTime.toISOString())
+        const originRevision = active.reduce<number | undefined>(
+          (earliest, row) =>
+            row.runRevision === null
+              ? earliest
+              : earliest === undefined || row.runRevision < earliest
+                ? row.runRevision
+                : earliest,
+          undefined
+        )
+        return {
+          status: "active",
+          retryAt,
+          recoveryRequired,
+          recoveryExhausted: active.some((row) => row.attemptNumber >= 2),
+          ...(originRevision === undefined ? {} : { originRevision })
+        }
+      }
+      const completed = rows.filter((row) => row.status === "completed" && row.resultJson !== null)
+      if (completed.length > 0) {
+        return {
+          status: "completed",
+          completedInRun: completed.some((row) => row.runId === runId)
+        }
+      }
+      return rows.some((row) => row.status === "unknown" && row.resultJson !== null)
+        ? { status: "unknown" }
+        : { status: "none" }
+    },
+    async expireMutationRecovery(runId) {
+      const [run] = await database
+        .select({
+          ownerId: agentRuns.userId,
+          conversationTurnId: agentRuns.conversationTurnId,
+          conversationTurnRevision: agentRuns.conversationTurnRevision
+        })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, runId))
+        .limit(1)
+      if (
+        run?.conversationTurnId === null ||
+        run?.conversationTurnId === undefined ||
+        run.conversationTurnRevision === null
+      ) {
+        return false
+      }
+      const currentTime = now()
+      const resultJson = await encodePrivate(run.ownerId, {
+        ok: false,
+        code: "tool_recovery_failed",
+        message: "The action result is unknown. Review the current state before trying again."
+      } satisfies ToolResult)
+      const expiredRuns = database
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.conversationTurnId, run.conversationTurnId),
+            lt(agentRuns.conversationTurnRevision, run.conversationTurnRevision)
+          )
+        )
+      const recovered = await database
+        .update(toolCalls)
+        .set({
+          resultJson,
+          status: "unknown",
+          claimToken: null,
+          claimExpiresAt: null,
+          completedAt: currentTime.toISOString()
+        })
+        .where(
+          and(
+            or(
+              inArray(toolCalls.runId, expiredRuns),
+              and(eq(toolCalls.runId, runId), gte(toolCalls.attemptNumber, 2))
+            ),
+            inArray(toolCalls.toolName, mutatingToolNames),
+            inArray(toolCalls.status, ["pending", "executing"]),
+            isNull(toolCalls.resultJson),
+            or(
+              isNull(toolCalls.claimExpiresAt),
+              lte(toolCalls.claimExpiresAt, currentTime.toISOString())
+            )
+          )
+        )
+        .returning({ id: toolCalls.id })
+      return recovered.length > 0
+    },
     async execute(input) {
       const command = Schema.decodeUnknownSync(ToolCommand)(input)
       const commandRun = await conversationTurnForRun(command.runId)
@@ -429,6 +621,24 @@ export function makeToolExecutor(
           }))
       ) {
         return denied()
+      }
+      if (!isReadOnlyToolName(command.name)) {
+        const context = await runContext(command.runId)
+        if (latestFragmentBlocksMutation(context.request)) return denied()
+      }
+      if (stableMutationTurnId !== undefined) {
+        const revision = commandRun?.conversationTurnRevision
+        if (revision === null || revision === undefined) return denied()
+        const reserved = await reserveMutation(
+          stableMutationTurnId,
+          revision,
+          command.runId,
+          command.idempotencyKey
+        )
+        if (!reserved) {
+          if (!(await runCanClaimTool(command.runId))) return denied()
+          return additionalMutationConfirmationRequired()
+        }
       }
       const commandHash = await toolCommandHash(command)
       const [existing] = await database
@@ -462,6 +672,19 @@ export function makeToolExecutor(
           : ((await conversationTurnForRun(existing.runId))?.conversationTurnId ?? undefined)
       if (existing !== undefined && !ownsCommand(existing, existingTurnId)) return denied()
       if (existing?.resultJson !== null && existing?.resultJson !== undefined) {
+        if (stableMutationTurnId !== undefined && existing.runId !== command.runId) {
+          await database
+            .update(toolCalls)
+            .set({ runId: command.runId, toolCallId: command.toolCallId, commandHash })
+            .where(
+              and(
+                eq(toolCalls.id, existing.id),
+                eq(toolCalls.idempotencyKey, command.idempotencyKey),
+                isNull(toolCalls.claimToken),
+                isNull(toolCalls.claimExpiresAt)
+              )
+            )
+        }
         return decodePrivate<ToolResult>(command.ownerId, existing.resultJson)
       }
 
@@ -498,6 +721,19 @@ export function makeToolExecutor(
           : ((await conversationTurnForRun(winner.runId))?.conversationTurnId ?? undefined)
       if (winner === undefined || !ownsCommand(winner, winnerTurnId)) return denied()
       if (winner.resultJson !== null) {
+        if (stableMutationTurnId !== undefined && winner.runId !== command.runId) {
+          await database
+            .update(toolCalls)
+            .set({ runId: command.runId, toolCallId: command.toolCallId, commandHash })
+            .where(
+              and(
+                eq(toolCalls.id, winner.id),
+                eq(toolCalls.idempotencyKey, command.idempotencyKey),
+                isNull(toolCalls.claimToken),
+                isNull(toolCalls.claimExpiresAt)
+              )
+            )
+        }
         return decodePrivate<ToolResult>(command.ownerId, winner.resultJson)
       }
 

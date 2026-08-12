@@ -1,7 +1,20 @@
-import type { ContextItem } from "@bob/contracts/agent"
-
+import { PriorToolReceipt, type ContextItem } from "@bob/contracts/agent"
 import { isReadOnlyToolName, ToolName, ToolResult } from "@bob/contracts/tools"
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, sql } from "drizzle-orm"
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  ne,
+  or,
+  sql
+} from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
@@ -36,6 +49,7 @@ export interface ContextStore {
   /** String arguments remain valid for storage-safety tests and old snapshots. */
   build(input: ContextBuildRequest | string, channelId?: string): Promise<readonly ContextItem[]>
   recentToolCapabilities(input: ContextBuildRequest): Promise<readonly ToolName[]>
+  priorToolReceipts(input: ContextBuildRequest): Promise<readonly PriorToolReceipt[]>
 }
 
 export const ContextStore = Context.Service<ContextStore>("bob/ContextStore")
@@ -253,7 +267,7 @@ export function makeContextStore(
             eq(messages.direction, "inbound")
           )
         )
-        .orderBy(asc(conversationTurnMessages.ordinal))
+        .orderBy(asc(messages.occurredAt), asc(messages.createdAt), asc(messages.id))
       const [outbound] = await database
         .select({
           id: messages.id,
@@ -318,11 +332,8 @@ export function makeContextStore(
     }
     const rows = await database
       .select({
-        id: toolCalls.id,
         toolName: toolCalls.toolName,
-        resultJson: toolCalls.resultJson,
-        completedAt: toolCalls.completedAt,
-        createdAt: toolCalls.createdAt
+        resultJson: toolCalls.resultJson
       })
       .from(toolCalls)
       .innerJoin(agentRuns, eq(agentRuns.id, toolCalls.runId))
@@ -346,21 +357,17 @@ export function makeContextStore(
           JSON.parse(await protection.decryptText(key, envelope)) as unknown
         )
         const toolName = Schema.decodeUnknownSync(ToolName)(row.toolName)
-        const completedAt = row.completedAt ?? row.createdAt
+        const receipt = Schema.decodeUnknownSync(PriorToolReceipt)({
+          origin: "same_turn",
+          toolName,
+          result: { ok: result.ok, code: result.code }
+        })
         receipts.push({
           kind: "conversation",
-          text: `Earlier revision tool receipt. Do not repeat an identical completed mutation. ${JSON.stringify(
-            { toolName, readOnly: isReadOnlyToolName(toolName), result }
-          )}`,
+          text: `Earlier revision action record. Do not repeat an identical completed mutation. ${JSON.stringify(receipt)}`,
           instruction: false,
           conflict: false,
-          sources: [
-            {
-              sourceId: row.id,
-              sourceLabel: `${toolName} receipt ${sourceDay(completedAt)}`,
-              occurredAt: completedAt
-            }
-          ]
+          sources: []
         })
       } catch {
         // A malformed private receipt is skipped. It never changes the workflow.
@@ -541,6 +548,117 @@ export function makeContextStore(
   }
 
   return {
+    async priorToolReceipts(input) {
+      if (
+        input.currentConversationTurnId === undefined ||
+        input.currentConversationTurnRevision === undefined
+      ) {
+        return []
+      }
+      const [currentTurn] = await database
+        .select({ createdAt: conversationTurns.createdAt })
+        .from(conversationTurns)
+        .where(
+          and(
+            eq(conversationTurns.id, input.currentConversationTurnId),
+            eq(conversationTurns.userId, input.ownerId),
+            eq(conversationTurns.channelId, input.channelId)
+          )
+        )
+        .limit(1)
+      const predecessorBefore =
+        currentTurn === undefined || Date.parse(currentTurn.createdAt) > Date.parse(input.localTime)
+          ? input.localTime
+          : currentTurn.createdAt
+      const predecessorAfter = new Date(Date.parse(input.localTime) - 15 * 60_000).toISOString()
+      const [predecessor] =
+        currentTurn === undefined
+          ? []
+          : await database
+              .select({ id: conversationTurns.id, revision: conversationTurns.revision })
+              .from(conversationTurns)
+              .innerJoin(
+                outboxMessages,
+                and(
+                  eq(outboxMessages.id, conversationTurns.replyOutboxId),
+                  eq(outboxMessages.conversationTurnId, conversationTurns.id),
+                  eq(outboxMessages.conversationTurnRevision, conversationTurns.revision)
+                )
+              )
+              .where(
+                and(
+                  eq(conversationTurns.userId, input.ownerId),
+                  eq(conversationTurns.channelId, input.channelId),
+                  eq(conversationTurns.status, "replied"),
+                  ne(conversationTurns.id, input.currentConversationTurnId),
+                  isNotNull(conversationTurns.repliedAt),
+                  gte(conversationTurns.repliedAt, predecessorAfter),
+                  lte(conversationTurns.repliedAt, predecessorBefore)
+                )
+              )
+              .orderBy(
+                desc(conversationTurns.repliedAt),
+                desc(conversationTurns.updatedAt),
+                desc(conversationTurns.id)
+              )
+              .limit(1)
+      const currentTurnRevision = and(
+        eq(agentRuns.conversationTurnId, input.currentConversationTurnId),
+        lt(agentRuns.conversationTurnRevision, input.currentConversationTurnRevision)
+      )
+      const runAuthority =
+        predecessor === undefined
+          ? currentTurnRevision
+          : or(
+              currentTurnRevision,
+              and(
+                eq(agentRuns.conversationTurnId, predecessor.id),
+                eq(agentRuns.conversationTurnRevision, predecessor.revision)
+              )
+            )
+      const rows = await database
+        .select({
+          conversationTurnId: agentRuns.conversationTurnId,
+          toolName: toolCalls.toolName,
+          resultJson: toolCalls.resultJson
+        })
+        .from(toolCalls)
+        .innerJoin(agentRuns, eq(agentRuns.id, toolCalls.runId))
+        .where(
+          and(
+            eq(agentRuns.userId, input.ownerId),
+            runAuthority,
+            inArray(toolCalls.status, ["completed", "failed", "unknown"]),
+            isNotNull(toolCalls.resultJson)
+          )
+        )
+        .orderBy(desc(toolCalls.completedAt), desc(toolCalls.createdAt))
+        .limit(8)
+      const key = await ownerKey(input.ownerId)
+      const receipts: (typeof PriorToolReceipt.Type)[] = []
+      for (const row of rows.toReversed()) {
+        try {
+          const envelope = JSON.parse(row.resultJson!) as { ciphertext: string; iv: string }
+          const result = Schema.decodeUnknownSync(ToolResult)(
+            JSON.parse(await protection.decryptText(key, envelope)) as unknown
+          )
+          receipts.push(
+            Schema.decodeUnknownSync(PriorToolReceipt)({
+              origin:
+                row.conversationTurnId === input.currentConversationTurnId
+                  ? "same_turn"
+                  : "predecessor_turn",
+              toolName: Schema.decodeUnknownSync(ToolName)(row.toolName),
+              result: { ok: result.ok, code: result.code }
+            })
+          )
+        } catch {
+          // Malformed private receipts do not enter the Agent request.
+        }
+      }
+      return receipts
+    },
+
     async recentToolCapabilities(input) {
       if (input.currentConversationTurnId === undefined) return []
       const deliveredAfter = new Date(Date.parse(input.localTime) - 15 * 60_000).toISOString()

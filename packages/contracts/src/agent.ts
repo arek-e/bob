@@ -23,6 +23,79 @@ export const CurrentTurnMessage = Schema.Struct({
   text: NonEmptyText
 })
 
+export const PriorToolReceiptOrigin = Schema.Literals(["same_turn", "predecessor_turn"])
+
+export const PriorToolReceipt = Schema.Union([
+  Schema.Struct({
+    origin: PriorToolReceiptOrigin,
+    toolName: Schema.Literal("reminder_create"),
+    result: Schema.Struct({
+      ok: Schema.Literal(true),
+      code: Schema.Literals(["reminder_created", "reminder_exists"])
+    })
+  }),
+  Schema.Struct({
+    origin: PriorToolReceiptOrigin,
+    toolName: Schema.Literal("reminder_acknowledge"),
+    result: Schema.Struct({ ok: Schema.Literal(true), code: Schema.Literal("reminder_seen") })
+  }),
+  Schema.Struct({
+    origin: PriorToolReceiptOrigin,
+    toolName: Schema.Literal("reminder_complete"),
+    result: Schema.Struct({ ok: Schema.Literal(true), code: Schema.Literal("reminder_done") })
+  }),
+  Schema.Struct({
+    origin: PriorToolReceiptOrigin,
+    toolName: Schema.Literal("reminder_snooze"),
+    result: Schema.Struct({ ok: Schema.Literal(true), code: Schema.Literal("reminder_snoozed") })
+  }),
+  Schema.Struct({
+    origin: PriorToolReceiptOrigin,
+    toolName: Schema.Literal("reminder_cancel"),
+    result: Schema.Struct({
+      ok: Schema.Literal(true),
+      code: Schema.Literals(["reminder_cancelled", "reminder_occurrence_cancelled"])
+    })
+  }),
+  Schema.Struct({
+    origin: PriorToolReceiptOrigin,
+    toolName: Schema.Literal("memory_propose"),
+    result: Schema.Struct({ ok: Schema.Literal(true), code: Schema.Literal("memory_proposed") })
+  }),
+  Schema.Struct({
+    origin: PriorToolReceiptOrigin,
+    toolName: Schema.Literal("journal_link_create"),
+    result: Schema.Struct({
+      ok: Schema.Literal(true),
+      code: Schema.Literal("journal_link_created")
+    })
+  }),
+  Schema.Struct({
+    origin: PriorToolReceiptOrigin,
+    toolName: Schema.Literal("connection_link_create"),
+    result: Schema.Struct({
+      ok: Schema.Literal(true),
+      code: Schema.Literal("connection_link_created")
+    })
+  }),
+  Schema.Struct({
+    origin: PriorToolReceiptOrigin,
+    toolName: Schema.Literal("settings_update"),
+    result: Schema.Struct({
+      ok: Schema.Literal(true),
+      code: Schema.Literal("owner_settings_updated")
+    })
+  }),
+  Schema.Struct({
+    origin: PriorToolReceiptOrigin,
+    toolName: ToolName,
+    result: Schema.Struct({
+      ok: Schema.Literal(false),
+      code: Schema.Literal("tool_recovery_failed")
+    })
+  })
+])
+
 export const AgentRunRequest = Schema.Struct({
   protocolVersion: Schema.Literal(1),
   runId: Uuid,
@@ -40,6 +113,9 @@ export const AgentRunRequest = Schema.Struct({
   userText: NonEmptyText,
   currentTurnMessages: Schema.optionalKey(
     Schema.Array(CurrentTurnMessage).check(Schema.isMaxLength(12))
+  ),
+  priorToolReceipts: Schema.optionalKey(
+    Schema.Array(PriorToolReceipt).check(Schema.isMaxLength(8))
   ),
   contextItems: Schema.Array(ContextItem),
   allowedTools: Schema.Array(ToolName),
@@ -136,6 +212,8 @@ export const DeviceLoginEvent = Schema.Union([
 export type ContextSource = typeof ContextSource.Type
 export type ContextItem = typeof ContextItem.Type
 export type CurrentTurnMessage = typeof CurrentTurnMessage.Type
+export type PriorToolReceiptOrigin = typeof PriorToolReceiptOrigin.Type
+export type PriorToolReceipt = typeof PriorToolReceipt.Type
 export type AgentRunRequest = typeof AgentRunRequest.Type
 export type AgentRunResult = typeof AgentRunResult.Type
 export type AgentSteerRequest = typeof AgentSteerRequest.Type

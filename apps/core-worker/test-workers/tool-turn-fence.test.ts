@@ -279,6 +279,58 @@ afterEach(async () => {
 })
 
 describe("conversation tool claim fence", () => {
+  it.each(["Cancel it.", "Stop this reminder."])(
+    "allows one direct single-message cancellation: %s",
+    async (userText) => {
+      const seeded = await seedActiveConversationRun(userText, ["reminder_cancel"])
+      const reminderId = "00000000-0000-4000-8000-000000002016"
+      const argumentsValue = { reminderId }
+      const idempotencyKey = await conversationMutationIdempotencyKey({
+        ownerId,
+        conversationTurnId: turnId,
+        toolName: "reminder_cancel",
+        arguments: argumentsValue
+      })
+      let cancelCalls = 0
+      const executor = makeToolExecutor(
+        seeded.database,
+        seeded.protection,
+        {
+          reminders: {
+            list: async () => [
+              {
+                id: reminderId,
+                displayText: "Lunch",
+                state: "active",
+                actionTargets: []
+              }
+            ],
+            cancel: async () => {
+              cancelCalls += 1
+            }
+          } as never,
+          memory: {} as never,
+          journal: {} as never,
+          training: {} as never,
+          settings: {} as never
+        },
+        { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
+      )
+
+      await expect(
+        executor.execute({
+          runId,
+          toolCallId: "single-message-cancel-call",
+          idempotencyKey,
+          ownerId,
+          name: "reminder_cancel",
+          arguments: argumentsValue
+        })
+      ).resolves.toMatchObject({ ok: true, code: "reminder_cancelled" })
+      expect(cancelCalls).toBe(1)
+    }
+  )
+
   it("uses earlier details and a safe latest correction for reminder mutation policy", async () => {
     const latestText = "Actually at 08:00"
     const seeded = await seedActiveConversationRun(
@@ -332,6 +384,62 @@ describe("conversation tool claim fence", () => {
         runId,
         toolCallId: "fragmented-reminder-call",
         idempotencyKey,
+        ownerId,
+        name: "reminder_create",
+        arguments: argumentsValue
+      })
+    ).resolves.toMatchObject({ ok: true, code: "reminder_created" })
+    expect(createCalls).toBe(1)
+  })
+
+  it("allows a direct mutation question in the latest fragment", async () => {
+    const latestText = "Can you remind me tomorrow at 13:00?"
+    const seeded = await seedActiveConversationRun(
+      latestText,
+      ["reminder_create"],
+      [
+        {
+          sourceMessageId: "00000000-0000-4000-8000-000000002014",
+          text: "Lunch is important."
+        },
+        { sourceMessageId: messageId, text: latestText }
+      ]
+    )
+    const argumentsValue = reminderArguments(messageId)
+    let createCalls = 0
+    const executor = makeToolExecutor(
+      seeded.database,
+      seeded.protection,
+      {
+        reminders: {
+          createOneShot: async () => {
+            createCalls += 1
+            return {
+              reminderId: "00000000-0000-4000-8000-000000002019",
+              occurrenceId: "00000000-0000-4000-8000-000000002020",
+              localDisplayTime: "2026-08-12T13:00+02:00[Europe/Stockholm]",
+              duplicate: false
+            }
+          }
+        } as never,
+        memory: {} as never,
+        journal: {} as never,
+        training: {} as never,
+        settings: {} as never
+      },
+      { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
+    )
+
+    await expect(
+      executor.execute({
+        runId,
+        toolCallId: "direct-question-reminder-call",
+        idempotencyKey: await conversationMutationIdempotencyKey({
+          ownerId,
+          conversationTurnId: turnId,
+          toolName: "reminder_create",
+          arguments: argumentsValue
+        }),
         ownerId,
         name: "reminder_create",
         arguments: argumentsValue
@@ -394,7 +502,86 @@ describe("conversation tool claim fence", () => {
     }
   )
 
-  it.each(["Wait, what will that change?", "What will that change?"])(
+  it("allows a later explicit instruction after an earlier revision denies the mutation", async () => {
+    const retraction = "Never mind."
+    const seeded = await seedActiveConversationRun(
+      retraction,
+      ["reminder_create"],
+      [
+        {
+          sourceMessageId: "00000000-0000-4000-8000-000000002014",
+          text: "Remind me tomorrow at 13:00."
+        },
+        { sourceMessageId: messageId, text: retraction }
+      ]
+    )
+    const firstArguments = reminderArguments(messageId)
+    const idempotencyKey = await conversationMutationIdempotencyKey({
+      ownerId,
+      conversationTurnId: turnId,
+      toolName: "reminder_create",
+      arguments: firstArguments
+    })
+    let createCalls = 0
+    const executor = makeToolExecutor(
+      seeded.database,
+      seeded.protection,
+      {
+        reminders: {
+          createOneShot: async () => {
+            createCalls += 1
+            return {
+              reminderId: "00000000-0000-4000-8000-000000002017",
+              occurrenceId: "00000000-0000-4000-8000-000000002018",
+              localDisplayTime: "2026-08-12T13:00+02:00[Europe/Stockholm]",
+              duplicate: false
+            }
+          }
+        } as never,
+        memory: {} as never,
+        journal: {} as never,
+        training: {} as never,
+        settings: {} as never
+      },
+      { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
+    )
+    await expect(
+      executor.execute({
+        runId,
+        toolCallId: "retracted-then-authorized-call",
+        idempotencyKey,
+        ownerId,
+        name: "reminder_create",
+        arguments: firstArguments
+      })
+    ).resolves.toMatchObject({ ok: false, code: "policy_denied" })
+    const [turnAfterDenial] = await seeded.database
+      .select({ mutationIdempotencyKey: conversationTurns.mutationIdempotencyKey })
+      .from(conversationTurns)
+      .where(eq(conversationTurns.id, turnId))
+    expect(turnAfterDenial?.mutationIdempotencyKey).toBeNull()
+    await expect(seeded.database.select().from(toolCalls)).resolves.toEqual([])
+
+    await activateSecondConversationRun(seeded, "Remind me tomorrow at 13:00.", ["reminder_create"])
+    await expect(
+      executor.execute({
+        runId: secondRunId,
+        toolCallId: "explicitly-authorized-call",
+        idempotencyKey,
+        ownerId,
+        name: "reminder_create",
+        arguments: reminderArguments(secondMessageId)
+      })
+    ).resolves.toMatchObject({ ok: true, code: "reminder_created" })
+    expect(createCalls).toBe(1)
+  })
+
+  it.each([
+    "Wait, what will that change?",
+    "What will that change?",
+    "Can you explain what that will change?",
+    "At 8?"
+  ])(
     "does not let an earlier fragment authorize a mutation while the latest fragment asks for review: %s",
     async (latestText) => {
       const seeded = await seedActiveConversationRun(
@@ -505,6 +692,398 @@ describe("conversation tool claim fence", () => {
 
     expect(replay).toEqual(firstResult)
     expect(updateCalls).toBe(1)
+    await expect(executor.mutationActivity(secondRunId)).resolves.toEqual({
+      status: "completed",
+      completedInRun: true
+    })
+    const [receipt] = await database
+      .select({ runId: toolCalls.runId, toolCallId: toolCalls.toolCallId })
+      .from(toolCalls)
+      .where(eq(toolCalls.idempotencyKey, idempotencyKey))
+    expect(receipt).toEqual({
+      runId: secondRunId,
+      toolCallId: "revision-two-settings-call"
+    })
+  })
+
+  it("requires a new confirmation before a second distinct successful mutation in one turn", async () => {
+    const userText = "Set my time zone to America/New_York, then set my time zone to Europe/London."
+    const seeded = await seedActiveConversationRun(userText, ["settings_update"])
+    let updateCalls = 0
+    const executor = makeToolExecutor(
+      seeded.database,
+      seeded.protection,
+      {
+        reminders: {} as never,
+        memory: {} as never,
+        journal: {} as never,
+        training: {} as never,
+        settings: {
+          update: async (_ownerId: string, input: { readonly timeZone?: string }) => {
+            updateCalls += 1
+            return {
+              timeZone: input.timeZone ?? "Europe/Stockholm",
+              locale: "en",
+              hourCycle: "h23"
+            }
+          }
+        } as never
+      },
+      { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
+    )
+    const firstArguments = { timeZone: "America/New_York" }
+    const firstKey = await conversationMutationIdempotencyKey({
+      ownerId,
+      conversationTurnId: turnId,
+      toolName: "settings_update",
+      arguments: firstArguments
+    })
+    await expect(
+      executor.execute({
+        runId,
+        toolCallId: "first-distinct-settings-call",
+        idempotencyKey: firstKey,
+        ownerId,
+        name: "settings_update",
+        arguments: firstArguments
+      })
+    ).resolves.toMatchObject({ ok: true, code: "owner_settings_updated" })
+
+    const secondArguments = { timeZone: "Europe/London" }
+    const secondKey = await conversationMutationIdempotencyKey({
+      ownerId,
+      conversationTurnId: turnId,
+      toolName: "settings_update",
+      arguments: secondArguments
+    })
+    await expect(
+      executor.execute({
+        runId,
+        toolCallId: "second-distinct-settings-call",
+        idempotencyKey: secondKey,
+        ownerId,
+        name: "settings_update",
+        arguments: secondArguments
+      })
+    ).resolves.toMatchObject({ ok: false, code: "confirmation_required" })
+    expect(updateCalls).toBe(1)
+  })
+
+  it("does not dispatch a distinct mutation while one mutation in the turn is active", async () => {
+    const userText = "Set my time zone to America/New_York, then set my time zone to Europe/London."
+    const seeded = await seedActiveConversationRun(userText, ["settings_update"])
+    let releaseFirst!: () => void
+    const firstMayFinish = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    let markFirstStarted!: () => void
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve
+    })
+    let updateCalls = 0
+    const executor = makeToolExecutor(
+      seeded.database,
+      seeded.protection,
+      {
+        reminders: {} as never,
+        memory: {} as never,
+        journal: {} as never,
+        training: {} as never,
+        settings: {
+          update: async (_ownerId: string, input: { readonly timeZone?: string }) => {
+            updateCalls += 1
+            if (updateCalls === 1) {
+              markFirstStarted()
+              await firstMayFinish
+            }
+            return {
+              timeZone: input.timeZone ?? "Europe/Stockholm",
+              locale: "en",
+              hourCycle: "h23"
+            }
+          }
+        } as never
+      },
+      { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
+    )
+    const firstArguments = { timeZone: "America/New_York" }
+    const firstPromise = executor.execute({
+      runId,
+      toolCallId: "active-first-settings-call",
+      idempotencyKey: await conversationMutationIdempotencyKey({
+        ownerId,
+        conversationTurnId: turnId,
+        toolName: "settings_update",
+        arguments: firstArguments
+      }),
+      ownerId,
+      name: "settings_update",
+      arguments: firstArguments
+    })
+    await firstStarted
+
+    const secondArguments = { timeZone: "Europe/London" }
+    await expect(
+      executor.execute({
+        runId,
+        toolCallId: "active-second-settings-call",
+        idempotencyKey: await conversationMutationIdempotencyKey({
+          ownerId,
+          conversationTurnId: turnId,
+          toolName: "settings_update",
+          arguments: secondArguments
+        }),
+        ownerId,
+        name: "settings_update",
+        arguments: secondArguments
+      })
+    ).resolves.toMatchObject({ ok: false, code: "confirmation_required" })
+    expect(updateCalls).toBe(1)
+
+    releaseFirst()
+    await expect(firstPromise).resolves.toMatchObject({ ok: true, code: "owner_settings_updated" })
+  })
+
+  it("lets only one distinct mutation claim a conversation turn concurrently", async () => {
+    const userText = "Set my time zone to America/New_York, then set my time zone to Europe/London."
+    const seeded = await seedActiveConversationRun(userText, ["settings_update"])
+    let updateCalls = 0
+    const executor = makeToolExecutor(
+      seeded.database,
+      seeded.protection,
+      {
+        reminders: {} as never,
+        memory: {} as never,
+        journal: {} as never,
+        training: {} as never,
+        settings: {
+          update: async (_ownerId: string, input: { readonly timeZone?: string }) => {
+            updateCalls += 1
+            return {
+              timeZone: input.timeZone ?? "Europe/Stockholm",
+              locale: "en",
+              hourCycle: "h23"
+            }
+          }
+        } as never
+      },
+      { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
+    )
+    const commands = await Promise.all(
+      ["America/New_York", "Europe/London"].map(async (timeZone, index) => ({
+        runId,
+        toolCallId: `concurrent-distinct-settings-call-${index}`,
+        idempotencyKey: await conversationMutationIdempotencyKey({
+          ownerId,
+          conversationTurnId: turnId,
+          toolName: "settings_update",
+          arguments: { timeZone }
+        }),
+        ownerId,
+        name: "settings_update" as const,
+        arguments: { timeZone }
+      }))
+    )
+
+    const results = await Promise.all(commands.map((command) => executor.execute(command)))
+
+    expect(results.filter((result) => result.ok)).toHaveLength(1)
+    expect(results.filter((result) => result.code === "confirmation_required")).toHaveLength(1)
+    expect(updateCalls).toBe(1)
+    await expect(executor.mutationActivity(runId)).resolves.toEqual({
+      status: "completed",
+      completedInRun: true
+    })
+    const winningIndex = results.findIndex((result) => result.ok)
+    const [turn] = await seeded.database
+      .select({ mutationIdempotencyKey: conversationTurns.mutationIdempotencyKey })
+      .from(conversationTurns)
+      .where(eq(conversationTurns.id, turnId))
+    expect(turn?.mutationIdempotencyKey).toBe(commands[winningIndex]?.idempotencyKey)
+  })
+
+  it("reports mutation activity across revisions of the same conversation turn", async () => {
+    const userText = "Set my time zone to America/New_York."
+    const seeded = await seedActiveConversationRun(userText, ["settings_update"])
+    let releaseMutation!: () => void
+    const mutationMayFinish = new Promise<void>((resolve) => {
+      releaseMutation = resolve
+    })
+    let markMutationStarted!: () => void
+    const mutationStarted = new Promise<void>((resolve) => {
+      markMutationStarted = resolve
+    })
+    const executor = makeToolExecutor(
+      seeded.database,
+      seeded.protection,
+      {
+        reminders: {} as never,
+        memory: {} as never,
+        journal: {} as never,
+        training: {} as never,
+        settings: {
+          update: async () => {
+            markMutationStarted()
+            await mutationMayFinish
+            return { timeZone: "America/New_York", locale: "en", hourCycle: "h23" }
+          }
+        } as never
+      },
+      { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
+    )
+    await expect(executor.mutationActivity(runId)).resolves.toEqual({ status: "none" })
+    const argumentsValue = { timeZone: "America/New_York" }
+    const mutation = executor.execute({
+      runId,
+      toolCallId: "activity-settings-call",
+      idempotencyKey: await conversationMutationIdempotencyKey({
+        ownerId,
+        conversationTurnId: turnId,
+        toolName: "settings_update",
+        arguments: argumentsValue
+      }),
+      ownerId,
+      name: "settings_update",
+      arguments: argumentsValue
+    })
+    await mutationStarted
+    await activateSecondConversationRun(seeded, userText, ["settings_update"])
+
+    await expect(executor.mutationActivity(secondRunId)).resolves.toEqual({
+      status: "active",
+      retryAt: "2026-08-11T10:01:00.000Z",
+      recoveryRequired: false,
+      recoveryExhausted: false,
+      originRevision: 1
+    })
+    releaseMutation()
+    await expect(mutation).resolves.toMatchObject({ ok: true, code: "owner_settings_updated" })
+    await expect(executor.mutationActivity(secondRunId)).resolves.toEqual({
+      status: "completed",
+      completedInRun: false
+    })
+  })
+
+  it("gives an expired mutation a bounded recovery deadline", async () => {
+    const seeded = await seedActiveConversationRun("Set my time zone to America/New_York.", [
+      "settings_update"
+    ])
+    await seeded.database.insert(toolCalls).values({
+      id: "00000000-0000-4000-8000-000000002090",
+      runId,
+      toolCallId: "expired-activity-settings-call",
+      idempotencyKey: "sha256:expired-activity",
+      ownerId,
+      toolName: "settings_update",
+      commandHash: "sha256:expired-command",
+      argumentsJson: "{}",
+      status: "executing",
+      claimToken: "expired-token",
+      claimedAt: "2026-08-11T09:58:59.000Z",
+      claimExpiresAt: "2026-08-11T09:59:59.000Z",
+      attemptNumber: 1,
+      createdAt: "2026-08-11T09:58:59.000Z"
+    })
+    const executor = makeExecutor(seeded.database, seeded.protection, async () => [])
+
+    await expect(executor.mutationActivity(runId)).resolves.toEqual({
+      status: "active",
+      retryAt: "2026-08-11T10:01:00.000Z",
+      recoveryRequired: true,
+      recoveryExhausted: false,
+      originRevision: 1
+    })
+    await activateSecondConversationRun(seeded, "Set my time zone to America/New_York.", [
+      "settings_update"
+    ])
+    await expect(executor.expireMutationRecovery(secondRunId)).resolves.toBe(true)
+    await expect(executor.mutationActivity(secondRunId)).resolves.toEqual({ status: "unknown" })
+    const [expired] = await seeded.database
+      .select({ status: toolCalls.status, resultJson: toolCalls.resultJson })
+      .from(toolCalls)
+      .where(eq(toolCalls.id, "00000000-0000-4000-8000-000000002090"))
+    expect(expired).toMatchObject({ status: "unknown" })
+    expect(expired?.resultJson).not.toBeNull()
+  })
+
+  it("exhausts recovery after the stable mutation is reparented and expires again", async () => {
+    const userText = "Set my time zone to America/New_York."
+    const seeded = await seedActiveConversationRun(userText, ["settings_update"])
+    const argumentsValue = { timeZone: "America/New_York" }
+    const idempotencyKey = await conversationMutationIdempotencyKey({
+      ownerId,
+      conversationTurnId: turnId,
+      toolName: "settings_update",
+      arguments: argumentsValue
+    })
+    await seeded.database.insert(toolCalls).values({
+      id: "00000000-0000-4000-8000-000000002091",
+      runId,
+      toolCallId: "first-expired-settings-call",
+      idempotencyKey,
+      ownerId,
+      toolName: "settings_update",
+      commandHash: "sha256:first-expired-command",
+      argumentsJson: "{}",
+      status: "executing",
+      claimToken: "first-expired-token",
+      claimedAt: "2026-08-11T09:58:59.000Z",
+      claimExpiresAt: "2026-08-11T09:59:59.000Z",
+      attemptNumber: 1,
+      createdAt: "2026-08-11T09:58:59.000Z"
+    })
+    await activateSecondConversationRun(seeded, userText, ["settings_update"])
+    let currentTime = new Date(at)
+    let mutationStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      mutationStarted = resolve
+    })
+    let releaseMutation!: () => void
+    const mayFinish = new Promise<void>((resolve) => {
+      releaseMutation = resolve
+    })
+    const executor = makeToolExecutor(
+      seeded.database,
+      seeded.protection,
+      {
+        reminders: {} as never,
+        memory: {} as never,
+        journal: {} as never,
+        training: {} as never,
+        settings: {
+          update: async () => {
+            mutationStarted()
+            await mayFinish
+            return { timeZone: "America/New_York", locale: "en", hourCycle: "h23" }
+          }
+        } as never
+      },
+      { uiBaseUrl: "https://bob.example.invalid", now: () => currentTime }
+    )
+
+    const recovery = executor.execute({
+      runId: secondRunId,
+      toolCallId: "second-recovery-settings-call",
+      idempotencyKey,
+      ownerId,
+      name: "settings_update",
+      arguments: argumentsValue
+    })
+    await started
+    currentTime = new Date("2026-08-11T10:01:01.000Z")
+
+    await expect(executor.mutationActivity(secondRunId)).resolves.toMatchObject({
+      status: "active",
+      recoveryRequired: true,
+      recoveryExhausted: true,
+      originRevision: 2
+    })
+    await expect(executor.expireMutationRecovery(secondRunId)).resolves.toBe(true)
+    await expect(executor.mutationActivity(secondRunId)).resolves.toEqual({ status: "unknown" })
+
+    releaseMutation()
+    await expect(recovery).resolves.toMatchObject({ ok: true, code: "owner_settings_updated" })
+    await expect(executor.mutationActivity(secondRunId)).resolves.toEqual({ status: "unknown" })
   })
 
   it.each([

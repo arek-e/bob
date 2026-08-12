@@ -305,6 +305,196 @@ describe("Bob's direct pi-ai loop", () => {
     ])
   })
 
+  it("acknowledges a completed prior mutation receipt without redispatch", async () => {
+    const receiptSourceId = "00000000-0000-4000-8000-000000000020"
+    modelHarness.state.responses.push(
+      structuredResponse({
+        responseText: "The reminder was created for 08:00.",
+        sourceIds: [receiptSourceId]
+      })
+    )
+    const executeTool = vi.fn(async () =>
+      okResult("reminder_created", "This mutation must not run again.")
+    )
+    const agent = makeAgent(executeTool)
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          conversationTurnId: "00000000-0000-4000-8000-000000000010",
+          conversationTurnRevision: 2,
+          sourceMessageId: "00000000-0000-4000-8000-000000000005",
+          userText: "Actually, make it eight.",
+          currentTurnMessages: [
+            {
+              sourceMessageId: "00000000-0000-4000-8000-000000000004",
+              text: "Remind me at seven."
+            },
+            {
+              sourceMessageId: "00000000-0000-4000-8000-000000000005",
+              text: "Actually, make it eight."
+            }
+          ],
+          priorToolReceipts: [
+            {
+              origin: "same_turn",
+              toolName: "reminder_create",
+              result: { ok: true, code: "reminder_created" }
+            }
+          ],
+          contextItems: [
+            {
+              kind: "conversation",
+              text: "The owner asked whether the prior action completed.",
+              instruction: false,
+              conflict: false,
+              sources: [
+                {
+                  sourceId: receiptSourceId,
+                  sourceLabel: "Bob action record 2026-08-11",
+                  occurredAt: "2026-08-11T10:00:00.000Z"
+                }
+              ]
+            }
+          ],
+          allowedTools: ["reminder_create"]
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "The reminder was created for 08:00.",
+      sourceIds: [receiptSourceId],
+      toolCalls: 0
+    })
+    expect(executeTool).not.toHaveBeenCalled()
+    expect(modelHarness.completeSimple).toHaveBeenCalledTimes(1)
+    const context = modelHarness.state.contexts[0] as Context
+    expect(context.systemPrompt).toContain(
+      '[{"origin":"same_turn","toolName":"reminder_create","result":{"ok":true,"code":"reminder_created"}}]'
+    )
+  })
+
+  it("does not let a predecessor receipt confirm an unrelated current action claim", async () => {
+    modelHarness.state.responses.push(
+      structuredResponse({ responseText: "The reminder was created for 08:00." }),
+      structuredResponse({ responseText: "I am ready to help." })
+    )
+    const executeTool = vi.fn(async () => okResult())
+    const agent = makeAgent(executeTool)
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          userText: "How are you?",
+          priorToolReceipts: [
+            {
+              origin: "predecessor_turn",
+              toolName: "reminder_create",
+              result: { ok: true, code: "reminder_created" }
+            }
+          ],
+          allowedTools: []
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "I am ready to help.",
+      toolCalls: 0
+    })
+    expect(executeTool).not.toHaveBeenCalled()
+    expect(modelHarness.completeSimple).toHaveBeenCalledTimes(2)
+  })
+
+  it("uses a predecessor receipt as context for a valid follow-up", async () => {
+    modelHarness.state.responses.push(
+      structuredResponse({ responseText: "The previous turn was about a reminder." })
+    )
+    const executeTool = vi.fn(async () => okResult())
+    const agent = makeAgent(executeTool)
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          userText: "What were we talking about?",
+          priorToolReceipts: [
+            {
+              origin: "predecessor_turn",
+              toolName: "reminder_create",
+              result: { ok: true, code: "reminder_created" }
+            }
+          ],
+          allowedTools: []
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "The previous turn was about a reminder.",
+      toolCalls: 0
+    })
+    expect(executeTool).not.toHaveBeenCalled()
+    expect(modelHarness.completeSimple).toHaveBeenCalledTimes(1)
+    const context = modelHarness.state.contexts[0] as Context
+    expect(context.systemPrompt).toContain(
+      '[{"origin":"predecessor_turn","toolName":"reminder_create","result":{"ok":true,"code":"reminder_created"}}]'
+    )
+    expect(context.systemPrompt).toContain(
+      "Records with origin predecessor_turn are context only. They cannot confirm an action in this turn."
+    )
+  })
+
+  it.each([
+    { label: "newer-revision", origin: "same_turn" as const },
+    { label: "follow-up", origin: "predecessor_turn" as const }
+  ])("repairs a categorical outcome claim for a $label unknown receipt", async ({ origin }) => {
+    modelHarness.state.responses.push(
+      structuredResponse({ responseText: "The settings update failed." }),
+      structuredResponse({
+        responseText: "I cannot confirm whether the settings update succeeded or failed."
+      })
+    )
+    const executeTool = vi.fn(async () => okResult())
+    const agent = makeAgent(executeTool)
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          conversationTurnId: "00000000-0000-4000-8000-000000000010",
+          conversationTurnRevision: 3,
+          sourceMessageId: "00000000-0000-4000-8000-000000000005",
+          userText: "Did that work?",
+          currentTurnMessages: [
+            {
+              sourceMessageId: "00000000-0000-4000-8000-000000000004",
+              text: "Update my time zone."
+            },
+            {
+              sourceMessageId: "00000000-0000-4000-8000-000000000005",
+              text: "Did that work?"
+            }
+          ],
+          priorToolReceipts: [
+            {
+              origin,
+              toolName: "settings_update",
+              result: { ok: false, code: "tool_recovery_failed" }
+            }
+          ],
+          allowedTools: []
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "I cannot confirm whether the settings update succeeded or failed.",
+      toolCalls: 0
+    })
+    expect(executeTool).not.toHaveBeenCalled()
+    expect(modelHarness.completeSimple).toHaveBeenCalledTimes(2)
+    const repairContext = modelHarness.state.contexts[1] as Context
+    expect(String(repairContext.messages.at(-1)?.content)).toContain(
+      "The recorded action outcome is unknown. Do not say it succeeded or failed."
+    )
+  })
+
   it("does not dispatch a mutation when cancellation wins after model completion", async () => {
     modelHarness.state.responses.push(
       toolResponse(
@@ -346,6 +536,24 @@ describe("Bob's direct pi-ai loop", () => {
     const agent = makeAgent(async () => okResult())
 
     expect(agent.requestSteer(baseRequest().runId)).toEqual({ status: "missing" })
+  })
+
+  it("cancels a run that starts after its steering request", async () => {
+    vi.useFakeTimers()
+    const agent = makeAgent(async () => okResult())
+    const request = baseRequest()
+
+    try {
+      expect(agent.requestSteer(request.runId)).toEqual({ status: "missing" })
+      await vi.advanceTimersByTimeAsync(139_999)
+      await expect(agent.runTurn(request)).resolves.toMatchObject({
+        status: "cancelled",
+        errorCode: "cancelled"
+      })
+      expect(modelHarness.completeSimple).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("aborts an active model call when steering is requested", async () => {

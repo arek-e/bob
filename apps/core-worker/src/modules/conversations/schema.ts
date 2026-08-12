@@ -126,6 +126,7 @@ export const conversationTurns = sqliteTable(
     quietUntil: text("quiet_until").notNull(),
     burstExpiresAt: text("burst_expires_at").notNull(),
     replyOutboxId: text("reply_outbox_id"),
+    mutationIdempotencyKey: text("mutation_idempotency_key"),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
     repliedAt: text("replied_at")
@@ -183,7 +184,16 @@ export const agentRuns = sqliteTable(
     completedAt: text("completed_at"),
     createdAt: text("created_at").notNull()
   },
-  (table) => [uniqueIndex("agent_runs_inbound_uq").on(table.inboundEventId)]
+  (table) => [
+    uniqueIndex("agent_runs_legacy_inbound_uq")
+      .on(table.inboundEventId)
+      .where(sql`${table.conversationTurnId} IS NULL`),
+    uniqueIndex("agent_runs_turn_revision_uq")
+      .on(table.conversationTurnId, table.conversationTurnRevision)
+      .where(
+        sql`${table.conversationTurnId} IS NOT NULL AND ${table.conversationTurnRevision} IS NOT NULL`
+      )
+  ]
 )
 
 export const agentRunAttempts = sqliteTable("agent_run_attempts", {

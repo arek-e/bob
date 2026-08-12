@@ -3,7 +3,16 @@ import { env } from "cloudflare:workers"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createCoreDatabase } from "../src/database.ts"
-import { channels, inboundEvents, messages, users } from "../src/modules/conversations/schema.ts"
+import { makeAgentRunStore } from "../src/modules/conversations/run-store.ts"
+import {
+  agentRunAttempts,
+  agentRuns,
+  channels,
+  conversationTurns,
+  inboundEvents,
+  messages,
+  users
+} from "../src/modules/conversations/schema.ts"
 import { makeConversationTurnStore } from "../src/modules/conversations/turn-store.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { decodeTestMigrations } from "./migrations.ts"
@@ -133,6 +142,42 @@ async function addInbound(
   ])
 }
 
+async function insertExecutingConversationRun(
+  database: ReturnType<typeof createCoreDatabase>,
+  input: {
+    readonly turnId: string
+    readonly runId: string
+    readonly attemptId: string
+    readonly revision: number
+    readonly at: string
+  }
+) {
+  await database.batch([
+    database.insert(agentRuns).values({
+      id: input.runId,
+      userId: ownerId,
+      inboundEventId: firstEventId,
+      conversationTurnId: input.turnId,
+      conversationTurnRevision: input.revision,
+      targetMessageId: firstMessageId,
+      correlationId: "00000000-0000-4000-8000-000000000405",
+      inputSnapshotJson: "{}",
+      inputHash: "hash",
+      status: "executing",
+      model: "gpt-test",
+      activeAttemptId: input.attemptId,
+      createdAt: input.at
+    }),
+    database.insert(agentRunAttempts).values({
+      id: input.attemptId,
+      runId: input.runId,
+      attemptNumber: 1,
+      status: "executing",
+      startedAt: input.at
+    })
+  ])
+}
+
 beforeEach(async () => {
   await applyD1Migrations(env.DB, decodeTestMigrations(env.TEST_MIGRATIONS))
 })
@@ -156,6 +201,261 @@ describe("durable conversation turns", () => {
       status: "collecting",
       quietUntil: "2026-08-12T08:00:01.500Z",
       appended: true
+    })
+  })
+
+  it("atomically starts a fresh reflection revision after a completed mutation", async () => {
+    const { database, protection } = await seedInbound()
+    let at = new Date("2026-08-12T08:00:00.000Z")
+    const turns = makeConversationTurnStore(database, protection, {
+      ownerId,
+      now: () => at,
+      randomUuid: uuidSequence()
+    })
+    const offered = await turns.offer(firstEventId)
+    at = new Date("2026-08-12T08:00:02.000Z")
+    const claimed = await turns.claimReady(offered.turnId)
+    expect(claimed?.revision).toBe(1)
+    const runId = "00000000-0000-4000-8000-000000000520"
+    const attemptId = "00000000-0000-4000-8000-000000000521"
+    expect(await turns.markRunning(offered.turnId, 1, runId)).toBe(true)
+    await insertExecutingConversationRun(database, {
+      turnId: offered.turnId,
+      runId,
+      attemptId,
+      revision: 1,
+      at: at.toISOString()
+    })
+    const runs = makeAgentRunStore(database, protection, { now: () => at })
+
+    await expect(
+      runs.completeForReflection(
+        {
+          protocolVersion: 1,
+          runId,
+          correlationId: "00000000-0000-4000-8000-000000000405",
+          status: "failed",
+          errorCode: "provider",
+          model: "gpt-test",
+          durationMs: 100,
+          inputTokens: 10,
+          outputTokens: 2,
+          toolCalls: 1
+        },
+        "00000000-0000-4000-8000-000000000529",
+        { conversationTurnId: offered.turnId, conversationTurnRevision: 1 }
+      )
+    ).resolves.toEqual({ status: "lost" })
+    await expect(database.select().from(agentRuns)).resolves.toEqual([
+      expect.objectContaining({ status: "executing", activeAttemptId: attemptId })
+    ])
+    await expect(database.select().from(conversationTurns)).resolves.toEqual([
+      expect.objectContaining({ status: "running", revision: 1, activeRunId: runId })
+    ])
+
+    await expect(
+      runs.completeForReflection(
+        {
+          protocolVersion: 1,
+          runId,
+          correlationId: "00000000-0000-4000-8000-000000000405",
+          status: "failed",
+          errorCode: "provider",
+          model: "gpt-test",
+          durationMs: 100,
+          inputTokens: 10,
+          outputTokens: 2,
+          toolCalls: 1
+        },
+        attemptId,
+        { conversationTurnId: offered.turnId, conversationTurnRevision: 1 }
+      )
+    ).resolves.toEqual({
+      status: "released",
+      revision: 2,
+      wakeAt: "2026-08-12T08:00:02.000Z"
+    })
+    await expect(
+      runs.completeForReflection(
+        {
+          protocolVersion: 1,
+          runId,
+          correlationId: "00000000-0000-4000-8000-000000000405",
+          status: "failed",
+          errorCode: "provider",
+          model: "gpt-test",
+          durationMs: 100,
+          inputTokens: 10,
+          outputTokens: 2,
+          toolCalls: 1
+        },
+        attemptId,
+        { conversationTurnId: offered.turnId, conversationTurnRevision: 1 }
+      )
+    ).resolves.toEqual({ status: "lost" })
+
+    const [storedRun] = await database.select().from(agentRuns)
+    const [storedAttempt] = await database.select().from(agentRunAttempts)
+    const [storedTurn] = await database.select().from(conversationTurns)
+    expect(storedRun).toMatchObject({ status: "superseded", activeAttemptId: null })
+    expect(storedAttempt).toMatchObject({ status: "superseded" })
+    expect(storedTurn).toMatchObject({
+      status: "collecting",
+      revision: 2,
+      activeRunId: null,
+      claimedRevision: null
+    })
+    await expect(turns.claimReady(offered.turnId)).resolves.toMatchObject({
+      revision: 2,
+      latest: { eventId: firstEventId, messageId: firstMessageId },
+      messages: [{ eventId: firstEventId, messageId: firstMessageId }]
+    })
+  })
+
+  it("releases an existing newer user revision without adding another revision", async () => {
+    const { database, protection, ownerKey } = await seedInbound()
+    let at = new Date("2026-08-12T08:00:00.000Z")
+    const turns = makeConversationTurnStore(database, protection, {
+      ownerId,
+      now: () => at,
+      randomUuid: uuidSequence()
+    })
+    const offered = await turns.offer(firstEventId)
+    at = new Date("2026-08-12T08:00:02.000Z")
+    await turns.claimReady(offered.turnId)
+    const runId = "00000000-0000-4000-8000-000000000524"
+    const attemptId = "00000000-0000-4000-8000-000000000525"
+    expect(await turns.markRunning(offered.turnId, 1, runId)).toBe(true)
+    await insertExecutingConversationRun(database, {
+      turnId: offered.turnId,
+      runId,
+      attemptId,
+      revision: 1,
+      at: at.toISOString()
+    })
+    const secondEventId = "00000000-0000-4000-8000-000000000526"
+    const secondMessageId = "00000000-0000-4000-8000-000000000527"
+    await addInbound(database, protection, ownerKey, {
+      eventId: secondEventId,
+      messageId: secondMessageId,
+      text: "Actually at eight",
+      at: "2026-08-12T08:00:02.100Z"
+    })
+    at = new Date("2026-08-12T08:00:02.100Z")
+    await expect(turns.offer(secondEventId)).resolves.toMatchObject({
+      turnId: offered.turnId,
+      revision: 2,
+      status: "settling",
+      quietUntil: "2026-08-12T08:00:03.600Z"
+    })
+    const runs = makeAgentRunStore(database, protection, { now: () => at })
+
+    await expect(
+      runs.completeForReflection(
+        {
+          protocolVersion: 1,
+          runId,
+          correlationId: "00000000-0000-4000-8000-000000000405",
+          status: "cancelled",
+          errorCode: "cancelled",
+          model: "gpt-test",
+          durationMs: 100,
+          inputTokens: 10,
+          outputTokens: 2,
+          toolCalls: 1
+        },
+        attemptId,
+        { conversationTurnId: offered.turnId, conversationTurnRevision: 1 }
+      )
+    ).resolves.toEqual({
+      status: "released",
+      revision: 2,
+      wakeAt: "2026-08-12T08:00:03.600Z"
+    })
+
+    at = new Date("2026-08-12T08:00:03.599Z")
+    await expect(turns.claimReady(offered.turnId)).resolves.toBeUndefined()
+    at = new Date("2026-08-12T08:00:03.600Z")
+    await expect(turns.claimReady(offered.turnId)).resolves.toMatchObject({
+      revision: 2,
+      latest: { eventId: secondEventId, messageId: secondMessageId },
+      messages: [
+        { eventId: firstEventId, messageId: firstMessageId },
+        { eventId: secondEventId, messageId: secondMessageId }
+      ]
+    })
+  })
+
+  it("keeps reflection settling until the active mutation lease expires", async () => {
+    const { database, protection, ownerKey } = await seedInbound()
+    let at = new Date("2026-08-12T08:00:00.000Z")
+    const turns = makeConversationTurnStore(database, protection, {
+      ownerId,
+      now: () => at,
+      randomUuid: uuidSequence()
+    })
+    const offered = await turns.offer(firstEventId)
+    at = new Date("2026-08-12T08:00:02.000Z")
+    await turns.claimReady(offered.turnId)
+    const runId = "00000000-0000-4000-8000-000000000522"
+    const attemptId = "00000000-0000-4000-8000-000000000523"
+    expect(await turns.markRunning(offered.turnId, 1, runId)).toBe(true)
+    await insertExecutingConversationRun(database, {
+      turnId: offered.turnId,
+      runId,
+      attemptId,
+      revision: 1,
+      at: at.toISOString()
+    })
+    const secondEventId = "00000000-0000-4000-8000-000000000528"
+    const secondMessageId = "00000000-0000-4000-8000-000000000529"
+    await addInbound(database, protection, ownerKey, {
+      eventId: secondEventId,
+      messageId: secondMessageId,
+      text: "Actually at eight",
+      at: "2026-08-12T08:00:02.100Z"
+    })
+    at = new Date("2026-08-12T08:00:02.100Z")
+    await expect(turns.offer(secondEventId)).resolves.toMatchObject({
+      revision: 2,
+      status: "settling",
+      activeRunId: runId
+    })
+    const runs = makeAgentRunStore(database, protection, { now: () => at })
+
+    await expect(
+      runs.completeForReflection(
+        {
+          protocolVersion: 1,
+          runId,
+          correlationId: "00000000-0000-4000-8000-000000000405",
+          status: "failed",
+          errorCode: "provider",
+          model: "gpt-test",
+          durationMs: 100,
+          inputTokens: 10,
+          outputTokens: 2,
+          toolCalls: 1
+        },
+        attemptId,
+        {
+          conversationTurnId: offered.turnId,
+          conversationTurnRevision: 1,
+          settleUntil: "2026-08-12T08:01:00.000Z"
+        }
+      )
+    ).resolves.toEqual({
+      status: "settling",
+      revision: 2,
+      wakeAt: "2026-08-12T08:01:00.000Z"
+    })
+
+    at = new Date("2026-08-12T08:00:59.999Z")
+    await expect(turns.claimReady(offered.turnId)).resolves.toBeUndefined()
+    at = new Date("2026-08-12T08:01:00.000Z")
+    await expect(turns.claimReady(offered.turnId)).resolves.toMatchObject({
+      revision: 2,
+      latest: { eventId: secondEventId, messageId: secondMessageId }
     })
   })
 
@@ -562,6 +862,94 @@ describe("durable conversation turns", () => {
       appended: true
     })
     await expect(turns.offer(secondEventId)).resolves.not.toHaveProperty("activeRunId")
+    await expect(database.select().from(conversationTurns)).resolves.toEqual([
+      expect.objectContaining({
+        revision: 2,
+        status: "collecting",
+        replyOutboxId: null
+      })
+    ])
+  })
+
+  it("starts mutation reflection after a newer inbound supersedes a committed reply", async () => {
+    const { database, protection, ownerKey } = await seedInbound()
+    let at = new Date("2026-08-12T08:00:00.000Z")
+    const turns = makeConversationTurnStore(database, protection, {
+      ownerId,
+      now: () => at,
+      randomUuid: uuidSequence()
+    })
+    const first = await turns.offer(firstEventId)
+    at = new Date("2026-08-12T08:00:01.500Z")
+    const firstClaim = await turns.claimReady(first.turnId, 90_000)
+    const firstRunId = "00000000-0000-4000-8000-000000000426"
+    await turns.markRunning(first.turnId, firstClaim!.revision, firstRunId)
+    await turns.commitReply(
+      first.turnId,
+      firstClaim!.revision,
+      firstRunId,
+      "00000000-0000-4000-8000-000000000427"
+    )
+
+    const secondEventId = "00000000-0000-4000-8000-000000000428"
+    const secondMessageId = "00000000-0000-4000-8000-000000000429"
+    await addInbound(database, protection, ownerKey, {
+      eventId: secondEventId,
+      messageId: secondMessageId,
+      text: "Actually at eight",
+      at: "2026-08-12T08:00:02.000Z"
+    })
+    at = new Date("2026-08-12T08:00:02.000Z")
+    await turns.offer(secondEventId)
+    at = new Date("2026-08-12T08:00:03.500Z")
+    const reflectionClaim = await turns.claimReady(first.turnId, 90_000)
+    expect(reflectionClaim).toMatchObject({
+      revision: 2,
+      latest: { eventId: secondEventId, messageId: secondMessageId }
+    })
+
+    const reflectionRunId = "00000000-0000-4000-8000-000000000430"
+    const reflectionAttemptId = "00000000-0000-4000-8000-000000000431"
+    await turns.markRunning(first.turnId, reflectionClaim!.revision, reflectionRunId)
+    await insertExecutingConversationRun(database, {
+      turnId: first.turnId,
+      runId: reflectionRunId,
+      attemptId: reflectionAttemptId,
+      revision: reflectionClaim!.revision,
+      at: at.toISOString()
+    })
+    const runs = makeAgentRunStore(database, protection, { now: () => at })
+
+    await expect(
+      runs.completeForReflection(
+        {
+          protocolVersion: 1,
+          runId: reflectionRunId,
+          correlationId: "00000000-0000-4000-8000-000000000405",
+          status: "failed",
+          errorCode: "provider",
+          model: "gpt-test",
+          durationMs: 100,
+          inputTokens: 10,
+          outputTokens: 2,
+          toolCalls: 1
+        },
+        reflectionAttemptId,
+        { conversationTurnId: first.turnId, conversationTurnRevision: 2 }
+      )
+    ).resolves.toEqual({
+      status: "released",
+      revision: 3,
+      wakeAt: "2026-08-12T08:00:03.500Z"
+    })
+    await expect(database.select().from(conversationTurns)).resolves.toEqual([
+      expect.objectContaining({
+        revision: 3,
+        status: "collecting",
+        replyOutboxId: null,
+        activeRunId: null
+      })
+    ])
   })
 
   it("claims the earliest ready turn for its configured owner", async () => {

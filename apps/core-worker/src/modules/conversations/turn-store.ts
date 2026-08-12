@@ -42,6 +42,9 @@ export interface ConversationTurnStore {
     turnId: string,
     activeRunId: string
   ): Promise<{ readonly ready: boolean; readonly quietUntil?: string }>
+  releaseSettlingForRun(
+    activeRunId: string
+  ): Promise<{ readonly ownerId: string; readonly quietUntil: string } | undefined>
   commitReply(
     turnId: string,
     revision: number,
@@ -219,6 +222,7 @@ export function makeConversationTurnStore(
                 revision,
                 latestInboundEventId: inboundEventId,
                 latestMessageId: event.messageId,
+                replyOutboxId: null,
                 quietUntil: winnerQuietUntil,
                 updatedAt: createdAt
               })
@@ -553,6 +557,33 @@ export function makeConversationTurnStore(
         )
         .returning({ id: conversationTurns.id })
       return released === undefined ? { ready: false } : { ready: true, quietUntil }
+    },
+
+    async releaseSettlingForRun(activeRunId) {
+      const at = now().toISOString()
+      const [released] = await database
+        .update(conversationTurns)
+        .set({
+          status: "collecting",
+          activeRunId: null,
+          activeRunRevision: null,
+          claimedRevision: null,
+          claimedAt: null,
+          claimExpiresAt: null,
+          quietUntil: sql`max(${conversationTurns.quietUntil}, ${at})`,
+          updatedAt: at
+        })
+        .where(
+          and(
+            eq(conversationTurns.activeRunId, activeRunId),
+            eq(conversationTurns.status, "settling")
+          )
+        )
+        .returning({
+          ownerId: conversationTurns.userId,
+          quietUntil: conversationTurns.quietUntil
+        })
+      return released
     },
 
     async commitReply(turnId, revision, runId, outboxId) {
