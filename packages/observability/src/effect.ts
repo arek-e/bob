@@ -1,3 +1,4 @@
+import { OutputValidationCode } from "@bob/contracts/output-safety"
 import { ToolName } from "@bob/contracts/tools"
 import { Context, Effect, Exit, Layer, Option, Schema, Tracer } from "effect"
 
@@ -113,6 +114,7 @@ export interface BobDecision {
   readonly outcome: BobDecisionOutcome
   readonly selectedCount?: number
   readonly toolName?: string
+  readonly validationCode?: typeof OutputValidationCode.Type
 }
 
 export interface BobSpan {
@@ -261,6 +263,12 @@ function validateDecision(input: BobDecision): void {
   if (!decisionOutcomes.has(input.outcome)) throw new TypeError("Decision outcome is invalid")
   assertNatural(input.selectedCount, "Selected count")
   if (input.toolName !== undefined) Schema.decodeUnknownSync(ToolName)(input.toolName)
+  if (input.validationCode !== undefined) {
+    if (input.name !== "bob.decision.output" || input.code !== "repair_required") {
+      throw new TypeError("Output validation code requires a failed output-validation decision")
+    }
+    Schema.decodeUnknownSync(OutputValidationCode)(input.validationCode)
+  }
 }
 
 function spanAttributes(input: BobSpan): Record<string, string | number> {
@@ -380,12 +388,25 @@ function safeDecisionEvent(
   if (!decisionOutcomes.has(outcome as BobDecisionOutcome)) return undefined
   const selectedCount = event[2]["bob.selected.count"]
   const toolName = event[2]["bob.tool.name"]
+  const validationCode = event[2]["bob.output.validation_code"]
   let safeToolName: string | undefined
   if (typeof toolName === "string") {
     try {
       safeToolName = Schema.decodeUnknownSync(ToolName)(toolName)
     } catch {
       // Unknown Tool names can contain user content. Drop the field.
+    }
+  }
+  let safeValidationCode: typeof OutputValidationCode.Type | undefined
+  if (
+    name === "bob.decision.output" &&
+    code === "repair_required" &&
+    typeof validationCode === "string"
+  ) {
+    try {
+      safeValidationCode = Schema.decodeUnknownSync(OutputValidationCode)(validationCode)
+    } catch {
+      // Unknown values can contain user content. Drop the field.
     }
   }
   return {
@@ -395,7 +416,10 @@ function safeDecisionEvent(
       "bob.decision.code": code,
       "bob.decision.outcome": outcome as BobDecisionOutcome,
       ...(safeNatural(selectedCount, 100) ? { "bob.selected.count": selectedCount } : {}),
-      ...(safeToolName === undefined ? {} : { "bob.tool.name": safeToolName })
+      ...(safeToolName === undefined ? {} : { "bob.tool.name": safeToolName }),
+      ...(safeValidationCode === undefined
+        ? {}
+        : { "bob.output.validation_code": safeValidationCode })
     }
   }
 }
@@ -527,7 +551,10 @@ export function recordDecision(input: BobDecision): Effect.Effect<void> {
       "bob.decision.code": input.code,
       "bob.decision.outcome": input.outcome,
       ...(input.selectedCount === undefined ? {} : { "bob.selected.count": input.selectedCount }),
-      ...(input.toolName === undefined ? {} : { "bob.tool.name": input.toolName })
+      ...(input.toolName === undefined ? {} : { "bob.tool.name": input.toolName }),
+      ...(input.validationCode === undefined
+        ? {}
+        : { "bob.output.validation_code": input.validationCode })
     })
   }).pipe(Effect.catchTag("NoSuchElementError", () => Effect.void))
 }

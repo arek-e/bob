@@ -204,6 +204,50 @@ describe("Effect telemetry", () => {
     ).not.toContain(privateCanary)
   })
 
+  it("drops an unknown output validation code without dropping the decision", async () => {
+    const privateCanary = "private-validation-code-8841"
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+
+    await Effect.runPromise(
+      withBobSpan(
+        {
+          name: "bob.output.validate",
+          correlationId,
+          runId,
+          feature: "assistant"
+        },
+        Effect.gen(function* () {
+          const span = yield* Effect.currentSpan
+          const now = yield* Effect.clockWith((clock) => clock.currentTimeNanos)
+          span.event("bob.decision.output", now, {
+            "bob.decision.code": "repair_required",
+            "bob.decision.outcome": "selected",
+            "bob.output.validation_code": privateCanary
+          })
+        })
+      ).pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(telemetry.finishedSpans()[0]?.events).toContainEqual(
+      expect.objectContaining({
+        name: "bob.decision.output",
+        attributes: {
+          "bob.decision.code": "repair_required",
+          "bob.decision.outcome": "selected"
+        }
+      })
+    )
+    expect(
+      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
+        typeof value === "bigint" ? value.toString() : value
+      )
+    ).not.toContain(privateCanary)
+  })
+
   it("keeps health telemetry failures outside the application result", async () => {
     const layer = telemetryLayer({
       processor: {

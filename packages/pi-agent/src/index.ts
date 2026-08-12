@@ -156,6 +156,46 @@ function toolCallsFromAssistant(message: AssistantMessage): ToolCall[] {
   return message.content.flatMap((block) => (block.type === "toolCall" ? [block] : []))
 }
 
+function textPhase(signature: string | undefined): "commentary" | "final_answer" | undefined {
+  if (signature === undefined || !signature.startsWith("{")) return undefined
+  try {
+    const decoded = JSON.parse(signature) as unknown
+    if (
+      typeof decoded !== "object" ||
+      decoded === null ||
+      Reflect.get(decoded, "v") !== 1 ||
+      typeof Reflect.get(decoded, "id") !== "string"
+    ) {
+      return undefined
+    }
+    const phase = Reflect.get(decoded, "phase")
+    return phase === "commentary" || phase === "final_answer" ? phase : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function structuredOutputText(message: AssistantMessage): string {
+  const textBlocks = message.content.flatMap((block) =>
+    block.type === "text" ? [{ block, phase: textPhase(block.textSignature) }] : []
+  )
+  const finalAnswers = textBlocks.filter(({ phase }) => phase === "final_answer")
+  if (finalAnswers.length > 0) {
+    return finalAnswers
+      .map(({ block }) => block.text)
+      .join("\n")
+      .trim()
+  }
+  const unphased = textBlocks.filter(({ phase }) => phase === undefined)
+  if (unphased.length === textBlocks.length) {
+    return contentText(message.content).trim()
+  }
+  return unphased
+    .map(({ block }) => block.text)
+    .join("\n")
+    .trim()
+}
+
 export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
   if (options.provider !== "openai-codex") throw new Error("Only openai-codex is approved")
   if (!options.allowedModels.includes(options.model))
@@ -619,7 +659,8 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
             yield* recordDecision({
               name: "bob.decision.output",
               code: validation.ok ? "valid_output" : "repair_required",
-              outcome: validation.ok ? "allowed" : "selected"
+              outcome: validation.ok ? "allowed" : "selected",
+              ...(validation.ok ? {} : { validationCode: validation.code })
             })
             return validation
           })
@@ -638,7 +679,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
 
       const validateAndRepair = (message: AssistantMessage): Effect.Effect<AgentRunResult> =>
         Effect.gen(function* () {
-          const initial = yield* validateOutput(contentText(message.content).trim())
+          const initial = yield* validateOutput(structuredOutputText(message))
           if (initial.ok) return completeResult(initial.value)
           if (turns >= turnsLimit || controller.signal.aborted) {
             yield* recordDecision({
@@ -722,7 +763,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
                 )
               }
               context.messages.push(completion.message)
-              const repaired = yield* validateOutput(contentText(completion.message.content).trim())
+              const repaired = yield* validateOutput(structuredOutputText(completion.message))
               if (!repaired.ok) {
                 yield* recordDecision({
                   name: "bob.decision.output",

@@ -85,6 +85,9 @@ Use these span names for the agent loop:
 - `bob.output.validate`
 - `bob.output.repair`
 
+When `bob.output.validate` selects repair, inspect `bob.output.validation_code` for the closed
+validator result. This attribute never contains model text or a schema error.
+
 Create token charts from `token_usage`. Group the charts by `feature`, `workflow`, and `model`.
 
 Use this D1 query for durable token attribution:

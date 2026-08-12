@@ -79,6 +79,9 @@ Create one `bob.tool.execute` server span in Core.
 
 Record output validation and repair as separate spans.
 
+Attach `bob.output.validation_code` to a failed output-validation decision. Use only the
+shared, closed `OutputValidationCode` values. Do not attach response text or schema errors.
+
 Record decisions with stable codes only.
 
 Never export chain-of-thought or natural-language reasoning.
