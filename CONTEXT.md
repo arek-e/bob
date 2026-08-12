@@ -85,6 +85,9 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Secret values never enter committed environment files.
 - Alchemy state credentials stay in Cloudflare Secrets Store.
 - Alchemy owns each Bob Cloudflare resource that it declares.
+- A separate D1 database stores continuous public benchmark run metadata.
+- A separate private R2 bucket stores public or synthetic evaluation artifacts.
+- Production assistant Workers cannot access evaluation storage.
 - Alchemy creates Access service tokens and Tunnel credentials before OpenBao receives their runtime copies.
 - No Cloudflare resource has two infrastructure owners.
 - Kubernetes and OpenBao stay outside Alchemy in the first release.
@@ -116,3 +119,4 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - [ADR 0007: Bob-owned Pi AI loop](docs/adr/0007-bob-owned-pi-ai-loop.md)
 - [ADR 0009: Coolify private runtime](docs/adr/0009-coolify-private-runtime.md)
 - [ADR 0010: Revisioned conversation turns](docs/adr/0010-revisioned-conversation-turns.md)
+- [ADR 0011: Evaluation records and artifacts](docs/adr/0011-evaluation-storage.md)
