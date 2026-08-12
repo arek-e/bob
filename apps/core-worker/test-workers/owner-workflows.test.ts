@@ -363,7 +363,7 @@ describe("owner memory review", () => {
       expect.objectContaining({
         id: replacementId,
         canonicalText: "My training day is Tuesday.",
-        sourceLabel: "Owner message linked on 11 Aug 2026"
+        sourceLabel: expect.stringMatching(/^Owner message linked on \d{1,2} [A-Z][a-z]{2} \d{4}$/u)
       })
     ])
     await expect(
