@@ -26,6 +26,8 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "db:generate": "pnpm --filter @bob/core-worker db:generate",
     "sendblue:reconcile": "pnpm --filter @bob/sendblue-reconcile reconcile",
+    "agent:check": "pnpm --filter @bob/pi-agent typecheck && pnpm --filter @bob/agent typecheck && pnpm --filter @bob/pi-smoke typecheck && pnpm exec vitest run packages/pi-agent/test apps/agent/test tools/pi-smoke/test && pnpm --filter @bob/agent build && pnpm eval:offline",
+    "agent:smoke:predeploy": "pnpm --filter @bob/pi-smoke smoke:predeploy",
     "agent:start": "pnpm --filter @bob/agent start",
     "infra:plan": "pnpm --filter @bob/cloudflare-infra plan",
     "infra:load": "pnpm --filter @bob/cloudflare-infra load:check",

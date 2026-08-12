@@ -278,7 +278,11 @@ Confirm the agent, Tunnel, Nango, Redis, and database are healthy.
 
 Run the Nango connection checks through the canary hostname.
 
-Run one Bob request through the canary agent hostname.
+Point `AGENT_URL` and `AGENT_ADMIN_URL` at the canary hostnames. Run the candidate suite.
+
+```sh
+pnpm agent:smoke:predeploy
+```
 
 Confirm D1, Tempo, and Loki show the same workflow.
 
@@ -316,7 +320,13 @@ Do not stop the old agent or Nango yet.
 
 Send the exact owner request `List my reminders.`.
 
-Confirm one successful request in D1, Tempo, and Loki.
+Confirm D1 shows a completed run, completed `reminder_list`, accepted `agent_reply` outbox, and delivered attempt.
+
+Reject every fallback or failure outbox, even when Sendblue delivered it.
+
+Confirm one trace contains ingress, Core, agent, egress, and the three Tool spans.
+
+Confirm Loki shows the completed run with approved fields only.
 
 Confirm Nango callbacks use the production hostnames.
 
