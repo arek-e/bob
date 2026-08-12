@@ -21,7 +21,7 @@
     "lint:fix": "oxlint --fix .",
     "test": "pnpm test:unit && pnpm test:workers",
     "test:unit": "vitest run",
-    "test:workers": "pnpm --filter @bob/core-worker test:workers",
+    "test:workers": "pnpm --filter @bob/core-worker test:workers && pnpm --filter @bob/eval-worker test:workers",
     "test:watch": "vitest",
     "typecheck": "pnpm -r --if-present typecheck",
     "db:generate": "pnpm --filter @bob/core-worker db:generate",

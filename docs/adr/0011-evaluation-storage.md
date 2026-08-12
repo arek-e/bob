@@ -33,7 +33,15 @@ The production assistant Workers receive no evaluation storage bindings.
 
 The main Bob Alchemy stack does not own evaluation storage.
 
-A future evaluation runner will receive scoped D1 and R2 bindings.
+A scheduled Cloudflare Worker runs the committed synthetic interaction gate each day.
+
+The Worker receives scoped D1 and R2 bindings.
+
+It receives no owner data, production assistant storage, connector access, or model credentials.
+
+The first runner validates scheduling, evaluation, and storage.
+
+It does not produce live-model or official public benchmark scores.
 
 Langfuse can receive redacted traces for analysis. It is not authoritative storage.
 
@@ -49,4 +57,6 @@ The evaluation runner cannot read owner messages or private objects.
 
 Cloudflare deployment creates two additional retained resources.
 
-The storage foundation does not schedule or execute evaluation runs.
+The first runner gives Bob a continuous deterministic regression record.
+
+Live-model and public benchmark adapters remain separate reviewed work.

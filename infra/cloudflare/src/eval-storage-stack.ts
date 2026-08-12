@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect"
 export interface EvalStorageStackOptions {
   readonly name?: string
   readonly providers: ReturnType<typeof Cloudflare.providers>
+  readonly releaseSha: string
   readonly state: ReturnType<typeof Cloudflare.state> | ReturnType<typeof Alchemy.inMemoryState>
 }
 
@@ -26,6 +27,24 @@ export function createEvalStorageStack(options: EvalStorageStackOptions) {
         jurisdiction: "eu",
         locationHint: "weur"
       }).pipe(retain(true))
+
+      yield* Cloudflare.Worker("EvalRunner", {
+        name: "bob-eval-runner-prod",
+        main: "../../apps/eval-worker/src/index.ts",
+        workersDev: false,
+        compatibility: { date: "2026-08-10" },
+        crons: ["17 3 * * *"],
+        observability: {
+          enabled: true,
+          logs: { enabled: true, invocationLogs: true },
+          traces: { enabled: true, headSamplingRate: 1, persist: true }
+        },
+        env: {
+          EVAL_DB: database,
+          EVAL_ARTIFACTS: artifacts,
+          BOB_RELEASE_SHA: options.releaseSha
+        }
+      })
 
       return {
         databaseId: database.databaseId,
