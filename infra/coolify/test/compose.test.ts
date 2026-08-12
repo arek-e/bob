@@ -25,10 +25,10 @@ describe("Coolify production stack", () => {
     expect(compose).not.toMatch(/^\s+ports:/m)
   })
 
-  it("uses file-backed AppRole login and a persistent backup volume", () => {
+  it("uses Coolify AppRole login and a persistent backup volume", () => {
     expect(compose).toContain("BAO_AUTH_METHOD: approle")
-    expect(compose).toContain("target: openbao_approle_secret_id")
-    expect(compose).toContain("environment: BAO_APPROLE_SECRET_ID")
+    expect(compose).toContain("BAO_APPROLE_SECRET_ID: ${BAO_APPROLE_SECRET_ID:?}")
+    expect(compose).not.toContain("target: openbao_approle_secret_id")
     expect(compose).toContain("NANGO_RECORDS_DATABASE_URL")
     expect(compose).toContain("external: true")
     expect(compose).toContain("bob-backups:/backups")
