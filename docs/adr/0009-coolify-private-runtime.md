@@ -95,9 +95,21 @@ The skill adds process rules. It does not add permissions.
 
 ### Backup ownership
 
-Store Nango database backups in independent S3-compatible storage.
+Store Nango database backups in a dedicated private R2 bucket.
 
-Copy every encrypted D1 and R2 archive to independent S3-compatible storage.
+Copy every encrypted D1 and R2 archive to a second private R2 bucket.
+
+Use the existing Cloudflare account for both backup buckets.
+
+Use one bucket-scoped Object Read and Write token for each backup process.
+
+Do not give either process R2 bucket administration permission.
+
+Lock every backup object for 90 days. Expire each object after 180 days.
+
+This design protects against host loss and compromised runtime credentials.
+
+It does not protect against Cloudflare account loss or a Cloudflare-wide failure.
 
 Keep the age identity outside the Coolify host.
 
@@ -143,9 +155,9 @@ Validate the resolved Compose model without printing its environment.
 
 Require healthy agent, Nango, Redis, Tunnel, and database resources.
 
-Require one fresh Nango database backup in independent storage.
+Require one fresh Nango database backup in its locked R2 bucket.
 
-Require one fresh encrypted Bob backup with an independent copy.
+Require one fresh encrypted Bob backup in its locked R2 bucket.
 
 Run one canary owner request before cutover.
 
@@ -174,6 +186,10 @@ The server needs strict disk alerts because the guest uses the same RAID volume.
 Secret synchronization remains an administrator task.
 
 Coolify is not a secret authority or an application data authority.
+
+The backup copies share the Cloudflare account with the source data.
+
+This accepted tradeoff reduces cost and account administration.
 
 ## Sources
 

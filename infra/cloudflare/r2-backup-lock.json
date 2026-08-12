@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "id": "retain-all-backups-90-days",
+      "enabled": true,
+      "prefix": "",
+      "condition": {
+        "type": "Age",
+        "maxAgeSeconds": 7776000
+      }
+    }
+  ]
+}

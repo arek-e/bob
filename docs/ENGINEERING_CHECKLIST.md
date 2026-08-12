@@ -182,7 +182,7 @@ Snapshot date: 2026-08-12
 ### P2: Improve operations
 
 - [x] Implement a four-hour encrypted backup job with 42-copy retention.
-- [ ] Copy encrypted archives to node-independent storage outside Cloudflare.
+- [ ] Copy encrypted archives to the locked `bob-backup-prod` R2 bucket.
 - [x] Implement an isolated EU restore drill with full table-content hash checks.
 - [x] Run and record a primary-data restore drill.
 - [x] Define latency and availability SLOs.

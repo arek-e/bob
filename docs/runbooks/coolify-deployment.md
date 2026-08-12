@@ -139,6 +139,10 @@ Record its internal host and port.
 
 Configure an S3 backup every four hours.
 
+Use the private `bob-nango-backup-prod` R2 bucket.
+
+Use an Object Read and Write token scoped only to this bucket.
+
 Use independent object storage and enable `backup_now`.
 
 Require one successful backup before Nango receives production traffic.
@@ -179,9 +183,28 @@ Set `BAO_ADDR=http://vault.lamb-bicolor.ts.net:8200`.
 
 Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel.lamb-bicolor.ts.net:4318`.
 
-Configure independent S3 fields for the encrypted Bob backup copy.
+Configure the S3 fields for the encrypted Bob backup copy.
 
-Use a storage account outside the Bob source-data account.
+Use the private `bob-backup-prod` R2 bucket in the existing Cloudflare account.
+
+Use an Object Read and Write token scoped only to this bucket.
+
+Do not reuse the private-object read token or a bucket administration token.
+
+Apply the repository lock configuration to both backup buckets after creation:
+
+```sh
+pnpm --filter @bob/cloudflare-infra exec wrangler r2 bucket lock set \
+  bob-backup-prod --file r2-backup-lock.json --jurisdiction eu --force
+pnpm --filter @bob/cloudflare-infra exec wrangler r2 bucket lock set \
+  bob-nango-backup-prod --file r2-backup-lock.json --jurisdiction eu --force
+```
+
+Confirm each bucket has the 90-day lock before a backup job starts.
+
+The lock protects objects from the runtime tokens.
+
+The same Cloudflare account remains one accepted failure domain.
 
 ## Configure schedules
 
@@ -297,9 +320,9 @@ Confirm one successful request in D1, Tempo, and Loki.
 
 Confirm Nango callbacks use the production hostnames.
 
-Confirm the latest Nango backup exists in independent storage.
+Confirm the latest Nango backup exists in its locked R2 bucket.
 
-Confirm the latest Bob archive has an independent copy.
+Confirm the latest Bob archive exists in its locked R2 bucket.
 
 Keep the Kubernetes runtime ready for rollback during the observation window.
 
