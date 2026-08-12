@@ -44,7 +44,8 @@ async function validInput() {
     argocdRepositorySecretStore,
     argocdProject,
     argocdApplication,
-    argocdKustomization
+    argocdKustomization,
+    coolifyCompose
   ] = await Promise.all([
     readFile(new URL("infra/kubernetes/base/deployment.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/kubernetes/base/agent-config.yaml", repositoryRoot), "utf8"),
@@ -77,7 +78,8 @@ async function validInput() {
     readFile(new URL("infra/argocd/repository-secret-store.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/argocd/project.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/argocd/application.yaml", repositoryRoot), "utf8"),
-    readFile(new URL("infra/argocd/kustomization.yaml", repositoryRoot), "utf8")
+    readFile(new URL("infra/argocd/kustomization.yaml", repositoryRoot), "utf8"),
+    readFile(new URL("infra/coolify/compose.yaml", repositoryRoot), "utf8")
   ])
   return {
     deployment,
@@ -103,6 +105,7 @@ async function validInput() {
     argocdProject,
     argocdApplication,
     argocdKustomization,
+    coolifyCompose,
     renderedKubernetes: renderKustomization("infra/kubernetes"),
     renderedArgocd: renderKustomization("infra/argocd")
   } as const
@@ -185,6 +188,12 @@ describe("production GitOps deployment readiness", () => {
         productionOverlay: input.productionOverlay.replace(agentDigest, "latest")
       })
     ).toThrow(/production Kustomize overlay/u)
+    expect(() =>
+      assertDeploymentReadiness({
+        ...input,
+        coolifyCompose: input.coolifyCompose.replace(tunnelImage, "cloudflare/cloudflared:latest")
+      })
+    ).toThrow(/Coolify production Tunnel image/u)
     expect(() =>
       assertDeploymentReadiness({
         ...input,

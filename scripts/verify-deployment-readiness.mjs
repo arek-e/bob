@@ -40,7 +40,8 @@ const [
   argocdRepositorySecretStore,
   argocdProject,
   argocdApplication,
-  argocdKustomization
+  argocdKustomization,
+  coolifyCompose
 ] = await Promise.all([
   readFile("infra/kubernetes/base/deployment.yaml", "utf8"),
   readFile("infra/kubernetes/base/agent-config.yaml", "utf8"),
@@ -64,7 +65,8 @@ const [
   readFile("infra/argocd/repository-secret-store.yaml", "utf8"),
   readFile("infra/argocd/project.yaml", "utf8"),
   readFile("infra/argocd/application.yaml", "utf8"),
-  readFile("infra/argocd/kustomization.yaml", "utf8")
+  readFile("infra/argocd/kustomization.yaml", "utf8"),
+  readFile("infra/coolify/compose.yaml", "utf8")
 ])
 
 const renderedKubernetes = renderKustomization("infra/kubernetes")
@@ -94,6 +96,7 @@ assertDeploymentReadiness({
   argocdProject,
   argocdApplication,
   argocdKustomization,
+  coolifyCompose,
   renderedKubernetes,
   renderedArgocd
 })

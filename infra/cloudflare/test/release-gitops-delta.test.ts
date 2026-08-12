@@ -63,8 +63,8 @@ describe("release GitOps delta", () => {
       assertReleaseGitOpsDelta({
         sourceOverlay,
         gitopsOverlay: reviewed.replace(
-          /newName: docker\.io\/cloudflare\/cloudflared\n    digest: sha256:[a-f0-9]{64}/u,
-          `newName: docker.io/cloudflare/cloudflared\n    digest: sha256:${"c".repeat(64)}`
+          /newName: docker\.io\/nangohq\/nango-server\n    digest: sha256:[a-f0-9]{64}/u,
+          `newName: docker.io/nangohq/nango-server\n    digest: sha256:${"c".repeat(64)}`
         ),
         sourceSha
       })
