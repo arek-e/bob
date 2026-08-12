@@ -40,6 +40,7 @@ Coolify owns these resources:
 - Nango and its ephemeral Redis service;
 - the Bob backup runner and schedule;
 - the Nango PostgreSQL database and its backup schedule.
+- the content-free Coolify host and container metrics collector.
 
 Use `infra/coolify/compose.yaml` as the application stack source.
 
@@ -52,6 +53,16 @@ Do not publish container ports on the host.
 The Tunnel connector is the only public application ingress.
 
 Use immutable image digests for every production container.
+
+The metrics collector sends only infrastructure metrics to the private OTLP endpoint.
+
+It reads host statistics and backup modification times through read-only mounts.
+
+It reads Docker statistics through the Docker socket as a non-root user.
+
+The Docker socket group is specific to the fixed Coolify guest.
+
+Do not add application logs, container environment values, or backup contents to this pipeline.
 
 ### Secret delivery
 

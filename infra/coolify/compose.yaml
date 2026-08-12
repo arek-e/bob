@@ -192,6 +192,32 @@ services:
           cpus: "0.05"
           memory: 128M
 
+  observer:
+    <<: *runtime-security
+    image: docker.io/otel/opentelemetry-collector-contrib@sha256:388054389612c69d0387ecac256338e4086f6cf072fc8feafb6ce7968dc6946c
+    user: "10001:10001"
+    command: [--config=/etc/otelcol-contrib/config.yaml]
+    environment:
+      NANGO_DB_HOST: ${NANGO_DB_HOST:?}
+      NANGO_DB_PORT: ${NANGO_DB_PORT:-5432}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?}
+    group_add: ["988"]
+    networks: [runtime, coolify]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - /:/hostfs:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /data/coolify/backups/databases/root-team-0/bob-nango-postgres-g60dc8bcxunc34j7wg47fvov:/nango-backups:ro
+      - bob-backups:/backups:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.05"
+          memory: 128M
+
 networks:
   runtime:
   coolify:
