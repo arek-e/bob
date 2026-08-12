@@ -406,6 +406,14 @@ Repeat the agent-to-Core Access check from the release preflight.
 
 Check the Core `/health` and `/setup` paths again. The old Core must remain live.
 
+Point `AGENT_URL` and `AGENT_ADMIN_URL` at the new agent. Run the bounded live suite.
+
+```sh
+pnpm agent:smoke:predeploy
+```
+
+The suite must complete all cases. It must not execute a Tool.
+
 Use the pre-Core rollback procedure when any check fails.
 
 ### 4. Drain runs and deploy the reviewed Cloudflare plan
@@ -480,9 +488,18 @@ Confirm that one Tempo trace contains these services:
 
 Confirm that the trace contains `bob.tool.invoke`, `bob.tool.execute`, and `bob.tool.domain`.
 
-Confirm that D1 shows one processed inbound event, one terminal run, one accepted outbox, and one terminal delivery.
+Confirm that D1 shows all of these results:
 
-Confirm that Loki shows only approved JSON fields for that correlation ID.
+- One processed inbound event.
+- One agent run with `status=completed`.
+- No failed agent attempt.
+- One completed `reminder_list` Tool call.
+- One accepted outbox with `reason_code=agent_reply`.
+- One delivered attempt for that outbox.
+
+Reject `agent_failure`, `agent_boundary_fallback`, and `agent_degraded_recall`. A delivered failure reply is not acceptance.
+
+Confirm that Loki shows a completed `agent_run` event with approved fields only.
 
 Do not mark production tracing complete until Tempo, Loki, and D1 agree.
 

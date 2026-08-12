@@ -8,6 +8,7 @@
     "env:check": "varlock load --agent --path . --skip-cache",
     "smoke": "varlock run --inject blob --skip-cache -- tsx src/index.ts --completion",
     "smoke:auth": "varlock run --inject blob --skip-cache -- tsx src/index.ts",
+    "smoke:predeploy": "varlock run --inject blob --skip-cache -- tsx src/index.ts --predeploy",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

@@ -860,6 +860,36 @@ describe("Bob's direct pi-ai loop", () => {
     expect(String(repairContext.messages.at(-1)?.content)).toContain("failed validation")
   })
 
+  it("repairs an unsupported conflict without inventing a saved conflict", async () => {
+    modelHarness.state.responses.push(
+      structuredResponse({
+        responseText: "I found conflicting saved information.",
+        conflict: "disclosed"
+      }),
+      (context: Context) => {
+        const instruction = String(context.messages.at(-1)?.content)
+        return instruction.includes('Set "conflict" to "none"') &&
+          instruction.includes("Remove unsupported conflict claims")
+          ? structuredResponse({ responseText: "I can compare the two options you described." })
+          : fauxAssistantMessage("still not json", { stopReason: "stop" })
+      }
+    )
+    const agent = makeAgent(async () => okResult())
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          userText: "Compare two invented training plans without changing anything.",
+          allowedTools: []
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "I can compare the two options you described.",
+      conflict: "none"
+    })
+  })
+
   it("validates only the signed final answer from a repair turn", async () => {
     modelHarness.state.responses.push(
       fauxAssistantMessage("not json", { stopReason: "stop" }),
