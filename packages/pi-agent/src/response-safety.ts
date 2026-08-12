@@ -2,7 +2,8 @@ import {
   internalToolReferences,
   noSupportedRecordFallback,
   requiresPersonalGrounding,
-  scanUnsafeOutput
+  scanUnsafeOutput,
+  type OutputValidationCode
 } from "@bob/contracts/output-safety"
 import { ToolName, type ToolResult } from "@bob/contracts/tools"
 import { Schema } from "effect"
@@ -34,7 +35,7 @@ export interface AssistantResponsePolicy {
 
 export type AssistantResponseValidation =
   | { readonly ok: true; readonly value: StructuredAssistantResponse }
-  | { readonly ok: false; readonly code: string }
+  | { readonly ok: false; readonly code: OutputValidationCode }
 
 const confirmedActionCodesByTool: Partial<Record<typeof ToolName.Type, ReadonlySet<string>>> = {
   reminder_create: new Set(["reminder_created", "reminder_exists"]),
@@ -300,14 +301,14 @@ export type RepairedAssistantResponse =
   | {
       readonly ok: false
       readonly code: "invalid_output"
-      readonly validationCode: string
+      readonly validationCode: OutputValidationCode | "repair_failed"
       readonly repairAttempted: boolean
     }
 
 export async function validateAssistantResponseWithRepair(
   raw: string,
   policy: AssistantResponsePolicy,
-  repair?: (validationCode: string) => Promise<string>
+  repair?: (validationCode: OutputValidationCode) => Promise<string>
 ): Promise<RepairedAssistantResponse> {
   const first = validateAssistantResponse(raw, policy)
   if (first.ok) return { ...first, repairAttempted: false }

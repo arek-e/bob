@@ -1,3 +1,21 @@
+import { Schema } from "effect"
+
+export const OutputValidationCode = Schema.Literals([
+  "response_envelope_too_long",
+  "malformed_response",
+  "response_too_long",
+  "prompt_injection_echo",
+  "secret_like_output",
+  "source_required",
+  "invalid_source_reference",
+  "invalid_tool_reference",
+  "unverified_action_claim",
+  "unsupported_conflict",
+  "conflict_not_disclosed"
+])
+
+export type OutputValidationCode = typeof OutputValidationCode.Type
+
 const promptInjectionEchoes = [
   /\b(?:ignore|disregard|override|forget)\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|rules?|messages?)\b/iu,
   /\b(?:reveal|print|repeat|show)\s+(?:the\s+)?(?:system|developer)\s+prompt\b/iu,

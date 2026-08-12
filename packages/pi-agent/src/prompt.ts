@@ -1,4 +1,5 @@
 import type { AgentRunRequest } from "@bob/contracts/agent"
+import type { OutputValidationCode } from "@bob/contracts/output-safety"
 
 function localDateTime(instant: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -56,7 +57,7 @@ export function renderSystemPrompt(request: AgentRunRequest): string {
 }
 
 /** Prompt used for one bounded output repair. It cannot execute a tool. */
-export function renderRepairPrompt(validationCode: string): string {
+export function renderRepairPrompt(validationCode: OutputValidationCode): string {
   return [
     `Your prior response failed validation with code ${validationCode}.`,
     "Do not call a tool. Return one corrected JSON object only.",

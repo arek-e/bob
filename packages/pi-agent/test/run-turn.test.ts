@@ -127,6 +127,38 @@ const structuredResponse = (overrides: Record<string, unknown> = {}) =>
     ...overrides
   })
 
+const phasedStructuredResponse = (
+  commentary: string,
+  overrides: Record<string, unknown> = {},
+  phaseFinalAnswer = true
+): AssistantMessage =>
+  fauxAssistantMessage(
+    [
+      {
+        type: "text",
+        text: commentary,
+        textSignature: JSON.stringify({ v: 1, id: "commentary-1", phase: "commentary" })
+      },
+      {
+        type: "text",
+        text: JSON.stringify({
+          protocolVersion: 1,
+          responseText: "I found the requested record.",
+          sourceIds: [],
+          toolNames: [],
+          conflict: "none",
+          ...overrides
+        }),
+        ...(!phaseFinalAnswer
+          ? {}
+          : {
+              textSignature: JSON.stringify({ v: 1, id: "final-1", phase: "final_answer" })
+            })
+      }
+    ],
+    { stopReason: "stop" }
+  )
+
 const makeAgent = (
   executeTool: (command: ToolCommand, signal?: AbortSignal) => Promise<ToolResult>,
   now: () => number = () => 1
@@ -574,6 +606,97 @@ describe("Bob's direct pi-ai loop", () => {
     )
   })
 
+  it("traces closed validation codes without model response content", async () => {
+    const privateCanary = "private-output-canary-8841"
+    modelHarness.state.responses.push(
+      fauxAssistantMessage(`${privateCanary}-primary`, { stopReason: "stop" }),
+      fauxAssistantMessage(`${privateCanary}-repair`, { stopReason: "stop" })
+    )
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const agent = makeAgent(async () => okResult())
+
+    const output = await Effect.runPromise(
+      agent
+        .runTurnEffect(baseRequest({ userText: "Hello Bob", allowedTools: [] }))
+        .pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(output).toMatchObject({ status: "failed", errorCode: "invalid_output" })
+    const validations = telemetry
+      .finishedSpans()
+      .filter((span) => span.name === "bob.output.validate")
+    expect(validations).toHaveLength(2)
+    for (const validation of validations) {
+      expect(validation.events).toContainEqual(
+        expect.objectContaining({
+          name: "bob.decision.output",
+          attributes: {
+            "bob.decision.code": "repair_required",
+            "bob.decision.outcome": "selected",
+            "bob.output.validation_code": "malformed_response"
+          }
+        })
+      )
+    }
+    expect(
+      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
+        typeof value === "bigint" ? value.toString() : value
+      )
+    ).not.toContain(privateCanary)
+  })
+
+  it("validates only the signed final answer when Codex also returns commentary", async () => {
+    modelHarness.state.responses.push(
+      phasedStructuredResponse("Preparing the structured response.", {
+        responseText: "We can review your training plan together."
+      })
+    )
+    const agent = makeAgent(async () => okResult())
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          userText: "Help me plan today's training.",
+          allowedTools: ["routine_get"]
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "We can review your training plan together.",
+      toolCalls: 0
+    })
+    expect(modelHarness.completeSimple).toHaveBeenCalledTimes(1)
+  })
+
+  it("uses an unphased final answer when Codex phases only its commentary", async () => {
+    modelHarness.state.responses.push(
+      phasedStructuredResponse(
+        "Preparing the structured response.",
+        { responseText: "We can review your training plan together." },
+        false
+      )
+    )
+    const agent = makeAgent(async () => okResult())
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          userText: "Help me plan today's training.",
+          allowedTools: ["routine_get"]
+        })
+      )
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "We can review your training plan together.",
+      toolCalls: 0
+    })
+    expect(modelHarness.completeSimple).toHaveBeenCalledTimes(1)
+  })
+
   it("executes tool calls through pi-ai, then validates the final response", async () => {
     modelHarness.state.responses.push(
       toolResponse(fauxToolCall("memory_search", { query: "routine" }, { id: "call-1" })),
@@ -735,6 +858,25 @@ describe("Bob's direct pi-ai loop", () => {
     expect(repairContext.tools).toEqual([])
     expect(repairContext.messages.at(-1)).toMatchObject({ role: "user" })
     expect(String(repairContext.messages.at(-1)?.content)).toContain("failed validation")
+  })
+
+  it("validates only the signed final answer from a repair turn", async () => {
+    modelHarness.state.responses.push(
+      fauxAssistantMessage("not json", { stopReason: "stop" }),
+      phasedStructuredResponse("Correcting the response format.", {
+        responseText: "Hello. How can I help?"
+      })
+    )
+    const agent = makeAgent(async () => okResult())
+
+    await expect(
+      agent.runTurn(baseRequest({ userText: "Hello Bob", allowedTools: [] }))
+    ).resolves.toMatchObject({
+      status: "completed",
+      responseText: "Hello. How can I help?",
+      toolCalls: 0
+    })
+    expect(modelHarness.completeSimple).toHaveBeenCalledTimes(2)
   })
 
   it("returns timeout for a non-cooperative pi-ai call and aborts its signal", async () => {
