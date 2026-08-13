@@ -1,10 +1,15 @@
-# Bob
+# Bob Runtime
 
-Bob is a private continuity assistant for one owner.
+Bob Runtime is an AGPLv3-licensed application and self-hosting contract for a
+private continuity assistant.
 
 It uses iMessage through Sendblue. It stores application data in Cloudflare D1.
 
-Bob has one production deployment. Local checks use explicit fixtures and create no cloud environment.
+Managed production operations live in the private Bob Control Plane repository.
+Local checks use explicit fixtures and create no cloud environment.
+
+The Runtime is licensed under the GNU Affero General Public License, version 3.
+See [LICENSE](LICENSE). The private Control Plane is not part of this repository.
 
 The private `/settings` page manages owner locality and connection status.
 
