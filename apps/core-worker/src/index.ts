@@ -30,7 +30,7 @@ export default {
     return processed
   },
   scheduled(
-    _controller: ScheduledController,
+    controller: ScheduledController,
     bindings: CoreBindings,
     context: ExecutionContext
   ): void {
@@ -52,6 +52,7 @@ export default {
                 bindings,
                 {
                   correlationId,
+                  scheduledAt: new Date(controller.scheduledTime),
                   ...(traceparent === null ? {} : { traceparent })
                 },
                 telemetry

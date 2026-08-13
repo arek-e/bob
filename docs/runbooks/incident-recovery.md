@@ -27,6 +27,9 @@ If Sendblue history has no message, classify the failure as external provider ac
 
 If Sendblue history has a message but D1 does not, check the scheduled history reconciliation.
 
+The egress Worker has a direct two-minute trigger. The core Worker also calls the authenticated
+egress recovery endpoint on even UTC minutes. D1 removes duplicate webhook or replay records.
+
 ## Recover
 
 Run duplicate, timeout, and privacy tests with offline fixtures.

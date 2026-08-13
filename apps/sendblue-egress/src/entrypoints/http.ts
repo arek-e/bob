@@ -5,13 +5,18 @@ import { Schema } from "effect"
 import type { EgressBindings } from "../bindings.ts"
 
 import { composeEgress } from "../composition.ts"
+import { handleScheduledReconcile } from "./provider-recovery.ts"
+
+async function hasValidCallerToken(request: Request, bindings: EgressBindings): Promise<boolean> {
+  const callerToken = request.headers.get("x-bob-caller-token") ?? ""
+  return timingSafeEqual(callerToken, bindings.CORE_CALLER_SECRET)
+}
 
 export async function handleInteractionRequest(
   request: Request,
   bindings: EgressBindings
 ): Promise<Response> {
-  const callerToken = request.headers.get("x-bob-caller-token") ?? ""
-  if (!(await timingSafeEqual(callerToken, bindings.CORE_CALLER_SECRET))) {
+  if (!(await hasValidCallerToken(request, bindings))) {
     return Response.json({ error: "unauthorized" }, { status: 401 })
   }
 
@@ -48,4 +53,16 @@ export async function handleInteractionRequest(
     })
   ])
   return Response.json({ reaction, typing })
+}
+
+export async function handleReconcileRequest(
+  request: Request,
+  bindings: EgressBindings
+): Promise<Response> {
+  if (!(await hasValidCallerToken(request, bindings))) {
+    return Response.json({ error: "unauthorized" }, { status: 401 })
+  }
+
+  const result = await handleScheduledReconcile(new Date(), bindings)
+  return Response.json(result)
 }

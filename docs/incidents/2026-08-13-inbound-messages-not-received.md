@@ -51,6 +51,12 @@ The release deployment republished the Workers. It did not change the ingress ha
 
 Bob now polls Sendblue inbound history every two minutes.
 
+The egress Worker has a direct two-minute Cron Trigger. Bob's existing core scheduler also invokes
+the authenticated egress recovery endpoint on even UTC minutes.
+
+The core fallback was added after Cloudflare registered the direct trigger but did not invoke it
+within the documented release window.
+
 Each poll uses a 15-minute overlap. It selects only the approved line and owner. It replays valid records through the normal signed ingress path.
 
 D1 deduplicates each replay by account, line, and provider message handle.
@@ -72,5 +78,5 @@ An independent inbound channel is required to remove this provider boundary. Pro
 - The history client has bounded-query tests.
 - The recovery path has owner-filter and ordering tests.
 - The recovery path uses the existing D1 idempotency boundary.
-- The production release must show one successful scheduled reconciliation.
+- The production release must show one successful reconciliation from either scheduled path.
 - The production release must keep the normal webhook acceptance path healthy.

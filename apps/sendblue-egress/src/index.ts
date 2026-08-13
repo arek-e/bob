@@ -1,6 +1,6 @@
 import type { EgressBindings } from "./bindings.ts"
 
-import { handleInteractionRequest } from "./entrypoints/http.ts"
+import { handleInteractionRequest, handleReconcileRequest } from "./entrypoints/http.ts"
 import { handleScheduledReconcile } from "./entrypoints/provider-recovery.ts"
 import { handleOutboundQueue } from "./entrypoints/queue.ts"
 
@@ -12,6 +12,9 @@ export default {
     }
     if (request.method === "POST" && url.pathname === "/internal/message-interaction") {
       return handleInteractionRequest(request, bindings)
+    }
+    if (request.method === "POST" && url.pathname === "/internal/inbound-reconcile") {
+      return handleReconcileRequest(request, bindings)
     }
     return new Response(null, { status: 404 })
   },
