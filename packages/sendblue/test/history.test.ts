@@ -53,7 +53,7 @@ describe("Sendblue history client", () => {
     expect(url.pathname).toBe("/api/v2/messages")
     expect(Object.fromEntries(url.searchParams)).toEqual({
       is_outbound: "false",
-      limit: "1000",
+      limit: "100",
       sendblue_number: "+46711111111",
       sent_at_gte: "2026-08-13T10:20:00.000Z",
       sent_at_lte: "2026-08-13T10:31:00.000Z"
@@ -103,6 +103,7 @@ describe("Sendblue history client", () => {
     ).resolves.toEqual([outbound])
     const url = new URL(String(request.mock.calls[0]?.[0]))
     expect(url.searchParams.get("is_outbound")).toBe("true")
+    expect(url.searchParams.get("limit")).toBe("100")
     expect(url.searchParams.get("sent_at_gte")).toBe("2026-08-13T10:20:00.000Z")
     expect(url.searchParams.get("sent_at_lte")).toBe("2026-08-13T10:40:00.000Z")
   })

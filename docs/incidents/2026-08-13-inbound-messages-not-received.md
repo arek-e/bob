@@ -57,6 +57,10 @@ the authenticated egress recovery endpoint on even UTC minutes.
 The core fallback was added after Cloudflare registered the direct trigger but did not invoke it
 within the documented release window.
 
+Production acceptance found that Sendblue rejected the documented `limit=1000` history query.
+The live endpoint accepts at most 100. Bob now uses the verified live limit for inbound and outbound
+history queries.
+
 Each poll uses a 15-minute overlap. It selects only the approved line and owner. It replays valid records through the normal signed ingress path.
 
 D1 deduplicates each replay by account, line, and provider message handle.

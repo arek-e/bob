@@ -14,6 +14,9 @@ const MessageList = Schema.Struct({
 
 const LineList = Schema.Struct({ numbers: Schema.Array(Schema.String) })
 
+// Sendblue documents a 1,000-message maximum. The production API rejects values above 100.
+const MESSAGE_PAGE_LIMIT = "100"
+
 export interface SendblueHistoryClientOptions {
   readonly apiKeyId: string
   readonly apiSecretKey: string
@@ -43,7 +46,7 @@ export function createSendblueHistoryClient(options: SendblueHistoryClientOption
     async listInbound(window: InboundHistoryWindow) {
       const url = new URL("/api/v2/messages", baseUrl)
       url.searchParams.set("is_outbound", "false")
-      url.searchParams.set("limit", "1000")
+      url.searchParams.set("limit", MESSAGE_PAGE_LIMIT)
       url.searchParams.set("sendblue_number", window.sendblueNumber)
       url.searchParams.set("sent_at_gte", window.since.toISOString())
       url.searchParams.set("sent_at_lte", window.until.toISOString())
@@ -65,7 +68,7 @@ export function createSendblueHistoryClient(options: SendblueHistoryClientOption
     async listOutbound(window: OutboundHistoryWindow) {
       const url = new URL("/api/v2/messages", baseUrl)
       url.searchParams.set("is_outbound", "true")
-      url.searchParams.set("limit", "1000")
+      url.searchParams.set("limit", MESSAGE_PAGE_LIMIT)
       url.searchParams.set("sendblue_number", window.sendblueNumber)
       url.searchParams.set("sent_at_gte", window.since.toISOString())
       url.searchParams.set("sent_at_lte", window.until.toISOString())
