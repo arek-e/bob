@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createCoreDatabase } from "../src/database.ts"
 import { channels, conversationTurns, users } from "../src/modules/conversations/schema.ts"
-import { outboxMessages } from "../src/modules/delivery/schema.ts"
+import { deliveryAttempts, outboxMessages } from "../src/modules/delivery/schema.ts"
 import { makeDeliveryStore } from "../src/modules/delivery/store.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { decodeTestMigrations } from "./migrations.ts"
@@ -141,12 +141,48 @@ describe("delivery conversation turn fence", () => {
       .set({ replyOutboxId: outboxId, updatedAt: "2026-08-12T10:00:02.000Z" })
 
     await expect(delivery.claimOutbox(outboxId, 60_000)).resolves.toMatchObject({ outboxId })
+    await expect(delivery.reconciliationTarget(outboxId)).resolves.toMatchObject({
+      outboxId,
+      destinationE164: "+46700000000",
+      payloadFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      since: "2026-08-12T09:55:01.000Z",
+      until: "2026-08-12T10:20:01.000Z"
+    })
     const [turn] = await database.select().from(conversationTurns)
     expect(turn).toMatchObject({
       status: "replied",
       repliedAt: "2026-08-12T10:00:01.000Z",
       updatedAt: "2026-08-12T10:00:01.000Z"
     })
+  })
+
+  it("recovers an exhausted pending outbox but never a claimed delivery", async () => {
+    const { database, delivery } = await seedOwnerChannelAndTurn()
+    const outboxId = await delivery.createOutbox({
+      ownerId,
+      channelId,
+      text: "Recover this once",
+      reasonCode: "agent_reply",
+      correlationId: "00000000-0000-4000-8000-000000000020",
+      idempotencyKey: "delivery:dead-letter:recovery"
+    })
+    await delivery.markEnqueued(outboxId, "2026-08-12T10:00:00.500Z")
+
+    await expect(delivery.prepareOutboundRecovery(outboxId, 3)).resolves.toBe("recover")
+    const [recovered] = await database
+      .select({
+        state: outboxMessages.state,
+        enqueuedAt: outboxMessages.enqueuedAt,
+        recoveryCount: outboxMessages.recoveryCount
+      })
+      .from(outboxMessages)
+      .where(eq(outboxMessages.id, outboxId))
+    expect(recovered).toEqual({ state: "pending", enqueuedAt: null, recoveryCount: 1 })
+
+    await delivery.markEnqueued(outboxId, "2026-08-12T10:00:02.000Z")
+    await expect(delivery.prepareOutboundRecovery(outboxId, 3)).resolves.toBe("active")
+    await expect(delivery.claimOutbox(outboxId, 60_000)).resolves.toBeDefined()
+    await expect(delivery.prepareOutboundRecovery(outboxId, 3)).resolves.toBe("unsafe")
   })
 
   it("releases an artifact follow-up only after the reply is accepted", async () => {
@@ -195,7 +231,7 @@ describe("delivery conversation turn fence", () => {
     })
   })
 
-  it("closes the turn before post-claim work can fail", async () => {
+  it("rolls back the claim and turn when the attempt cannot commit", async () => {
     const { database, delivery } = await seedOwnerChannelAndTurn()
     const outboxId = await delivery.createOutbox({
       ownerId,
@@ -222,9 +258,15 @@ describe("delivery conversation turn fence", () => {
     await expect(delivery.claimOutbox(outboxId, 60_000)).rejects.toThrow()
     const [turn] = await database.select().from(conversationTurns)
     expect(turn).toMatchObject({
-      status: "replied",
-      repliedAt: "2026-08-12T10:00:01.000Z"
+      status: "committing",
+      repliedAt: null
     })
+    const [outbox] = await database
+      .select({ state: outboxMessages.state })
+      .from(outboxMessages)
+      .where(eq(outboxMessages.id, outboxId))
+    expect(outbox?.state).toBe("pending")
+    await expect(database.select().from(deliveryAttempts)).resolves.toEqual([])
   })
 
   it("closes the turn when an exact claimed reply is cancelled for opt-out", async () => {

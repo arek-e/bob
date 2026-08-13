@@ -36,6 +36,33 @@ export const DeliveryResult = Schema.Struct({
   occurredAt: IsoDateTime
 })
 
+const DeliveryReconciliationIdentity = {
+  outboxId: Uuid,
+  attemptId: Uuid,
+  correlationId: Uuid
+}
+
+export const DeliveryReconciliationRequest = Schema.Union([
+  Schema.Struct({
+    ...DeliveryReconciliationIdentity,
+    providerMessageHandle: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))
+  }),
+  Schema.Struct({
+    ...DeliveryReconciliationIdentity,
+    destinationE164: E164,
+    payloadFingerprint: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
+    since: IsoDateTime,
+    until: IsoDateTime
+  })
+])
+
+export const DeliveryReconciliationResponse = Schema.Union([
+  Schema.Struct({ status: Schema.Literal("resolved"), result: DeliveryResult }),
+  Schema.Struct({ status: Schema.Literal("pending") })
+])
+
 export type DeliveryAttemptState = typeof DeliveryAttemptState.Type
 export type OutboxClaim = typeof OutboxClaim.Type
 export type DeliveryResult = typeof DeliveryResult.Type
+export type DeliveryReconciliationRequest = typeof DeliveryReconciliationRequest.Type
+export type DeliveryReconciliationResponse = typeof DeliveryReconciliationResponse.Type

@@ -65,7 +65,8 @@ function composition(
   }
   const coreTools = {
     executeEffect: vi.fn(() => Effect.die("not implemented in HTTP boundary test")),
-    execute: vi.fn()
+    execute: vi.fn(),
+    checkReadiness: vi.fn(async () => true)
   }
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(telemetry.layer, accessVerifierLayer(access), coreToolClientLayer(coreTools))
@@ -112,6 +113,39 @@ describe("agent HTTP boundary", () => {
     const response = await handleAgentHttp(new Request("http://agent/health"), composition(false))
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ healthy: true, service: "agent", version: 1 })
+  })
+
+  it("checks credentials and Core through the private readiness route", async () => {
+    const target = composition(true)
+    target.services.agent.getAuthStatus = vi.fn(async () => ({
+      configured: true,
+      provider: "openai-codex" as const,
+      expiresAt: "2999-08-13T12:00:00.000Z"
+    }))
+
+    const response = await handleAgentHttp(new Request("http://agent/v1/admin/readiness"), target)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      ready: true,
+      checks: { credentials: "ready", core: "ready" },
+      service: "agent",
+      version: 1
+    })
+    expect(target.services.access.verify).toHaveBeenCalledWith(expect.any(Request), "admin")
+    expect(target.services.coreTools.checkReadiness).toHaveBeenCalledOnce()
+  })
+
+  it("reports unavailable credentials without exposing a cause", async () => {
+    const target = composition(true)
+
+    const response = await handleAgentHttp(new Request("http://agent/v1/admin/readiness"), target)
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({
+      ready: false,
+      checks: { credentials: "unavailable", core: "ready" }
+    })
   })
 
   it("rejects a run before parsing its body when Access rejects it", async () => {

@@ -94,7 +94,12 @@ function requiredCaller(pathname: string): CoreCaller | undefined {
     return "ingress"
   }
   if (/^\/internal\/outbox\/[^/]+\/(?:claim|result)$/.test(pathname)) return "egress"
-  if (pathname === "/internal/tools" || pathname === "/internal/agent/result") return "agent"
+  if (
+    pathname === "/internal/tools" ||
+    pathname === "/internal/agent/result" ||
+    pathname === "/internal/readiness"
+  )
+    return "agent"
   return undefined
 }
 

@@ -1,5 +1,5 @@
 import { DeliveryResult } from "@bob/contracts/delivery"
-import { InboundJob } from "@bob/contracts/jobs"
+import { InboundJob, OutboundJob } from "@bob/contracts/jobs"
 import { recordDecision, withBobSpan } from "@bob/observability/effect"
 import {
   externalParentFromTraceparent,
@@ -37,6 +37,80 @@ export async function handleInboundQueue(
 ): Promise<void> {
   const composition = composeCore(bindings)
   const runTelemetry = telemetry?.runPromise ?? Effect.runPromise
+  if (batch.queue === bindings.OUTBOUND_DEAD_LETTER_QUEUE_NAME) {
+    for (const message of batch.messages) {
+      let job: typeof OutboundJob.Type
+      try {
+        job = Schema.decodeUnknownSync(OutboundJob)(message.body)
+      } catch {
+        message.ack()
+        continue
+      }
+      try {
+        const correlationId = job.correlationId ?? job.outboxId
+        const program = withTraceparentParent(
+          job.traceparent,
+          withBobSpan(
+            {
+              name: "bob.outbox.publish",
+              correlationId,
+              outboxId: job.outboxId,
+              feature: "delivery"
+            },
+            Effect.gen(function* () {
+              const [outbox] = yield* promiseEffect(() =>
+                composition.database
+                  .select({ userId: outboxMessages.userId })
+                  .from(outboxMessages)
+                  .where(eq(outboxMessages.id, job.outboxId))
+                  .limit(1)
+              )
+              if (outbox !== undefined) {
+                yield* promiseEffect(() =>
+                  composition.services.alerts.record({
+                    ownerId: outbox.userId,
+                    code: "outbound_exhausted",
+                    objectType: "outbox_message",
+                    objectId: job.outboxId,
+                    idempotencyKey: `alert:outbound-exhausted:${job.outboxId}`
+                  })
+                )
+              }
+              const decision = yield* promiseEffect(() =>
+                composition.services.delivery.prepareOutboundRecovery(job.outboxId, 3)
+              )
+              yield* recordDecision({
+                name: "bob.decision.idempotency",
+                code: decision === "recover" ? "allowed" : "limit",
+                outcome: decision === "recover" ? "allowed" : "skipped"
+              })
+              if (decision !== "recover") return
+              const headers = yield* injectCurrentTraceparent()
+              const traceparent = headers.get("traceparent")
+              yield* promiseEffect(() =>
+                bindings.OUTBOUND_QUEUE.send(
+                  {
+                    ...job,
+                    correlationId,
+                    ...(traceparent === null ? {} : { traceparent })
+                  },
+                  { delaySeconds: 300 }
+                )
+              )
+              yield* promiseEffect(() =>
+                composition.services.delivery.markEnqueued(job.outboxId, new Date().toISOString())
+              )
+            })
+          )
+        )
+        await runTelemetry(program)
+        message.ack()
+      } catch {
+        message.retry({ delaySeconds: 60 })
+      }
+    }
+    return
+  }
   const isDeliveryResult =
     batch.queue === bindings.DELIVERY_RESULT_QUEUE_NAME ||
     batch.queue === bindings.DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME

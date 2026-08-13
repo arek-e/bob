@@ -364,6 +364,9 @@ export function makeAgentRunStore(
                 NULL,
                 NULL,
                 NULL,
+                NULL,
+                0,
+                NULL,
               ${at}
               FROM ${agentRuns}
               WHERE ${activeAttempt}
@@ -519,6 +522,9 @@ export function makeAgentRunStore(
                 NULL,
                 NULL,
                 NULL,
+                NULL,
+                NULL,
+                0,
                 NULL,
                 ${at}
               FROM ${agentRuns}

@@ -1,112 +1,39 @@
-# Coolify deployment runbook
+# Coolify private runtime
 
-This runbook migrates Bob's private application runtime to Coolify.
+Status: active
+Authority: Coolify
 
-Use `bob-production-ops` and `deploy-bob-coolify` together.
+Coolify owns the agent, Tunnel, Nango, backup runner, observer, and backup task.
 
-Do not deploy from a dirty worktree.
+`infra/coolify/compose.yaml` owns the service model.
 
-## Target topology
+`infra/coolify/release.json` owns source and image pins.
 
-| Resource                                                         | Owner                       | Location                                    |
-| ---------------------------------------------------------------- | --------------------------- | ------------------------------------------- |
-| Core, UI, Queues, D1, and R2                                     | Alchemy                     | Cloudflare                                  |
-| Agent, Tunnel, Nango, Redis, backup runner, and metrics observer | Coolify Compose application | `bob-coolify` KVM guest on `teampitch-prod` |
-| Nango PostgreSQL                                                 | Coolify database            | `bob-coolify` KVM guest                     |
-| Production configuration and credentials                         | OpenBao                     | Kubernetes on `teampitch-prod`              |
-| Tempo, Loki, and OTLP collector                                  | Existing platform           | Kubernetes on `teampitch-prod`              |
-| Coolify UI, API, and MCP                                         | Coolify through Tailscale   | `bob-coolify` KVM guest                     |
+`infra/coolify/runtime-contract.json` owns scheduled task and readiness requirements.
 
-## External prerequisites
+## Create the application
 
-Use the existing Hetzner server named `teampitch-prod`.
+Create one Git-based Docker Compose application.
 
-Require 12 free CPU threads, 12 GiB available memory, and 50 GiB available disk.
+Use `infra/coolify/compose.yaml` from the reviewed deployment commit.
 
-Use `infra/coolify/host/cloud-init.yaml` for the Ubuntu guest.
+Do not publish a host port.
 
-Use `infra/coolify/host/bob-coolify-vm.service` for the QEMU process.
+Do not assign a proxy domain to a Compose service.
 
-Give the guest 4 vCPUs, 12 GiB memory, and a 50 GiB thin disk.
+Route public traffic only through the scoped Cloudflare Tunnel.
 
-Keep ports 80 and 443 with Cilium on the host.
+## Configure OpenBao
 
-Bind guest SSH and Coolify port forwards to `127.0.0.1` only.
+Apply `infra/openbao/agent-production-policy.hcl` as `bob-agent-production`.
 
-Forward OpenBao port 8200 and OTLP port 4318 through QEMU.
-
-Update the forwards if either Kubernetes ClusterIP changes.
-
-Expose the dashboard only through Tailscale Serve.
-
-Keep Coolify automatic updates disabled in production.
-
-Record and review each Coolify version upgrade.
-
-## Install and secure Coolify
-
-Install Coolify inside the guest only.
-
-Follow the current official installation guide.
-
-Set `DOCKER_ADDRESS_POOL_BASE=172.20.0.0/16` during installation.
-
-Disable Coolify automatic updates.
-
-Record the installed Coolify version in the operator record.
-
-Create one `bob` project and one `production` environment.
-
-Use the guest localhost server as the production server.
-
-Enable the API and MCP server.
-
-Create these API tokens:
-
-- `bob-agent-read-deploy` with `read` and `deploy` permissions;
-- `bob-bootstrap-admin` with `write` permission and a short expiry.
-
-Do not grant `read:sensitive` to the deployment token.
-
-Delete the bootstrap token after setup.
-
-Serve ports 8000, 6001, and 6002 through Tailnet HTTPS endpoints.
-
-Do not use Funnel or a public DNS record for the dashboard.
-
-## Configure agent MCP access
-
-Start from `.codex/coolify-mcp.toml.example`.
-
-Copy its server block into the project or user Codex configuration.
-
-Replace the example URL with the final Coolify MCP URL.
-
-Set this value outside Git:
-
-```sh
-export COOLIFY_MCP_TOKEN='set-through-your-secret-manager'
-```
-
-Restart Codex after the MCP configuration changes.
-
-Confirm `get_infrastructure_overview` works.
-
-Confirm the token cannot read environment values.
-
-Confirm a deployment action requests approval.
-
-## Create the agent AppRole
-
-Apply `infra/openbao/agent-production-policy.hcl` under the policy name `bob-agent-production`.
-
-Enable AppRole once if the auth method is absent.
+Enable AppRole once.
 
 ```sh
 bao auth enable approle
 ```
 
-Bind the role to the Coolify guest when routing permits it.
+Create the agent role.
 
 ```sh
 bao write auth/approle/role/bob-coolify-agent \
@@ -117,116 +44,47 @@ bao write auth/approle/role/bob-coolify-agent \
   secret_id_num_uses=0
 ```
 
-Read the role ID and create one secret ID through a trusted terminal.
+Store the role ID as `BAO_APPROLE_ROLE_ID`.
 
-Do not print either value into an agent transcript.
+Store the secret ID as the Coolify secret source `BAO_APPROLE_SECRET_ID`.
 
-Store the role ID as `BAO_APPROLE_ROLE_ID` in Coolify.
+Compose mounts it at `/run/secrets/openbao_approle_secret_id`.
 
-Store the secret ID as `BAO_APPROLE_SECRET_ID` with show-once enabled.
+The agent container does not receive it as an environment value.
 
-Rotate the secret ID at least every 30 days.
+Rotate the secret ID every 30 days or after suspected exposure.
 
-## Create the Nango database
+## Configure Nango
 
-Create a standalone PostgreSQL database in the Coolify project.
+Create one private PostgreSQL database.
 
-Use `nango` for the database name and user.
+Disable its public port.
 
-Keep its public port disabled.
+Configure its S3 backup every four hours.
 
-Record its internal host and port.
+Require one successful backup before production traffic.
 
-Configure an S3 backup every four hours.
+## Configure Bob backups
 
-Use the private `bob-nango-backup-prod` R2 bucket.
-
-Use an Object Read and Write token scoped only to this bucket.
-
-Enable `backup_now` for the locked backup bucket.
-
-Require one successful backup before Nango receives production traffic.
-
-Export the current Nango database with `pg_dump --format=custom`.
-
-Import it into the Coolify database with `pg_restore`.
-
-Compare row counts before and after the import.
-
-## Create the Compose application
-
-Create a Git-based Docker Compose application.
-
-Use the Bob repository and `infra/coolify/compose.yaml`.
-
-Use the reviewed GitOps commit, not a working branch.
-
-Do not assign a Coolify proxy domain to any stack service.
-
-Set every required environment key shown by Coolify.
-
-Copy runtime secret values from OpenBao through a trusted administrator path.
-
-Use the existing `access/*`, `nango/runtime`, `backup/runtime`, and `tunnel/agent-host` records.
-
-Store the `BACKUP_COPY_*` fields in `ops/apps/prod/bob/backup/runtime`.
-
-Set `NANGO_RECORDS_DATABASE_URL` to the internal Coolify database URL.
-
-Use URL encoding for any password characters in that URL.
-
-Set the two Bob image digest fields without an `@` prefix.
-
-Set `BOB_RELEASE_SHA` to the full source commit for those images.
-
-Set `BAO_ADDR=http://vault.lamb-bicolor.ts.net:8200`.
-
-Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel.lamb-bicolor.ts.net:4318`.
-
-Configure the S3 fields for the encrypted Bob backup copy.
-
-Use the private `bob-backup-prod` R2 bucket in the existing Cloudflare account.
-
-Use an Object Read and Write token scoped only to this bucket.
-
-Do not reuse the private-object read token or a bucket administration token.
-
-Apply the repository lock configuration to both backup buckets after creation:
-
-```sh
-pnpm --filter @bob/cloudflare-infra exec wrangler r2 bucket lock set \
-  bob-backup-prod --file r2-backup-lock.json --jurisdiction eu --force
-pnpm --filter @bob/cloudflare-infra exec wrangler r2 bucket lock set \
-  bob-nango-backup-prod --file r2-backup-lock.json --jurisdiction eu --force
-```
-
-Confirm each bucket has the 90-day lock before a backup job starts.
-
-The lock protects objects from the runtime tokens.
-
-The same Cloudflare account remains one accepted failure domain.
-
-## Configure schedules
-
-Create this task on the `backup-runner` container:
+Create this task on `backup-runner`:
 
 ```sh
 node ../../node_modules/varlock/bin/cli.js run --inject blob --skip-cache -- node dist/index.mjs backup
 ```
 
-Use `15 */4 * * *` as its schedule.
+Use `15 */4 * * *`.
 
-Enable failure notifications for backups and scheduled tasks.
+Enable Coolify failure notifications.
 
-Run the task once before deployment acceptance.
+Compare both values to `infra/coolify/runtime-contract.json`.
 
-Require a `completed` result with `independentCopy` set to `completed`.
+Run the task once.
 
-Do not log archive contents or environment values.
+Require `independentCopy` to report `completed`.
+
+Require the newest backup age to stay below 18,000 seconds.
 
 ## Release preflight
-
-Run these commands from a clean release commit:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -235,141 +93,28 @@ pnpm secrets:scan:trusted
 node scripts/verify-deployment-readiness.mjs
 ```
 
-Verify both image attestations.
+The repository check proves the declared schedule.
 
-```sh
-gh attestation verify "oci://ghcr.io/arek-e/bob-agent@${AGENT_DIGEST}" --repo arek-e/bob
-gh attestation verify "oci://ghcr.io/arek-e/bob-data-backup@${BACKUP_DIGEST}" --repo arek-e/bob
-```
-
-Run the skill preflight script.
-
-```sh
-/Users/alex/.codex/skills/deploy-bob-coolify/scripts/check-release.sh /Users/alex/projects/bob
-```
-
-Stop when any check fails.
-
-## Temporary migration canary
-
-The steady-state stack has no canary Tunnel, DNS records, or Access applications.
-
-Create temporary canary resources only for a migration that changes the private runtime.
-
-Use a reviewed Alchemy change. Remove the resources after production acceptance.
-
-Create a separate canary Cloudflare Tunnel.
-
-Use canary hostnames for the agent and Nango.
-
-Alchemy owns each temporary canary resource while it exists.
-
-Read the canary Tunnel token from `ops/apps/prod/bob/tunnel/agent-host-canary`.
-
-Read canary Access audiences from the two canary Access records.
-
-Protect the agent canary hostnames with the existing service-token policies.
-
-Give the canary Tunnel token to the Coolify stack.
-
-Do not use the production Tunnel token yet.
-
-Deploy the Compose application through Coolify MCP.
-
-Wait for the deployment to finish.
-
-Inspect capped deployment logs and current container logs.
-
-Confirm the agent, Tunnel, Nango, Redis, and database are healthy.
-
-Run the Nango connection checks through the canary hostname.
-
-Point `AGENT_URL` and `AGENT_ADMIN_URL` at the canary hostnames. Run the candidate suite.
-
-```sh
-pnpm agent:smoke:predeploy
-```
-
-Confirm D1, Tempo, and Loki show the same workflow.
-
-## Cutover
-
-Use a quiet owner window.
-
-Run fresh Nango and Bob backups.
-
-Record the old Tunnel connector state and all old origin URLs.
-
-Set these OpenBao configuration values for the Coolify connector:
-
-```text
-AGENT_ORIGIN_URL=http://agent:8787
-NANGO_ORIGIN_URL=http://nango:3003
-NANGO_CONNECT_ORIGIN_URL=http://nango:3009
-```
-
-Set `OTEL_ORIGIN_URL` to the private endpoint reachable from the Coolify host.
-
-Run `pnpm infra:plan` and review every replacement.
-
-Apply the Cloudflare change only after the plan is accepted.
-
-Stop the Kubernetes production Tunnel connector.
-
-Replace the Coolify canary Tunnel token with the production Tunnel token.
-
-Restart only the Coolify Tunnel service.
-
-Do not stop the old agent or Nango yet.
+The release operator must also prove the live Coolify task matches it.
 
 ## Acceptance
 
-Send the exact owner request `List my reminders.`.
+Require all Compose services to be healthy.
 
-Confirm D1 shows a completed run, completed `reminder_list`, accepted `agent_reply` outbox, and delivered attempt.
+Call the authenticated agent route `/v1/admin/readiness`.
 
-Reject every fallback or failure outbox, even when Sendblue delivered it.
+Require `credentials` and `core` to report `ready`.
 
-Confirm one trace contains ingress, Core, agent, egress, and the three Tool spans.
+Run one inbound and outbound acceptance message.
 
-Confirm Loki shows the completed run with approved fields only.
+Run one backup and verify the independent copy.
 
-Confirm Nango callbacks use the production hostnames.
+## Recovery
 
-Confirm the latest Nango backup exists in its locked R2 bucket.
+Recreate the application from the reviewed Compose and release files.
 
-Confirm the latest Bob archive exists in its locked R2 bucket.
+Recreate the backup task from the runtime contract.
 
-Confirm the observer exports `host.name=bob-coolify` metrics.
+Restore Nango and Bob from the latest independent copies.
 
-Confirm Docker metrics include `agent`, `nango`, `nango-redis`, `tunnel`, and `backup-runner`.
-
-Confirm HTTP checks cover the agent, Nango, Coolify, and the stable Tunnel routes.
-
-Confirm TCP checks cover Nango PostgreSQL and Redis.
-
-Confirm both backup directory modification times are less than five hours old.
-
-Keep the Kubernetes runtime ready for rollback during the observation window.
-
-## Rollback
-
-Stop the Coolify production Tunnel connector.
-
-Restore the old Cloudflare origin values through an accepted Alchemy plan.
-
-Start the Kubernetes production Tunnel connector.
-
-Verify the stable agent and Nango hostnames.
-
-Do not restore PostgreSQL unless the Nango data check requires it.
-
-Preserve failed Coolify deployment logs without secret values.
-
-Delete all temporary canary resources after rollback or successful acceptance.
-
-## Retire a former runtime
-
-After acceptance, delete the former application runtime and its local storage.
-
-Keep OpenBao and telemetry on Kubernetes until a separate migration removes that dependency.
+The shared host and Cloudflare account remain accepted failure domains.

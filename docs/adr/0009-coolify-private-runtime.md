@@ -3,7 +3,8 @@
 - Status: Accepted
 - Date: 2026-08-12
 - Scope: Agent, Nango, backups, private ingress, and deployment control
-- Supersedes: The Kubernetes runtime ownership in ADR 0005
+- Supersedes: Kubernetes runtime ownership in ADR 0005
+- Supersedes: Kubernetes OpenBao login in ADR 0001
 
 Migration status: Complete. The Kubernetes Bob runtime and temporary canary resources are retired.
 
@@ -130,7 +131,7 @@ Keep a local encrypted copy for fast recovery.
 
 Test both restore paths before cutover.
 
-### Migration stages
+### Completed migration stages
 
 Use a dedicated virtual machine on the existing Hetzner server.
 
@@ -142,21 +143,21 @@ Forward OpenBao and OTLP traffic to their Kubernetes ClusterIPs through QEMU.
 
 Do not expose Coolify ports on the server's public interfaces.
 
-Keep the Kubernetes runtime available during acceptance.
+The Kubernetes runtime stayed available during acceptance.
 
-Use a separate canary Tunnel and canary hostnames for acceptance.
+The migration used a separate canary Tunnel and canary hostnames.
 
-Do not connect both runtimes to the production Tunnel at the same time.
+The migration did not connect both runtimes to the production Tunnel at the same time.
 
-Move the production Tunnel only after canary acceptance succeeds.
+The production Tunnel moved after canary acceptance succeeded.
 
-Keep OpenBao and the telemetry backend on the current private host initially.
+OpenBao and the telemetry backend stayed on the private host.
 
-Reach them over the private network during the first migration stage.
+The Coolify runtime reaches them over the private network.
 
-Move those platform services in a separate reviewed change.
+Move those platform services only in a separate reviewed change.
 
-Remove Kubernetes only after no production resource depends on it.
+The retired Bob Kubernetes and Argo manifests are no longer release inputs.
 
 ## Verification
 

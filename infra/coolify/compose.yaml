@@ -1,8 +1,5 @@
 name: bob-private-runtime
 
-x-coolify-required:
-  BAO_APPROLE_SECRET_ID: ${BAO_APPROLE_SECRET_ID:?}
-
 x-observer-config: &observer-config |-
   extensions:
     health_check:
@@ -198,7 +195,7 @@ services:
       ADMIN_ACCESS_SUBJECT: ${ADMIN_ACCESS_SUBJECT:?}
       BAO_ADDR: ${BAO_ADDR:?}
       BAO_APPROLE_ROLE_ID: ${BAO_APPROLE_ROLE_ID:?}
-      BAO_APPROLE_SECRET_ID: ${BAO_APPROLE_SECRET_ID:?}
+      BAO_APPROLE_SECRET_ID_PATH: /run/secrets/openbao_approle_secret_id
       BAO_AUTH_METHOD: approle
       BOB_ALLOWED_MODELS: ${BOB_ALLOWED_MODELS:?}
       BOB_MODEL: ${BOB_MODEL:?}
@@ -223,6 +220,9 @@ services:
       retries: 3
       start_period: 20s
     networks: [runtime]
+    secrets:
+      - source: openbao_approle_secret_id
+        target: openbao_approle_secret_id
     tmpfs:
       - /tmp:mode=1777,uid=1000,gid=1000
     deploy:
@@ -357,6 +357,16 @@ services:
       R2_BUCKET: ${R2_BUCKET:?}
       R2_ENDPOINT: ${R2_ENDPOINT:?}
       R2_SECRET_ACCESS_KEY: ${R2_BACKUP_SECRET_ACCESS_KEY:?}
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - const fs=require('node:fs');const p='/backups';const n=fs.readdirSync(p).filter(x=>/^bob-.*\.json\.gz\.age$/.test(x));if(n.length===0)process.exit(1);const newest=Math.max(...n.map(x=>fs.statSync(p+'/'+x).mtimeMs));if(Date.now()-newest>18000000)process.exit(1)
+      interval: 5m
+      timeout: 5s
+      retries: 1
+      start_period: 10m
     networks: [runtime]
     tmpfs:
       - /tmp:mode=1777,uid=1000,gid=1000
@@ -404,3 +414,7 @@ networks:
 
 volumes:
   bob-backups:
+
+secrets:
+  openbao_approle_secret_id:
+    environment: BAO_APPROLE_SECRET_ID

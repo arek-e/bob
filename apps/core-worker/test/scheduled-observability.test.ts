@@ -1,7 +1,7 @@
 import { parseTraceparent } from "@bob/observability/propagation"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect } from "effect"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
@@ -35,6 +35,10 @@ function captureRunner(telemetry: ReturnType<typeof makeCaptureTelemetry>) {
 
 beforeEach(() => {
   compositionHarness.current = undefined
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 describe("Core scheduled telemetry", () => {
@@ -170,5 +174,92 @@ describe("Core scheduled telemetry", () => {
     expect(new Headers(recoveryFetch.mock.calls[0]?.[1]?.headers).get("x-bob-caller-token")).toBe(
       "c".repeat(64)
     )
+  })
+
+  it("continues later reminders and delivery recovery after one clock item fails", async () => {
+    const schedulerItems = [
+      {
+        id: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0",
+        reminderId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
+        userId: scheduledCorrelationId,
+        scheduleRevision: 1,
+        command: "upsert",
+        processedAt: null,
+        createdAt: "2026-08-13T10:00:00.000Z"
+      },
+      {
+        id: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba2",
+        reminderId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba3",
+        userId: scheduledCorrelationId,
+        scheduleRevision: 1,
+        command: "upsert",
+        processedAt: null,
+        createdAt: "2026-08-13T10:00:01.000Z"
+      }
+    ] as const
+    const pendingOutbox = [
+      {
+        id: firstOutboxId,
+        correlationId: firstCorrelationId,
+        actionTargetType: null,
+        actionTargetId: null
+      }
+    ]
+    const select = vi
+      .fn()
+      .mockReturnValueOnce({
+        from: () => ({
+          where: () => ({ orderBy: () => ({ limit: async () => schedulerItems }) })
+        })
+      })
+      .mockReturnValueOnce({
+        from: () => ({ where: () => ({ limit: async () => pendingOutbox }) })
+      })
+    const markEnqueued = vi.fn(async () => undefined)
+    compositionHarness.current = {
+      config: { OWNER_ID: scheduledCorrelationId },
+      database: {
+        select,
+        update: vi.fn(() => ({ set: () => ({ where: async () => undefined }) }))
+      },
+      services: {
+        delivery: { reconcileExpiredClaims: vi.fn(async () => 0), markEnqueued },
+        reminders: {
+          releaseExpiredClaims: vi.fn(async () => 0),
+          markExpiredResponseDeadlines: vi.fn(async () => 0)
+        }
+      }
+    } as unknown as CoreComposition
+    let commandCount = 0
+    const clock = {
+      fetch: vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).endsWith("/command")) {
+          commandCount += 1
+          return new Response(null, { status: commandCount === 1 ? 503 : 200 })
+        }
+        return new Response(null, { status: 200 })
+      })
+    }
+    const namespace = {
+      idFromName: vi.fn(() => ({ toString: () => scheduledCorrelationId })),
+      get: vi.fn(() => clock)
+    }
+    const send = vi.fn(async () => undefined)
+    const bindings = {
+      REMINDER_CLOCK: { jurisdiction: vi.fn(() => namespace) },
+      OUTBOUND_QUEUE: { send }
+    } as unknown as CoreBindings
+
+    await expect(
+      handleScheduled(bindings, {
+        correlationId: scheduledCorrelationId,
+        scheduledAt: new Date("2026-08-13T10:31:00.000Z")
+      })
+    ).rejects.toThrow("scheduled_recovery_failed")
+
+    expect(commandCount).toBe(2)
+    expect(clock.fetch).toHaveBeenCalledWith("https://clock.internal/reconcile", expect.any(Object))
+    expect(send).toHaveBeenCalledOnce()
+    expect(markEnqueued).toHaveBeenCalledWith(firstOutboxId, expect.any(String))
   })
 })

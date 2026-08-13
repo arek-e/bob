@@ -73,7 +73,8 @@ describe("Sendblue provider recovery", () => {
       headers: {
         "content-type": "application/json",
         "sb-signing-secret": "s".repeat(64)
-      }
+      },
+      signal: expect.any(AbortSignal)
     })
     expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({
       message_handle: "handle-recovered",

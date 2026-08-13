@@ -39,10 +39,11 @@ describe("Alchemy compatibility stack", () => {
     })
 
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain("Plan: 40 to create")
+    expect(result.stdout).toContain("Plan: 41 to create")
     for (const resource of [
       "[BackupArchives] create",
       "[NangoBackups] create",
+      "[OutboundDeadLetterConsumer] create",
       "[WorkerToOtlp] create",
       "[WorkerOtlpServicePolicy] create",
       "[WorkerOtlpApplication] create",

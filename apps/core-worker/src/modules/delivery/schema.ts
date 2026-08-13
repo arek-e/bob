@@ -23,7 +23,10 @@ export const outboxMessages = sqliteTable(
     }).notNull(),
     enqueuedAt: text("enqueued_at"),
     claimedAt: text("claimed_at"),
+    claimToken: text("claim_token"),
     claimExpiresAt: text("claim_expires_at"),
+    deadLetteredAt: text("dead_lettered_at"),
+    recoveryCount: integer("recovery_count").notNull().default(0),
     completedAt: text("completed_at"),
     createdAt: text("created_at").notNull()
   },
@@ -44,6 +47,7 @@ export const deliveryAttempts = sqliteTable(
       enum: ["pending", "claimed", "sending", "accepted", "delivered", "uncertain", "failed"]
     }).notNull(),
     providerMessageHandle: text("provider_message_handle"),
+    payloadFingerprint: text("payload_fingerprint"),
     errorCode: text("error_code"),
     startedAt: text("started_at").notNull(),
     updatedAt: text("updated_at").notNull()

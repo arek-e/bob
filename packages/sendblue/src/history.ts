@@ -18,6 +18,7 @@ export interface SendblueHistoryClientOptions {
   readonly apiKeyId: string
   readonly apiSecretKey: string
   readonly baseUrl?: string
+  readonly timeoutMs?: number
   readonly fetch?: typeof fetch
 }
 
@@ -27,9 +28,12 @@ export interface InboundHistoryWindow {
   readonly until: Date
 }
 
+export type OutboundHistoryWindow = InboundHistoryWindow
+
 export function createSendblueHistoryClient(options: SendblueHistoryClientOptions) {
   const request = options.fetch ?? fetch
   const baseUrl = options.baseUrl ?? "https://api.sendblue.com"
+  const timeoutMs = options.timeoutMs ?? 10_000
   const headers = {
     "sb-api-key-id": options.apiKeyId,
     "sb-api-secret-key": options.apiSecretKey
@@ -43,16 +47,31 @@ export function createSendblueHistoryClient(options: SendblueHistoryClientOption
       url.searchParams.set("sendblue_number", window.sendblueNumber)
       url.searchParams.set("sent_at_gte", window.since.toISOString())
       url.searchParams.set("sent_at_lte", window.until.toISOString())
-      const response = await request(url, { headers })
+      const response = await request(url, { headers, signal: AbortSignal.timeout(timeoutMs) })
       if (!response.ok) throw new Error(`sendblue_history_http_${response.status}`)
       return Schema.decodeUnknownSync(MessageList)(await response.json()).data
     },
 
     async hasLine(sendblueNumber: string): Promise<boolean> {
-      const response = await request(new URL("/api/lines", baseUrl), { headers })
+      const response = await request(new URL("/api/lines", baseUrl), {
+        headers,
+        signal: AbortSignal.timeout(timeoutMs)
+      })
       if (!response.ok) throw new Error(`sendblue_lines_http_${response.status}`)
       const lines = Schema.decodeUnknownSync(LineList)(await response.json())
       return lines.numbers.includes(sendblueNumber)
+    },
+
+    async listOutbound(window: OutboundHistoryWindow) {
+      const url = new URL("/api/v2/messages", baseUrl)
+      url.searchParams.set("is_outbound", "true")
+      url.searchParams.set("limit", "1000")
+      url.searchParams.set("sendblue_number", window.sendblueNumber)
+      url.searchParams.set("sent_at_gte", window.since.toISOString())
+      url.searchParams.set("sent_at_lte", window.until.toISOString())
+      const response = await request(url, { headers, signal: AbortSignal.timeout(timeoutMs) })
+      if (!response.ok) throw new Error(`sendblue_history_http_${response.status}`)
+      return Schema.decodeUnknownSync(MessageList)(await response.json()).data
     }
   }
 }

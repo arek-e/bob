@@ -7,6 +7,23 @@ const SendResponse = Schema.Struct({
   status: Schema.optionalKey(Schema.String)
 })
 
+const StatusResponse = Schema.Struct({
+  message_handle: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  status: Schema.Literals([
+    "REGISTERED",
+    "PENDING",
+    "DECLINED",
+    "QUEUED",
+    "ACCEPTED",
+    "SENT",
+    "DELIVERED",
+    "ERROR",
+    "OPTED_OUT"
+  ])
+})
+
+export type SendblueStatus = typeof StatusResponse.Type
+
 export interface SendblueCredentials {
   readonly apiKeyId: string
   readonly apiSecretKey: string
@@ -151,12 +168,19 @@ export function createSendblueClient(options: SendblueClientOptions) {
       })
     },
 
-    async getStatus(handle: string): Promise<unknown> {
-      const response = await request(`${baseUrl}/api/status?handle=${encodeURIComponent(handle)}`, {
-        headers
-      })
-      if (!response.ok) throw new Error(`Sendblue status request failed: ${response.status}`)
-      return response.json()
+    async getStatus(handle: string): Promise<SendblueStatus> {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort("sendblue_status_timeout"), timeoutMs)
+      try {
+        const response = await request(
+          `${baseUrl}/api/status?handle=${encodeURIComponent(handle)}`,
+          { headers, signal: controller.signal }
+        )
+        if (!response.ok) throw new Error(`Sendblue status request failed: ${response.status}`)
+        return Schema.decodeUnknownSync(StatusResponse)(await response.json())
+      } finally {
+        clearTimeout(timeout)
+      }
     }
   }
 }

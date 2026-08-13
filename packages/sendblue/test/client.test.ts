@@ -34,6 +34,19 @@ describe("Sendblue client", () => {
     })
   })
 
+  it("validates provider status through a timed request", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ message_handle: "provider-1", status: "DELIVERED" }))
+    const client = createSendblueClient({ apiKeyId: "id", apiSecretKey: "secret", fetch: request })
+
+    await expect(client.getStatus("provider-1")).resolves.toEqual({
+      message_handle: "provider-1",
+      status: "DELIVERED"
+    })
+    expect(request.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal)
+  })
+
   it("sends a reaction with the documented provider fields", async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 200 }))
     const client = createSendblueClient({ apiKeyId: "id", apiSecretKey: "secret", fetch: request })

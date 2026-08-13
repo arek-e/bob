@@ -1,676 +1,130 @@
-# Deployment runbook
+# Production deployment
 
-## Preconditions
+Status: active
+Runtime authority: Coolify
 
-Complete every production gate in the project plan.
+Use this runbook for Bob production releases.
 
-Approve the Alchemy state privacy review before a production plan.
+## Prepare the source release
 
-Create the scoped OpenBao identity. Do not use a Cloudflare administrator token.
-
-Build and publish the agent image by digest.
-
-Use a reviewed cloudflared digest.
-
-Update the two immutable images in `infra/kubernetes/overlays/prod`.
-
-Do not replace either digest with a mutable tag.
-
-Use Cilium for Bob egress enforcement.
-
-Allow direct CoreDNS queries and public IPv4 HTTPS only.
-
-Exclude private and reserved IPv4 ranges.
-
-Do not use Cilium DNS proxy rules for Bob. The current transparent proxy drops Bob DNS requests.
-
-Repair the proxy through cluster GitOps before you restore FQDN rules.
-
-Use the in-cluster OpenBao service for runtime secret access.
-
-Confirm `kubectl kustomize infra/kubernetes` contains no unresolved input.
-
-Create `ops/apps/prod/bob/config` before planning.
-
-Keep the persistent deployment fields in that record. Do not commit their values.
-
-Create the other scoped OpenBao records before secret synchronization.
-
-Install the reviewed External Secrets controller.
-
-Create the `bob-agent` OpenBao Kubernetes role for Pi OAuth only.
-
-Confirm the role accepts only the `bob-agent` ServiceAccount in the `bob` namespace.
-
-Create the `bob-agent-secret-delivery` OpenBao Kubernetes role.
-
-Attach the production secret-delivery policy to that role.
-
-Confirm it accepts only the matching secret-delivery ServiceAccount.
-
-Create one read-only GitHub deploy key for the Bob repository.
-
-Store its private key at `ops/apps/prod/bob/argocd/repository`.
-
-Never apply a raw repository Secret with `kubectl`.
-
-Apply `argocd-repository-production-policy.hcl` to OpenBao.
-
-Create the `bob-argocd-repository` Kubernetes role in OpenBao.
-
-Bind it only to `argocd/bob-argocd-repository` with audience `openbao`.
-
-## Validate
-
-Run these commands from the repository root.
+Start from a clean commit on `main`.
 
 ```sh
+export RELEASE_SHA="$(git rev-parse HEAD)"
 pnpm install --frozen-lockfile
 pnpm check
-pnpm secrets:scan:staged
-```
-
-Run the complete secret scan only with the trusted OpenBao identity.
-
-```sh
 pnpm secrets:scan:trusted
 node scripts/verify-deployment-readiness.mjs
-kubectl kustomize infra/kubernetes >/dev/null
-kubectl kustomize infra/argocd >/dev/null
 ```
 
-Do not continue when the trusted scan or deployment check fails.
+The image workflow publishes these immutable images:
 
-## Plan Cloudflare changes
+- `ghcr.io/arek-e/bob-agent:sha-$RELEASE_SHA`
+- `ghcr.io/arek-e/bob-data-backup:sha-$RELEASE_SHA`
 
-Set only declared Varlock inputs. Then run this command.
+Read each manifest digest from the registry.
 
-```sh
-pnpm infra:plan
-```
+## Create the deployment commit
 
-Review every replacement. Stop when any replacement lacks written approval.
+Change only these values in `infra/coolify/release.json`:
 
-Run `pnpm infra:load` before the plan.
+- `sourceSha`
+- `agentDigest`
+- `backupDigest`
 
-Set `BOB_RELEASE_SHA` to the full reviewed commit. The value must match the planned Worker source.
+Set `sourceSha` to `RELEASE_SHA`.
 
-The infrastructure workspace uses the reviewed Effect beta.102 exception.
-Application workspaces use beta.107.
-
-The trusted CI plan is a release gate.
-Do not deploy when the plan job is skipped or fails.
-
-## Deploy evaluation storage
-
-The evaluation storage stack is separate from Bob's application stack.
-
-Set `BOB_RELEASE_SHA` to the full reviewed commit.
-
-Run the offline compatibility plan first.
+Commit the manifest change on `main`.
 
 ```sh
-pnpm infra:evals:load
-```
-
-Run the trusted production plan.
-
-```sh
-pnpm infra:evals:plan
-```
-
-For the first storage deployment, require exactly two creates.
-
-For the first runner deployment, require `EvalDatabase` and `EvalArtifacts` to remain unchanged.
-
-Permit only the `EvalRunner` create and its three bindings.
-
-Stop for each update, replacement, or deletion.
-
-Deploy the reviewed plan.
-
-```sh
-pnpm infra:evals:deploy
-```
-
-Run `pnpm infra:evals:plan` again.
-
-Require a no-change plan.
-
-Confirm that D1 contains the three migration tables.
-
-- `benchmark_runs`
-- `benchmark_scores`
-- `benchmark_artifacts`
-
-Confirm that the R2 bucket has no public domain.
-
-Confirm that Worker `bob-eval-runner-prod` has these functional bindings.
-
-- `EVAL_DB`
-- `EVAL_ARTIFACTS`
-- `BOB_RELEASE_SHA`
-
-Alchemy also adds these plain-text management bindings.
-
-- `ALCHEMY_CLOUDFLARE_ACCOUNT_ID`
-- `ALCHEMY_PHASE`
-- `ALCHEMY_STACK_NAME`
-- `ALCHEMY_STAGE`
-- `ALCHEMY_WORKER_NAME`
-
-Stop if the Worker has another binding.
-
-Confirm that its only Cron Trigger is `45 22 * * *`.
-
-The schedule runs at 22:45 UTC each day.
-
-After the first scheduled event, require one completed D1 run and one matching R2 manifest.
-
-Confirm that the manifest hash equals its D1 `sha256` value.
-
-Do not delete the retained resources to roll back an empty first deployment.
-
-GitHub OIDC requires a runner with network access to OpenBao.
-
-For a local handoff, mint one 10-minute orphan token.
-
-Attach only the `bob-deployment-credential-handoff` policy.
-
-Create this token role once:
-
-```sh
-bao write auth/token/roles/bob-deployment-handoff \
-  allowed_policies=bob-deployment-credential-handoff \
-  orphan=true \
-  token_explicit_max_ttl=10m
-```
-
-Mint the token through that role. The policy permits only four runtime writes and self-revocation.
-
-```sh
-bao token create \
-  -role=bob-deployment-handoff \
-  -policy=bob-deployment-credential-handoff \
-  -ttl=10m
-```
-
-Enter it through the hidden `BAO_DEPLOY_TOKEN` environment input.
-
-Do not use GitHub OIDC fields at the same time.
-
-The handoff revokes the token after its four writes. Unset the input after the command.
-
-## Release preflight
-
-Use the stable Core host for every check and deployment.
-
-```sh
-CORE_URL="https://bob.${BOB_DOMAIN}"
-node --input-type=module -e '
-  const url = new URL(process.argv[1])
-  if (url.protocol !== "https:" || !url.hostname.startsWith("bob.") || url.pathname !== "/") {
-    process.exit(1)
-  }
-' "$CORE_URL"
-curl -fsS "$CORE_URL/health" >/dev/null
-SETUP_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' "$CORE_URL/setup")"
-case "$SETUP_STATUS" in 200|302|401|403) ;; *) exit 1 ;; esac
-```
-
-Do not use a `workers.dev` address as `CORE_URL`.
-
-Test the current agent-to-Core Access path. The request must reach Core and fail schema validation.
-
-```sh
-kubectl --context=teampitch-prod -n bob exec deployment/bob-agent -c agent -- \
-  env EXPECTED_CORE_URL="$CORE_URL" node --input-type=module -e '
-    if (process.env.CORE_URL !== process.env.EXPECTED_CORE_URL) process.exit(1)
-    const response = await fetch(`${process.env.CORE_URL}/internal/tools`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "CF-Access-Client-Id": process.env.CORE_ACCESS_CLIENT_ID,
-        "CF-Access-Client-Secret": process.env.CORE_ACCESS_CLIENT_SECRET
-      },
-      body: "{}"
-    })
-    const body = await response.json()
-    if (response.status !== 400 || body.code !== "invalid_request") process.exit(1)
-  '
-```
-
-Stop if `/health`, `/setup`, or the internal Access check fails.
-
-Record the live rollback values before any change.
-
-```sh
-PRIOR_ARGO_SHA="$(kubectl --context=teampitch-prod -n argocd \
-  get application bob -o jsonpath='{.spec.source.targetRevision}')"
-PRIOR_AGENT_IMAGE="$(kubectl --context=teampitch-prod -n bob \
-  get deployment bob-agent -o jsonpath='{.spec.template.spec.containers[?(@.name=="agent")].image}')"
-```
-
-Keep these values in the operator record. They do not contain credentials.
-
-Require the reviewed source commit in the operator shell.
-
-```sh
-: "${BOB_RELEASE_SHA:?Set BOB_RELEASE_SHA to the reviewed source commit}"
-[[ "$BOB_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
-RELEASE_SHA="$BOB_RELEASE_SHA"
-export BOB_RELEASE_SHA="$RELEASE_SHA"
-test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
-git merge-base --is-ancestor "$RELEASE_SHA" origin/main
-```
-
-Set the exact live Worker names in the operator shell.
-
-```sh
-: "${CORE_WORKER_NAME:?Set the exact Core Worker name}"
-: "${INGRESS_WORKER_NAME:?Set the exact ingress Worker name}"
-: "${EGRESS_WORKER_NAME:?Set the exact egress Worker name}"
-: "${BOB_OPERATOR_RECORD_DIR:?Set the private operator-record directory}"
-test -d "$BOB_OPERATOR_RECORD_DIR"
-```
-
-Record the active version for each Worker. These commands read metadata only.
-
-```sh
-CORE_DEPLOYMENTS_FILE="$BOB_OPERATOR_RECORD_DIR/core-deployments.json"
-INGRESS_DEPLOYMENTS_FILE="$BOB_OPERATOR_RECORD_DIR/ingress-deployments.json"
-EGRESS_DEPLOYMENTS_FILE="$BOB_OPERATOR_RECORD_DIR/egress-deployments.json"
-
-pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
-  sh -c 'wrangler deployments list --name "$1" --json > "$2"' \
-  operator-record "$CORE_WORKER_NAME" "$CORE_DEPLOYMENTS_FILE"
-pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
-  sh -c 'wrangler deployments list --name "$1" --json > "$2"' \
-  operator-record "$INGRESS_WORKER_NAME" "$INGRESS_DEPLOYMENTS_FILE"
-pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
-  sh -c 'wrangler deployments list --name "$1" --json > "$2"' \
-  operator-record "$EGRESS_WORKER_NAME" "$EGRESS_DEPLOYMENTS_FILE"
-
-PRIOR_CORE_VERSION_ID="$(jq -er \
-  '.[-1].versions | if length == 1 and .[0].percentage == 100 then .[0].version_id else error("Core does not have one active version") end' \
-  "$CORE_DEPLOYMENTS_FILE")"
-PRIOR_INGRESS_VERSION_ID="$(jq -er \
-  '.[-1].versions | if length == 1 and .[0].percentage == 100 then .[0].version_id else error("Ingress does not have one active version") end' \
-  "$INGRESS_DEPLOYMENTS_FILE")"
-PRIOR_EGRESS_VERSION_ID="$(jq -er \
-  '.[-1].versions | if length == 1 and .[0].percentage == 100 then .[0].version_id else error("Egress does not have one active version") end' \
-  "$EGRESS_DEPLOYMENTS_FILE")"
-```
-
-Store the three names and version identifiers in the operator record.
-
-Validate the rollback syntax without changing traffic.
-
-```sh
-pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
-  wrangler versions deploy \
-  "$PRIOR_CORE_VERSION_ID@100" --name "$CORE_WORKER_NAME" --yes --dry-run
-pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
-  wrangler versions deploy \
-  "$PRIOR_INGRESS_VERSION_ID@100" --name "$INGRESS_WORKER_NAME" --yes --dry-run
-pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
-  wrangler versions deploy \
-  "$PRIOR_EGRESS_VERSION_ID@100" --name "$EGRESS_WORKER_NAME" --yes --dry-run
-```
-
-Stop if a command rejects its Worker name or version identifier.
-
-Use a quiet owner window. Pause Sendblue traffic before the Core drain gate.
-
-## Production cutover
-
-Follow these steps in order. Do not combine the agent and Core deployments.
-
-### 1. Publish attested images from the release SHA
-
-The release SHA must be a full commit on `main`.
-
-```sh
-test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
-git merge-base --is-ancestor "$RELEASE_SHA" origin/main
-gh workflow run release-images.yml --ref main -f release_sha="$RELEASE_SHA"
-```
-
-The workflow checks out that exact SHA. It publishes the agent and backup images.
-
-BuildKit adds OCI provenance and software bills of materials for both platforms.
-
-Copy both digests from the workflow summary. Inspect both OCI indexes.
-
-```sh
-set -euo pipefail
-
-for IMAGE_REF in \
-  "ghcr.io/arek-e/bob-agent@${AGENT_DIGEST}" \
-  "ghcr.io/arek-e/bob-data-backup@${BACKUP_DIGEST}"
-do
-  INDEX_JSON="$(docker buildx imagetools inspect --raw "$IMAGE_REF")"
-  printf '%s' "$INDEX_JSON" | jq -e '
-    .mediaType == "application/vnd.oci.image.index.v1+json" and
-    ([
-      .manifests[] |
-      select(.annotations["vnd.docker.reference.type"] != "attestation-manifest") |
-      [.platform.os, .platform.architecture]
-    ] | sort) == [["linux", "amd64"], ["linux", "arm64"]] and
-    ([
-      .manifests[] |
-      select(.annotations["vnd.docker.reference.type"] == "attestation-manifest")
-    ] | length) == 2
-  ' >/dev/null
-
-  printf '%s' "$INDEX_JSON" | jq -r '
-    .manifests[] |
-    select(.annotations["vnd.docker.reference.type"] == "attestation-manifest") |
-    .digest
-  ' | while IFS= read -r ATTESTATION_DIGEST; do
-    docker buildx imagetools inspect --raw \
-      "${IMAGE_REF%@*}@${ATTESTATION_DIGEST}" | jq -e '
-        ([
-          .layers[] |
-          select(
-            .mediaType == "application/vnd.in-toto+json" and
-            .annotations["in-toto.io/predicate-type"] == "https://spdx.dev/Document"
-          )
-        ] | length) == 1 and
-        ([
-          .layers[] |
-          select(
-            .mediaType == "application/vnd.in-toto+json" and
-            .annotations["in-toto.io/predicate-type"] == "https://slsa.dev/provenance/v1"
-          )
-        ] | length) == 1
-      ' >/dev/null
-  done
-done
-```
-
-The image workflow also verifies each attestation subject against its platform manifest.
-
-Pin both digests in `infra/kubernetes/overlays/prod/kustomization.yaml`.
-
-Create and push a reviewed GitOps commit with those pins. Do not change runtime files in that commit.
-
-```sh
-GITOPS_SHA="$(git rev-parse HEAD)"
-git merge-base --is-ancestor "$RELEASE_SHA" "$GITOPS_SHA"
-node scripts/verify-deployment-readiness.mjs
+export DEPLOYMENT_SHA="$(git rev-parse HEAD)"
 gh workflow run release-gate.yml --ref main \
   -f source_sha="$RELEASE_SHA" \
-  -f gitops_sha="$GITOPS_SHA"
+  -f deployment_sha="$DEPLOYMENT_SHA"
 ```
 
-Wait for the release gate to pass. It checks out `GITOPS_SHA` and plans that exact commit.
+The gate permits only the three release values between both commits.
 
-The gate accepts only the production Kustomization between both commits.
+The gate also binds both registry digests to `RELEASE_SHA`.
 
-The gate resolves both `sha-$RELEASE_SHA` image tags. Their index digests must match both pins.
+## Apply the release
 
-### 2. Deploy the compatible agent while the old Core stays live
+Open the production Compose application in Coolify.
 
-The new agent must accept the old Core request contract. Verify the compatibility test first.
+Select `DEPLOYMENT_SHA` as the Git revision.
 
-```sh
-pnpm exec vitest run packages/contracts/test/agent.test.ts packages/pi-agent/test/tools.test.ts
-```
+Set these application values from `infra/coolify/release.json`:
 
-Do not run the Cloudflare deployment in this step.
+- `BOB_RELEASE_SHA`
+- `BOB_AGENT_IMAGE_DIGEST`
+- `BOB_BACKUP_IMAGE_DIGEST`
 
-Bootstrap the isolated Argo repository identity when this is the first deployment.
+Deploy the application.
 
-```sh
-kubectl --context=teampitch-prod apply --server-side \
-  -f infra/argocd/namespace.yaml \
-  -f infra/argocd/repository-service-account.yaml \
-  -f infra/argocd/repository-secret-store.yaml
+Do not change the Compose model during this action.
 
-kubectl --context=teampitch-prod -n argocd wait \
-  --for=condition=Ready secretstore/bob-argocd-repository \
-  --timeout=2m
+Wait for the agent, Tunnel, Nango, backup runner, and observer to become healthy.
 
-kubectl --context=teampitch-prod apply --server-side \
-  -f infra/argocd/repository-external-secret.yaml
+## Verify readiness
 
-kubectl --context=teampitch-prod -n argocd wait \
-  --for=condition=Ready externalsecret/bob-repository \
-  --timeout=2m
-```
+Keep `/health` as the public liveness check.
 
-Apply the scoped project and application. Set the live Argo target to the reviewed GitOps SHA.
+Call `/v1/admin/readiness` through the admin Cloudflare Access policy.
 
-```sh
-kubectl --context=teampitch-prod apply --server-side -f infra/argocd/project.yaml
-kubectl --context=teampitch-prod apply --server-side -f infra/argocd/application.yaml
-kubectl --context=teampitch-prod -n argocd patch application bob --type=merge \
-  --patch "{\"spec\":{\"source\":{\"targetRevision\":\"$GITOPS_SHA\"}}}"
+Require HTTP 200 and both checks to report `ready`.
 
-kubectl --context=teampitch-prod -n argocd wait \
-  --for=jsonpath='{.status.sync.status}'=Synced application/bob --timeout=10m
-kubectl --context=teampitch-prod -n argocd wait \
-  --for=jsonpath='{.status.health.status}'=Healthy application/bob --timeout=10m
-kubectl --context=teampitch-prod -n bob rollout status deployment/bob-agent --timeout=10m
-```
+This check proves that the agent can read its OAuth record and reach Core.
 
-Record the same reviewed target in `infra/argocd/application.yaml` after the cutover.
+Run one synthetic inbound message through the canary number.
 
-### 3. Verify the new agent against the old Core
+Require one accepted outbound result and one linked provider status.
 
-Confirm the deployed image matches the attested agent digest.
+Run the Coolify backup task once.
+
+Require `independentCopy` to report `completed`.
+
+Confirm that the latest Bob and Nango backup age is below 18,000 seconds.
+
+## Apply the Cloudflare plan
+
+Use the plan from the successful release gate.
+
+Set the same source revision before the trusted apply.
 
 ```sh
-DEPLOYED_AGENT_IMAGE="$(kubectl --context=teampitch-prod -n bob \
-  get deployment bob-agent -o jsonpath='{.spec.template.spec.containers[?(@.name=="agent")].image}')"
-test "$DEPLOYED_AGENT_IMAGE" = "ghcr.io/arek-e/bob-agent@${AGENT_DIGEST}"
-kubectl --context=teampitch-prod -n bob exec deployment/bob-agent -c agent -- \
-  node --input-type=module -e '
-    const response = await fetch("http://127.0.0.1:8787/health")
-    if (!response.ok) process.exit(1)
-  '
-```
-
-Repeat the agent-to-Core Access check from the release preflight.
-
-Check the Core `/health` and `/setup` paths again. The old Core must remain live.
-
-Point `AGENT_URL` and `AGENT_ADMIN_URL` at the new agent. Run the bounded live suite.
-
-```sh
-pnpm agent:smoke:predeploy
-```
-
-The suite must complete all cases. It must not execute a Tool.
-
-Use the pre-Core rollback procedure when any check fails.
-
-### 4. Drain runs and deploy the reviewed Cloudflare plan
-
-Keep Sendblue traffic paused. Wait for the old agent pod to terminate.
-
-Query production D1 immediately before the Cloudflare deployment.
-
-```sh
-DRAIN_SQL="SELECT \
-  (SELECT COUNT(*) FROM agent_runs WHERE status IN ('pending','claimed','executing')) AS active_runs, \
-  (SELECT COUNT(*) FROM tool_calls WHERE status IN ('pending','claimed','executing')) AS active_tool_calls"
-DRAIN_FILE="$BOB_OPERATOR_RECORD_DIR/d1-drain.json"
-pnpm --filter @bob/cloudflare-infra exec varlock run --inject all --skip-cache -- \
-  sh -c 'wrangler d1 execute bob-prod --remote --json --command "$1" > "$2"' \
-  operator-record "$DRAIN_SQL" "$DRAIN_FILE"
-jq -e \
-  '.[0].results[0] | .active_runs == 0 and .active_tool_calls == 0' \
-  "$DRAIN_FILE" >/dev/null
-```
-
-Stop when either count is not zero. Reconcile the active action before another check.
-
-The gate prevents an old result from reaching the new Core contract.
-
-Apply only the reviewed production plan. Use the same GitOps commit that produced the plan.
-
-```sh
-test "$(git rev-parse HEAD)" = "$GITOPS_SHA"
-git diff --quiet
 export BOB_RELEASE_SHA="$RELEASE_SHA"
-pnpm infra:plan
-pnpm --filter @bob/cloudflare-infra deploy
 ```
 
-Keep the stable `https://bob.${BOB_DOMAIN}` host. Do not cut traffic to another Core address.
+Apply only that reviewed plan.
 
-Verify D1 and R2 report EU jurisdiction. Verify every Queue and dead letter Queue.
+Do not copy the Worker OTLP token to OpenBao.
 
-Verify Better Auth protects each owner API route.
+The Worker uses its scoped Cloudflare Access token.
 
-Verify Access protects only the Core `/internal` and `/setup` paths.
-
-Verify Access still protects the agent host. Verify the ingress host remains public.
-
-Verify the Worker OTLP host requires Cloudflare Access.
+The protected endpoint is:
 
 ```sh
 OTLP_URL="https://bob-otel.${BOB_DOMAIN}"
-OTLP_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' "$OTLP_URL/v1/traces")"
-case "$OTLP_STATUS" in 401|403) ;; *) exit 1 ;; esac
 ```
 
-Do not use `/health` as a trace test. Health checks do not create application spans.
+## Observe
 
-Send this invented text from the allowlisted owner number:
+Observe delivery errors, queue depth, reminder misses, and agent failures.
 
-```text
-List my reminders.
-```
+Keep the release under observation for at least 30 minutes.
 
-This check uses a read-only Tool. An empty reminder list is valid.
+Record the source SHA, deployment SHA, image digests, and backup result.
 
-Record the new inbound correlation ID from D1. Do not print message text or phone numbers.
+## Roll back
 
-Confirm that one Tempo trace contains these services:
+Select the last healthy Coolify deployment.
 
-- `bob-sendblue-ingress`
-- `bob-core-worker`
-- `bob-agent`
-- `bob-sendblue-egress`
+Restore its three release values and deploy it.
 
-Confirm that the trace contains `bob.tool.invoke`, `bob.tool.execute`, and `bob.tool.domain`.
+Do not retry an uncertain delivery during rollback.
 
-Confirm that D1 shows all of these results:
+Reconcile provider status first.
 
-- One processed inbound event.
-- One agent run with `status=completed`.
-- No failed agent attempt.
-- One completed `reminder_list` Tool call.
-- One accepted outbox with `reason_code=agent_reply`.
-- One delivered attempt for that outbox.
+Run `/v1/admin/readiness` and the backup freshness checks again.
 
-Reject `agent_failure`, `agent_boundary_fallback`, and `agent_degraded_recall`. A delivered failure reply is not acceptance.
-
-Confirm that Loki shows a completed `agent_run` event with approved fields only.
-
-Do not mark production tracing complete until Tempo, Loki, and D1 agree.
-
-The Worker OTLP token goes directly into Worker bindings. Do not copy the Worker OTLP token to OpenBao.
-
-Enable the reviewed credential handoff only in trusted GitHub Actions.
-
-Write the Access records and Tunnel token directly to OpenBao.
-
-Do not store these values in workflow artifacts or command output.
-
-Never reverse an additive D1 migration during deployment or rollback.
-
-### 5. Wait for the External Secrets refresh
-
-Record the current refresh time. Then request one immediate refresh.
-
-```sh
-PRIOR_REFRESH_TIME="$(kubectl --context=teampitch-prod -n bob \
-  get externalsecret bob-agent-bootstrap -o jsonpath='{.status.refreshTime}')"
-ESO_REQUESTED_AT="$(date +%s)"
-kubectl --context=teampitch-prod -n bob annotate externalsecret bob-agent-bootstrap \
-  force-sync="$ESO_REQUESTED_AT" --overwrite
-
-for _ in {1..36}; do
-  CURRENT_REFRESH_TIME="$(kubectl --context=teampitch-prod -n bob \
-    get externalsecret bob-agent-bootstrap -o jsonpath='{.status.refreshTime}')"
-  test "$CURRENT_REFRESH_TIME" != "$PRIOR_REFRESH_TIME" && break
-  sleep 5
-done
-test "$CURRENT_REFRESH_TIME" != "$PRIOR_REFRESH_TIME"
-kubectl --context=teampitch-prod -n bob wait \
-  --for=condition=Ready externalsecret/bob-agent-bootstrap --timeout=2m
-```
-
-Confirm the synchronized Secret contains every required key. Never print its data.
-
-Stop when the secret workflow or scoped OpenBao role is absent.
-
-### 6. Force and verify an agent restart
-
-The running pod does not reload synchronized environment values.
-
-```sh
-PRIOR_AGENT_POD_UID="$(kubectl --context=teampitch-prod -n bob \
-  get pod -l app.kubernetes.io/name=bob-agent -o jsonpath='{.items[0].metadata.uid}')"
-kubectl --context=teampitch-prod -n bob rollout restart deployment/bob-agent
-kubectl --context=teampitch-prod -n bob rollout status deployment/bob-agent --timeout=10m
-CURRENT_AGENT_POD_UID="$(kubectl --context=teampitch-prod -n bob \
-  get pod -l app.kubernetes.io/name=bob-agent -o jsonpath='{.items[0].metadata.uid}')"
-test "$CURRENT_AGENT_POD_UID" != "$PRIOR_AGENT_POD_UID"
-```
-
-Verify the image digest again. Repeat the agent health and internal Access checks.
-
-Use the post-Core rollback procedure when any check fails.
-
-### 7. Accept traffic and test domain tools
-
-Resume Sendblue only after every prior gate passes.
-
-Run the Sendblue reconciler after the ingress URL is stable.
-
-Run one harmless round trip. Then verify duplicate and timeout states in D1.
-
-Test read-only domain tools first. Test one reversible write only after those checks pass.
-
-For the first Better Auth release, open the stable Core `/setup` path.
-
-Complete the Cloudflare Access check. Create the owner password once.
-
-Confirm `/settings` opens with the new session. Then sign out and sign in again.
-
-The setup API rejects another account after the owner record exists.
-
-Access service tokens expire after seven days.
-
-Increment `ACCESS_SERVICE_TOKEN_ROTATION_VERSION` for each rotation.
-
-Set `ACCESS_SERVICE_TOKEN_ROTATE_BY` between 24 hours and eight days ahead.
-
-Rotate and sync the three agent service tokens before that deadline.
-
-Redeploy the Workers to rotate the Worker OTLP token before that deadline.
-
-Never print a service secret or Tunnel token. Store only agent runtime copies in OpenBao.
-
-The generic base uses invalid image sentinels and unresolved host inputs.
-
-Only the production overlay is deployable.
-
-The root Kustomization renders that overlay.
-
-The readiness check rejects unresolved, mutable, or local-only images.
-
-External Secrets synchronizes live credentials from OpenBao.
-
-## Production safety
-
-Production D1, R2, and Queues use retain policies.
-
-Never run `alchemy unsafe nuke` for Bob.
-
-Do not remove retained resources to simulate a reset.
+Use [Incident recovery](incident-recovery.md) if the runtime does not recover.
