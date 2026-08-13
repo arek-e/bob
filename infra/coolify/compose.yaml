@@ -194,8 +194,12 @@ services:
       - >-
         const fs=require('node:fs');
         const source='/run/secrets/openbao_approle_secret_id';
+        const directory='/run/agent-secrets';
         const target='/run/agent-secrets/openbao_approle_secret_id';
+        fs.chownSync(directory,1000,1000);
+        fs.chmodSync(directory,0o700);
         fs.copyFileSync(source,target);
+        fs.chownSync(target,1000,1000);
         fs.chmodSync(target,0o400)
     restart: "no"
     security_opt: [no-new-privileges:true]
@@ -205,9 +209,9 @@ services:
         uid: "1000"
         gid: "1000"
         mode: 0400
-    user: "1000:1000"
+    user: "0:0"
     volumes:
-      - agent-secrets:/run/agent-secrets
+      - /run/bob-agent-secrets:/run/agent-secrets
 
   agent:
     <<: *runtime-security
@@ -249,7 +253,7 @@ services:
     tmpfs:
       - /tmp:mode=1777,uid=1000,gid=1000
     volumes:
-      - agent-secrets:/run/secrets:ro
+      - /run/bob-agent-secrets:/run/secrets:ro
     deploy:
       resources:
         limits:
@@ -438,12 +442,6 @@ networks:
     external: true
 
 volumes:
-  agent-secrets:
-    driver: local
-    driver_opts:
-      type: tmpfs
-      device: tmpfs
-      o: uid=1000,gid=1000,mode=0700
   bob-backups:
 
 secrets:

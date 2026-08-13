@@ -34,7 +34,12 @@ describe("Coolify production stack", () => {
     ) as {
       services: {
         agent: { read_only?: boolean; volumes?: Array<{ target: string; read_only?: boolean }> }
-        "agent-secret-init": { read_only?: boolean; secrets?: Array<{ target: string }> }
+        "agent-secret-init": {
+          read_only?: boolean
+          secrets?: Array<{ target: string }>
+          user?: string
+          volumes?: Array<{ source: string; target: string }>
+        }
       }
     }
 
@@ -49,11 +54,19 @@ describe("Coolify production stack", () => {
     expect(compose).toContain("Date.now()-newest>18000000")
     expect(model.services.agent.read_only).toBe(true)
     expect(model.services["agent-secret-init"].read_only).not.toBe(true)
+    expect(model.services["agent-secret-init"].user).toBe("0:0")
     expect(model.services["agent-secret-init"].secrets).toContainEqual(
       expect.objectContaining({ target: "openbao_approle_secret_id" })
     )
+    expect(model.services["agent-secret-init"].volumes).toContainEqual(
+      expect.objectContaining({ source: "/run/bob-agent-secrets", target: "/run/agent-secrets" })
+    )
     expect(model.services.agent.volumes).toContainEqual(
-      expect.objectContaining({ target: "/run/secrets", read_only: true })
+      expect.objectContaining({
+        source: "/run/bob-agent-secrets",
+        target: "/run/secrets",
+        read_only: true
+      })
     )
   })
 
