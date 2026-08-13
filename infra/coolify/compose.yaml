@@ -75,6 +75,7 @@ x-observer-config: &observer-config |-
             - http://coolify:8080/api/health
             - https://nango.tpops.dev/health
             - https://bob-agent.tpops.dev/health
+            - https://bob-sendblue.tpops.dev/health
 
     tcp_check:
       collection_interval: 30s

@@ -387,7 +387,8 @@ Sendblue does not document that behavior.
 
 #### Sendblue egress Worker
 
-- Hold only outbound Sendblue credentials.
+- Hold the Sendblue API credentials.
+- Use bounded provider-history reads to recover missed inbound webhooks.
 - Consume opaque outbox identifiers.
 - Claim and fetch SMS-safe content through a core service binding.
 - Record a dispatch attempt before the provider call.

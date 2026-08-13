@@ -447,6 +447,7 @@ export function createBobStack(options: BobStackOptions) {
           main: "../../apps/sendblue-egress/src/index.ts",
           workersDev: false,
           domain: egressHost,
+          crons: ["*/2 * * * *"],
           compatibility: { date: "2026-08-10" },
           observability: {
             enabled: true,
@@ -455,6 +456,7 @@ export function createBobStack(options: BobStackOptions) {
           },
           env: {
             CORE: coreWorker,
+            INGRESS: ingress,
             DELIVERY_RESULT_QUEUE: deliveryResultQueue,
             SENDBLUE_API_KEY_ID: Redacted.make(
               requiredSendblue(ENV.SENDBLUE_API_KEY_ID, "SENDBLUE_API_KEY_ID")
@@ -462,6 +464,9 @@ export function createBobStack(options: BobStackOptions) {
             SENDBLUE_API_SECRET_KEY: Redacted.make(
               requiredSendblue(ENV.SENDBLUE_API_SECRET_KEY, "SENDBLUE_API_SECRET_KEY")
             ),
+            SENDBLUE_WEBHOOK_SIGNING_SECRET: Redacted.make(webhookSecret),
+            SENDBLUE_FROM_NUMBER: Redacted.make(fromNumber),
+            SENDBLUE_ALLOWED_USER_NUMBER: Redacted.make(ownerNumber),
             SENDBLUE_STATUS_CALLBACK_URL: Output.map(
               ingress.url,
               () => `https://${ingressHost}/webhooks/outbound`
