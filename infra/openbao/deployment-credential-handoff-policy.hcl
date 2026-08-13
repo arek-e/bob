@@ -10,9 +10,6 @@ path "ops/data/apps/prod/bob/access/agent-to-core" {
   capabilities = ["create", "update"]
 }
 
-path "ops/data/apps/prod/bob/tunnel/agent-host" {
-  capabilities = ["create", "update"]
-}
 
 path "auth/token/revoke-self" {
   capabilities = ["update"]

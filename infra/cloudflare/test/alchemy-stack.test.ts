@@ -39,7 +39,7 @@ describe("Alchemy compatibility stack", () => {
     })
 
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain("Plan: 41 to create")
+    expect(result.stdout).toContain("Plan: 35 to create")
     for (const resource of [
       "[BackupArchives] create",
       "[NangoBackups] create",
@@ -47,7 +47,6 @@ describe("Alchemy compatibility stack", () => {
       "[WorkerToOtlp] create",
       "[WorkerOtlpServicePolicy] create",
       "[WorkerOtlpApplication] create",
-      "[OtlpTunnelDns] create",
       "[CoreWorker/OTEL_EXPORTER_OTLP_ENDPOINT] create",
       "[CoreWorker/OTEL_ACCESS_CLIENT_ID] create",
       "[CoreWorker/OTEL_ACCESS_CLIENT_SECRET] create",
@@ -140,25 +139,9 @@ describe("Alchemy compatibility stack", () => {
     expect(stack).toContain("tokenId: workerToOtlp.serviceTokenId")
     expect(stack).toContain('"WorkerOtlpApplication"')
     expect(stack).toContain("domain: otlpHost")
-    expect(stack).toContain("{ hostname: otlpHost, service: ENV.OTEL_ORIGIN_URL }")
-    expect(stack).toContain("{ hostname: nangoHost, service: ENV.NANGO_ORIGIN_URL }")
-    expect(stack).toContain("{ hostname: nangoConnectHost, service: ENV.NANGO_CONNECT_ORIGIN_URL }")
-
-    const otlpDns = stack.slice(
-      stack.indexOf('Cloudflare.DNS.Record("OtlpTunnelDns"'),
-      stack.indexOf('Cloudflare.DNS.Record("NangoTunnelDns"')
-    )
-    expect(otlpDns).toContain("name: otlpHost")
-    expect(otlpDns).toContain('type: "CNAME"')
-    expect(otlpDns).toContain(
-      "content: Output.interpolate`${agentTunnel.tunnelId}.cfargotunnel.com`"
-    )
-    expect(otlpDns).toContain("proxied: true")
-
-    const otlpIngress = stack.indexOf("hostname: otlpHost")
-    const catchAll = stack.indexOf('{ service: "http_status:404" }')
-    expect(otlpIngress).toBeGreaterThan(-1)
-    expect(otlpIngress).toBeLessThan(catchAll)
+    expect(stack).not.toContain("ENV.OTEL_ORIGIN_URL")
+    expect(stack).not.toContain("ENV.NANGO_ORIGIN_URL")
+    expect(stack).not.toContain('Cloudflare.Tunnel.Tunnel("AgentTunnel"')
 
     const handoff = stack.slice(
       stack.indexOf("yield* RuntimeCredentialHandoff"),

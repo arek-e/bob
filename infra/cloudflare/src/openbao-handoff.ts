@@ -9,7 +9,6 @@ export interface RuntimeCredentials {
   readonly coreToAgentAdminClientSecret: string
   readonly agentToCoreClientId: string
   readonly agentToCoreClientSecret: string
-  readonly tunnelToken: string
 }
 
 export interface HandoffIdentityInput {
@@ -148,7 +147,7 @@ export async function syncRuntimeCredentials(
   input: RuntimeCredentials,
   identity: HandoffIdentity,
   fetch: typeof globalThis.fetch = globalThis.fetch
-): Promise<{ readonly recordsWritten: 4 }> {
+): Promise<{ readonly recordsWritten: 3 }> {
   const token =
     identity.kind === "openbao-token"
       ? identity.deployToken
@@ -182,10 +181,6 @@ export async function syncRuntimeCredentials(
         CORE_URL: input.coreUrl,
         ACCESS_TEAM_DOMAIN: input.accessTeamDomain
       }
-    },
-    {
-      path: `${prefix}/tunnel/agent-host`,
-      data: { TUNNEL_TOKEN: input.tunnelToken }
     }
   ] as const
   let writeFailure: unknown
@@ -220,5 +215,5 @@ export async function syncRuntimeCredentials(
     throw new RuntimeCredentialHandoffError("handoff token revocation", revocation.status)
   }
   if (writeFailure !== undefined) throw writeFailure
-  return { recordsWritten: 4 }
+  return { recordsWritten: 3 }
 }

@@ -18,8 +18,7 @@ const runtimeCredentials: RuntimeCredentials = {
   coreToAgentAdminClientId: "admin-client",
   coreToAgentAdminClientSecret: "admin-secret",
   agentToCoreClientId: "core-client",
-  agentToCoreClientSecret: "core-secret",
-  tunnelToken: "tunnel-secret"
+  agentToCoreClientSecret: "core-secret"
 }
 
 describe("OpenBao runtime credential handoff", () => {
@@ -58,12 +57,11 @@ describe("OpenBao runtime credential handoff", () => {
       fetch
     )
 
-    expect(result).toEqual({ recordsWritten: 4 })
-    expect(requests.slice(2, 6).map((request) => request.url)).toEqual([
+    expect(result).toEqual({ recordsWritten: 3 })
+    expect(requests.slice(2, 5).map((request) => request.url)).toEqual([
       "https://bao.example.invalid/v1/ops/data/apps/prod/bob/access/core-to-agent",
       "https://bao.example.invalid/v1/ops/data/apps/prod/bob/access/core-to-agent-admin",
-      "https://bao.example.invalid/v1/ops/data/apps/prod/bob/access/agent-to-core",
-      "https://bao.example.invalid/v1/ops/data/apps/prod/bob/tunnel/agent-host"
+      "https://bao.example.invalid/v1/ops/data/apps/prod/bob/access/agent-to-core"
     ])
     expect(requests.at(-1)?.url).toBe("https://bao.example.invalid/v1/auth/token/revoke-self")
     expect(JSON.stringify(result)).not.toContain("secret")
@@ -87,10 +85,10 @@ describe("OpenBao runtime credential handoff", () => {
         },
         fetch
       )
-    ).resolves.toEqual({ recordsWritten: 4 })
+    ).resolves.toEqual({ recordsWritten: 3 })
 
-    expect(requests).toHaveLength(5)
-    expect(requests.slice(0, 4).every(({ url }) => url.includes("/ops/data/apps/prod/bob/"))).toBe(
+    expect(requests).toHaveLength(4)
+    expect(requests.slice(0, 3).every(({ url }) => url.includes("/ops/data/apps/prod/bob/"))).toBe(
       true
     )
     expect(requests.at(-1)?.url).toBe("https://bao.example.invalid/v1/auth/token/revoke-self")
