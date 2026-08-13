@@ -48,7 +48,9 @@ Store the role ID as `BAO_APPROLE_ROLE_ID`.
 
 Store the secret ID as the Coolify secret source `BAO_APPROLE_SECRET_ID`.
 
-Compose mounts it at `/run/secrets/openbao_approle_secret_id`.
+The one-shot `agent-secret-init` service copies it into a tmpfs volume.
+
+The read-only agent mounts that volume at `/run/secrets`.
 
 The agent container does not receive it as an environment value.
 

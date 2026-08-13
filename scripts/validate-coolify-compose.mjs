@@ -1,7 +1,15 @@
 import { readFile } from "node:fs/promises"
 
 const composePath = new URL("../infra/coolify/compose.yaml", import.meta.url)
-const requiredServices = ["agent", "tunnel", "nango", "nango-redis", "backup-runner", "observer"]
+const requiredServices = [
+  "agent-secret-init",
+  "agent",
+  "tunnel",
+  "nango",
+  "nango-redis",
+  "backup-runner",
+  "observer"
+]
 const immutableImage = /image:\s+[^\s@]+@(?:sha256:[a-f0-9]{64}|\$\{[A-Z0-9_]+(?::\?[^}]*)?\})/u
 
 function serviceSection(source, service) {

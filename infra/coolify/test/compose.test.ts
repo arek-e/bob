@@ -18,7 +18,7 @@ describe("Coolify production stack", () => {
 
   it("pins every image and publishes no host ports", () => {
     const images = [...compose.matchAll(/^\s+image:\s+(.+)$/gm)].map((match) => match[1])
-    expect(images).toHaveLength(6)
+    expect(images).toHaveLength(7)
     expect(images.every((image) => image?.includes("@sha256:") || image?.includes("@${"))).toBe(
       true
     )
@@ -26,6 +26,18 @@ describe("Coolify production stack", () => {
   })
 
   it("uses Coolify AppRole login and a persistent backup volume", () => {
+    const model = JSON.parse(
+      execFileSync("docker", ["compose", "-f", composeUrl.pathname, "config", "--format", "json"], {
+        env: fixtureEnvironment(),
+        encoding: "utf8"
+      })
+    ) as {
+      services: {
+        agent: { read_only?: boolean; volumes?: Array<{ target: string; read_only?: boolean }> }
+        "agent-secret-init": { read_only?: boolean; secrets?: Array<{ target: string }> }
+      }
+    }
+
     expect(compose).toContain("BAO_AUTH_METHOD: approle")
     expect(compose).not.toContain("BAO_APPROLE_SECRET_ID: ${BAO_APPROLE_SECRET_ID:?}")
     expect(compose).toContain("BAO_APPROLE_SECRET_ID_PATH: /run/secrets/openbao_approle_secret_id")
@@ -35,6 +47,14 @@ describe("Coolify production stack", () => {
     expect(compose).toContain("external: true")
     expect(compose).toContain("bob-backups:/backups")
     expect(compose).toContain("Date.now()-newest>18000000")
+    expect(model.services.agent.read_only).toBe(true)
+    expect(model.services["agent-secret-init"].read_only).not.toBe(true)
+    expect(model.services["agent-secret-init"].secrets).toContainEqual(
+      expect.objectContaining({ target: "openbao_approle_secret_id" })
+    )
+    expect(model.services.agent.volumes).toContainEqual(
+      expect.objectContaining({ target: "/run/secrets", read_only: true })
+    )
   })
 
   it("exports content-free host, container, service, and backup metrics", () => {
