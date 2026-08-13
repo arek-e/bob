@@ -48,9 +48,9 @@ Store the role ID as `BAO_APPROLE_ROLE_ID`.
 
 Store the secret ID as the Coolify secret source `BAO_APPROLE_SECRET_ID`.
 
-The one-shot `agent-secret-init` service copies it into a tmpfs volume.
+The one-shot `agent-secret-init` service copies it into `/run/bob-agent-secrets`.
 
-The read-only agent mounts that volume at `/run/secrets`.
+The guest stores `/run` in tmpfs. The read-only agent mounts that directory at `/run/secrets`.
 
 The agent container does not receive it as an environment value.
 
