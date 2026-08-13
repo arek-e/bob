@@ -1,0 +1,97 @@
+services:
+  agent:
+    image: ghcr.io/arek-e/bob-agent@${BOB_AGENT_IMAGE_DIGEST:?BOB_AGENT_IMAGE_DIGEST is required}
+    restart: unless-stopped
+    expose:
+      - "8787"
+    environment:
+      PORT: "8787"
+      BAO_ADDR: ${BAO_ADDR:?BAO_ADDR is required}
+      BAO_APPROLE_ROLE_ID: ${BAO_APPROLE_ROLE_ID:?BAO_APPROLE_ROLE_ID is required}
+      BAO_APPROLE_SECRET_ID: ${BAO_APPROLE_SECRET_ID:?BAO_APPROLE_SECRET_ID is required}
+      BOB_PROVIDER: openai-codex
+      BOB_MODEL: ${BOB_MODEL:?BOB_MODEL is required}
+      BOB_ALLOWED_MODELS: ${BOB_ALLOWED_MODELS:?BOB_ALLOWED_MODELS is required}
+      BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?BOB_RELEASE_SHA is required}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?OTEL_EXPORTER_OTLP_ENDPOINT is required}
+      CORE_URL: ${CORE_URL:?CORE_URL is required}
+      CORE_ACCESS_CLIENT_ID: ${CORE_ACCESS_CLIENT_ID:?CORE_ACCESS_CLIENT_ID is required}
+      CORE_ACCESS_CLIENT_SECRET: ${CORE_ACCESS_CLIENT_SECRET:?CORE_ACCESS_CLIENT_SECRET is required}
+      ACCESS_TEAM_DOMAIN: ${ACCESS_TEAM_DOMAIN:?ACCESS_TEAM_DOMAIN is required}
+      RUN_ACCESS_AUDIENCE: ${RUN_ACCESS_AUDIENCE:?RUN_ACCESS_AUDIENCE is required}
+      RUN_ACCESS_SUBJECT: ${RUN_ACCESS_SUBJECT:?RUN_ACCESS_SUBJECT is required}
+      ADMIN_ACCESS_AUDIENCE: ${ADMIN_ACCESS_AUDIENCE:?ADMIN_ACCESS_AUDIENCE is required}
+      ADMIN_ACCESS_SUBJECT: ${ADMIN_ACCESS_SUBJECT:?ADMIN_ACCESS_SUBJECT is required}
+
+  cloudflared:
+    image: docker.io/cloudflare/cloudflared@${CLOUDFLARED_IMAGE_DIGEST:?CLOUDFLARED_IMAGE_DIGEST is required}
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARED_TUNNEL_TOKEN:?CLOUDFLARED_TUNNEL_TOKEN is required}
+
+  nango:
+    image: docker.io/nangohq/nango-server@${NANGO_IMAGE_DIGEST:?NANGO_IMAGE_DIGEST is required}
+    restart: unless-stopped
+    expose:
+      - "3003"
+      - "3009"
+    environment:
+      SERVER_PORT: "3003"
+      FLAG_SERVE_CONNECT_UI: "true"
+      NANGO_CONNECT_UI_PORT: "3009"
+      NANGO_SERVER_URL: ${NANGO_SERVER_URL:?NANGO_SERVER_URL is required}
+      NANGO_PUBLIC_SERVER_URL: ${NANGO_PUBLIC_SERVER_URL:?NANGO_PUBLIC_SERVER_URL is required}
+      NANGO_PUBLIC_CONNECT_URL: ${NANGO_PUBLIC_CONNECT_URL:?NANGO_PUBLIC_CONNECT_URL is required}
+      FLAG_AUTH_ENABLED: "false"
+      NANGO_LOGS_ENABLED: "false"
+      NANGO_PROXY_BASE_URL_OVERRIDE_ENABLED: "false"
+      NANGO_TELEMETRY_SDK: "false"
+      TELEMETRY: "false"
+      LOG_LEVEL: info
+      NANGO_DB_HOST: ${NANGO_DB_HOST:?NANGO_DB_HOST is required}
+      NANGO_DB_PORT: ${NANGO_DB_PORT:-5432}
+      NANGO_DB_USER: ${NANGO_DB_USER:?NANGO_DB_USER is required}
+      NANGO_DB_NAME: ${NANGO_DB_NAME:?NANGO_DB_NAME is required}
+      NANGO_DB_PASSWORD: ${NANGO_DB_PASSWORD:?NANGO_DB_PASSWORD is required}
+      NANGO_DB_SSL: ${NANGO_DB_SSL:-true}
+      NANGO_RECORDS_DATABASE_URL: ${NANGO_RECORDS_DATABASE_URL:?NANGO_RECORDS_DATABASE_URL is required}
+      RECORDS_DATABASE_URL: ${NANGO_RECORDS_DATABASE_URL:?NANGO_RECORDS_DATABASE_URL is required}
+      NANGO_REDIS_URL: redis://redis:6379
+      NANGO_MIGRATE_AT_START: "true"
+      NANGO_SECRET_KEY_DEV: ${NANGO_SECRET_KEY:?NANGO_SECRET_KEY is required}
+      NANGO_ENCRYPTION_KEY: ${NANGO_ENCRYPTION_KEY:?NANGO_ENCRYPTION_KEY is required}
+      NANGO_ADMIN_KEY: ${NANGO_ADMIN_KEY:?NANGO_ADMIN_KEY is required}
+      NANGO_DASHBOARD_USERNAME: ${NANGO_DASHBOARD_USERNAME:?NANGO_DASHBOARD_USERNAME is required}
+      NANGO_DASHBOARD_PASSWORD: ${NANGO_DASHBOARD_PASSWORD:?NANGO_DASHBOARD_PASSWORD is required}
+
+  redis:
+    image: docker.io/library/redis@${REDIS_IMAGE_DIGEST:?REDIS_IMAGE_DIGEST is required}
+    restart: unless-stopped
+    expose:
+      - "6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+  backup-runner:
+    image: ghcr.io/arek-e/bob-data-backup@${BOB_BACKUP_IMAGE_DIGEST:?BOB_BACKUP_IMAGE_DIGEST is required}
+    restart: "no"
+    volumes:
+      - bob-backups:/backups
+    environment:
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:?CLOUDFLARE_ACCOUNT_ID is required}
+      CLOUDFLARE_D1_DATABASE_ID: ${CLOUDFLARE_D1_DATABASE_ID:?CLOUDFLARE_D1_DATABASE_ID is required}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}
+      R2_BUCKET: ${R2_BUCKET:?R2_BUCKET is required}
+      R2_ENDPOINT: ${R2_ENDPOINT:?R2_ENDPOINT is required}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:?BACKUP_AGE_RECIPIENT is required}
+      BACKUP_OUTPUT_DIRECTORY: /backups
+      BACKUP_MAX_BYTES: ${BACKUP_MAX_BYTES:-268435456}
+      BACKUP_RETENTION_COUNT: ${BACKUP_RETENTION_COUNT:-42}
+      BACKUP_MIGRATIONS_DIRECTORY: ../../apps/core-worker/migrations
+      BACKUP_RESTORE_DATABASE_PREFIX: ${BACKUP_RESTORE_DATABASE_PREFIX:-bob-restore-drill}
+      BACKUP_RESTORE_BUCKET_PREFIX: ${BACKUP_RESTORE_BUCKET_PREFIX:-bob-restore-drill}
+
+volumes:
+  bob-backups:

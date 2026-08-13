@@ -14,15 +14,15 @@ describe("OpenBao Pi credential store", () => {
   it("lists metadata without token values", async () => {
     const request = vi.fn<typeof fetch>(async (input) => {
       const url = String(input)
-      if (url.includes("/auth/kubernetes/login")) {
+      if (url.includes("/auth/approle/login")) {
         return Response.json({ auth: { client_token: "vault-token", lease_duration: 300 } })
       }
       return Response.json({ data: { data: credential, metadata: { version: 4 } } })
     })
     const store = new OpenBaoCredentialStore({
       address: "https://bao.example",
-      kubernetesRole: "bob",
-      getKubernetesJwt: async () => "jwt",
+      appRoleRoleId: "role-id",
+      getAppRoleSecretId: async () => "secret-id",
       fetch: request
     })
     await expect(store.list()).resolves.toEqual([{ providerId: "openai-codex", type: "oauth" }])
@@ -37,7 +37,7 @@ describe("OpenBao Pi credential store", () => {
     const bodies: unknown[] = []
     const request = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input)
-      if (url.includes("/auth/kubernetes/login")) {
+      if (url.includes("/auth/approle/login")) {
         return Response.json({ auth: { client_token: "vault-token", lease_duration: 300 } })
       }
       if (init?.method === "POST") {
@@ -48,8 +48,8 @@ describe("OpenBao Pi credential store", () => {
     })
     const store = new OpenBaoCredentialStore({
       address: "https://bao.example",
-      kubernetesRole: "bob",
-      getKubernetesJwt: async () => "jwt",
+      appRoleRoleId: "role-id",
+      getAppRoleSecretId: async () => "secret-id",
       fetch: request
     })
     await store.modify("openai-codex", async () => ({
@@ -68,7 +68,7 @@ describe("OpenBao Pi credential store", () => {
   it("preserves the old version when refresh fails", async () => {
     const writes: unknown[] = []
     const request = vi.fn<typeof fetch>(async (input, init) => {
-      if (String(input).includes("/auth/kubernetes/login")) {
+      if (String(input).includes("/auth/approle/login")) {
         return Response.json({ auth: { client_token: "vault-token", lease_duration: 300 } })
       }
       if (init?.method === "POST") writes.push(init.body)
@@ -76,8 +76,8 @@ describe("OpenBao Pi credential store", () => {
     })
     const store = new OpenBaoCredentialStore({
       address: "https://bao.example",
-      kubernetesRole: "bob",
-      getKubernetesJwt: async () => "jwt",
+      appRoleRoleId: "role-id",
+      getAppRoleSecretId: async () => "secret-id",
       fetch: request
     })
     await expect(

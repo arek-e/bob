@@ -1,16 +1,22 @@
-# Bob
+# Bob Runtime
 
-Bob is a private continuity assistant for one owner.
+Bob Runtime is the open-source application and self-hosting contract for a
+private continuity assistant. Product data remains private at runtime.
 
 It uses iMessage through Sendblue. It stores application data in Cloudflare D1.
 
-Bob has one production deployment. Local checks use explicit fixtures and create no cloud environment.
+Managed production operations live in the private Bob Control Plane repository.
+Local checks use explicit fixtures and create no cloud environment.
+
+The root `private` package flag prevents npm publication. It does not set the
+source repository visibility.
 
 The private `/settings` page manages owner locality and connection status.
 
 The owner can also change locality through Bob's Sendblue conversation.
 
 See [CONTEXT.md](CONTEXT.md) for domain rules. See [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) for the build plan.
+See [coolify-deployment.md](docs/runbooks/coolify-deployment.md) for the public deployment contract.
 
 ## Local checks
 

@@ -15,7 +15,7 @@ const OAuthRecord = Schema.Struct({
   accountId: Schema.String
 })
 
-const KubernetesLoginResponse = Schema.Struct({
+const AppRoleLoginResponse = Schema.Struct({
   auth: Schema.Struct({
     client_token: Schema.String,
     lease_duration: Schema.Number
@@ -39,8 +39,8 @@ export class CredentialConflictError extends Error {
 
 export interface OpenBaoCredentialStoreOptions {
   readonly address: string
-  readonly kubernetesRole: string
-  readonly getKubernetesJwt: (signal?: AbortSignal) => Promise<string>
+  readonly appRoleRoleId: string
+  readonly getAppRoleSecretId: (signal?: AbortSignal) => Promise<string>
   readonly mount?: string
   readonly authMount?: string
   readonly allowDelete?: boolean
@@ -69,7 +69,7 @@ export class OpenBaoCredentialStore implements CredentialStore {
   constructor(private readonly options: OpenBaoCredentialStoreOptions) {
     this.request = options.fetch ?? fetch
     this.mount = options.mount ?? "ops"
-    this.authMount = options.authMount ?? "kubernetes"
+    this.authMount = options.authMount ?? "approle"
     this.now = options.now ?? Date.now
   }
 
@@ -101,20 +101,19 @@ export class OpenBaoCredentialStore implements CredentialStore {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 15_000)
     try {
-      const jwt = await this.options.getKubernetesJwt(signal)
+      const secretId = await this.options.getAppRoleSecretId(signal)
       const requestSignal = combineSignals(signal, controller.signal)
       const response = await this.request(
         `${this.options.address}/v1/auth/${this.authMount}/login`,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ role: this.options.kubernetesRole, jwt }),
+          body: JSON.stringify({ role_id: this.options.appRoleRoleId, secret_id: secretId }),
           ...(requestSignal === undefined ? {} : { signal: requestSignal })
         }
       )
-      if (!response.ok)
-        throw new Error(`OpenBao Kubernetes authentication failed: ${response.status}`)
-      const login = Schema.decodeUnknownSync(KubernetesLoginResponse)(await response.json())
+      if (!response.ok) throw new Error(`OpenBao AppRole authentication failed: ${response.status}`)
+      const login = Schema.decodeUnknownSync(AppRoleLoginResponse)(await response.json())
       this.token = {
         value: login.auth.client_token,
         expiresAt: this.now() + login.auth.lease_duration * 1_000

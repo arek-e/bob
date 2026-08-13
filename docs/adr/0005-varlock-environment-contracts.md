@@ -43,7 +43,7 @@ Varlock must not become a second secret store.
 
 Alchemy remains the Cloudflare infrastructure authority.
 
-Kubernetes remains the Node runtime authority.
+Coolify is the portable Node runtime authority. The private Control Plane is the managed deployment authority.
 
 ### Schema layout
 
@@ -113,7 +113,7 @@ Attach only the `bob-deployment-credential-handoff` policy.
 
 The handoff must receive exactly one identity method.
 
-It revokes its OpenBao token after the four scoped writes.
+It revokes its OpenBao token after the scoped writes.
 
 Inject only the secret-zero authentication fields into the automation job.
 
@@ -153,7 +153,7 @@ Run the private agent through `varlock run --inject vars --skip-cache --`.
 
 Varlock validates bootstrap configuration before the Node process starts.
 
-The Node service still uses Kubernetes authentication for runtime OpenBao access.
+The Node service uses AppRole authentication for portable runtime OpenBao access.
 
 Do not fetch deployment credentials for each user request.
 

@@ -79,9 +79,9 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Secret values never enter committed environment files.
 - Alchemy state credentials stay in Cloudflare Secrets Store.
 - Alchemy owns each Bob Cloudflare resource that it declares.
-- Alchemy creates Access service tokens and Tunnel credentials before OpenBao receives their runtime copies.
+- Runtime Alchemy creates application Access service tokens. The private Control Plane creates the production Tunnel and DNS records.
 - No Cloudflare resource has two infrastructure owners.
-- Kubernetes and OpenBao stay outside Alchemy in the first release.
+- Coolify and OpenBao stay outside Runtime Alchemy. The private Control Plane owns their managed production configuration.
 - Effect composes I/O. Pure domain rules stay as normal TypeScript.
 - Drizzle owns application schemas and queries. Better Auth uses its built-in D1 adapter for auth tables.
 - Drizzle schemas and queries stay with their owning domain modules.

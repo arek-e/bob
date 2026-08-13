@@ -2,7 +2,6 @@ import { nodeTelemetrySink } from "@bob/observability/node"
 import { createBobPiAgent, type BobPiAgent } from "@bob/pi-agent"
 import { OpenBaoCredentialStore } from "@bob/pi-agent/auth"
 import { Effect, Layer } from "effect"
-import { readFile } from "node:fs/promises"
 
 import { AccessVerifier, accessVerifierLayer, createAccessVerifier } from "./access.ts"
 import { readAgentConfiguration, type AgentConfiguration } from "./configuration.ts"
@@ -42,10 +41,10 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
   })
   const credentials = new OpenBaoCredentialStore({
     address: config.baoAddress,
-    kubernetesRole: config.baoKubernetesRole,
-    getKubernetesJwt: async (signal) => {
+    appRoleRoleId: config.baoAppRoleRoleId,
+    getAppRoleSecretId: async (signal) => {
       if (signal?.aborted === true) throw signal.reason
-      return (await readFile(config.baoKubernetesJwtPath, "utf8")).trim()
+      return config.baoAppRoleSecretId
     }
   })
   const agent = createBobPiAgent({

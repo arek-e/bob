@@ -81,11 +81,11 @@ Do not let Wrangler, OpenTofu, and Alchemy manage the same resource.
 
 Keep existing shared platform resources with their current owner.
 
-Keep Kubernetes and OpenBao infrastructure outside Alchemy for the first release.
+Keep Coolify and OpenBao infrastructure outside Runtime Alchemy.
 
 Alchemy has no native OpenBao provider.
 
-Use the existing Kubernetes and OpenBao workflows for those resources.
+Use the private Control Plane workflow for those resources.
 
 Apply a retain policy to production D1, R2, and Queue resources.
 
@@ -121,9 +121,9 @@ Do not create `ALCHEMY_PASSWORD` or `ALCHEMY_STATE_TOKEN`.
 
 Do not keep an active copy of either state credential in OpenBao.
 
-Alchemy creates declared Access service tokens and Tunnel credentials.
+Runtime Alchemy creates declared application Access service tokens.
 
-Sync their runtime values to scoped OpenBao records after creation.
+The private Control Plane creates the production Tunnel and syncs its token to OpenBao.
 
 Use in-memory Alchemy state only for the offline compatibility fixture.
 

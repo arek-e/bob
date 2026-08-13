@@ -1,10 +1,8 @@
-import { access, readFile } from "node:fs/promises"
+import { readFile } from "node:fs/promises"
 import { describe, expect, it } from "vitest"
 
-const repositoryRoot = new URL("../../../", import.meta.url)
-
 async function repositoryFile(path: string): Promise<string> {
-  return readFile(new URL(path, repositoryRoot), "utf8")
+  return readFile(path, "utf8")
 }
 
 describe("production-only deployment contract", () => {
@@ -18,8 +16,7 @@ describe("production-only deployment contract", () => {
       repositoryFile("apps/ui/.env.schema"),
       repositoryFile("tools/sendblue-reconcile/.env.schema"),
       repositoryFile("tools/pi-smoke/.env.schema"),
-      repositoryFile("infra/cloudflare/.env.schema"),
-      repositoryFile("infra/kubernetes/base/agent-config.yaml")
+      repositoryFile("infra/cloudflare/.env.schema")
     ])
 
     for (const file of files) {
@@ -29,67 +26,15 @@ describe("production-only deployment contract", () => {
     }
   })
 
-  it("uses only exact production OpenBao paths", async () => {
-    const files = await Promise.all([
-      repositoryFile("infra/kubernetes/base/secret-delivery.yaml"),
-      repositoryFile("infra/openbao/agent-production-policy.hcl"),
-      repositoryFile("infra/openbao/agent-secret-delivery-production-policy.hcl"),
-      repositoryFile("infra/openbao/agent-credential-admin-policy.hcl"),
-      repositoryFile("infra/openbao/argocd-repository-production-policy.hcl"),
-      repositoryFile("infra/openbao/deployment-credential-handoff-policy.hcl")
+  it("keeps managed production infrastructure outside the Runtime repository", async () => {
+    const [compose, controlPlaneSeam] = await Promise.all([
+      repositoryFile("infra/coolify/compose.yaml"),
+      repositoryFile("scripts/verify-boundaries.mjs")
     ])
 
-    const [delivery, ...policies] = files
-    expect(delivery).toContain("path: ops")
-    expect(delivery).toContain('key: "apps/prod/bob/')
-    expect(delivery).not.toContain("path: secret")
-    for (const file of policies) {
-      expect(file).toMatch(/path "ops\/(?:data|metadata)\/apps\/prod\/bob\//u)
-      expect(file).not.toContain("secret/data/ops")
-      expect(file).not.toContain("secret/metadata/ops")
-    }
-    for (const file of files) {
-      expect(file).not.toContain("ops/apps/staging")
-      expect(file).not.toContain("ops/apps/+/bob")
-    }
-    expect(files.at(-1)).toContain('path "auth/token/revoke-self"')
-  })
-
-  it("uses one production-only identity for Argo repository delivery", async () => {
-    const [externalSecret, secretStore, serviceAccount, policy] = await Promise.all([
-      repositoryFile("infra/argocd/repository-external-secret.yaml"),
-      repositoryFile("infra/argocd/repository-secret-store.yaml"),
-      repositoryFile("infra/argocd/repository-service-account.yaml"),
-      repositoryFile("infra/openbao/argocd-repository-production-policy.hcl")
-    ])
-
-    expect(externalSecret).toContain("kind: SecretStore")
-    expect(externalSecret).not.toContain("ClusterSecretStore")
-    expect(externalSecret).toContain("key: apps/prod/bob/argocd/repository")
-    expect(secretStore).toContain("role: bob-argocd-repository")
-    expect(secretStore).toContain("name: bob-argocd-repository")
-    expect(serviceAccount).toContain("automountServiceAccountToken: false")
-    expect(policy).toContain('path "ops/data/apps/prod/bob/argocd/repository"')
-    expect(policy.match(/^path /gmu)).toHaveLength(1)
-    expect(policy).not.toContain("*")
-    expect(policy).not.toContain("+")
-  })
-
-  it("has one production overlay and no stage variants", async () => {
-    const [root, production] = await Promise.all([
-      repositoryFile("infra/kubernetes/kustomization.yaml"),
-      repositoryFile("infra/kubernetes/overlays/prod/kustomization.yaml")
-    ])
-
-    expect(root).toContain("- overlays/prod")
-    expect(production).toContain("- ../../base")
-    expect(production).not.toContain("staging")
-    await expect(
-      access(new URL("infra/kubernetes/overlays/staging/kustomization.yaml", repositoryRoot))
-    ).rejects.toThrow()
-    await expect(
-      access(new URL("infra/kubernetes/overlays/production/kustomization.yaml", repositoryRoot))
-    ).rejects.toThrow()
+    expect(compose).toContain("CLOUDFLARED_TUNNEL_TOKEN")
+    expect(compose).toContain("BOB_AGENT_IMAGE_DIGEST")
+    expect(controlPlaneSeam).not.toContain("infra/kubernetes")
   })
 
   it("validates schemas with local fixtures and no production secret lookup", async () => {

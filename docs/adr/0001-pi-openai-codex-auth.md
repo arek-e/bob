@@ -94,7 +94,7 @@ The runtime policy can read, create, and update only this provider path.
 
 A separate administration policy controls credential deletion.
 
-Use OpenBao Kubernetes authentication. Do not place these credentials in environment files.
+Use OpenBao AppRole authentication for the portable Runtime service. Do not place OAuth credentials in environment files.
 
 Do not store these credentials in D1, R2, logs, traces, prompts, or Sendblue.
 

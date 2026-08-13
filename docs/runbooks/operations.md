@@ -20,21 +20,19 @@ Cloudflare receives Worker invocation logs and traces. Bob requests full head sa
 
 The Node agent writes typed JSON events to standard output.
 
-The production collector accepts only the `agent` container in the `bob` namespace. It sends those logs to Loki.
+The configured collector accepts only the `agent` service. It sends those logs to the selected telemetry store.
 
 The collector redacts authentication values, secrets, email addresses, and phone numbers before export.
 
-Open the [Bob Production Overview](https://grafana.lamb-bicolor.ts.net/d/bob-production-overview/bob-production-overview) dashboard from the Tailnet.
+Open the configured Bob production dashboard through the private operations network.
 
-The dashboard shows pod health, restarts, failures, safe logs, and Tempo trace searches.
+The dashboard shows service health, restarts, failures, safe logs, and trace searches.
 
 Set the `correlationId` variable to one opaque identifier. Use `.*` to show all recent activity.
 
 Raw log details stay disabled on the dashboard. Use Grafana Explore only for a specific incident.
 
-The Grafana MCP reads its Viewer token from `ops/apps/internal/grafana/mcp` in OpenBao.
-
-Rotate that token before `2027-08-11T18:13:44Z`.
+The operations dashboard reads its Viewer token from the private secret store.
 
 The agent OTLP exporter sends native spans to the production collector. It does not block a request after export failure.
 

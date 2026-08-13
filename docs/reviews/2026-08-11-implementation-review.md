@@ -40,7 +40,7 @@ The green check did not prove the runtime and recovery paths.
 6. Add ownership, relationship, state, and approval checks to training writes.
 7. Keep Sendblue ingress and egress disabled until production setup is ready.
 8. Select the EU Durable Object jurisdiction before each object lookup.
-9. Add restrictive Kubernetes egress policy.
+9. Add restrictive service-network egress policy.
 10. Separate agent run identity from device-login administration identity.
 11. Sync generated Access and Tunnel credentials without logging them.
 12. Add immutable image inputs, `.dockerignore`, and secret provisioning gates.
@@ -83,7 +83,7 @@ These items need live infrastructure or user approval:
 
 - Cloudflare production plan and deployment.
 - Immutable image publication.
-- OpenBao and Kubernetes role creation.
+- OpenBao and managed runtime role creation.
 - Access and Tunnel secret synchronization.
 - Live Sendblue signature, callback, opt-out, and regional tests.
 - Live Pi login, completion, restart, refresh, and revocation tests.

@@ -5,8 +5,8 @@ const Environment = Schema.Struct({
     Schema.check(Schema.isBetween({ minimum: 1, maximum: 65_535 }))
   ),
   BAO_ADDR: Schema.URLFromString,
-  BAO_KUBERNETES_ROLE: Schema.String.check(Schema.isMinLength(1)),
-  BAO_KUBERNETES_JWT_PATH: Schema.String.check(Schema.isMinLength(1)),
+  BAO_APPROLE_ROLE_ID: Schema.String.check(Schema.isMinLength(1)),
+  BAO_APPROLE_SECRET_ID: Schema.String.check(Schema.isMinLength(1)),
   BOB_PROVIDER: Schema.Literal("openai-codex"),
   BOB_MODEL: Schema.String.check(Schema.isMinLength(1)),
   BOB_ALLOWED_MODELS: Schema.String.check(Schema.isMinLength(1)),
@@ -25,8 +25,8 @@ const Environment = Schema.Struct({
 export interface AgentConfiguration {
   readonly port: number
   readonly baoAddress: string
-  readonly baoKubernetesRole: string
-  readonly baoKubernetesJwtPath: string
+  readonly baoAppRoleRoleId: string
+  readonly baoAppRoleSecretId: string
   readonly provider: "openai-codex"
   readonly model: string
   readonly allowedModels: readonly string[]
@@ -51,8 +51,8 @@ export function readAgentConfiguration(environment: NodeJS.ProcessEnv): AgentCon
   return {
     port: decoded.PORT,
     baoAddress: decoded.BAO_ADDR.toString().replace(/\/$/, ""),
-    baoKubernetesRole: decoded.BAO_KUBERNETES_ROLE,
-    baoKubernetesJwtPath: decoded.BAO_KUBERNETES_JWT_PATH,
+    baoAppRoleRoleId: decoded.BAO_APPROLE_ROLE_ID,
+    baoAppRoleSecretId: decoded.BAO_APPROLE_SECRET_ID,
     provider: decoded.BOB_PROVIDER,
     model: decoded.BOB_MODEL,
     allowedModels,

@@ -1140,7 +1140,7 @@ describe("D1 migrations and durability", () => {
   it("applies one scheduler command to the EU reminder clock alarm", async () => {
     const { database, protection, ownerKey } = await seedRunData()
     const encrypted = await protection.encryptText(ownerKey, "Future reminder")
-    const dueAt = "2026-08-12T10:00:00.000Z"
+    const dueAt = "2026-08-14T10:00:00.000Z"
     await database.batch([
       database.insert(reminders).values({
         id: "00000000-0000-4000-8000-000000000601",
@@ -1155,7 +1155,7 @@ describe("D1 migrations and durability", () => {
         dataKeyVersion: 1,
         sensitivity: "normal",
         scheduleKind: "one_shot",
-        localStartDate: "2026-08-12",
+        localStartDate: "2026-08-14",
         localStartTime: "12:00",
         timeZone: "Europe/Stockholm",
         nextDueAt: dueAt,
@@ -1175,7 +1175,7 @@ describe("D1 migrations and durability", () => {
         reminderId: "00000000-0000-4000-8000-000000000601",
         sequence: 1,
         intendedDueAt: dueAt,
-        localDisplayTime: "2026-08-12T12:00+02:00[Europe/Stockholm]",
+        localDisplayTime: "2026-08-14T12:00+02:00[Europe/Stockholm]",
         idempotencyKey: "reminder:future:one",
         state: "scheduled",
         createdAt: "2026-08-11T10:00:00.000Z",

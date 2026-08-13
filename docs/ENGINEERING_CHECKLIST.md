@@ -59,8 +59,8 @@ Current summary:
 
 Snapshot date: 2026-08-11
 
-- [x] The Kubernetes agent is healthy.
-- [x] The Cloudflare tunnel is healthy.
+- [x] The Coolify agent service is healthy.
+- [x] The private edge tunnel is healthy.
 - [x] The stable Core host and authenticated agent-to-Core path are healthy.
 - [x] Sendblue has one receive webhook and one outbound webhook.
 - [x] Six inbound messages reached durable storage.
@@ -68,8 +68,8 @@ Snapshot date: 2026-08-11
 - [x] Six outbound responses reached `delivered` state.
 - [x] No delivery is failed, uncertain, claimed, or dead-lettered.
 - [x] Production records model token counts and latency.
-- [x] Redacted production agent logs reach Loki.
-- [x] The Bob production dashboard shows pod health, logs, failures, and Tempo searches.
+- [x] Redacted production agent logs reach the configured telemetry store.
+- [x] The Bob production dashboard shows service health, logs, failures, and trace searches.
 - [x] The native agent OTLP exporter sent a content-free live test trace to Tempo.
 - [ ] The running production agent image exports native traces.
 - [ ] Cloudflare Worker logs and traces export to the private LGTM stack.
@@ -91,9 +91,9 @@ Snapshot date: 2026-08-11
 - [ ] Reject any unexpected Worker, D1, R2, Queue, Durable Object, or Access replacement.
 - [ ] Deploy the backward-compatible agent before the new Core Worker.
 - [ ] Drain old agent runs before the Core Worker update.
-- [ ] Keep the stable `bob.tpops.dev` Core address through the cutover.
-- [ ] Wait for External Secrets, then restart and verify the agent after the handoff.
-- [ ] Pin Argo CD to the reviewed release SHA and verify a healthy sync.
+- [ ] Keep the stable Core address through the cutover.
+- [ ] Wait for the managed secret refresh, then restart and verify the agent after the handoff.
+- [ ] Deploy the reviewed Runtime SHA through Coolify and verify a healthy service.
 - [ ] Run one manual encrypted backup and verify its archive manifest.
 - [ ] Complete Better Auth owner setup and a new sign-in.
 - [ ] Complete one harmless live acceptance check for each domain.
@@ -221,7 +221,7 @@ Do not add these while Bob uses OpenAI-hosted inference:
 - Backup source: [`tools/data-backup/src/cloudflare.ts`](../tools/data-backup/src/cloudflare.ts)
 - Restore drill: [`tools/data-backup/src/restore.ts`](../tools/data-backup/src/restore.ts)
 - Cache policy: [`docs/adr/0006-personal-context-cache-policy.md`](adr/0006-personal-context-cache-policy.md)
-- Backup schedule: [`infra/kubernetes/base/backup-job.yaml`](../infra/kubernetes/base/backup-job.yaml)
+- Backup schedule: [`docs/runbooks/coolify-deployment.md`](runbooks/coolify-deployment.md)
 - Backup runbook: [`docs/runbooks/backup-restore.md`](runbooks/backup-restore.md)
 
 ## Update procedure

@@ -1,11 +1,18 @@
-import { readdir, readFile } from "node:fs/promises"
+import { access, readdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
 
 const roots = ["apps", "packages", "tools"]
 const manifests = ["package.json", "infra/cloudflare/package.json"]
 for (const root of roots) {
   for (const entry of await readdir(root, { withFileTypes: true })) {
-    if (entry.isDirectory()) manifests.push(join(root, entry.name, "package.json"))
+    if (!entry.isDirectory()) continue
+    const manifest = join(root, entry.name, "package.json")
+    try {
+      await access(manifest)
+      manifests.push(manifest)
+    } catch {
+      // Ignore generated or tool-only directories without a workspace manifest.
+    }
   }
 }
 

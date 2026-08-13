@@ -133,6 +133,52 @@ function candidateSourceLabel(sourceType: string, createdAt: string): string {
   }
 }
 
+async function candidateSourceDate(
+  database: CoreDatabase,
+  candidate: Pick<MemoryCandidateReview, "sourceType" | "sourceId" | "createdAt">
+): Promise<string> {
+  const source = (() => {
+    switch (candidate.sourceType) {
+      case "message":
+        return database
+          .select({ createdAt: messages.createdAt })
+          .from(messages)
+          .where(eq(messages.id, candidate.sourceId))
+          .limit(1)
+      case "journal":
+      case "journal_entry":
+      case "journal_summary":
+        return database
+          .select({ createdAt: journalEntries.createdAt })
+          .from(journalEntries)
+          .where(eq(journalEntries.id, candidate.sourceId))
+          .limit(1)
+      case "reminder":
+        return database
+          .select({ createdAt: reminders.createdAt })
+          .from(reminders)
+          .where(eq(reminders.id, candidate.sourceId))
+          .limit(1)
+      case "routine":
+        return database
+          .select({ createdAt: routines.createdAt })
+          .from(routines)
+          .where(eq(routines.id, candidate.sourceId))
+          .limit(1)
+      case "workout_session":
+        return database
+          .select({ createdAt: workoutSessions.createdAt })
+          .from(workoutSessions)
+          .where(eq(workoutSessions.id, candidate.sourceId))
+          .limit(1)
+      default:
+        return undefined
+    }
+  })()
+  if (source === undefined) return candidate.createdAt
+  return (await source)[0]?.createdAt ?? candidate.createdAt
+}
+
 export function makeMemoryStore(
   database: CoreDatabase,
   protection: DataProtection,
@@ -458,6 +504,7 @@ export function makeMemoryStore(
       })
       const revisionId = randomUuid()
       const createdAt = now().toISOString()
+      const sourceCreatedAt = await candidateSourceDate(database, candidate)
       const excerptHash = await protection.contentHash(canonicalText)
       const sensitiveValue =
         candidate.proposedValueCiphertext === null || candidate.proposedValueIv === null
@@ -515,8 +562,8 @@ export function makeMemoryStore(
             sourceType: "fact_revision",
             sourceId: revisionId,
             text: canonicalText,
-            sourceLabel: candidateSourceLabel(candidate.sourceType, candidate.createdAt),
-            occurredAt: candidate.createdAt,
+            sourceLabel: candidateSourceLabel(candidate.sourceType, sourceCreatedAt),
+            occurredAt: sourceCreatedAt,
             importance: 500,
             sensitivity: confirmedPolicy.sensitivity,
             modelEligible: confirmedPolicy.modelEligible,
@@ -695,6 +742,7 @@ export function makeMemoryStore(
                   ciphertext: candidate.proposedValueCiphertext,
                   iv: candidate.proposedValueIv
                 })
+          const sourceCreatedAt = await candidateSourceDate(database, candidate)
           return {
             id: candidate.id,
             scope: candidate.scope,
@@ -704,7 +752,7 @@ export function makeMemoryStore(
             originClass: candidate.originClass as OriginClass,
             sourceType: candidate.sourceType,
             sourceId: candidate.sourceId,
-            sourceLabel: candidateSourceLabel(candidate.sourceType, candidate.createdAt),
+            sourceLabel: candidateSourceLabel(candidate.sourceType, sourceCreatedAt),
             sensitivity: candidate.sensitivity as "normal" | "private" | "high",
             status: candidate.status as "proposed" | "disputed",
             createdAt: candidate.createdAt

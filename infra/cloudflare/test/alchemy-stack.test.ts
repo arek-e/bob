@@ -41,4 +41,12 @@ describe("Alchemy compatibility stack", () => {
     expect(stack).toContain("SENDBLUE_EGRESS_URL: `https://${egressHost}`")
     expect(stack).toContain("domain: egressHost")
   })
+
+  it("leaves tunnel and DNS ownership with the private control plane", async () => {
+    const stack = await readFile(new URL("../src/bob-stack.ts", import.meta.url), "utf8")
+
+    expect(stack).not.toContain("Cloudflare.Tunnel.Tunnel")
+    expect(stack).not.toContain("Cloudflare.DNS.Record")
+    expect(stack).not.toContain("tunnelToken")
+  })
 })

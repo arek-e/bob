@@ -7,8 +7,8 @@ describe("agent configuration", () => {
     const configuration = readAgentConfiguration({
       PORT: "8787",
       BAO_ADDR: "https://openbao.example.invalid/",
-      BAO_KUBERNETES_ROLE: "bob-agent",
-      BAO_KUBERNETES_JWT_PATH: "/var/run/secrets/kubernetes.io/serviceaccount/token",
+      BAO_APPROLE_ROLE_ID: "bob-agent-role",
+      BAO_APPROLE_SECRET_ID: "bob-agent-secret",
       BOB_PROVIDER: "openai-codex",
       BOB_MODEL: "gpt-5.6-luna",
       BOB_ALLOWED_MODELS: "gpt-5.6-luna,gpt-5.6-terra",

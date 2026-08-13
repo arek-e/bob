@@ -14,7 +14,7 @@ const fixtureConfig = {
   BOB_DOMAIN: "bob.invalid",
   OWNER_ACCESS_EMAIL: "owner@bob.invalid",
   ACCESS_TEAM_DOMAIN: "bob.cloudflareaccess.invalid",
-  AGENT_ORIGIN_URL: "http://bob-agent.bob.svc.cluster.local:8787",
+  AGENT_ORIGIN_URL: "http://agent.offline.invalid:8787",
   OWNER_ID: "00000000-0000-4000-8000-000000000001",
   OWNER_TIME_ZONE: "Europe/Stockholm",
   REMINDER_QUIET_HOURS_START: "21:00",

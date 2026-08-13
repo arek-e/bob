@@ -2,7 +2,7 @@
 
 ## Current state
 
-Bob has a tested backup tool and Kubernetes schedule.
+Bob has a backup tool and a Coolify schedule.
 
 The repository does not contain proof of a completed production backup or restore drill.
 
@@ -19,15 +19,15 @@ D1 Time Travel is useful recovery support. It is not an independent backup.
 
 ## Current storage limitation
 
-The CronJob writes to the `bob-backups` PersistentVolumeClaim.
+The Coolify scheduled service writes to the `bob-backups` volume.
 
-The claim uses the `local-path` storage class. It stores data on one Kubernetes node.
+The `bob-backups` volume stores files on the Coolify host.
 
-This storage is outside Cloudflare. It is not independent from the Kubernetes node.
+This storage is outside Cloudflare. It is not independent from the Coolify host.
 
 A node or disk failure can remove every retained copy.
 
-The `Prune=false` annotation prevents normal Argo CD pruning. It does not prevent disk loss.
+Host volume retention does not prevent disk loss.
 
 Copy each encrypted archive to node-independent storage. Do not close the backup gate before this exists.
 
@@ -65,7 +65,7 @@ The current compressed archive budget is 256 MiB. The job fails closed when the 
 
 ## Schedule and retention
 
-The `bob-data-backup` CronJob runs at minute 15 every four hours.
+The `backup-runner` service runs at minute 15 every four hours.
 
 It forbids concurrent jobs. It has a one-hour deadline and two retries.
 
@@ -75,13 +75,13 @@ The retention code rejects zero or negative retention values.
 
 ## Credential isolation
 
-External Secrets reads the scheduled runtime record from this OpenBao path:
+The private secret system reads the scheduled runtime record from its managed path:
 
 ```text
 ops/apps/prod/bob/backup/runtime
 ```
 
-The `bob-backup-secret-delivery` policy can read only that record.
+The managed backup policy can read only that record.
 
 The scheduled job receives these secret classes:
 
@@ -118,35 +118,26 @@ pnpm --filter @bob/data-backup typecheck
 pnpm exec vitest run tools/data-backup/test
 pnpm --filter @bob/data-backup build
 pnpm exec vitest run infra/cloudflare/test/deployment-readiness.test.ts
-kubectl kustomize infra/kubernetes >/dev/null
+pnpm coolify:check
+docker compose -f infra/coolify/compose.yaml config --quiet
 ```
 
-The production overlay must pin the backup image by digest.
+The Coolify service must pin the backup image by digest.
 
-The rendered output must have no invalid image sentinel or unresolved OpenBao address.
+The Compose model must have no mutable image tag or unresolved required value.
 
 ## First production backup
 
-Confirm the secret and claim before you start a job:
+Confirm the secret and volume before you start a job:
 
 ```sh
-kubectl --context=teampitch-prod -n bob wait \
-  --for=condition=Ready externalsecret/bob-backup-runtime \
-  --timeout=2m
-kubectl --context=teampitch-prod -n bob get pvc bob-backups
-kubectl --context=teampitch-prod -n bob get cronjob bob-data-backup
+docker compose -f infra/coolify/compose.yaml ps backup-runner
 ```
 
-Create one job from the reviewed CronJob:
+Run one backup from the reviewed Coolify service:
 
 ```sh
-job_name="bob-data-backup-manual-$(date -u +%Y%m%d%H%M%S)"
-kubectl --context=teampitch-prod -n bob create job \
-  --from=cronjob/bob-data-backup "$job_name"
-kubectl --context=teampitch-prod -n bob wait \
-  --for=condition=Complete "job/$job_name" \
-  --timeout=70m
-kubectl --context=teampitch-prod -n bob logs "job/$job_name"
+docker compose -f infra/coolify/compose.yaml run --rm backup-runner
 ```
 
 The completion log contains counts and cutoff times only. It must not contain record text or credentials.

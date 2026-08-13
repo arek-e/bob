@@ -143,7 +143,7 @@ Keep sensitive text out of Queues. Queue messages contain opaque record identifi
 
 Use Alchemy for Bob-owned Cloudflare application infrastructure.
 
-Keep Kubernetes and OpenBao resources with their current tools.
+Keep Coolify and OpenBao resources with the private Control Plane.
 
 One tool owns each Cloudflare resource.
 
@@ -414,7 +414,7 @@ Sendblue does not document that behavior.
 - Run one agent replica during the first release.
 - Allow outbound access only to required Pi and OpenAI endpoints.
 
-Run this service in the existing private Kubernetes cluster.
+Run this service through the Coolify deployment contract.
 
 Use a Cloudflare Tunnel and Access service token for ingress.
 
@@ -1246,11 +1246,11 @@ Do not keep active copies of the state credentials in OpenBao.
 
 Do not place secret values in unencrypted local Alchemy state.
 
-Use Alchemy to create Access service tokens and Tunnel credentials.
+Use Runtime Alchemy to create application Access service tokens. The private Control Plane creates the production Tunnel.
 
 Sync only their runtime values to scoped OpenBao records after creation.
 
-Give the Node service a narrow OpenBao policy through Kubernetes authentication.
+Give the Node service a narrow OpenBao policy through AppRole authentication.
 
 Implement `read`, `list`, `modify`, and `delete` for Pi's credential store.
 
@@ -1324,9 +1324,9 @@ Cloudflare can process Worker logs outside the selected data jurisdiction.
 
 ## 12. Current OpenBao inventory
 
-OpenBao is healthy at `https://vault.lamb-bicolor.ts.net`.
+OpenBao is healthy at the managed private endpoint.
 
-The older `vault.tpops.dev` address does not currently resolve.
+The public Runtime repository does not record the managed OpenBao endpoint.
 
 Existing secret paths include:
 
@@ -1393,14 +1393,14 @@ Varlock schemas must not resolve this provider record into process environment v
 
 Keep production Sendblue egress disabled until live URLs and reconciliation are ready.
 
-Alchemy creates the Access service tokens and Tunnel before these records exist:
+Runtime Alchemy creates the application Access service tokens before these records exist:
 
 - `ops/apps/prod/bob/access/core-to-agent`
 - `ops/apps/prod/bob/access/core-to-agent-admin`
 - `ops/apps/prod/bob/access/agent-to-core`
-- `ops/apps/prod/bob/tunnel/agent-host`
+- The private Control Plane manages the tunnel record.
 
-Sync the generated runtime credentials to these records after Alchemy creates the resources.
+Sync the generated application credentials to these records after Alchemy creates the resources.
 
 Do not reuse a broad Cloudflare administrator token.
 
@@ -1720,7 +1720,7 @@ Resolve these items before production:
 
 Recommended defaults:
 
-- Use the existing Kubernetes cluster for the Node service.
+- Use Coolify for the Node service.
 - Use `openai-codex/gpt-5.6-luna` as the first model candidate.
 - Validate provider authentication and model availability at startup.
 - Select models only from a configured allowlist.
