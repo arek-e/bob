@@ -7,6 +7,7 @@ import { Schema } from "effect"
 import type { EgressBindings } from "../bindings.ts"
 
 import { composeEgress } from "../composition.ts"
+import { handleScheduledReconcile } from "./provider-recovery.ts"
 
 async function callerIsAuthorized(request: Request, bindings: EgressBindings): Promise<boolean> {
   const callerToken = request.headers.get("x-bob-caller-token") ?? ""
@@ -138,4 +139,16 @@ export async function handleDeliveryReconciliationRequest(
   } catch {
     return Response.json({ status: "pending" }, { status: 502 })
   }
+}
+
+export async function handleReconcileRequest(
+  request: Request,
+  bindings: EgressBindings
+): Promise<Response> {
+  if (!(await callerIsAuthorized(request, bindings))) {
+    return Response.json({ error: "unauthorized" }, { status: 401 })
+  }
+
+  const result = await handleScheduledReconcile(new Date(), bindings)
+  return Response.json(result)
 }

@@ -15,6 +15,7 @@ import { schedulerOutbox } from "../modules/reminders/schema.ts"
 
 export interface ScheduledTraceContext {
   readonly correlationId: string
+  readonly scheduledAt?: Date
   readonly traceparent?: string
 }
 
@@ -202,6 +203,38 @@ export async function handleScheduled(
           })
         )
       )
+    })
+  }
+
+  const scheduledAt = scheduledTrace.scheduledAt ?? new Date(startedAt)
+  if (scheduledAt.getUTCMinutes() % 2 === 0) {
+    await recover(async () => {
+      const recoveryResponse = await runTelemetry(
+        withTraceparentParent(
+          scheduledTrace.traceparent,
+          withBobSpan(
+            {
+              name: "bob.inbound.reconcile",
+              correlationId: scheduledTrace.correlationId,
+              feature: "assistant"
+            },
+            Effect.gen(function* () {
+              const headers = yield* injectCurrentTraceparent({
+                "x-bob-caller-token": bindings.EGRESS_CALLER_SECRET,
+                "x-bob-correlation-id": scheduledTrace.correlationId
+              })
+              return yield* promiseEffect((signal) =>
+                fetch(`${bindings.SENDBLUE_EGRESS_URL}/internal/inbound-reconcile`, {
+                  method: "POST",
+                  headers,
+                  signal
+                })
+              )
+            })
+          )
+        )
+      )
+      if (!recoveryResponse.ok) throw new Error("sendblue_inbound_reconcile_failed")
     })
   }
 

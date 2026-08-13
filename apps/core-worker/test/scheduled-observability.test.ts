@@ -1,7 +1,7 @@
 import { parseTraceparent } from "@bob/observability/propagation"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect } from "effect"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
@@ -35,6 +35,10 @@ function captureRunner(telemetry: ReturnType<typeof makeCaptureTelemetry>) {
 
 beforeEach(() => {
   compositionHarness.current = undefined
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
 })
 
 describe("Core scheduled telemetry", () => {
@@ -104,14 +108,24 @@ describe("Core scheduled telemetry", () => {
       get: vi.fn(() => clock)
     }
     const published: unknown[] = []
+    const recoveryFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({ retrieved: 0, replayed: 0, skipped: 0 })
+    )
+    vi.stubGlobal("fetch", recoveryFetch)
     const bindings = {
       REMINDER_CLOCK: { jurisdiction: vi.fn(() => namespace) },
-      OUTBOUND_QUEUE: { send: async (job: unknown) => published.push(job) }
+      OUTBOUND_QUEUE: { send: async (job: unknown) => published.push(job) },
+      SENDBLUE_EGRESS_URL: "https://egress.example.invalid",
+      EGRESS_CALLER_SECRET: "c".repeat(64)
     } as unknown as CoreBindings
 
     await handleScheduled(
       bindings,
-      { correlationId: scheduledCorrelationId, traceparent },
+      {
+        correlationId: scheduledCorrelationId,
+        traceparent,
+        scheduledAt: new Date("2026-08-13T10:32:00.000Z")
+      },
       captureRunner(telemetry)
     )
 
@@ -152,6 +166,14 @@ describe("Core scheduled telemetry", () => {
     })
     expect(outboxPublishes[1]?.attributes).not.toHaveProperty("bob.reminder.occurrence_id")
     expect(markEnqueued).toHaveBeenCalledTimes(2)
+    expect(recoveryFetch).toHaveBeenCalledOnce()
+    expect(String(recoveryFetch.mock.calls[0]?.[0])).toBe(
+      "https://egress.example.invalid/internal/inbound-reconcile"
+    )
+    expect(recoveryFetch.mock.calls[0]?.[1]).toMatchObject({ method: "POST" })
+    expect(new Headers(recoveryFetch.mock.calls[0]?.[1]?.headers).get("x-bob-caller-token")).toBe(
+      "c".repeat(64)
+    )
   })
 
   it("continues later reminders and delivery recovery after one clock item fails", async () => {
@@ -228,7 +250,12 @@ describe("Core scheduled telemetry", () => {
       OUTBOUND_QUEUE: { send }
     } as unknown as CoreBindings
 
-    await expect(handleScheduled(bindings)).rejects.toThrow("scheduled_recovery_failed")
+    await expect(
+      handleScheduled(bindings, {
+        correlationId: scheduledCorrelationId,
+        scheduledAt: new Date("2026-08-13T10:31:00.000Z")
+      })
+    ).rejects.toThrow("scheduled_recovery_failed")
 
     expect(commandCount).toBe(2)
     expect(clock.fetch).toHaveBeenCalledWith("https://clock.internal/reconcile", expect.any(Object))

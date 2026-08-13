@@ -31,6 +31,16 @@ Core raises `outbound_exhausted` for the owner.
 
 Never resend a claimed or uncertain outbox automatically.
 
+## Inbound recovery
+
+The egress Worker runs direct recovery every two minutes.
+
+The Core Worker also calls the authenticated recovery endpoint on even UTC minutes.
+
+D1 removes duplicate webhook and replay records.
+
+## Uncertain delivery recovery
+
 For `delivery_uncertain`, use the owner alert reconciliation action.
 
 The action asks Sendblue for status when an attempt has a provider handle.
