@@ -16,6 +16,17 @@ Classify external actions as completed, failed, or unknown.
 
 Reconcile every unknown action before retrying it.
 
+For a missing inbound message, check each boundary in this order:
+
+1. Check Sendblue message history.
+2. Check Cloudflare for a POST to the receive webhook.
+3. Check D1 for durable acceptance.
+4. Check Tempo and Loki with the correlation identifier.
+
+If Sendblue history has no message, classify the failure as external provider acceptance.
+
+If Sendblue history has a message but D1 does not, check the scheduled history reconciliation.
+
 ## Recover
 
 Run duplicate, timeout, and privacy tests with offline fixtures.

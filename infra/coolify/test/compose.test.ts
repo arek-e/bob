@@ -54,6 +54,7 @@ describe("Coolify production stack", () => {
     expect(collector).toContain("docker_stats:")
     expect(collector).toContain("http_check:")
     expect(collector).toContain("http://coolify:8080/api/health")
+    expect(collector).toContain("https://bob-sendblue.tpops.dev/health")
     expect(collector).toContain("tcp_check:")
     expect(collector).toContain("file_stats/bob_backup:")
     expect(collector).toContain("file_stats/nango_backup:")

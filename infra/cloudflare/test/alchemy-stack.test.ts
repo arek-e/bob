@@ -203,4 +203,23 @@ describe("Alchemy compatibility stack", () => {
 
     expect(plan.resources.SendblueIngress.downstream).toContain("SendblueEgress")
   }, 30_000)
+
+  it("polls Sendblue history from the provider-credential Worker", async () => {
+    const stack = await readFile(new URL("../src/bob-stack.ts", import.meta.url), "utf8")
+    const ingress = stack.slice(
+      stack.indexOf('Cloudflare.Worker("SendblueIngress"'),
+      stack.indexOf('Cloudflare.Worker("SendblueEgress"')
+    )
+    const egress = stack.slice(stack.indexOf('Cloudflare.Worker("SendblueEgress"'))
+
+    expect(ingress).not.toContain("SENDBLUE_API_KEY_ID")
+    expect(ingress).not.toContain("SENDBLUE_API_SECRET_KEY")
+    expect(egress).toContain('crons: ["*/2 * * * *"]')
+    expect(egress).toContain("INGRESS: ingress")
+    expect(egress).toContain("SENDBLUE_API_KEY_ID")
+    expect(egress).toContain("SENDBLUE_API_SECRET_KEY")
+    expect(egress).toContain("SENDBLUE_WEBHOOK_SIGNING_SECRET")
+    expect(egress).toContain("SENDBLUE_ALLOWED_USER_NUMBER")
+    expect(egress).toContain("SENDBLUE_FROM_NUMBER")
+  })
 })

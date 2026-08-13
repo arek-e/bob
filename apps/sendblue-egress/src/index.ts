@@ -1,6 +1,7 @@
 import type { EgressBindings } from "./bindings.ts"
 
 import { handleInteractionRequest } from "./entrypoints/http.ts"
+import { handleScheduledReconcile } from "./entrypoints/provider-recovery.ts"
 import { handleOutboundQueue } from "./entrypoints/queue.ts"
 
 export default {
@@ -20,5 +21,14 @@ export default {
     context: ExecutionContext
   ): Promise<void> {
     return handleOutboundQueue(batch, bindings, context)
+  },
+  scheduled(
+    controller: ScheduledController,
+    bindings: EgressBindings,
+    context: ExecutionContext
+  ): void {
+    context.waitUntil(
+      handleScheduledReconcile(new Date(controller.scheduledTime), bindings).then(() => undefined)
+    )
   }
 } satisfies ExportedHandler<EgressBindings>
