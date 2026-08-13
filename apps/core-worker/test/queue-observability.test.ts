@@ -45,6 +45,55 @@ beforeEach(() => {
 })
 
 describe("Core Queue telemetry", () => {
+  it("recovers an exhausted outbound job only after the delivery store allows it", async () => {
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-core",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const message = queueMessage({ outboxId, correlationId, traceparent: inboundTraceparent })
+    const prepareOutboundRecovery = vi.fn(async () => "recover" as const)
+    const markEnqueued = vi.fn(async () => undefined)
+    const record = vi.fn(async () => "alert-id")
+    compositionHarness.current = {
+      database: {
+        select: vi.fn(() => ({
+          from: () => ({ where: () => ({ limit: async () => [{ userId: ownerId }] }) })
+        }))
+      },
+      services: {
+        delivery: { prepareOutboundRecovery, markEnqueued },
+        alerts: { record }
+      }
+    } as unknown as CoreComposition
+    const send = vi.fn(async () => undefined)
+    const bindings = {
+      OUTBOUND_DEAD_LETTER_QUEUE_NAME: "outbound-dead-letter",
+      OUTBOUND_QUEUE: { send }
+    } as unknown as CoreBindings
+    const batch = {
+      queue: "outbound-dead-letter",
+      messages: [message]
+    } as unknown as MessageBatch<unknown>
+
+    await handleInboundQueue(batch, bindings, captureRunner(telemetry))
+
+    expect(record).toHaveBeenCalledWith({
+      ownerId,
+      code: "outbound_exhausted",
+      objectType: "outbox_message",
+      objectId: outboxId,
+      idempotencyKey: `alert:outbound-exhausted:${outboxId}`
+    })
+    expect(prepareOutboundRecovery).toHaveBeenCalledWith(outboxId, 3)
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ outboxId, correlationId }), {
+      delaySeconds: 300
+    })
+    expect(markEnqueued).toHaveBeenCalledWith(outboxId, expect.any(String))
+    expect(message.ack).toHaveBeenCalledOnce()
+    expect(message.retry).not.toHaveBeenCalled()
+  })
+
   it("continues the inbound trace through the Queue consumer", async () => {
     const telemetry = makeCaptureTelemetry({
       serviceName: "bob-core",

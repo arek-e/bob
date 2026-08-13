@@ -58,11 +58,12 @@ describe("Sendblue history client", () => {
       sent_at_gte: "2026-08-13T10:20:00.000Z",
       sent_at_lte: "2026-08-13T10:31:00.000Z"
     })
-    expect(request.mock.calls[0]?.[1]).toEqual({
+    expect(request.mock.calls[0]?.[1]).toMatchObject({
       headers: {
         "sb-api-key-id": "key-id",
         "sb-api-secret-key": "secret-key"
-      }
+      },
+      signal: expect.any(AbortSignal)
     })
   })
 
@@ -79,5 +80,48 @@ describe("Sendblue history client", () => {
 
     await expect(client.hasLine("+46711111111")).resolves.toBe(true)
     expect(String(request.mock.calls[0]?.[0])).toBe("https://sendblue.example.test/api/lines")
+  })
+
+  it("lists outbound messages in a bounded provider window", async () => {
+    const outbound = { ...inbound, is_outbound: true, status: "DELIVERED" }
+    const request = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({ status: "OK", data: [outbound], pagination: { total: 1 } })
+    )
+    const client = createSendblueHistoryClient({
+      apiKeyId: "key-id",
+      apiSecretKey: "secret-key",
+      baseUrl: "https://sendblue.example.test",
+      fetch: request as typeof fetch
+    })
+
+    await expect(
+      client.listOutbound({
+        sendblueNumber: "+46711111111",
+        since: new Date("2026-08-13T10:20:00.000Z"),
+        until: new Date("2026-08-13T10:40:00.000Z")
+      })
+    ).resolves.toEqual([outbound])
+    const url = new URL(String(request.mock.calls[0]?.[0]))
+    expect(url.searchParams.get("is_outbound")).toBe("true")
+    expect(url.searchParams.get("sent_at_gte")).toBe("2026-08-13T10:20:00.000Z")
+    expect(url.searchParams.get("sent_at_lte")).toBe("2026-08-13T10:40:00.000Z")
+  })
+
+  it("cancels a provider history request at the configured timeout", async () => {
+    const request = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true })
+        })
+    )
+    const client = createSendblueHistoryClient({
+      apiKeyId: "key-id",
+      apiSecretKey: "secret-key",
+      timeoutMs: 1,
+      fetch: request as typeof fetch
+    })
+
+    await expect(client.hasLine("+46711111111")).rejects.toBeDefined()
+    expect(request.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal)
   })
 })

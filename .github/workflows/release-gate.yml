@@ -7,8 +7,8 @@ on:
         description: Full reviewed source commit SHA from main
         required: true
         type: string
-      gitops_sha:
-        description: Full GitOps commit SHA from main
+      deployment_sha:
+        description: Full Coolify release commit SHA from main
         required: true
         type: string
 
@@ -32,28 +32,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.gitops_sha }}
+          ref: ${{ inputs.deployment_sha }}
           fetch-depth: 0
-      - name: Verify reviewed source and GitOps commits
+      - name: Verify reviewed source and Coolify release commits
         id: release_delta
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
-          GITOPS_SHA: ${{ inputs.gitops_sha }}
+          DEPLOYMENT_SHA: ${{ inputs.deployment_sha }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$GITOPS_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$GITOPS_SHA"
+          [[ "$DEPLOYMENT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$DEPLOYMENT_SHA"
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$SOURCE_SHA" origin/main
-          git merge-base --is-ancestor "$GITOPS_SHA" origin/main
-          git merge-base --is-ancestor "$SOURCE_SHA" "$GITOPS_SHA"
+          git merge-base --is-ancestor "$DEPLOYMENT_SHA" origin/main
+          git merge-base --is-ancestor "$SOURCE_SHA" "$DEPLOYMENT_SHA"
 
-          mapfile -t changed_paths < <(git diff --name-only "$SOURCE_SHA" "$GITOPS_SHA")
+          mapfile -t changed_paths < <(git diff --name-only "$SOURCE_SHA" "$DEPLOYMENT_SHA")
           test "${#changed_paths[@]}" -eq 1
-          test "${changed_paths[0]}" = "infra/kubernetes/overlays/prod/kustomization.yaml"
-          release_delta="$(node scripts/verify-release-gitops-delta.mjs "$SOURCE_SHA" "$GITOPS_SHA")"
+          test "${changed_paths[0]}" = "infra/coolify/release.json"
+          release_delta="$(node scripts/verify-release-manifest-delta.mjs "$SOURCE_SHA" "$DEPLOYMENT_SHA")"
           echo "agent_digest=$(jq -er .agentDigest <<<"$release_delta")" >> "$GITHUB_OUTPUT"
           echo "backup_digest=$(jq -er .backupDigest <<<"$release_delta")" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
@@ -66,8 +66,8 @@ jobs:
       - name: Bind image pins to the reviewed source commit
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
-          OVERLAY_AGENT_DIGEST: ${{ steps.release_delta.outputs.agent_digest }}
-          OVERLAY_BACKUP_DIGEST: ${{ steps.release_delta.outputs.backup_digest }}
+          MANIFEST_AGENT_DIGEST: ${{ steps.release_delta.outputs.agent_digest }}
+          MANIFEST_BACKUP_DIGEST: ${{ steps.release_delta.outputs.backup_digest }}
         shell: bash
         run: |
           set -euo pipefail
@@ -79,8 +79,8 @@ jobs:
             "ghcr.io/arek-e/bob-data-backup:sha-$SOURCE_SHA")"
           [[ "$agent_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "$backup_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          test "$agent_digest" = "$OVERLAY_AGENT_DIGEST"
-          test "$backup_digest" = "$OVERLAY_BACKUP_DIGEST"
+          test "$agent_digest" = "$MANIFEST_AGENT_DIGEST"
+          test "$backup_digest" = "$MANIFEST_BACKUP_DIGEST"
       - name: Connect to the production Tailnet
         uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888
         with:

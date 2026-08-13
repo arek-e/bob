@@ -98,13 +98,16 @@ describe("core route authorization", () => {
     ).rejects.toThrow("access_denied")
   })
 
-  it("allows the agent only on tool and result routes", async () => {
+  it("allows the agent only on tool, result, and readiness routes", async () => {
     await expect(
       authorizeCoreRequest(request("/internal/tools"), configuration, async () => agent)
     ).resolves.toBe("agent")
     await expect(
       authorizeCoreRequest(request("/internal/tools"), configuration, async () => owner)
     ).rejects.toThrow("access_denied")
+    await expect(
+      authorizeCoreRequest(request("/internal/readiness"), configuration, async () => agent)
+    ).resolves.toBe("agent")
   })
 
   it("rejects an unclassified protected route", async () => {

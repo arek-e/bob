@@ -88,6 +88,10 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Reminder:** One schedule and the owner's intent.
 - **Reminder occurrence:** One due instance of a reminder.
 - **Delivery attempt:** One local attempt to contact a provider.
+- **Delivery recovery:** A bounded decision that restores a safe delivery or raises an operational alert.
+- **Scheduled recovery:** Independent repair phases that continue after one item fails.
+- **Runtime assurance:** Evidence that the private runtime, backups, and credentials meet the production contract.
+- **Production release:** One reviewed source revision and its immutable runtime artifacts.
 - **Acknowledged:** The owner confirms seeing one reminder occurrence.
 - **Completed:** The owner confirms finishing one task.
 - **Snoozed:** One occurrence closes and a linked successor is created.
@@ -132,7 +136,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Production assistant Workers cannot access evaluation storage.
 - Alchemy creates Access service tokens and Tunnel credentials before OpenBao receives their runtime copies.
 - No Cloudflare resource has two infrastructure owners.
-- Kubernetes and OpenBao stay outside Alchemy in the first release.
+- Coolify and OpenBao stay outside Alchemy.
 - Effect composes I/O. Pure domain rules stay as normal TypeScript.
 - Drizzle owns application schemas and queries. Better Auth uses its built-in D1 adapter for auth tables.
 - Drizzle schemas and queries stay with their owning domain modules.
@@ -149,6 +153,9 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Reminders run outside the model.
 - Delivery does not imply acknowledgment or completion.
 - A provider timeout does not cause an automatic duplicate send.
+- A delivery claim and its first attempt enter D1 in one atomic batch.
+- An exhausted outbound queue item gets a bounded recovery decision.
+- One scheduled recovery failure does not stop unrelated recovery work.
 
 ## Decision index
 

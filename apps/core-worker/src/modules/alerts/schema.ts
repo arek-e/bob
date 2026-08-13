@@ -9,6 +9,7 @@ export const operationalAlerts = sqliteTable(
       enum: [
         "inbound_exhausted",
         "delivery_uncertain",
+        "outbound_exhausted",
         "delivery_result_exhausted",
         "agent_authentication_failed",
         "agent_quota_exhausted",

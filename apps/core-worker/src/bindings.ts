@@ -9,6 +9,7 @@ export interface CoreBindings {
   INBOUND_DEAD_LETTER_QUEUE_NAME: string
   DELIVERY_RESULT_QUEUE_NAME: string
   DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: string
+  OUTBOUND_DEAD_LETTER_QUEUE_NAME: string
   OUTBOUND_QUEUE: Queue<OutboundJob>
   OWNER_RUN_COORDINATOR: DurableObjectNamespace
   REMINDER_CLOCK: DurableObjectNamespace

@@ -66,19 +66,77 @@ export async function handleScheduled(
   const runTelemetry = telemetry?.runPromise ?? Effect.runPromise
   const scheduledTrace: ScheduledTraceContext = trace ?? { correlationId: crypto.randomUUID() }
   const startedAt = new Date().toISOString()
-  await composition.services.delivery.reconcileExpiredClaims(startedAt)
-  await composition.services.reminders.releaseExpiredClaims(startedAt)
-  await composition.services.reminders.markExpiredResponseDeadlines(startedAt)
+  const failures: unknown[] = []
+  async function recover(operation: () => Promise<void>): Promise<void> {
+    try {
+      await operation()
+    } catch (error) {
+      failures.push(error)
+    }
+  }
+
+  await recover(async () => {
+    await composition.services.delivery.reconcileExpiredClaims(startedAt)
+  })
+  await recover(async () => {
+    await composition.services.reminders.releaseExpiredClaims(startedAt)
+  })
+  await recover(async () => {
+    await composition.services.reminders.markExpiredResponseDeadlines(startedAt)
+  })
+
   const euClock = bindings.REMINDER_CLOCK.jurisdiction("eu")
   const clock = euClock.get(euClock.idFromName(composition.config.OWNER_ID))
-
-  const pendingScheduler = await composition.database
-    .select()
-    .from(schedulerOutbox)
-    .where(isNull(schedulerOutbox.processedAt))
-    .orderBy(schedulerOutbox.createdAt)
-    .limit(100)
+  let pendingScheduler: (typeof schedulerOutbox.$inferSelect)[] = []
+  await recover(async () => {
+    pendingScheduler = await composition.database
+      .select()
+      .from(schedulerOutbox)
+      .where(isNull(schedulerOutbox.processedAt))
+      .orderBy(schedulerOutbox.createdAt)
+      .limit(100)
+  })
   for (const item of pendingScheduler) {
+    await recover(async () => {
+      const response = await runTelemetry(
+        withTraceparentParent(
+          scheduledTrace.traceparent,
+          withBobSpan(
+            {
+              name: "bob.reminder.invoke",
+              correlationId: scheduledTrace.correlationId,
+              feature: "reminders"
+            },
+            Effect.gen(function* () {
+              const headers = yield* injectCurrentTraceparent({
+                "content-type": "application/json",
+                "x-bob-correlation-id": scheduledTrace.correlationId
+              })
+              return yield* promiseEffect(() =>
+                clock.fetch("https://clock.internal/command", {
+                  method: "POST",
+                  headers,
+                  body: JSON.stringify({
+                    id: item.id,
+                    reminderId: item.reminderId,
+                    scheduleRevision: item.scheduleRevision,
+                    command: item.command
+                  })
+                })
+              )
+            })
+          )
+        )
+      )
+      if (!response.ok) throw new Error("reminder_clock_command_failed")
+      await composition.database
+        .update(schedulerOutbox)
+        .set({ processedAt: new Date().toISOString() })
+        .where(and(eq(schedulerOutbox.id, item.id), isNull(schedulerOutbox.processedAt)))
+    })
+  }
+
+  await recover(async () => {
     const response = await runTelemetry(
       withTraceparentParent(
         scheduledTrace.traceparent,
@@ -90,91 +148,62 @@ export async function handleScheduled(
           },
           Effect.gen(function* () {
             const headers = yield* injectCurrentTraceparent({
-              "content-type": "application/json",
               "x-bob-correlation-id": scheduledTrace.correlationId
             })
             return yield* promiseEffect(() =>
-              clock.fetch("https://clock.internal/command", {
-                method: "POST",
-                headers,
-                body: JSON.stringify({
-                  id: item.id,
-                  reminderId: item.reminderId,
-                  scheduleRevision: item.scheduleRevision,
-                  command: item.command
-                })
-              })
+              clock.fetch("https://clock.internal/reconcile", { method: "POST", headers })
             )
           })
         )
       )
     )
-    if (!response.ok) throw new Error("reminder_clock_command_failed")
-    await composition.database
-      .update(schedulerOutbox)
-      .set({ processedAt: new Date().toISOString() })
-      .where(and(eq(schedulerOutbox.id, item.id), isNull(schedulerOutbox.processedAt)))
-  }
+    if (!response.ok) throw new Error("reminder_clock_reconcile_failed")
+  })
 
-  const clockResponse = await runTelemetry(
-    withTraceparentParent(
-      scheduledTrace.traceparent,
-      withBobSpan(
-        {
-          name: "bob.reminder.invoke",
-          correlationId: scheduledTrace.correlationId,
-          feature: "reminders"
-        },
-        Effect.gen(function* () {
-          const headers = yield* injectCurrentTraceparent({
-            "x-bob-correlation-id": scheduledTrace.correlationId
-          })
-          return yield* promiseEffect(() =>
-            clock.fetch("https://clock.internal/reconcile", { method: "POST", headers })
-          )
-        })
-      )
-    )
-  )
-  if (!clockResponse.ok) throw new Error("reminder_clock_reconcile_failed")
-
-  const pendingOutbox = await composition.database
-    .select({
-      id: outboxMessages.id,
-      correlationId: outboxMessages.correlationId,
-      actionTargetType: outboxMessages.actionTargetType,
-      actionTargetId: outboxMessages.actionTargetId
-    })
-    .from(outboxMessages)
-    .where(recoverablePendingOutbox)
-    .limit(100)
+  let pendingOutbox: PendingOutbox[] = []
+  await recover(async () => {
+    pendingOutbox = await composition.database
+      .select({
+        id: outboxMessages.id,
+        correlationId: outboxMessages.correlationId,
+        actionTargetType: outboxMessages.actionTargetType,
+        actionTargetId: outboxMessages.actionTargetId
+      })
+      .from(outboxMessages)
+      .where(recoverablePendingOutbox)
+      .limit(100)
+  })
   for (const item of pendingOutbox) {
-    const occurrenceId = reminderOccurrence(item)
-    const span: BobSpan = {
-      name: "bob.outbox.publish",
-      correlationId: item.correlationId,
-      feature: item.actionTargetType === "reminder_occurrence" ? "reminders" : "assistant",
-      outboxId: item.id,
-      ...(occurrenceId === undefined ? {} : { reminderOccurrenceId: occurrenceId })
-    }
-    await runTelemetry(
-      withBobRootSpan(
-        span,
-        Effect.gen(function* () {
-          const headers = yield* injectCurrentTraceparent()
-          const traceparent = headers.get("traceparent")
-          yield* promiseEffect(() =>
-            bindings.OUTBOUND_QUEUE.send({
-              outboxId: item.id,
-              correlationId: item.correlationId,
-              ...(traceparent === null ? {} : { traceparent })
-            })
-          )
-          yield* promiseEffect(() =>
-            composition.services.delivery.markEnqueued(item.id, new Date().toISOString())
-          )
-        })
+    await recover(async () => {
+      const occurrenceId = reminderOccurrence(item)
+      const span: BobSpan = {
+        name: "bob.outbox.publish",
+        correlationId: item.correlationId,
+        feature: item.actionTargetType === "reminder_occurrence" ? "reminders" : "assistant",
+        outboxId: item.id,
+        ...(occurrenceId === undefined ? {} : { reminderOccurrenceId: occurrenceId })
+      }
+      await runTelemetry(
+        withBobRootSpan(
+          span,
+          Effect.gen(function* () {
+            const headers = yield* injectCurrentTraceparent()
+            const traceparent = headers.get("traceparent")
+            yield* promiseEffect(() =>
+              bindings.OUTBOUND_QUEUE.send({
+                outboxId: item.id,
+                correlationId: item.correlationId,
+                ...(traceparent === null ? {} : { traceparent })
+              })
+            )
+            yield* promiseEffect(() =>
+              composition.services.delivery.markEnqueued(item.id, new Date().toISOString())
+            )
+          })
+        )
       )
-    )
+    })
   }
+
+  if (failures.length > 0) throw new Error("scheduled_recovery_failed")
 }

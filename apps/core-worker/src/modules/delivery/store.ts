@@ -37,6 +37,23 @@ export interface CreateOutboxInput {
   readonly artifactRevision?: number
 }
 
+interface DeliveryReconciliationIdentity {
+  readonly outboxId: string
+  readonly attemptId: string
+  readonly correlationId: string
+}
+
+export type DeliveryReconciliationTarget = DeliveryReconciliationIdentity &
+  (
+    | { readonly providerMessageHandle: string }
+    | {
+        readonly destinationE164: string
+        readonly payloadFingerprint: string
+        readonly since: string
+        readonly until: string
+      }
+  )
+
 export interface DeliveryStore {
   createOutbox(input: CreateOutboxInput): Promise<string>
   markEnqueued(outboxId: string, at: string): Promise<void>
@@ -45,6 +62,11 @@ export interface DeliveryStore {
   recordProviderEvent(event: NormalizedStatusEvent): Promise<readonly string[]>
   reconcileExpiredClaims(at: string): Promise<number>
   reconcileOutbox(outboxId: string): Promise<"resolved" | "pending" | "missing">
+  reconciliationTarget(outboxId: string): Promise<DeliveryReconciliationTarget | undefined>
+  prepareOutboundRecovery(
+    outboxId: string,
+    maxRecoveries: number
+  ): Promise<"recover" | "active" | "limit" | "resolved" | "unsafe" | "missing">
   outboxDisposition(outboxId: string): Promise<"active" | "complete" | "missing">
 }
 
@@ -104,6 +126,11 @@ const deferredConversationReply = sql<boolean>`(
     )
   )
 )`
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+}
 
 export const recoverablePendingOutbox = and(
   eq(outboxMessages.state, "pending"),
@@ -322,23 +349,12 @@ export function makeDeliveryStore(
     async claimOutbox(outboxId, leaseMs) {
       const claimedAt = now()
       await this.reconcileExpiredClaims(claimedAt.toISOString())
-      // The claim trigger closes an exact conversation turn in this SQLite statement.
-      const [claimed] = await database
-        .update(outboxMessages)
-        .set({
-          state: "claimed",
-          claimedAt: claimedAt.toISOString(),
-          claimExpiresAt: new Date(claimedAt.getTime() + leaseMs).toISOString()
-        })
-        .where(
-          and(
-            eq(outboxMessages.id, outboxId),
-            eq(outboxMessages.state, "pending"),
-            currentConversationReply
-          )
-        )
-        .returning()
-      if (claimed === undefined) {
+      const [candidate] = await database
+        .select()
+        .from(outboxMessages)
+        .where(eq(outboxMessages.id, outboxId))
+        .limit(1)
+      if (candidate === undefined || candidate.state !== "pending") {
         await database
           .update(outboxMessages)
           .set({ state: "cancelled", completedAt: claimedAt.toISOString() })
@@ -368,38 +384,58 @@ export function makeDeliveryStore(
         return undefined
       }
       const [[message], [channel], attempts] = await Promise.all([
-        database.select().from(messages).where(eq(messages.id, claimed.messageId)).limit(1),
-        database.select().from(channels).where(eq(channels.id, claimed.channelId)).limit(1),
+        database.select().from(messages).where(eq(messages.id, candidate.messageId)).limit(1),
+        database.select().from(channels).where(eq(channels.id, candidate.channelId)).limit(1),
         database
           .select({ count: sql<number>`count(*)` })
           .from(deliveryAttempts)
-          .where(eq(deliveryAttempts.outboxId, claimed.id))
+          .where(eq(deliveryAttempts.outboxId, candidate.id))
       ])
       if (message === undefined || channel === undefined || channel.optedOutAt !== null) {
         const cancelledAt = now().toISOString()
+        const cancellationToken = randomUuid()
         const statements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
           database
             .update(outboxMessages)
-            .set({ state: "cancelled", completedAt: cancelledAt })
-            .where(eq(outboxMessages.id, claimed.id)),
+            .set({ state: "claimed", claimedAt: cancelledAt, claimToken: cancellationToken })
+            .where(
+              and(
+                eq(outboxMessages.id, candidate.id),
+                eq(outboxMessages.state, "pending"),
+                currentConversationReply
+              )
+            ),
+          database
+            .update(outboxMessages)
+            .set({ state: "cancelled", completedAt: cancelledAt, claimToken: null })
+            .where(
+              and(
+                eq(outboxMessages.id, candidate.id),
+                eq(outboxMessages.state, "claimed"),
+                eq(outboxMessages.claimToken, cancellationToken)
+              )
+            ),
           database
             .update(outboxMessages)
             .set({ state: "cancelled", completedAt: cancelledAt })
             .where(
               and(
-                eq(outboxMessages.dependsOnOutboxId, claimed.id),
+                eq(outboxMessages.dependsOnOutboxId, candidate.id),
                 eq(outboxMessages.state, "pending")
               )
             )
         ]
-        if (claimed.actionTargetType === "reminder_occurrence" && claimed.actionTargetId !== null) {
+        if (
+          candidate.actionTargetType === "reminder_occurrence" &&
+          candidate.actionTargetId !== null
+        ) {
           statements.push(
             database
               .update(reminderOccurrences)
               .set({ state: "cancelled", updatedAt: cancelledAt })
               .where(
                 and(
-                  eq(reminderOccurrences.id, claimed.actionTargetId),
+                  eq(reminderOccurrences.id, candidate.actionTargetId),
                   inArray(reminderOccurrences.state, ["claimed", "awaiting_delivery"])
                 )
               ),
@@ -409,7 +445,7 @@ export function makeDeliveryStore(
               .where(
                 and(
                   eq(shortReplyBindings.targetType, "reminder"),
-                  eq(shortReplyBindings.targetId, claimed.actionTargetId),
+                  eq(shortReplyBindings.targetId, candidate.actionTargetId),
                   isNull(shortReplyBindings.consumedAt)
                 )
               )
@@ -420,15 +456,7 @@ export function makeDeliveryStore(
       }
       const attemptId = randomUuid()
       const attemptNumber = Number(attempts[0]?.count ?? 0) + 1
-      await database.insert(deliveryAttempts).values({
-        id: attemptId,
-        outboxId: claimed.id,
-        attemptNumber,
-        state: "sending",
-        startedAt: claimedAt.toISOString(),
-        updatedAt: claimedAt.toISOString()
-      })
-      const key = await ownerKey(claimed.userId)
+      const key = await ownerKey(candidate.userId)
       const [smsSafeText, number, fromNumber] = await Promise.all([
         protection.decryptText(key, { ciphertext: message.textCiphertext, iv: message.textIv }),
         protection.decryptText(key, {
@@ -440,16 +468,93 @@ export function makeDeliveryStore(
           iv: channel.destinationIv
         })
       ])
+      const payloadFingerprint = await sha256Hex(smsSafeText)
+      const claimExpiresAt = new Date(claimedAt.getTime() + leaseMs).toISOString()
+      await database.batch([
+        // This update and the attempt insert share one D1 transaction. The existing trigger
+        // closes an exact conversation turn only if the attempt insert can also commit.
+        database
+          .update(outboxMessages)
+          .set({
+            state: "claimed",
+            claimedAt: claimedAt.toISOString(),
+            claimToken: attemptId,
+            claimExpiresAt
+          })
+          .where(
+            and(
+              eq(outboxMessages.id, outboxId),
+              eq(outboxMessages.state, "pending"),
+              currentConversationReply
+            )
+          ),
+        database.insert(deliveryAttempts).select(
+          database
+            .select({
+              id: sql<string>`${attemptId}`.as("id"),
+              outboxId: outboxMessages.id,
+              attemptNumber: sql<number>`${attemptNumber}`.as("attempt_number"),
+              state: sql<"sending">`'sending'`.as("state"),
+              providerMessageHandle: sql<string | null>`NULL`.as("provider_message_handle"),
+              payloadFingerprint: sql<string>`${payloadFingerprint}`.as("payload_fingerprint"),
+              errorCode: sql<string | null>`NULL`.as("error_code"),
+              startedAt: sql<string>`${claimedAt.toISOString()}`.as("started_at"),
+              updatedAt: sql<string>`${claimedAt.toISOString()}`.as("updated_at")
+            })
+            .from(outboxMessages)
+            .where(
+              and(
+                eq(outboxMessages.id, outboxId),
+                eq(outboxMessages.state, "claimed"),
+                eq(outboxMessages.claimToken, attemptId)
+              )
+            )
+        )
+      ])
+      const [attempt] = await database
+        .select({ id: deliveryAttempts.id })
+        .from(deliveryAttempts)
+        .where(eq(deliveryAttempts.id, attemptId))
+        .limit(1)
+      if (attempt === undefined) {
+        await database
+          .update(outboxMessages)
+          .set({ state: "cancelled", completedAt: claimedAt.toISOString() })
+          .where(
+            and(
+              eq(outboxMessages.id, outboxId),
+              eq(outboxMessages.state, "pending"),
+              sql<boolean>`NOT ${currentConversationReply}`,
+              sql<boolean>`NOT ${deferredConversationReply}`
+            )
+          )
+        await database
+          .update(outboxMessages)
+          .set({ state: "cancelled", completedAt: claimedAt.toISOString() })
+          .where(
+            and(
+              eq(outboxMessages.dependsOnOutboxId, outboxId),
+              eq(outboxMessages.state, "pending"),
+              sql`EXISTS (
+                SELECT 1
+                FROM outbox_messages AS predecessor
+                WHERE predecessor.id = ${outboxId}
+                  AND predecessor.state IN ('failed', 'cancelled')
+              )`
+            )
+          )
+        return undefined
+      }
       return {
-        outboxId: claimed.id,
+        outboxId: candidate.id,
         attemptId,
         number,
         fromNumber,
         smsSafeText,
-        ...(claimed.replyToProviderMessageHandle === null
+        ...(candidate.replyToProviderMessageHandle === null
           ? {}
-          : { replyToMessageHandle: claimed.replyToProviderMessageHandle }),
-        correlationId: claimed.correlationId,
+          : { replyToMessageHandle: candidate.replyToProviderMessageHandle }),
+        correlationId: candidate.correlationId,
         claimedAt: claimedAt.toISOString()
       } as OutboxClaim
     },
@@ -496,7 +601,8 @@ export function makeDeliveryStore(
           .set({
             state: outboxState,
             completedAt: result.occurredAt,
-            claimExpiresAt: null
+            claimExpiresAt: null,
+            claimToken: null
           })
           .where(
             and(
@@ -613,6 +719,21 @@ export function makeDeliveryStore(
               and(
                 eq(outboxMessages.dependsOnOutboxId, outbox.id),
                 eq(outboxMessages.state, "pending")
+              )
+            )
+        )
+      }
+      if (outboxState === "accepted" || outboxState === "failed") {
+        statements.push(
+          database
+            .update(operationalAlerts)
+            .set({ state: "resolved", updatedAt: result.occurredAt, resolvedAt: result.occurredAt })
+            .where(
+              and(
+                eq(operationalAlerts.code, "outbound_exhausted"),
+                eq(operationalAlerts.objectType, "outbox_message"),
+                eq(operationalAlerts.objectId, outbox.id),
+                inArray(operationalAlerts.state, ["open", "reconciling"])
               )
             )
         )
@@ -740,7 +861,12 @@ export function makeDeliveryStore(
             ),
           database
             .update(outboxMessages)
-            .set({ state: "uncertain", completedAt: at, claimExpiresAt: null })
+            .set({
+              state: "uncertain",
+              completedAt: at,
+              claimExpiresAt: null,
+              claimToken: null
+            })
             .where(
               and(
                 eq(outboxMessages.id, item.id),
@@ -804,6 +930,105 @@ export function makeDeliveryStore(
       return updated !== undefined && ["accepted", "failed", "cancelled"].includes(updated.state)
         ? "resolved"
         : "pending"
+    },
+
+    async reconciliationTarget(outboxId) {
+      const [target] = await database
+        .select({
+          outboxId: outboxMessages.id,
+          attemptId: deliveryAttempts.id,
+          correlationId: outboxMessages.correlationId,
+          ownerId: outboxMessages.userId,
+          providerMessageHandle: deliveryAttempts.providerMessageHandle,
+          payloadFingerprint: deliveryAttempts.payloadFingerprint,
+          startedAt: deliveryAttempts.startedAt,
+          senderCiphertext: channels.senderCiphertext,
+          senderIv: channels.senderIv
+        })
+        .from(outboxMessages)
+        .innerJoin(deliveryAttempts, eq(deliveryAttempts.outboxId, outboxMessages.id))
+        .innerJoin(channels, eq(channels.id, outboxMessages.channelId))
+        .where(
+          and(
+            eq(outboxMessages.id, outboxId),
+            inArray(outboxMessages.state, ["claimed", "accepted", "uncertain"])
+          )
+        )
+        .orderBy(desc(deliveryAttempts.attemptNumber))
+        .limit(1)
+      if (target === undefined) return undefined
+      const identity: DeliveryReconciliationIdentity = {
+        outboxId: target.outboxId,
+        attemptId: target.attemptId,
+        correlationId: target.correlationId
+      }
+      if (target.providerMessageHandle !== null) {
+        return { ...identity, providerMessageHandle: target.providerMessageHandle }
+      }
+      if (target.payloadFingerprint === null) return undefined
+      const destinationE164 = await protection.decryptText(await ownerKey(target.ownerId), {
+        ciphertext: target.senderCiphertext,
+        iv: target.senderIv
+      })
+      const startedAt = Date.parse(target.startedAt)
+      return {
+        ...identity,
+        destinationE164,
+        payloadFingerprint: target.payloadFingerprint,
+        since: new Date(startedAt - 5 * 60_000).toISOString(),
+        until: new Date(startedAt + 20 * 60_000).toISOString()
+      }
+    },
+
+    async prepareOutboundRecovery(outboxId, maxRecoveries) {
+      const [outbox] = await database
+        .select({
+          state: outboxMessages.state,
+          recoveryCount: outboxMessages.recoveryCount,
+          enqueuedAt: outboxMessages.enqueuedAt,
+          deadLetteredAt: outboxMessages.deadLetteredAt
+        })
+        .from(outboxMessages)
+        .where(eq(outboxMessages.id, outboxId))
+        .limit(1)
+      if (outbox === undefined) return "missing"
+      if (["accepted", "failed", "cancelled"].includes(outbox.state)) return "resolved"
+      if (outbox.state !== "pending") return "unsafe"
+      if (
+        outbox.enqueuedAt !== null &&
+        outbox.deadLetteredAt !== null &&
+        Date.parse(outbox.enqueuedAt) >= Date.parse(outbox.deadLetteredAt)
+      ) {
+        return "active"
+      }
+      const [attempt] = await database
+        .select({ id: deliveryAttempts.id })
+        .from(deliveryAttempts)
+        .where(eq(deliveryAttempts.outboxId, outboxId))
+        .limit(1)
+      if (attempt !== undefined) return "unsafe"
+      if (outbox.recoveryCount >= maxRecoveries) return "limit"
+      const recoveredAt = now().toISOString()
+      const [updated] = await database
+        .update(outboxMessages)
+        .set({
+          deadLetteredAt: recoveredAt,
+          enqueuedAt: null,
+          recoveryCount: outbox.recoveryCount + 1
+        })
+        .where(
+          and(
+            eq(outboxMessages.id, outboxId),
+            eq(outboxMessages.state, "pending"),
+            eq(outboxMessages.recoveryCount, outbox.recoveryCount),
+            sql<boolean>`NOT EXISTS (
+              SELECT 1 FROM ${deliveryAttempts}
+              WHERE ${deliveryAttempts.outboxId} = ${outboxId}
+            )`
+          )
+        )
+        .returning({ id: outboxMessages.id })
+      return updated === undefined ? "unsafe" : "recover"
     },
 
     async outboxDisposition(outboxId) {

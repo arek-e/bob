@@ -1,6 +1,6 @@
 import { AgentRunResult } from "@bob/contracts/agent"
 import { NormalizedInboundEvent, NormalizedStatusEvent } from "@bob/contracts/channel"
-import { DeliveryResult } from "@bob/contracts/delivery"
+import { DeliveryReconciliationResponse, DeliveryResult } from "@bob/contracts/delivery"
 import { ConnectionProvider, OwnerSettingsUpdate } from "@bob/contracts/settings"
 import { ToolCommand } from "@bob/contracts/tools"
 import {
@@ -208,6 +208,11 @@ export async function handleHttp(
 
   try {
     const composition = composeCore(bindings)
+
+    if (request.method === "GET" && url.pathname === "/internal/readiness") {
+      const result = await bindings.DB.prepare("SELECT 1 AS ready").first<{ ready: number }>()
+      return json({ ready: result?.ready === 1 }, result?.ready === 1 ? 200 : 503)
+    }
 
     if (request.method === "POST" && url.pathname === "/internal/inbound") {
       const event = Schema.decodeUnknownSync(NormalizedInboundEvent)(await readJson(request))
@@ -554,8 +559,56 @@ export async function handleHttp(
         }
         return json({ status: decision })
       }
+      if (alert.code === "outbound_exhausted") {
+        const decision = await composition.services.delivery.prepareOutboundRecovery(
+          alert.objectId,
+          4
+        )
+        if (decision === "recover") {
+          await bindings.OUTBOUND_QUEUE.send({ outboxId: alert.objectId })
+          await composition.services.delivery.markEnqueued(alert.objectId, new Date().toISOString())
+          await composition.services.alerts.setState(
+            composition.config.OWNER_ID,
+            alert.id,
+            "resolved"
+          )
+        } else if (decision === "resolved") {
+          await composition.services.alerts.setState(
+            composition.config.OWNER_ID,
+            alert.id,
+            "resolved"
+          )
+        }
+        return json({ status: decision })
+      }
       if (alert.code === "delivery_uncertain" || alert.code === "delivery_result_exhausted") {
-        const status = await composition.services.delivery.reconcileOutbox(alert.objectId)
+        let status = await composition.services.delivery.reconcileOutbox(alert.objectId)
+        if (status === "pending") {
+          const target = await composition.services.delivery.reconciliationTarget(alert.objectId)
+          if (target !== undefined) {
+            const response = await fetch(
+              `${composition.config.SENDBLUE_EGRESS_URL}/internal/delivery-reconciliation`,
+              {
+                method: "POST",
+                headers: {
+                  "content-type": "application/json",
+                  "x-bob-caller-token": composition.config.EGRESS_CALLER_SECRET
+                },
+                body: JSON.stringify(target),
+                signal: AbortSignal.timeout(10_000)
+              }
+            )
+            if (response.ok) {
+              const provider = Schema.decodeUnknownSync(DeliveryReconciliationResponse)(
+                await response.json()
+              )
+              if (provider.status === "resolved") {
+                await composition.services.delivery.recordResult(provider.result)
+                status = await composition.services.delivery.reconcileOutbox(alert.objectId)
+              }
+            }
+          }
+        }
         if (status === "resolved") {
           await composition.services.alerts.setState(
             composition.config.OWNER_ID,

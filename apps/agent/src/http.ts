@@ -84,6 +84,30 @@ export async function handleAgentHttp(
   }
 
   try {
+    if (request.method === "GET" && url.pathname === "/v1/admin/readiness") {
+      const [auth, core] = await Promise.allSettled([
+        composition.services.agent.getAuthStatus(),
+        composition.services.coreTools.checkReadiness(request.signal)
+      ])
+      const authStatus = auth.status === "fulfilled" ? auth.value : undefined
+      const credentialsReady =
+        authStatus?.configured === true &&
+        authStatus.expiresAt !== undefined &&
+        Date.parse(authStatus.expiresAt) > Date.now()
+      const coreReady = core.status === "fulfilled" && core.value
+      return json(
+        {
+          ready: credentialsReady && coreReady,
+          checks: {
+            credentials: credentialsReady ? "ready" : "unavailable",
+            core: coreReady ? "ready" : "unavailable"
+          },
+          service: "agent",
+          version: 1
+        },
+        credentialsReady && coreReady ? 200 : 503
+      )
+    }
     if (request.method === "POST" && url.pathname === "/v1/run") {
       const input = Schema.decodeUnknownSync(AgentRunRequest)(await readJson(request))
       const feature = featureForTools(input.allowedTools)

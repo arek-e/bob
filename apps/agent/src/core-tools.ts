@@ -9,6 +9,7 @@ export interface CoreToolClient {
     signal?: AbortSignal
   ): Effect.Effect<typeof ToolResult.Type, unknown>
   execute(command: ToolCommand, signal?: AbortSignal): Promise<typeof ToolResult.Type>
+  checkReadiness(signal?: AbortSignal): Promise<boolean>
 }
 
 export const CoreToolClient = Context.Service<CoreToolClient>("bob/CoreToolClient")
@@ -77,7 +78,21 @@ export function createCoreToolClient(options: {
 
   return {
     executeEffect,
-    execute: (command, signal) => Effect.runPromise(executeEffect(command, signal))
+    execute: (command, signal) => Effect.runPromise(executeEffect(command, signal)),
+    async checkReadiness(signal) {
+      const requestSignal =
+        signal === undefined
+          ? AbortSignal.timeout(5_000)
+          : AbortSignal.any([signal, AbortSignal.timeout(5_000)])
+      const response = await request(`${options.coreUrl}/internal/readiness`, {
+        headers: {
+          "CF-Access-Client-Id": options.accessClientId,
+          "CF-Access-Client-Secret": options.accessClientSecret
+        },
+        signal: requestSignal
+      })
+      return response.ok
+    }
   }
 }
 

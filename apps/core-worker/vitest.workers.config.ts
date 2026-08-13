@@ -49,6 +49,7 @@ export default defineConfig({
           INBOUND_DEAD_LETTER_QUEUE_NAME: "bob-inbound-dead-letter-test",
           DELIVERY_RESULT_QUEUE_NAME: "bob-delivery-result-test",
           DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: "bob-delivery-result-dead-letter-test",
+          OUTBOUND_DEAD_LETTER_QUEUE_NAME: "bob-outbound-dead-letter-test",
           OWNER_ID: "00000000-0000-4000-8000-000000000001",
           OWNER_TIME_ZONE: "Europe/Stockholm",
           REMINDER_QUIET_HOURS_START: "22:00",

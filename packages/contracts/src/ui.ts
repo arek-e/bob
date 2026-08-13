@@ -79,6 +79,7 @@ export const OperationalAlert = Schema.Struct({
   code: Schema.Literals([
     "inbound_exhausted",
     "delivery_uncertain",
+    "outbound_exhausted",
     "delivery_result_exhausted",
     "agent_authentication_failed",
     "reminder_missed",

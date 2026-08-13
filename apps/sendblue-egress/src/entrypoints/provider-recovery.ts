@@ -42,7 +42,8 @@ export async function handleScheduledReconcile(scheduledAt: Date, bindings: Egre
         bindings.INGRESS.fetch("https://ingress.internal/webhooks/receive", {
           method: "POST",
           headers,
-          body
+          body,
+          signal: AbortSignal.timeout(10_000)
         })
     })
     console.log(JSON.stringify({ type: "inbound_reconcile", status: "completed", ...result }))

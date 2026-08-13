@@ -330,6 +330,7 @@ export function createBobStack(options: BobStackOptions) {
           INBOUND_DEAD_LETTER_QUEUE_NAME: inboundDeadLetter.queueName,
           DELIVERY_RESULT_QUEUE_NAME: deliveryResultQueue.queueName,
           DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: deliveryResultDeadLetter.queueName,
+          OUTBOUND_DEAD_LETTER_QUEUE_NAME: outboundDeadLetter.queueName,
           OUTBOUND_QUEUE: outboundQueue,
           OWNER_RUN_COORDINATOR: ownerRunCoordinator,
           REMINDER_CLOCK: reminderClock,
@@ -485,6 +486,11 @@ export function createBobStack(options: BobStackOptions) {
           scriptName: egress.workerName,
           deadLetterQueue: outboundDeadLetter.queueName,
           settings: { batchSize: 1, maxConcurrency: 1, maxRetries: 3, maxWaitTimeMs: 1_000 }
+        })
+        yield* Cloudflare.Queues.Consumer("OutboundDeadLetterConsumer", {
+          queueId: outboundDeadLetter.queueId,
+          scriptName: coreWorker.workerName,
+          settings: { batchSize: 1, maxConcurrency: 1, maxRetries: 10, maxWaitTimeMs: 1_000 }
         })
       }
 

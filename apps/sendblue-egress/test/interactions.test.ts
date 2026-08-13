@@ -2,13 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { EgressBindings } from "../src/bindings.ts"
 
-import { handleInteractionRequest } from "../src/entrypoints/http.ts"
+import {
+  handleDeliveryReconciliationRequest,
+  handleInteractionRequest
+} from "../src/entrypoints/http.ts"
 
 const bindings = {
   CORE: { fetch: vi.fn() },
   DELIVERY_RESULT_QUEUE: { send: vi.fn() },
   SENDBLUE_API_KEY_ID: "key",
   SENDBLUE_API_SECRET_KEY: "secret",
+  SENDBLUE_FROM_NUMBER: "+46711111111",
   SENDBLUE_STATUS_CALLBACK_URL: "https://ingress.example.invalid/webhooks/outbound",
   CORE_CALLER_SECRET: "c".repeat(64)
 } as unknown as EgressBindings
@@ -16,6 +20,34 @@ const bindings = {
 afterEach(() => {
   vi.unstubAllGlobals()
 })
+
+const outboundHistory = {
+  accountEmail: "owner@example.invalid",
+  content: "Reminder test",
+  is_outbound: true,
+  status: "DELIVERED",
+  error_code: null,
+  error_message: null,
+  error_reason: null,
+  message_handle: "provider-history-1",
+  date_sent: "2026-08-13T10:30:00.000Z",
+  date_updated: "2026-08-13T10:31:00.000Z",
+  from_number: "+46711111111",
+  number: "+46700000000",
+  to_number: "+46700000000",
+  was_downgraded: null,
+  plan: "dedicated",
+  media_url: "",
+  message_type: "message",
+  group_id: "",
+  participants: ["+46700000000", "+46711111111"],
+  send_style: "",
+  opted_out: false,
+  error_detail: null,
+  sendblue_number: "+46711111111",
+  service: "iMessage",
+  group_display_name: null
+}
 
 function interactionRequest(body: unknown, token = "c".repeat(64)) {
   return new Request("https://egress.example.invalid/internal/message-interaction", {
@@ -26,6 +58,77 @@ function interactionRequest(body: unknown, token = "c".repeat(64)) {
 }
 
 describe("Sendblue message interactions", () => {
+  it("reconciles a known provider handle without message content", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ message_handle: "provider-1", status: "DELIVERED" }))
+    )
+    const response = await handleDeliveryReconciliationRequest(
+      new Request("https://egress.example.invalid/internal/delivery-reconciliation", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-bob-caller-token": "c".repeat(64) },
+        body: JSON.stringify({
+          outboxId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
+          attemptId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0",
+          correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
+          providerMessageHandle: "provider-1"
+        })
+      }),
+      bindings
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      status: "resolved",
+      result: {
+        state: "delivered",
+        providerMessageHandle: "provider-1"
+      }
+    })
+  })
+
+  it("finds one handleless send through bounded provider history", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ status: "OK", data: [outboundHistory], pagination: { total: 1 } })
+      )
+    )
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(outboundHistory.content)
+    )
+    const payloadFingerprint = [...new Uint8Array(digest)]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("")
+    const response = await handleDeliveryReconciliationRequest(
+      new Request("https://egress.example.invalid/internal/delivery-reconciliation", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-bob-caller-token": "c".repeat(64) },
+        body: JSON.stringify({
+          outboxId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
+          attemptId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0",
+          correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
+          destinationE164: "+46700000000",
+          payloadFingerprint,
+          since: "2026-08-13T10:25:00.000Z",
+          until: "2026-08-13T10:45:00.000Z"
+        })
+      }),
+      bindings
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      status: "resolved",
+      result: {
+        state: "delivered",
+        providerMessageHandle: "provider-history-1",
+        occurredAt: "2026-08-13T10:31:00.000Z"
+      }
+    })
+  })
+
   it("rejects unauthenticated requests", async () => {
     const response = await handleInteractionRequest(
       interactionRequest({ action: "stop" }, "wrong"),
