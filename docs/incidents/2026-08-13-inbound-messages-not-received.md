@@ -2,9 +2,11 @@
 
 ## Status
 
-Resolved on 2026-08-13.
+Service restored on 2026-08-13.
 
 Bob accepted the next confirmed owner message at 17:54 CEST.
+
+The inbound recovery controls reached production at 20:30 CEST.
 
 ## Impact
 
@@ -82,5 +84,18 @@ An independent inbound channel is required to remove this provider boundary. Pro
 - The history client has bounded-query tests.
 - The recovery path has owner-filter and ordering tests.
 - The recovery path uses the existing D1 idempotency boundary.
-- The production release must show one successful reconciliation from either scheduled path.
-- The production release must keep the normal webhook acceptance path healthy.
+- Source release `28e4f94a37b46034928b5453a45d0fcaacc4569b` passed the full release gate.
+- Deployment release `88c1b5e112844cfb9f597b924f3162694a04b38b` pins both attested images.
+- The core fallback completed a reconciliation trace at 18:20:25 UTC.
+- The direct egress Cron completed at 18:30 UTC with zero missing records.
+- Core, ingress, egress, and Nango health routes returned HTTP 200.
+- A fresh Bob backup completed its independent copy.
+- A fresh Nango backup completed its S3 copy.
+
+## Follow-up work
+
+- [#23](https://github.com/arek-e/bob/issues/23) rotates the exposed Coolify deployment credential.
+- [#24](https://github.com/arek-e/bob/issues/24) removes Sendblue as the single acceptance boundary.
+- [#25](https://github.com/arek-e/bob/issues/25) removes persistent Alchemy drift.
+- [#26](https://github.com/arek-e/bob/issues/26) adds reconciliation metrics and stale-run alerts.
+- [#31](https://github.com/arek-e/bob/issues/31) fixes Coolify Compose startup sequencing.
