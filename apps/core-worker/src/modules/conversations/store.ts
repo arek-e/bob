@@ -222,6 +222,7 @@ export function makeConversationStore(
           accountId: event.accountId,
           lineId: event.lineId,
           providerMessageHandle: event.messageHandle,
+          replyToProviderMessageHandle: event.replyToMessageHandle,
           service: event.service,
           isGroup: event.isGroup,
           correlationId: event.correlationId,

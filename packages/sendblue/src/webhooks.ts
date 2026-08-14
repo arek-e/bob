@@ -6,6 +6,12 @@ const E164 = Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/))
 const NullableString = Schema.NullOr(Schema.String)
 const NullableNumber = Schema.NullOr(Schema.Number)
 const NullableBoolean = Schema.NullOr(Schema.Boolean)
+const ReplyTo = Schema.Struct({
+  message_handle: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  part_index: Schema.optionalKey(
+    Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 0, maximum: 50 }))
+  )
+})
 
 export const SendblueWebhookPayload = Schema.Struct({
   accountEmail: Schema.String,
@@ -45,7 +51,8 @@ export const SendblueWebhookPayload = Schema.Struct({
   service: Schema.String,
   group_display_name: NullableString,
   sender_email: Schema.optionalKey(NullableString),
-  seat_id: Schema.optionalKey(NullableString)
+  seat_id: Schema.optionalKey(NullableString),
+  reply_to: Schema.optionalKey(Schema.NullOr(ReplyTo))
 })
 
 export type SendblueWebhookPayload = typeof SendblueWebhookPayload.Type
@@ -124,6 +131,9 @@ export function normalizeInbound(
     accountId: context.accountId,
     lineId: context.lineId,
     messageHandle: payload.message_handle,
+    ...(payload.reply_to === undefined || payload.reply_to === null
+      ? {}
+      : { replyToMessageHandle: payload.reply_to.message_handle }),
     senderE164: payload.from_number,
     destinationE164: payload.to_number,
     text: payload.content,

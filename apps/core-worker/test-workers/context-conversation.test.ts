@@ -375,6 +375,75 @@ describe("recent conversation context", () => {
     ])
   })
 
+  it("adds the parent of an inline reply outside the recent-context window", async () => {
+    const fixture = await seedOwner()
+    const prior = await seedPriorTurn(fixture, {
+      sequence: 2200,
+      inboundTexts: ["Should I include a warm-up?"],
+      outboundText: "Do you want a warm-up before the workout?",
+      inboundAt: "2026-08-12T09:29:00.000Z",
+      deliveredAt: "2026-08-12T09:30:00.000Z",
+      attemptState: "delivered"
+    })
+    const currentMessageId = uuid(2250)
+    const currentEventId = uuid(2251)
+    const encrypted = await fixture.protection.encryptText(fixture.ownerKey, "No")
+    await fixture.database.batch([
+      fixture.database.insert(messages).values({
+        id: currentMessageId,
+        userId: ownerId,
+        channelId,
+        direction: "inbound",
+        textCiphertext: encrypted.ciphertext,
+        textIv: encrypted.iv,
+        dataKeyVersion: 1,
+        occurredAt: "2026-08-12T10:09:00.000Z",
+        createdAt: "2026-08-12T10:09:00.000Z"
+      }),
+      fixture.database.insert(inboundEvents).values({
+        id: currentEventId,
+        userId: ownerId,
+        channelId,
+        messageId: currentMessageId,
+        accountId: "account",
+        lineId: "line",
+        providerMessageHandle: "provider-current",
+        replyToProviderMessageHandle: "provider-2200",
+        service: "imessage",
+        isGroup: false,
+        correlationId: uuid(2252),
+        createdAt: "2026-08-12T10:09:00.000Z"
+      })
+    ])
+
+    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const items = await context.build({
+      ownerId,
+      channelId,
+      currentConversationTurnId: currentTurnId,
+      currentMessageId,
+      currentUserText: "No",
+      localTime: "2026-08-12T10:10:00.000Z",
+      timeZone: "Europe/Stockholm"
+    })
+
+    expect(items).toEqual([
+      {
+        kind: "conversation",
+        text: "Bob (message replied to): Do you want a warm-up before the workout?",
+        instruction: false,
+        conflict: false,
+        sources: [
+          {
+            sourceId: prior.outboundId,
+            sourceLabel: "Bob reply 2026-08-12",
+            occurredAt: "2026-08-12T09:30:00.000Z"
+          }
+        ]
+      }
+    ])
+  })
+
   it("recalls prior turn messages in provider order instead of webhook order", async () => {
     const fixture = await seedOwner()
     const prior = await seedPriorTurn(fixture, {
