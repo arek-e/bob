@@ -1,5 +1,5 @@
 [mcp_servers.coolify]
-url = "https://teampitch-prod.lamb-bicolor.ts.net:8443/mcp"
+url = "https://coolify.lamb-bicolor.ts.net/mcp"
 bearer_token_env_var = "COOLIFY_MCP_TOKEN"
 default_tools_approval_mode = "writes"
 enabled_tools = [
