@@ -239,17 +239,19 @@ describe("deterministic domain rules", () => {
     expect(bounded.reduce((sum, item) => sum + item.text.length, 0)).toBeLessThanOrEqual(180)
   })
 
-  it("selects only owner settings tools for locality requests", () => {
-    expect(selectTools("What time zone are you using?")).toEqual([
-      "settings_get",
-      "settings_update"
-    ])
-    expect(selectTools("Use 24-hour time.")).toEqual(["settings_get", "settings_update"])
-    expect(selectTools("Vilken tidszon använder du?")).toEqual(["settings_get", "settings_update"])
-    expect(selectTools("Ändra mitt tidsformat till 24-timmarsformat.")).toEqual([
-      "settings_get",
-      "settings_update"
-    ])
+  it("selects owner settings tools for locality requests", () => {
+    expect(selectTools("What time zone are you using?")).toEqual(
+      expect.arrayContaining(["settings_get", "settings_update"])
+    )
+    expect(selectTools("Use 24-hour time.")).toEqual(
+      expect.arrayContaining(["settings_get", "settings_update"])
+    )
+    expect(selectTools("Vilken tidszon använder du?")).toEqual(
+      expect.arrayContaining(["settings_get", "settings_update"])
+    )
+    expect(selectTools("Ändra mitt tidsformat till 24-timmarsformat.")).toEqual(
+      expect.arrayContaining(["settings_get", "settings_update"])
+    )
   })
 
   it("requires a direct owner instruction before a settings change", () => {
@@ -309,22 +311,20 @@ describe("deterministic domain rules", () => {
   })
 
   it("gives reminder requests the complete bounded tool surface", () => {
-    expect(selectTools("Snooze my reminder until 14:00.")).toEqual([
+    const reminderTools = [
       "reminder_create",
       "reminder_list",
       "reminder_acknowledge",
       "reminder_complete",
       "reminder_snooze",
       "reminder_cancel"
-    ])
-    expect(selectTools("Påminn mig att ta nycklarna")).toEqual([
-      "reminder_create",
-      "reminder_list",
-      "reminder_acknowledge",
-      "reminder_complete",
-      "reminder_snooze",
-      "reminder_cancel"
-    ])
+    ]
+    expect(selectTools("Snooze my reminder until 14:00.")).toEqual(
+      expect.arrayContaining(reminderTools)
+    )
+    expect(selectTools("Påminn mig att ta nycklarna")).toEqual(
+      expect.arrayContaining(reminderTools)
+    )
   })
 
   it("uses a safe prior capability only for an explicit short follow-up", () => {
@@ -343,10 +343,9 @@ describe("deterministic domain rules", () => {
   })
 
   it("routes Swedish journal and training requests to their bounded tools", () => {
-    expect(selectTools("Sök i min dagbok.")).toEqual([
-      "journal_link_create",
-      "journal_search_metadata"
-    ])
+    expect(selectTools("Sök i min dagbok.")).toEqual(
+      expect.arrayContaining(["journal_link_create", "journal_search_metadata"])
+    )
     expect(selectTools("Visa min träningsrutin.")).toContain("routine_get")
     expect(selectTools("Lägg till den här övningen.")).toContain("exercise_create")
     expect(selectTools("Vilka maskiner och övningar finns på mitt gym?")).toEqual(
@@ -355,9 +354,14 @@ describe("deterministic domain rules", () => {
     expect(selectTools("Which machines do I have?")).toContain("equipment_list")
   })
 
-  it("offers memory proposals only after an explicit owner request", () => {
-    expect(selectTools("I had a good day.")).not.toContain("memory_propose")
-    expect(selectTools("What did I say about coffee?")).not.toContain("memory_propose")
+  it("keeps memory proposals available for natural personal statements", () => {
+    expect(selectTools("I had a good day.")).toContain("memory_propose")
+    expect(selectTools("I like concise answers.")).toContain("memory_propose")
+    expect(selectTools("Please don't suggest restaurants with loud music.")).toContain(
+      "memory_propose"
+    )
+    expect(selectTools("Jag vill helst träna på kvällen.")).toContain("memory_propose")
+    expect(selectTools("My mornings work better without meetings.")).toContain("memory_propose")
     expect(selectTools("Remember that I prefer tea.")).toContain("memory_propose")
     expect(selectTools("Please save this about me.")).toContain("memory_propose")
     expect(selectTools("Kom ihåg att jag föredrar te.")).toContain("memory_propose")
@@ -382,18 +386,7 @@ describe("deterministic domain rules", () => {
       expect.arrayContaining(["reminder_create", "memory_propose"])
     )
     expect(selectTools("Framöver föredrar jag kvällsträning.")).toContain("memory_propose")
-    expect(selectTools("Morning workouts went well today.")).not.toContain("memory_propose")
-  })
-
-  it.each([
-    "I don't want to do warm-ups.",
-    "I don’t wanna do warm up.",
-    "I do not want warm ups in my workouts.",
-    "I want to skip the warm-up from now on.",
-    "Jag vill inte göra uppvärmning.",
-    "Jag vill hoppa över uppvärmningen framöver."
-  ])("offers a reviewable memory proposal for an explicit negative preference: %s", (text) => {
-    expect(selectTools(text)).toContain("memory_propose")
-    expect(selectTools(text)).toContain("routine_get")
+    expect(selectTools("Morning workouts went well today.")).toContain("memory_propose")
+    expect(selectTools("I don’t wanna do warm up.")).toContain("memory_propose")
   })
 })

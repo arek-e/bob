@@ -333,7 +333,8 @@ const toolDefinitions = {
   },
   memory_propose: {
     name: "memory_propose",
-    description: "Propose a memory revision. This does not confirm it.",
+    description:
+      "Save a reviewable personal memory candidate from the owner's direct wording. This does not confirm it.",
     inputSchema: {
       type: "object",
       properties: {

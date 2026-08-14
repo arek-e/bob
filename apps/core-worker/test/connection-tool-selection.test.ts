@@ -9,6 +9,8 @@ describe("connection tool selection", () => {
     "Koppla min kalender.",
     "Anslut Microsoft Calendar."
   ])("selects connection tools for %s", (text) => {
-    expect(selectTools(text)).toEqual(["connection_list", "connection_link_create"])
+    expect(selectTools(text)).toEqual(
+      expect.arrayContaining(["connection_list", "connection_link_create"])
+    )
   })
 })

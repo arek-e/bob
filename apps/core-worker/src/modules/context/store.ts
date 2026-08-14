@@ -89,7 +89,7 @@ function isReminderTask(text: string): boolean {
 }
 
 function isTrainingTask(text: string): boolean {
-  return /\bgym\b|\broutine\b|\bworkout\b|\bexercise\b|\btraining\b|\bsets?\b|\bwarm[- ]?ups?\b|\bstretch(?:es|ing)?\b|\brutin(?:en|er|erna)?\b|\btränings(?:rutin(?:en|er|erna)?|pass(?:et)?|plan(?:en)?|program(?:met)?)\b|\bövning(?:en|ar|arna)?\b|\bmaskin(?:en|er|erna)?\b|\butrustning(?:en)?\b|\buppvärmning(?:en)?\b|\bstretching(?:en)?\b/iu.test(
+  return /\bgym\b|\broutine\b|\bworkout\b|\bexercise\b|\btraining\b|\bsets?\b|\brutin(?:en|er|erna)?\b|\btränings(?:rutin(?:en|er|erna)?|pass(?:et)?|plan(?:en)?|program(?:met)?)\b|\bövning(?:en|ar|arna)?\b|\bmaskin(?:en|er|erna)?\b|\butrustning(?:en)?\b/iu.test(
     text
   )
 }

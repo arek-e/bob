@@ -349,6 +349,10 @@ describe("Pi training tools", () => {
       "Use a recalled preference only when it is relevant to the current result."
     )
     expect(prompt).toContain(
+      "Infer a durable preference from the owner's direct wording even when they do not say prefer or remember."
+    )
+    expect(prompt).toContain("Save that preference as a reviewable candidate with memory_propose.")
+    expect(prompt).toContain(
       "An explicit owner correction replaces the stale value for the current turn."
     )
     expect(prompt).toContain(
