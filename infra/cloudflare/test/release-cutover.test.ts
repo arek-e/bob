@@ -23,12 +23,12 @@ describe("production release cutover contract", () => {
     expect(workflow).toContain("verify-release-manifest-delta.mjs")
     expect(workflow).not.toContain("infra/kubernetes")
     expect(runbook).toContain("/v1/admin/readiness")
-    expect(runbook).toContain("Select `DEPLOYMENT_SHA` as the Git revision")
+    expect(runbook).toContain("The Control Plane selects `DEPLOYMENT_SHA`")
   })
 
-  it("defines a Coolify rollback without an automatic uncertain resend", async () => {
+  it("defines a Control Plane rollback without an automatic uncertain resend", async () => {
     const recovery = await repositoryFile("docs/runbooks/incident-recovery.md")
-    expect(recovery).toContain("Select the last healthy deployment in Coolify")
+    expect(recovery).toContain("Request rollback through the Bob Control Plane")
     expect(recovery).toContain("Never resend a claimed or uncertain outbox automatically")
     expect(recovery).not.toContain("kubectl")
   })

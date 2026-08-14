@@ -49,19 +49,17 @@ The gate also binds both registry digests to `RELEASE_SHA`.
 
 ## Apply the release
 
-Open the production Compose application in Coolify.
+Request the durable release through the Bob Control Plane workflow.
 
-Select `DEPLOYMENT_SHA` as the Git revision.
+```sh
+gh workflow run release.yml -R arek-e/bob-control-plane --ref main \
+  -f source_sha="$RELEASE_SHA" \
+  -f deployment_sha="$DEPLOYMENT_SHA" \
+  -f deploy=true
+```
 
-Set these application values from `infra/coolify/release.json`:
-
-- `BOB_RELEASE_SHA`
-- `BOB_AGENT_IMAGE_DIGEST`
-- `BOB_BACKUP_IMAGE_DIGEST`
-
-Deploy the application.
-
-Do not change the Compose model during this action.
+The Control Plane selects `DEPLOYMENT_SHA`, verifies the immutable image
+digests, deploys through Coolify, and records the accepted release.
 
 Wait for the agent, Tunnel, Nango, backup runner, and observer to become healthy.
 
@@ -85,27 +83,11 @@ Require `independentCopy` to report `completed`.
 
 Confirm that the latest Bob and Nango backup age is below 18,000 seconds.
 
-## Apply the Cloudflare plan
+## Keep Cloudflare ownership separate
 
-Use the plan from the successful release gate.
-
-Set the same source revision before the trusted apply.
-
-```sh
-export BOB_RELEASE_SHA="$RELEASE_SHA"
-```
-
-Apply only that reviewed plan.
-
-Do not copy the Worker OTLP token to OpenBao.
-
-The Worker uses its scoped Cloudflare Access token.
-
-The protected endpoint is:
-
-```sh
-OTLP_URL="https://bob-otel.${BOB_DOMAIN}"
-```
+Do not apply Runtime Alchemy in production. `teampitch-ops` OpenTofu owns
+Cloudflare resources and tunnel configuration. Use its reviewed change path
+for Cloudflare updates.
 
 ## Observe
 
@@ -117,9 +99,8 @@ Record the source SHA, deployment SHA, image digests, and backup result.
 
 ## Roll back
 
-Select the last healthy Coolify deployment.
-
-Restore its three release values and deploy it.
+Request rollback through the Bob Control Plane. It selects the previous
+accepted Runtime Release and records the result.
 
 Do not retry an uncertain delivery during rollback.
 
