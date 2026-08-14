@@ -384,4 +384,16 @@ describe("deterministic domain rules", () => {
     expect(selectTools("Framöver föredrar jag kvällsträning.")).toContain("memory_propose")
     expect(selectTools("Morning workouts went well today.")).not.toContain("memory_propose")
   })
+
+  it.each([
+    "I don't want to do warm-ups.",
+    "I don’t wanna do warm up.",
+    "I do not want warm ups in my workouts.",
+    "I want to skip the warm-up from now on.",
+    "Jag vill inte göra uppvärmning.",
+    "Jag vill hoppa över uppvärmningen framöver."
+  ])("offers a reviewable memory proposal for an explicit negative preference: %s", (text) => {
+    expect(selectTools(text)).toContain("memory_propose")
+    expect(selectTools(text)).toContain("routine_get")
+  })
 })

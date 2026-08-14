@@ -29,6 +29,12 @@ function hasExplicitPreferenceFeedback(text: string): boolean {
     ) ||
     /\b(?:jag föredrar|jag föredrar inte längre|min preferens är|från och med nu|framöver)\b/u.test(
       normalized
+    ) ||
+    /\bi\s+(?:(?:do not|don['’]?t|never)\s+(?:want(?:\s+to)?|wanna)|want\s+to\s+skip)\b.{0,80}\b(?:warm[- ]?ups?|stretch(?:es|ing)?)\b/u.test(
+      normalized
+    ) ||
+    /\bjag\s+(?:vill\s+inte\s+(?:göra\s+)?|vill\s+hoppa\s+över)\b.{0,80}\b(?:uppvärmning(?:en)?|stretching(?:en)?)\b/u.test(
+      normalized
     )
   )
 }
@@ -86,7 +92,7 @@ export function selectTools(text: string): readonly ToolName[] {
     return includePreferenceProposal(["journal_link_create", "journal_search_metadata"])
   }
   if (
-    /\b(?:(?:gym|routine|workout|exercise|machine|set)s?|equipment)\b|\brutin(?:en)?\b|\btränings(?:rutin(?:en)?|pass(?:et)?|plan(?:en)?|program(?:met)?)\b|(?<![\p{L}\p{N}_])övning(?:en|ar|arna)?(?![\p{L}\p{N}_])|\bmaskin(?:en|er|erna)?\b|\butrustning(?:en)?\b/u.test(
+    /\b(?:(?:gym|routine|workout|exercise|machine|set)s?|equipment|warm[- ]?ups?|stretch(?:es|ing)?)\b|\brutin(?:en)?\b|\btränings(?:rutin(?:en)?|pass(?:et)?|plan(?:en)?|program(?:met)?)\b|(?<![\p{L}\p{N}_])övning(?:en|ar|arna)?(?![\p{L}\p{N}_])|\bmaskin(?:en|er|erna)?\b|\butrustning(?:en)?\b|\buppvärmning(?:en)?\b|\bstretching(?:en)?\b/u.test(
       normalized
     )
   ) {
