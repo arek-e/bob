@@ -1,5 +1,5 @@
 import { PriorToolReceipt, type ContextItem } from "@bob/contracts/agent"
-import { isReadOnlyToolName, ToolName, ToolResult } from "@bob/contracts/tools"
+import { ToolName, ToolResult } from "@bob/contracts/tools"
 import {
   and,
   asc,
@@ -32,8 +32,6 @@ import {
 import { deliveryAttempts, outboxMessages } from "../delivery/schema.ts"
 import { buildFtsQuery } from "../memory/retrieval.ts"
 import { factEvidence, factRevisions, facts } from "../memory/schema.ts"
-import { reminderOccurrences, reminders } from "../reminders/schema.ts"
-import { exercises, routines, routineSteps, workoutSessions } from "../training/schema.ts"
 
 export interface ContextBuildRequest {
   readonly ownerId: string
@@ -49,7 +47,6 @@ export interface ContextBuildRequest {
 export interface ContextStore {
   /** String arguments remain valid for storage-safety tests and old snapshots. */
   build(input: ContextBuildRequest | string, channelId?: string): Promise<readonly ContextItem[]>
-  recentToolCapabilities(input: ContextBuildRequest): Promise<readonly ToolName[]>
   priorToolReceipts(input: ContextBuildRequest): Promise<readonly PriorToolReceipt[]>
 }
 
@@ -82,25 +79,11 @@ export function boundContextItems(
  */
 export { buildFtsQuery } from "../memory/retrieval.ts"
 
-function isReminderTask(text: string): boolean {
-  return /\bremind(?:er|ers|ing)?\b|\bsnooze\b|\bdue\b|\bpåminn(?:else(?:n|r|rna)?|a|er|t)?\b|\bsnooza?\b|\bsenarelägg\b|\bskjut(?:a)?\s+upp\b|\bförfaller\b|\bdags\b/iu.test(
-    text
-  )
-}
-
-function isTrainingTask(text: string): boolean {
-  return /\bgym\b|\broutine\b|\bworkout\b|\bexercise\b|\btraining\b|\bsets?\b|\brutin(?:en|er|erna)?\b|\btränings(?:rutin(?:en|er|erna)?|pass(?:et)?|plan(?:en)?|program(?:met)?)\b|\bövning(?:en|ar|arna)?\b|\bmaskin(?:en|er|erna)?\b|\butrustning(?:en)?\b/iu.test(
-    text
-  )
-}
-
 function hasJournalIntent(text: string): boolean {
   return /\b(?:journal(?:ing)?|diar(?:y|ies)|dagbok(?:en|ar|arna)?|dagboks)\b|\/journal\//iu.test(
     text
   )
 }
-
-const safeFollowUpCapabilities = new Set<ToolName>(["reminder_list"])
 
 function contextKind(sourceType: string): ContextItem["kind"] {
   if (sourceType === "reminder") return "reminder"
@@ -437,96 +420,11 @@ export function makeContextStore(
     return selected
   }
 
-  async function reminderContext(ownerId: string, key: CryptoKey): Promise<ContextItem[]> {
-    const rows = await database
-      .select({ reminder: reminders, occurrence: reminderOccurrences })
-      .from(reminders)
-      .leftJoin(
-        reminderOccurrences,
-        and(
-          eq(reminderOccurrences.reminderId, reminders.id),
-          sql`${reminderOccurrences.state} IN ('scheduled', 'claimed', 'awaiting_delivery', 'awaiting_response', 'acknowledged')`
-        )
-      )
-      .where(
-        and(
-          eq(reminders.userId, ownerId),
-          eq(reminders.state, "active"),
-          eq(reminders.sensitivity, "normal")
-        )
-      )
-      .orderBy(asc(reminders.nextDueAt), asc(reminderOccurrences.intendedDueAt))
-      .limit(4)
-
-    return Promise.all(
-      rows.map(async ({ reminder, occurrence }) => {
-        const displayText = await protection.decryptText(key, {
-          ciphertext: reminder.displayTextCiphertext,
-          iv: reminder.displayTextIv
-        })
-        const dueAt = occurrence?.localDisplayTime ?? reminder.nextDueAt ?? "unscheduled"
-        return {
-          kind: "reminder" as const,
-          text: `${displayText}. Due ${dueAt} ${reminder.timeZone}. State ${occurrence?.state ?? reminder.state}.`,
-          instruction: false as const,
-          conflict: false,
-          sources: [
-            {
-              sourceId: occurrence?.id ?? reminder.id,
-              sourceLabel: `reminder ${sourceDay(occurrence?.intendedDueAt ?? reminder.createdAt)}`,
-              occurredAt: occurrence?.intendedDueAt ?? reminder.createdAt
-            }
-          ]
-        }
-      })
-    )
-  }
-
-  async function trainingContext(
+  async function artifactContext(
     ownerId: string,
     channelId: string,
     key: CryptoKey
   ): Promise<ContextItem[]> {
-    const routineRows = await database
-      .select({ routine: routines, step: routineSteps, exercise: exercises })
-      .from(routines)
-      .leftJoin(routineSteps, eq(routineSteps.routineId, routines.id))
-      .leftJoin(exercises, eq(exercises.id, routineSteps.exerciseId))
-      .where(eq(routines.userId, ownerId))
-      .orderBy(desc(routines.updatedAt), asc(routineSteps.position))
-      .limit(40)
-
-    const byRoutine = new Map<string, { routine: typeof routines.$inferSelect; steps: string[] }>()
-    for (const row of routineRows) {
-      const value = byRoutine.get(row.routine.id) ?? { routine: row.routine, steps: [] }
-      if (row.step !== null) {
-        const target = [
-          row.step.targetSets === null ? undefined : `${row.step.targetSets} sets`,
-          row.step.targetReps === null ? undefined : `${row.step.targetReps} reps`
-        ]
-          .filter((part): part is string => part !== undefined)
-          .join(" × ")
-        value.steps.push(
-          `${row.step.position + 1}. ${row.exercise?.name ?? "Unknown exercise"}${target.length === 0 ? "" : ` (${target})`}`
-        )
-      }
-      byRoutine.set(row.routine.id, value)
-    }
-
-    const items: ContextItem[] = [...byRoutine.values()].slice(0, 3).map(({ routine, steps }) => ({
-      kind: "training" as const,
-      text: `Routine ${routine.name}: ${steps.length === 0 ? "no steps" : steps.join("; ")}.`,
-      instruction: false as const,
-      conflict: false,
-      sources: [
-        {
-          sourceId: routine.id,
-          sourceLabel: `routine ${sourceDay(routine.updatedAt)}`,
-          occurredAt: routine.updatedAt
-        }
-      ]
-    }))
-
     const [latestArtifact] = await database
       .select({ artifact: artifacts, revision: artifactRevisions })
       .from(artifacts)
@@ -540,49 +438,26 @@ export function makeContextStore(
       .where(and(eq(artifacts.userId, ownerId), eq(artifacts.channelId, channelId)))
       .orderBy(desc(artifacts.updatedAt))
       .limit(1)
-    if (latestArtifact !== undefined) {
-      const text = await protection.decryptText(key, {
-        ciphertext: latestArtifact.revision.renderedTextCiphertext,
-        iv: latestArtifact.revision.renderedTextIv
-      })
-      items.unshift({
-        kind: "training",
-        text: `Current draft training plan:\n${text}`,
+    if (latestArtifact === undefined) return []
+    const text = await protection.decryptText(key, {
+      ciphertext: latestArtifact.revision.renderedTextCiphertext,
+      iv: latestArtifact.revision.renderedTextIv
+    })
+    return [
+      {
+        kind: "artifact",
+        text: `Current plan:\n${text}`,
         instruction: false,
         conflict: false,
         sources: [
           {
             sourceId: `${latestArtifact.artifact.id}:revision:${latestArtifact.revision.revision}`,
-            sourceLabel: `training plan revision ${latestArtifact.revision.revision}`,
+            sourceLabel: `plan revision ${latestArtifact.revision.revision}`,
             occurredAt: latestArtifact.revision.createdAt
           }
         ]
-      })
-    }
-
-    const [active] = await database
-      .select({ session: workoutSessions, routine: routines })
-      .from(workoutSessions)
-      .innerJoin(routines, eq(routines.id, workoutSessions.routineId))
-      .where(and(eq(workoutSessions.userId, ownerId), eq(workoutSessions.status, "active")))
-      .orderBy(desc(workoutSessions.startedAt))
-      .limit(1)
-    if (active !== undefined) {
-      items.unshift({
-        kind: "training",
-        text: `Active workout for ${active.routine.name}, started ${active.session.startedAt}.`,
-        instruction: false,
-        conflict: false,
-        sources: [
-          {
-            sourceId: active.session.id,
-            sourceLabel: `workout ${sourceDay(active.session.startedAt)}`,
-            occurredAt: active.session.startedAt
-          }
-        ]
-      })
-    }
-    return items
+      }
+    ]
   }
 
   return {
@@ -697,79 +572,6 @@ export function makeContextStore(
       return receipts
     },
 
-    async recentToolCapabilities(input) {
-      if (input.currentConversationTurnId === undefined) return []
-      const deliveredAfter = new Date(Date.parse(input.localTime) - 15 * 60_000).toISOString()
-      const [latestTurn] = await database
-        .select({
-          id: conversationTurns.id,
-          revision: conversationTurns.revision
-        })
-        .from(conversationTurns)
-        .innerJoin(
-          outboxMessages,
-          and(
-            eq(outboxMessages.id, conversationTurns.replyOutboxId),
-            eq(outboxMessages.conversationTurnId, conversationTurns.id),
-            eq(outboxMessages.conversationTurnRevision, conversationTurns.revision),
-            eq(outboxMessages.state, "accepted")
-          )
-        )
-        .innerJoin(
-          deliveryAttempts,
-          and(
-            eq(deliveryAttempts.outboxId, outboxMessages.id),
-            eq(deliveryAttempts.state, "delivered")
-          )
-        )
-        .where(
-          and(
-            eq(conversationTurns.userId, input.ownerId),
-            eq(conversationTurns.channelId, input.channelId),
-            eq(conversationTurns.status, "replied"),
-            ne(conversationTurns.id, input.currentConversationTurnId),
-            gte(deliveryAttempts.updatedAt, deliveredAfter),
-            lte(deliveryAttempts.updatedAt, input.localTime)
-          )
-        )
-        .orderBy(desc(deliveryAttempts.updatedAt))
-        .limit(1)
-
-      if (latestTurn === undefined) return []
-      const rows = await database
-        .select({ toolName: toolCalls.toolName })
-        .from(agentRuns)
-        .innerJoin(
-          toolCalls,
-          and(eq(toolCalls.runId, agentRuns.id), eq(toolCalls.status, "completed"))
-        )
-        .where(
-          and(
-            eq(agentRuns.status, "completed"),
-            eq(agentRuns.conversationTurnId, latestTurn.id),
-            eq(agentRuns.conversationTurnRevision, latestTurn.revision)
-          )
-        )
-        .orderBy(desc(toolCalls.completedAt), desc(toolCalls.createdAt))
-        .limit(4)
-      const capabilities: ToolName[] = []
-      for (const row of rows) {
-        try {
-          const toolName = Schema.decodeUnknownSync(ToolName)(row.toolName)
-          if (
-            isReadOnlyToolName(toolName) &&
-            safeFollowUpCapabilities.has(toolName) &&
-            !capabilities.includes(toolName)
-          ) {
-            capabilities.push(toolName)
-          }
-        } catch {
-          // Unknown tool metadata cannot expand the next run's capability set.
-        }
-      }
-      return Object.freeze(capabilities)
-    },
-
     async build(inputOrOwnerId, legacyChannelId) {
       const input: ContextBuildRequest =
         typeof inputOrOwnerId === "string"
@@ -786,14 +588,10 @@ export function makeContextStore(
       const profile = await profileContext(input.ownerId, key)
       const conversation = await conversationContext(input, key)
       const toolReceipts = await toolReceiptContext(input, key)
-      const taskItems = isReminderTask(input.currentUserText)
-        ? await reminderContext(input.ownerId, key)
-        : isTrainingTask(input.currentUserText)
-          ? await trainingContext(input.ownerId, input.channelId, key)
-          : []
+      const artifactItems = await artifactContext(input.ownerId, input.channelId, key)
       const lexical = await lexicalContext(input.ownerId, input.currentUserText)
       const seenSources = new Set(
-        [...profile, ...conversation, ...toolReceipts, ...taskItems].flatMap((item) =>
+        [...profile, ...conversation, ...toolReceipts, ...artifactItems].flatMap((item) =>
           item.sources.map((source) => source.sourceId)
         )
       )
@@ -807,7 +605,7 @@ export function makeContextStore(
       ).toReversed()
       const receiptCharacters = boundedReceipts.reduce((total, item) => total + item.text.length, 0)
       const otherItems = boundContextItems(
-        [...profile, ...conversation, ...taskItems, ...uniqueLexical],
+        [...profile, ...conversation, ...artifactItems, ...uniqueLexical],
         totalCharacterBudget - receiptCharacters,
         itemCharacterBudget
       )

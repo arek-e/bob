@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  modelToolNames,
   ToolName,
   toolDefinitionForName,
   toolDefinitions,
@@ -8,12 +9,22 @@ import {
 } from "../src/tools.ts"
 
 describe("Bob tool catalogue", () => {
-  it("covers every model tool and leaves deterministic commands outside the catalogue", () => {
+  it("covers every registered Tool definition except deterministic commands", () => {
     const names = Object.keys(toolDefinitions).toSorted()
     const expected = ToolName.literals.filter((name) => name !== "memory_correct").toSorted()
 
     expect(names).toEqual(expected)
     expect(toolDefinitionForName("memory_correct")).toBeUndefined()
+  })
+
+  it("exposes every reviewed model capability without an owner-text router", () => {
+    expect(modelToolNames.toSorted()).toEqual(
+      Object.keys(toolDefinitions)
+        .filter((name) => name !== "memory_confirm")
+        .toSorted()
+    )
+    expect(modelToolNames).not.toContain("memory_confirm")
+    expect(modelToolNames).not.toContain("memory_correct")
   })
 
   it("keeps each definition provider-neutral and explicit", () => {

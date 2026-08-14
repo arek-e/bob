@@ -33,6 +33,7 @@ export function featureForTools(toolNames: readonly string[]): TelemetryFeature 
     if (feature !== "assistant") features.add(feature)
   }
   if (features.size === 0) return "assistant"
+  if (features.size === featureOrder.length) return "assistant"
   if (features.size > 1) return "mixed"
   return featureOrder.find((feature) => features.has(feature)) ?? "assistant"
 }

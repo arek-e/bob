@@ -3,6 +3,21 @@ import { describe, expect, it } from "vitest"
 import { renderArtifact } from "../src/modules/artifacts/render.ts"
 
 describe("artifact rendering", () => {
+  it("renders a general plan as stable copyable text", () => {
+    const artifact = {
+      kind: "plan" as const,
+      title: "Friday errands",
+      durationMinutes: 45,
+      sections: [{ heading: "Before lunch", items: ["Collect the parcel"] }]
+    }
+
+    expect(renderArtifact(artifact)).toBe(
+      ["Friday errands", "Duration: 45 minutes", "", "Before lunch", "1. Collect the parcel"].join(
+        "\n"
+      )
+    )
+  })
+
   it("renders a training plan as stable copyable text", () => {
     const artifact = {
       kind: "training_plan" as const,

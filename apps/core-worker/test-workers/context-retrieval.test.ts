@@ -65,7 +65,7 @@ afterEach(async () => {
   await reset()
 })
 
-describe("task-specific context retrieval", () => {
+describe("general context retrieval", () => {
   it("excludes profile facts that are not safe for the message channel", async () => {
     const { database, protection, ownerKey } = await seedOwner()
     const createdAt = "2026-08-10T08:00:00.000Z"
@@ -174,7 +174,7 @@ describe("task-specific context retrieval", () => {
     expect(items.every((item) => !item.text.includes("hidden exercise"))).toBe(true)
   })
 
-  it("adds normal active reminders but excludes private reminder text", async () => {
+  it("leaves reminder records behind their reviewed tools", async () => {
     const { database, protection, ownerKey } = await seedOwner()
     const normal = await protection.encryptText(ownerKey, "Bring training shoes")
     const privateText = await protection.encryptText(ownerKey, "Private appointment")
@@ -238,15 +238,13 @@ describe("task-specific context retrieval", () => {
     }
 
     const context = makeContextStore(database, protection, {})
-    const items = await context.build(request("Which reminders are due?"))
-    const swedishItems = await context.build(request("Vilka påminnelser ska snart skickas?"))
-
-    expect(items.some((item) => item.text.includes("Bring training shoes"))).toBe(true)
-    expect(items.every((item) => !item.text.includes("Private appointment"))).toBe(true)
-    expect(swedishItems).toEqual(items)
+    await expect(context.build(request("Which reminders are due?"))).resolves.toEqual([])
+    await expect(context.build(request("Vilka påminnelser ska snart skickas?"))).resolves.toEqual(
+      []
+    )
   })
 
-  it("loads the same routine context for Swedish and English requests", async () => {
+  it("leaves training records behind their reviewed tools", async () => {
     const { database, protection } = await seedOwner()
     const createdAt = "2026-08-11T10:00:00.000Z"
     const exerciseId = "00000000-0000-4000-8000-000000000341"
@@ -281,10 +279,7 @@ describe("task-specific context retrieval", () => {
     ])
 
     const context = makeContextStore(database, protection, {})
-    const english = await context.build(request("Show my training routine."))
-    const swedish = await context.build(request("Visa min träningsrutin."))
-
-    expect(swedish).toEqual(english)
-    expect(swedish[0]?.text).toContain("Routine Full body")
+    await expect(context.build(request("Show my training routine."))).resolves.toEqual([])
+    await expect(context.build(request("Visa min träningsrutin."))).resolves.toEqual([])
   })
 })

@@ -78,6 +78,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **External action attempt:** One durable attempt to change state or call an external system.
 - **Context pack:** Confirmed and policy-cleared data supplied to one agent run.
 - **Tool command:** One typed request from Bob's Pi loop to a Bob domain module.
+- **Capability catalogue:** The reviewed model tools available to every agent run.
+- **Plan artifact:** One reusable structured draft for any owner planning task.
 - **Short reply binding:** An expiring link from one reply to one pending action.
 - **Memory candidate:** An unconfirmed proposed fact revision.
 - **Fact:** Stable identity for one durable personal claim.
@@ -119,6 +121,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - The run attempt and reflection revision change in one D1 batch.
 - Only the current turn revision can commit and deliver its reply.
 - The core Worker enforces every domain invariant.
+- Every agent run receives the same reviewed capability catalogue.
+- Message wording does not grant Tool authority. Domain modules enforce each action invariant.
 - The agent never calls Sendblue directly.
 - The Sendblue modules never receive Pi OAuth credentials.
 - OpenBao is authoritative for production configuration and credentials.
@@ -170,3 +174,4 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - [ADR 0009: Coolify private runtime](docs/adr/0009-coolify-private-runtime.md)
 - [ADR 0010: Revisioned conversation turns](docs/adr/0010-revisioned-conversation-turns.md)
 - [ADR 0011: Evaluation records and artifacts](docs/adr/0011-evaluation-storage.md)
+- [ADR 0012: Model-directed capability selection](docs/adr/0012-model-directed-capability-selection.md)

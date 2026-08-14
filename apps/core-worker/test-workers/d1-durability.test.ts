@@ -864,7 +864,7 @@ describe("D1 migrations and durability", () => {
     )
     const attemptId = await store.claim(runId, 90_000)
     const artifact = {
-      kind: "training_plan" as const,
+      kind: "plan" as const,
       title: "Biceps · Thursday, August 13",
       durationMinutes: 50,
       sections: [
@@ -904,7 +904,7 @@ describe("D1 migrations and durability", () => {
     const revisions = await database.select().from(artifactRevisions)
     const outboxes = await database.select().from(outboxMessages)
     expect(storedArtifacts).toHaveLength(1)
-    expect(storedArtifacts[0]).toMatchObject({ currentRevision: 1, kind: "training_plan" })
+    expect(storedArtifacts[0]).toMatchObject({ currentRevision: 1, kind: "plan" })
     expect(revisions).toHaveLength(1)
     expect(JSON.parse(revisions[0]!.sourceIdsJson)).toEqual([messageId])
     expect(outboxes).toHaveLength(2)
@@ -936,14 +936,14 @@ describe("D1 migrations and durability", () => {
         ownerId,
         channelId,
         currentMessageId: messageId,
-        currentUserText: "Remove the warm-up from my training plan.",
+        currentUserText: "Please revise the latest plan.",
         localTime: "2026-08-11T10:01:00.000Z",
         timeZone: "Europe/Stockholm"
       })
     ).resolves.toContainEqual(
       expect.objectContaining({
-        kind: "training",
-        text: expect.stringContaining("Current draft training plan:\nBiceps")
+        kind: "artifact",
+        text: expect.stringContaining("Current plan:\nBiceps")
       })
     )
 
@@ -1888,7 +1888,7 @@ describe("D1 migrations and durability", () => {
     expect(indexed).toHaveLength(0)
   })
 
-  it("binds agent memory proposals to the current owner message", async () => {
+  it("binds inferred preference proposals to the current owner message", async () => {
     const { database, protection } = await seedRunData()
     const runStore = makeAgentRunStore(database, protection, {})
     await runStore.create(
@@ -1900,7 +1900,7 @@ describe("D1 migrations and durability", () => {
         sourceMessageId: messageId,
         localTime: "2026-08-11T10:00:00.000Z",
         timeZone: "Europe/Stockholm",
-        userText: "Remember that I prefer morning training.",
+        userText: "Concise answers work best for me.",
         contextItems: [],
         allowedTools: ["memory_propose"],
         limits: {
@@ -1941,16 +1941,16 @@ describe("D1 migrations and durability", () => {
       name: "memory_propose",
       arguments: {
         scope: "preferences",
-        key: "training_time",
-        value: "morning",
-        canonicalText: "I prefer morning training.",
+        key: "response_style",
+        value: "concise",
+        canonicalText: "Concise answers work best for me.",
         assertionKind: "user_stated",
         originClass: "background_model",
         sourceType: "assistant_claim",
         sourceId: "00000000-0000-4000-8000-999999999999",
         extractionConfidence: 0.9,
         importance: 0.8,
-        explicitRemember: true
+        explicitRemember: false
       }
     })
 

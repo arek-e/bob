@@ -2,6 +2,7 @@ import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import {
+  AgentArtifact,
   AgentRunRequest,
   AgentRunResult,
   AgentSteerRequest,
@@ -10,6 +11,28 @@ import {
 } from "../src/agent.ts"
 
 describe("AgentRunRequest rollout compatibility", () => {
+  it("accepts a general structured plan artifact", () => {
+    expect(
+      Schema.decodeUnknownSync(AgentArtifact)({
+        kind: "plan",
+        title: "Friday errands",
+        durationMinutes: 45,
+        sections: [{ heading: "Before lunch", items: ["Collect the parcel"] }]
+      })
+    ).toMatchObject({ kind: "plan", title: "Friday errands" })
+  })
+
+  it("keeps legacy training plan artifacts readable", () => {
+    expect(
+      Schema.decodeUnknownSync(AgentArtifact)({
+        kind: "training_plan",
+        title: "Legacy workout",
+        durationMinutes: 30,
+        sections: [{ heading: "Workout", items: ["Squats"] }]
+      })
+    ).toMatchObject({ kind: "training_plan", title: "Legacy workout" })
+  })
+
   it("decodes ordered messages from the current turn", () => {
     const request = Schema.decodeUnknownSync(AgentRunRequest)({
       protocolVersion: 1,
