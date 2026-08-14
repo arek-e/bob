@@ -28,8 +28,8 @@ their immutable digests in the private Control Plane release record.
 ## Deploy a managed instance
 
 The private Control Plane selects the Runtime SHA and image digests. It checks
-the Runtime Compose contract, plans Cloudflare resources, and deploys through
-Coolify.
+the Runtime Compose contract and deploys through Coolify. `teampitch-ops`
+OpenTofu owns Cloudflare resources and tunnel configuration.
 
 The managed deployment uses these services:
 

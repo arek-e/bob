@@ -221,7 +221,10 @@ Use custom SQL migrations for FTS5, triggers, and data changes.
 
 Use parameterized SQL templates for FTS queries.
 
-Alchemy is the only production migration applier.
+`teampitch-ops` OpenTofu is the only Cloudflare resource writer.
+
+The Runtime Alchemy package is a read-only compatibility planner during the
+Worker bundle handoff. It cannot apply production changes.
 
 Do not use `drizzle-kit push` in production.
 

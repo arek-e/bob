@@ -2,22 +2,21 @@ import { readFile } from "node:fs/promises"
 import { describe, expect, it } from "vitest"
 
 describe("trusted infrastructure plan", () => {
-  it("declares the reviewed credential handoff before Alchemy planning", async () => {
+  it("keeps Runtime workflows unable to apply Cloudflare changes", async () => {
     const workflows = await Promise.all([
       readFile(new URL("../../../.github/workflows/release-gate.yml", import.meta.url), "utf8"),
       readFile(new URL("../../../.github/workflows/ci.yml", import.meta.url), "utf8")
     ])
 
     for (const workflow of workflows) {
-      expect(workflow).toContain('RUNTIME_CREDENTIAL_HANDOFF_ENABLED: "true"')
-      expect(workflow).toContain("id-token: write")
-      expect(workflow).toContain("run: pnpm infra:plan")
-      expect(workflow).toContain("BAO_JWT_ROLE")
+      expect(workflow).not.toContain("run: pnpm --filter @bob/cloudflare-infra deploy")
+      expect(workflow).not.toContain("alchemy deploy")
+      expect(workflow).not.toContain("--yes")
       expect(workflow).not.toContain("BAO_DEPLOY_TOKEN")
       expect(workflow).not.toContain("BOB_STAGE")
       expect(workflow).not.toContain("staging")
     }
-    expect(workflows[0]).toContain("environment: production")
+    expect(workflows[0]).toContain("run: pnpm check")
   })
 
   it("exercises the production contract with offline Alchemy fixtures", async () => {

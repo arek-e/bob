@@ -2,11 +2,11 @@ import { spawnSync } from "node:child_process"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 
-const COMMANDS = new Set(["plan", "deploy"])
+const COMMANDS = new Set(["plan"])
 
 export function alchemyCommandArguments(command) {
-  if (!COMMANDS.has(command)) throw new Error("Alchemy command must be plan or deploy")
-  return ["exec", "alchemy", command, "--stage", "prod", ...(command === "deploy" ? ["--yes"] : [])]
+  if (!COMMANDS.has(command)) throw new Error("Alchemy command must be plan")
+  return ["exec", "alchemy", command, "--stage", "prod"]
 }
 
 function run(command) {

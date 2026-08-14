@@ -5,7 +5,6 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "deploy": "varlock run --inject all --skip-cache -- node src/run-alchemy.mjs deploy",
     "env:check": "varlock load --agent --path . --skip-cache",
     "load:check": "ALCHEMY_TELEMETRY_DISABLED=true alchemy plan alchemy.smoke.run.ts --stage prod --log-level error",
     "plan": "varlock run --inject all --skip-cache -- node src/run-alchemy.mjs plan",
