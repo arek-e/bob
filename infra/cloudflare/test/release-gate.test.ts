@@ -145,8 +145,11 @@ describe("trusted infrastructure plan", () => {
     expect(automaticRelease).toContain("infra/coolify/release.json.next")
     expect(automaticRelease).toContain("scripts/verify-release-manifest-delta.mjs")
     expect(automaticRelease).toContain("git push origin HEAD:main")
-    expect(automaticRelease).toContain("gh workflow run release-gate.yml --ref main")
-    expect(automaticRelease).toContain('gh run watch "$run_id" --exit-status')
+    expect(automaticRelease).toContain("GH_REPO: ${{ github.repository }}")
+    expect(automaticRelease).toContain(
+      'gh workflow run release-gate.yml --repo "$GH_REPO" --ref main'
+    )
+    expect(automaticRelease).toContain('gh run watch "$run_id" --repo "$GH_REPO" --exit-status')
     expect(automaticRelease).toContain("environment: production")
     expect(automaticRelease).toContain("BAO_JWT_ROLE_AUTO_RELEASE")
     expect(automaticRelease).toContain("id-token: write")

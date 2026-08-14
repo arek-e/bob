@@ -120,18 +120,19 @@ jobs:
         id: gate
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           SOURCE_SHA: ${{ needs.select-source.outputs.source_sha }}
           DEPLOYMENT_SHA: ${{ needs.pin-release.outputs.deployment_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          gh workflow run release-gate.yml --ref main \
+          gh workflow run release-gate.yml --repo "$GH_REPO" --ref main \
             -f source_sha="$SOURCE_SHA" \
             -f deployment_sha="$DEPLOYMENT_SHA"
 
           run_id=""
           for attempt in $(seq 1 30); do
-            run_id="$(gh run list \
+            run_id="$(gh run list --repo "$GH_REPO" \
               --workflow release-gate.yml \
               --event workflow_dispatch \
               --branch main \
@@ -143,7 +144,7 @@ jobs:
           done
           [[ "$run_id" =~ ^[0-9]+$ ]]
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          gh run watch "$run_id" --exit-status
+          gh run watch "$run_id" --repo "$GH_REPO" --exit-status
 
   deploy:
     needs: [select-source, build-images, pin-release, release-gate]
