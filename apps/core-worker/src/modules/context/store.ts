@@ -25,6 +25,7 @@ import {
   agentRuns,
   conversationTurnMessages,
   conversationTurns,
+  inboundEvents,
   messages,
   toolCalls,
   users
@@ -302,6 +303,69 @@ export function makeContextStore(
       })
     }
     return boundContextItems(newestItems, 2_400, itemCharacterBudget).toReversed()
+  }
+
+  async function inlineReplyContext(
+    input: ContextBuildRequest,
+    key: CryptoKey
+  ): Promise<ContextItem[]> {
+    const [parent] = await database
+      .select({
+        id: messages.id,
+        textCiphertext: messages.textCiphertext,
+        textIv: messages.textIv,
+        occurredAt: messages.occurredAt
+      })
+      .from(inboundEvents)
+      .innerJoin(
+        deliveryAttempts,
+        eq(deliveryAttempts.providerMessageHandle, inboundEvents.replyToProviderMessageHandle)
+      )
+      .innerJoin(
+        outboxMessages,
+        and(
+          eq(outboxMessages.id, deliveryAttempts.outboxId),
+          eq(outboxMessages.userId, input.ownerId),
+          eq(outboxMessages.channelId, input.channelId),
+          eq(outboxMessages.state, "accepted")
+        )
+      )
+      .innerJoin(
+        messages,
+        and(eq(messages.id, outboxMessages.messageId), eq(messages.direction, "outbound"))
+      )
+      .where(
+        and(
+          eq(inboundEvents.userId, input.ownerId),
+          eq(inboundEvents.channelId, input.channelId),
+          eq(inboundEvents.messageId, input.currentMessageId),
+          isNotNull(inboundEvents.replyToProviderMessageHandle),
+          inArray(deliveryAttempts.state, ["accepted", "delivered"])
+        )
+      )
+      .orderBy(desc(deliveryAttempts.updatedAt))
+      .limit(1)
+    if (parent === undefined) return []
+    const text = await protection.decryptText(key, {
+      ciphertext: parent.textCiphertext,
+      iv: parent.textIv
+    })
+    if (hasJournalIntent(text)) return []
+    return [
+      {
+        kind: "conversation",
+        text: `Bob (message replied to): ${text}`,
+        instruction: false,
+        conflict: false,
+        sources: [
+          {
+            sourceId: parent.id,
+            sourceLabel: `Bob reply ${sourceDay(parent.occurredAt)}`,
+            occurredAt: parent.occurredAt
+          }
+        ]
+      }
+    ]
   }
 
   async function toolReceiptContext(
@@ -586,13 +650,19 @@ export function makeContextStore(
           : inputOrOwnerId
       const key = await ownerKey(input.ownerId)
       const profile = await profileContext(input.ownerId, key)
-      const conversation = await conversationContext(input, key)
+      const inlineReply = await inlineReplyContext(input, key)
+      const repliedToSourceIds = new Set(
+        inlineReply.flatMap((item) => item.sources.map((source) => source.sourceId))
+      )
+      const conversation = (await conversationContext(input, key)).filter((item) =>
+        item.sources.every((source) => !repliedToSourceIds.has(source.sourceId))
+      )
       const toolReceipts = await toolReceiptContext(input, key)
       const artifactItems = await artifactContext(input.ownerId, input.channelId, key)
       const lexical = await lexicalContext(input.ownerId, input.currentUserText)
       const seenSources = new Set(
-        [...profile, ...conversation, ...toolReceipts, ...artifactItems].flatMap((item) =>
-          item.sources.map((source) => source.sourceId)
+        [...inlineReply, ...profile, ...conversation, ...toolReceipts, ...artifactItems].flatMap(
+          (item) => item.sources.map((source) => source.sourceId)
         )
       )
       const uniqueLexical = lexical.filter((item) =>
@@ -605,7 +675,7 @@ export function makeContextStore(
       ).toReversed()
       const receiptCharacters = boundedReceipts.reduce((total, item) => total + item.text.length, 0)
       const otherItems = boundContextItems(
-        [...profile, ...conversation, ...artifactItems, ...uniqueLexical],
+        [...inlineReply, ...profile, ...conversation, ...artifactItems, ...uniqueLexical],
         totalCharacterBudget - receiptCharacters,
         itemCharacterBudget
       )

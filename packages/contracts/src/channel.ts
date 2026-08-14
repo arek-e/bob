@@ -21,6 +21,7 @@ export const NormalizedInboundEvent = Schema.Struct({
   accountId: NonEmptyText,
   lineId: NonEmptyText,
   messageHandle: NonEmptyText,
+  replyToMessageHandle: Schema.optionalKey(NonEmptyText),
   senderE164: E164,
   destinationE164: E164,
   text: NonEmptyText,
