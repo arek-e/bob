@@ -63,6 +63,27 @@ digests, deploys through Coolify, and records the accepted release.
 
 Wait for the agent, Tunnel, Nango, backup runner, and observer to become healthy.
 
+## Automatic releases
+
+`.github/workflows/auto-release.yml` starts after successful `main` CI runs.
+
+It performs these actions:
+
+1. Confirm that the successful commit is still the tip of `main`.
+2. Skip commits that change only `infra/coolify/release.json`.
+3. Build and attest both immutable runtime images.
+4. Commit only the three reviewed release values to `main`.
+5. Run and observe the production release gate.
+6. Request and observe one durable Control Plane release.
+
+The automatic workflow uses the `bob-auto-release-production` OpenBao JWT role.
+
+That role is bound to the exact repository, workflow, event, branch, environment, and owner claims.
+
+It can read only the existing Control Plane operator Access record.
+
+Do not give this workflow a Coolify administrator token.
+
 ## Verify readiness
 
 Keep `/health` as the public liveness check.
