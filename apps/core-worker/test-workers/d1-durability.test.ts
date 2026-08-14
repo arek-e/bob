@@ -241,6 +241,7 @@ describe("D1 migrations and durability", () => {
       accountId: "account",
       lineId: "line",
       messageHandle: "first-production-inbound",
+      replyToMessageHandle: "prior-outbound-handle",
       senderE164: "+46700000000",
       destinationE164: "+46711111111",
       text: "HELP",
@@ -274,6 +275,13 @@ describe("D1 migrations and durability", () => {
       duplicate: false,
       shouldEnqueue: true
     })
+    const database = createCoreDatabase(env.DB)
+    await expect(
+      database
+        .select({ replyToProviderMessageHandle: inboundEvents.replyToProviderMessageHandle })
+        .from(inboundEvents)
+        .where(eq(inboundEvents.id, event.id))
+    ).resolves.toEqual([{ replyToProviderMessageHandle: "prior-outbound-handle" }])
     const counts = await env.DB.prepare(
       `SELECT
         (SELECT COUNT(*) FROM users) AS users,

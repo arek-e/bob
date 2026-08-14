@@ -82,6 +82,7 @@ export const inboundEvents = sqliteTable(
     accountId: text("account_id").notNull(),
     lineId: text("line_id").notNull(),
     providerMessageHandle: text("provider_message_handle").notNull(),
+    replyToProviderMessageHandle: text("reply_to_provider_message_handle"),
     service: text("service", { enum: ["imessage", "sms", "rcs", "unknown"] })
       .notNull()
       .default("unknown"),

@@ -56,6 +56,22 @@ describe("Sendblue webhook handling", () => {
     expect(event.destinationE164).toBe("+46711111111")
   })
 
+  it("preserves the immediate parent of an inbound inline reply", () => {
+    const event = normalizeInbound(
+      decodeWebhookPayload({
+        ...payload,
+        reply_to: { message_handle: "outbound-parent", part_index: 0 }
+      }),
+      {
+        accountId: "account-1",
+        lineId: "line-1",
+        randomUuid: () => "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
+      }
+    )
+
+    expect(event).toMatchObject({ replyToMessageHandle: "outbound-parent" })
+  })
+
   it("marks group messages and unknown services as ineligible for native interactions", () => {
     const event = normalizeInbound(
       decodeWebhookPayload({ ...payload, group_id: "group-1", service: "carrier-pigeon" }),
