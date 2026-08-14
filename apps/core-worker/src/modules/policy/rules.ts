@@ -108,8 +108,8 @@ export function urgentSafetyResponse(text: string): string | undefined {
 
 export function fixedHelpText(language: "en" | "sv" = "en"): string {
   return language === "sv"
-    ? "Jag kan hjälpa till med påminnelser, rutiner, träningspass, minnen och länkar till din privata dagbok. Skicka en begäran i taget."
-    : "I can help with reminders, routines, workouts, recall, and private journal links. Send one request at a time."
+    ? "Jag kan hjälpa dig att planera, minnas inställningar och använda dina godkända verktyg. Berätta vad du behöver."
+    : "I can help you plan, remember preferences, and use your approved tools. Tell me what you need."
 }
 
 export function canSendChannelText(sensitivity: "normal" | "private" | "high"): boolean {

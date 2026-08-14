@@ -186,7 +186,7 @@ async function seedPriorTurn(
 }
 
 describe("recent conversation context", () => {
-  it("does not inherit a capability across a newer unrelated delivered turn", async () => {
+  it("does not inject prior tool metadata into a newer unrelated turn", async () => {
     const fixture = await seedOwner()
     const reminderTurn = await seedPriorTurn(fixture, {
       sequence: 500,
@@ -235,20 +235,20 @@ describe("recent conversation context", () => {
 
     const context = makeContextStore(fixture.database, fixture.protection, {})
 
-    await expect(
-      context.recentToolCapabilities({
-        ownerId,
-        channelId,
-        currentConversationTurnId: currentTurnId,
-        currentMessageId: uuid(564),
-        currentUserText: "List",
-        localTime: "2026-08-12T10:10:00.000Z",
-        timeZone: "Europe/Stockholm"
-      })
-    ).resolves.toEqual([])
+    const items = await context.build({
+      ownerId,
+      channelId,
+      currentConversationTurnId: currentTurnId,
+      currentMessageId: uuid(564),
+      currentUserText: "List",
+      localTime: "2026-08-12T10:10:00.000Z",
+      timeZone: "Europe/Stockholm"
+    })
+
+    expect(JSON.stringify(items)).not.toMatch(/reminder-list-(?:call|key)/u)
   })
 
-  it("returns only safe read capabilities from a delivered prior turn", async () => {
+  it("does not inject prior private tool data into conversation context", async () => {
     const fixture = await seedOwner()
     const prior = await seedPriorTurn(fixture, {
       sequence: 580,
@@ -323,10 +323,9 @@ describe("recent conversation context", () => {
       localTime: "2026-08-12T10:10:00.000Z",
       timeZone: "Europe/Stockholm"
     }
-    const capabilities = await context.recentToolCapabilities(capabilityRequest)
+    const items = await context.build(capabilityRequest)
 
-    expect(capabilities).toEqual(["reminder_list"])
-    expect(JSON.stringify(capabilities)).not.toMatch(/PRIVATE_|journal|create/u)
+    expect(JSON.stringify(items)).not.toMatch(/PRIVATE_(?:REMINDER|JOURNAL).*ARGUMENTS/u)
   })
 
   it("adds one delivered prior turn as untrusted same-channel context", async () => {

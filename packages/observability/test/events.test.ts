@@ -193,6 +193,15 @@ describe("usage attribution", () => {
     expect(featureForTools([])).toBe("assistant")
     expect(featureForTools(["reminder_create", "reminder_list"])).toBe("reminders")
     expect(featureForTools(["memory_search", "workout_last"])).toBe("mixed")
+    expect(
+      featureForTools([
+        "reminder_list",
+        "memory_search",
+        "journal_search_metadata",
+        "workout_last",
+        "settings_get"
+      ])
+    ).toBe("assistant")
   })
 
   it("maps agent failures to stable content-free span codes", () => {

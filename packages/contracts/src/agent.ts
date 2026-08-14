@@ -8,8 +8,7 @@ const ArtifactTitle = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLen
 const ArtifactHeading = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80))
 const ArtifactItem = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(240))
 
-export const TrainingPlanArtifact = Schema.Struct({
-  kind: Schema.Literal("training_plan"),
+const PlanArtifactFields = {
   title: ArtifactTitle,
   durationMinutes: Schema.NullOr(
     Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 240 }))
@@ -20,9 +19,20 @@ export const TrainingPlanArtifact = Schema.Struct({
       items: Schema.Array(ArtifactItem).check(Schema.isMinLength(1), Schema.isMaxLength(12))
     })
   ).check(Schema.isMinLength(1), Schema.isMaxLength(8))
+}
+
+export const PlanArtifact = Schema.Struct({
+  kind: Schema.Literal("plan"),
+  ...PlanArtifactFields
 })
 
-export const AgentArtifact = TrainingPlanArtifact
+/** Legacy shape for artifacts saved before plans became domain-neutral. */
+export const TrainingPlanArtifact = Schema.Struct({
+  kind: Schema.Literal("training_plan"),
+  ...PlanArtifactFields
+})
+
+export const AgentArtifact = Schema.Union([PlanArtifact, TrainingPlanArtifact])
 
 export const ContextSource = Schema.Struct({
   sourceId: NonEmptyText,
@@ -31,7 +41,15 @@ export const ContextSource = Schema.Struct({
 })
 
 export const ContextItem = Schema.Struct({
-  kind: Schema.Literals(["profile", "conversation", "reminder", "training", "fact", "skill"]),
+  kind: Schema.Literals([
+    "profile",
+    "conversation",
+    "artifact",
+    "reminder",
+    "training",
+    "fact",
+    "skill"
+  ]),
   text: ShortText,
   instruction: Schema.Literal(false),
   conflict: Schema.Boolean,
@@ -231,6 +249,7 @@ export const DeviceLoginEvent = Schema.Union([
 ])
 
 export type ContextSource = typeof ContextSource.Type
+export type PlanArtifact = typeof PlanArtifact.Type
 export type TrainingPlanArtifact = typeof TrainingPlanArtifact.Type
 export type AgentArtifact = typeof AgentArtifact.Type
 export type ContextItem = typeof ContextItem.Type

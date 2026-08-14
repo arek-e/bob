@@ -1,3 +1,4 @@
+import { modelToolNames } from "@bob/contracts/tools"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -479,7 +480,7 @@ describe("conversation turn processing", () => {
     expect(releaseSettling).toHaveBeenCalledWith(turnId, expect.any(String))
   })
 
-  it("registers reminder_list for a new short follow-up after a delivered reminder turn", async () => {
+  it("registers every reviewed capability for a short follow-up", async () => {
     let capturedRequest: Record<string, unknown> | undefined
     vi.stubGlobal(
       "fetch",
@@ -501,7 +502,6 @@ describe("conversation turn processing", () => {
         })
       })
     )
-    const recentToolCapabilities = vi.fn(async () => ["reminder_list"] as const)
     const build = vi.fn(async () => [
       {
         kind: "conversation" as const,
@@ -540,7 +540,7 @@ describe("conversation turn processing", () => {
             hourCycle: "h23"
           }))
         },
-        context: { build, recentToolCapabilities },
+        context: { build },
         runs: {
           loadForInbound: vi.fn(async () => undefined),
           loadForTurn: vi.fn(async () => undefined),
@@ -589,18 +589,10 @@ describe("conversation turn processing", () => {
       composition
     )
 
-    expect(recentToolCapabilities).toHaveBeenCalledWith(
-      expect.objectContaining({
-        ownerId,
-        channelId,
-        currentConversationTurnId: turnId,
-        currentUserText: "List"
-      })
-    )
     expect(capturedRequest).toMatchObject({
       userText: "List",
       currentTurnMessages: [{ sourceMessageId: latestMessageId, text: "List" }],
-      allowedTools: expect.arrayContaining(["reminder_list"])
+      allowedTools: modelToolNames
     })
   })
 

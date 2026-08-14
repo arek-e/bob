@@ -191,6 +191,7 @@ export const SettingsUpdateArguments = Schema.Struct({
  * deterministic bound command and is intentionally not a model tool.
  */
 export type ToolDefinitionName = Exclude<ToolName, "memory_correct">
+export type ModelToolName = Exclude<ToolDefinitionName, "memory_confirm">
 
 export interface ToolDefinition<Name extends ToolDefinitionName = ToolDefinitionName> {
   readonly name: Name
@@ -333,7 +334,8 @@ const toolDefinitions = {
   },
   memory_propose: {
     name: "memory_propose",
-    description: "Propose a memory revision. This does not confirm it.",
+    description:
+      "Save a reviewable personal memory candidate from the owner's direct wording. This does not confirm it.",
     inputSchema: {
       type: "object",
       properties: {
@@ -369,7 +371,8 @@ const toolDefinitions = {
   },
   journal_link_create: {
     name: "journal_link_create",
-    description: "Create a private short-lived journal link. Never accept journal text.",
+    description:
+      "Create a private short-lived journal link after the owner asks. Never accept journal text.",
     inputSchema: emptyInputSchema
   },
   journal_search_metadata: {
@@ -552,7 +555,8 @@ const toolDefinitions = {
   },
   connection_link_create: {
     name: "connection_link_create",
-    description: "Create one short-lived account link for Google Calendar or Microsoft Calendar.",
+    description:
+      "Create one short-lived account link after the owner asks for Google Calendar or Microsoft Calendar.",
     inputSchema: {
       type: "object",
       properties: {
@@ -570,6 +574,13 @@ const toolDefinitions = {
 }
 
 export { toolDefinitions }
+
+/** Every reviewed capability that the model can choose during a turn. */
+export const modelToolNames: readonly ModelToolName[] = Object.freeze(
+  (Object.keys(toolDefinitions) as ToolDefinitionName[]).filter(
+    (name): name is ModelToolName => name !== "memory_confirm"
+  )
+)
 
 /** Stable lookup for adapters that need one reviewed definition. */
 export function toolDefinitionForName(name: ToolName): ToolDefinition | undefined {

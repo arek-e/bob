@@ -349,6 +349,18 @@ describe("Pi training tools", () => {
       "Use a recalled preference only when it is relevant to the current result."
     )
     expect(prompt).toContain(
+      "Infer a durable preference from the owner's direct wording even when they do not say prefer or remember."
+    )
+    expect(prompt).toContain("Save that preference as a reviewable candidate with memory_propose.")
+    expect(prompt).toContain(
+      "Do not call memory_propose when the owner asks not to remember or store the current information."
+    )
+    expect(prompt).toContain(
+      "Choose tools from the owner's meaning, not from keywords, language, or domain assumptions."
+    )
+    expect(prompt).toContain('For reusable structured plans, set "artifact" to {"kind":"plan"')
+    expect(prompt).not.toContain('"kind":"training_plan"')
+    expect(prompt).toContain(
       "An explicit owner correction replaces the stale value for the current turn."
     )
     expect(prompt).toContain(

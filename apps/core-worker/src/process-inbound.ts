@@ -2,6 +2,7 @@ import type { OutboundJob } from "@bob/contracts/jobs"
 import type { TelemetryFeature } from "@bob/observability/events"
 
 import { AgentRunResult, type AgentRunRequest } from "@bob/contracts/agent"
+import { modelToolNames } from "@bob/contracts/tools"
 import { featureForTools } from "@bob/observability/attribution"
 import { recordDecision, withBobSpan, type BobDecisionCode } from "@bob/observability/effect"
 import {
@@ -15,7 +16,6 @@ import type { CoreBindings } from "./bindings.ts"
 import type { CoreComposition } from "./composition.ts"
 import type { ConversationTurnSnapshot } from "./modules/conversations/turn-store.ts"
 
-import { selectTools, selectToolsWithPriorCapabilities } from "./modules/context/tool-selection.ts"
 import { conversationTiming } from "./modules/conversations/timing.ts"
 import { reportAgentFailure, reportAgentUsage } from "./modules/observability/reporting.ts"
 import { selectAgentResponse } from "./modules/policy/agent-response.ts"
@@ -899,22 +899,7 @@ export async function processInbound(
           localTime,
           timeZone: ownerSettings.timeZone
         }
-        const priorToolCapabilities =
-          conversationTurn === undefined
-            ? []
-            : yield* promiseEffect(
-                () =>
-                  composition.services.context.recentToolCapabilities?.(contextBuildRequest) ?? []
-              )
-        const allowedTools = [
-          ...new Set(
-            turnMessages.flatMap((message, index) =>
-              index === turnMessages.length - 1
-                ? selectToolsWithPriorCapabilities(message.text, priorToolCapabilities)
-                : selectTools(message.text)
-            )
-          )
-        ]
+        const allowedTools = [...modelToolNames]
         const feature = featureForTools(allowedTools)
         const retrievalStartedAt = Date.now()
         const retrieve = withBobSpan(

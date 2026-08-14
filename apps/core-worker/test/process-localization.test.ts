@@ -75,7 +75,7 @@ describe("deterministic Swedish replies", () => {
   })
 
   it.each([
-    ["HJÄLP", "Jag kan hjälpa till med påminnelser"],
+    ["HJÄLP", "Jag kan hjälpa dig att planera"],
     ["DAGBOK", "Öppna din privata dagbok: https://bob.example/journal/private-link"],
     ["KLART", "Påminnelsen är markerad som klar."],
     ["SETT", "Påminnelsen är markerad som sedd."],

@@ -1,5 +1,7 @@
 import { Schema } from "effect"
 
+import { ToolName } from "./tools.ts"
+
 export const OutputValidationCode = Schema.Literals([
   "response_envelope_too_long",
   "malformed_response",
@@ -79,9 +81,8 @@ export function scanUnsafeOutput(text: string): UnsafeOutputCode | undefined {
 }
 
 export function internalToolReferences(text: string): readonly string[] {
-  return (
-    text.match(
-      /\b(?:reminder|memory|journal|gym|exercise|equipment|routine|workout|settings|connection)_[a-z0-9_]+\b/giu
-    ) ?? []
+  const registered = new Set<string>(ToolName.literals)
+  return (text.match(/\b[a-z][a-z0-9]*_[a-z0-9_]+\b/giu) ?? []).filter((name) =>
+    registered.has(name.toLowerCase())
   )
 }
