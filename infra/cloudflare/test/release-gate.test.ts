@@ -149,8 +149,12 @@ describe("trusted infrastructure plan", () => {
     expect(automaticRelease).toContain(
       'gh workflow run release-gate.yml --repo "$GH_REPO" --ref main'
     )
+    expect(automaticRelease).toContain('previous_run_id="$(gh run list --repo "$GH_REPO"')
+    expect(automaticRelease).toContain(".databaseId > $previous_run_id")
     expect(automaticRelease).toContain('gh run watch "$run_id" --repo "$GH_REPO" --exit-status')
     expect(automaticRelease).toContain("environment: production")
+    expect(automaticRelease).toContain("TS_OAUTH_CLIENT_ID_AUTO_RELEASE")
+    expect(automaticRelease).toContain("TS_AUDIENCE_AUTO_RELEASE")
     expect(automaticRelease).toContain("BAO_JWT_ROLE_AUTO_RELEASE")
     expect(automaticRelease).toContain("id-token: write")
     expect(automaticRelease).toContain("control-plane/operator-access")
