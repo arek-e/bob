@@ -1,0 +1,261 @@
+name: Automatic Coolify release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+concurrency:
+  group: bob-automatic-production-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  select-source:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      release_required: ${{ steps.source.outputs.release_required }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+      - name: Select the current reviewed source
+        id: source
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA"
+
+          mapfile -t changed_paths < <(git diff-tree --no-commit-id --name-only -r HEAD)
+          if [[ "${#changed_paths[@]}" -eq 1 && "${changed_paths[0]}" == "infra/coolify/release.json" ]]; then
+            echo "release_required=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_required=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+  build-images:
+    needs: select-source
+    if: needs.select-source.outputs.release_required == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/release-images.yml
+    with:
+      release_sha: ${{ needs.select-source.outputs.source_sha }}
+
+  pin-release:
+    needs: [select-source, build-images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      deployment_sha: ${{ steps.pin.outputs.deployment_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Commit the immutable release pins
+        id: pin
+        env:
+          SOURCE_SHA: ${{ needs.select-source.outputs.source_sha }}
+          AGENT_DIGEST: ${{ needs.build-images.outputs.agent_digest }}
+          BACKUP_DIGEST: ${{ needs.build-images.outputs.backup_digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$AGENT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$BACKUP_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+
+          jq \
+            --arg source_sha "$SOURCE_SHA" \
+            --arg agent_digest "$AGENT_DIGEST" \
+            --arg backup_digest "$BACKUP_DIGEST" \
+            '.sourceSha = $source_sha | .agentDigest = $agent_digest | .backupDigest = $backup_digest' \
+            infra/coolify/release.json > infra/coolify/release.json.next
+          mv infra/coolify/release.json.next infra/coolify/release.json
+
+          mapfile -t changed_paths < <(git diff --name-only)
+          test "${#changed_paths[@]}" -eq 1
+          test "${changed_paths[0]}" = "infra/coolify/release.json"
+          git diff --check
+
+          git config user.name "bob-release-bot"
+          git config user.email "bob-release-bot@users.noreply.github.com"
+          git add infra/coolify/release.json
+          git commit -m "Release Bob runtime $SOURCE_SHA"
+          deployment_sha="$(git rev-parse HEAD)"
+          node scripts/verify-release-manifest-delta.mjs "$SOURCE_SHA" "$deployment_sha" >/dev/null
+          git push origin HEAD:main
+          echo "deployment_sha=$deployment_sha" >> "$GITHUB_OUTPUT"
+
+  release-gate:
+    needs: [select-source, pin-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      actions: write
+      contents: read
+    outputs:
+      run_id: ${{ steps.gate.outputs.run_id }}
+    steps:
+      - name: Run and observe the production release gate
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.select-source.outputs.source_sha }}
+          DEPLOYMENT_SHA: ${{ needs.pin-release.outputs.deployment_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run release-gate.yml --ref main \
+            -f source_sha="$SOURCE_SHA" \
+            -f deployment_sha="$DEPLOYMENT_SHA"
+
+          run_id=""
+          for attempt in $(seq 1 30); do
+            run_id="$(gh run list \
+              --workflow release-gate.yml \
+              --event workflow_dispatch \
+              --branch main \
+              --limit 10 \
+              --json databaseId,headSha \
+              --jq "map(select(.headSha == \"$DEPLOYMENT_SHA\")) | first | .databaseId // empty")"
+            [[ -n "$run_id" ]] && break
+            sleep 2
+          done
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          gh run watch "$run_id" --exit-status
+
+  deploy:
+    needs: [select-source, build-images, pin-release, release-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      BAO_ADDR: ${{ vars.BAO_ADDR }}
+      BAO_JWT_ROLE: ${{ vars.BAO_JWT_ROLE_AUTO_RELEASE }}
+      CONTROL_PLANE_URL: ${{ vars.CONTROL_PLANE_URL }}
+      BOB_INSTANCE_ID: ${{ vars.BOB_INSTANCE_ID }}
+    steps:
+      - name: Validate the production interface
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in BAO_ADDR BAO_JWT_ROLE CONTROL_PLANE_URL BOB_INSTANCE_ID; do
+            test -n "${!name}" || { echo "Missing production variable: ${name}" >&2; exit 1; }
+          done
+      - name: Connect to the production Tailnet
+        uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888
+        with:
+          oauth-client-id: ${{ vars.TS_OAUTH_CLIENT_ID_PRODUCTION }}
+          audience: ${{ vars.TS_AUDIENCE_PRODUCTION }}
+          tags: tag:ci
+          ping: vault.lamb-bicolor.ts.net
+      - name: Request and observe the durable Coolify release
+        env:
+          SOURCE_SHA: ${{ needs.select-source.outputs.source_sha }}
+          DEPLOYMENT_SHA: ${{ needs.pin-release.outputs.deployment_sha }}
+          AGENT_DIGEST: ${{ needs.build-images.outputs.agent_digest }}
+          BACKUP_DIGEST: ${{ needs.build-images.outputs.backup_digest }}
+          IDEMPOTENCY_KEY: ${{ github.repository }}:${{ github.run_id }}:${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bao_token=""
+          revoke_bao_token() {
+            if [[ -n "${bao_token:-}" ]]; then
+              curl --silent --show-error --connect-timeout 10 --max-time 10 --request POST \
+                --header "X-Vault-Token: ${bao_token}" \
+                "${BAO_ADDR%/}/v1/auth/token/revoke-self" >/dev/null || true
+            fi
+          }
+          trap revoke_bao_token EXIT
+
+          oidc_jwt="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+            --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=openbao" | jq -er '.value')"
+          login_response="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+            --request POST \
+            --header 'content-type: application/json' \
+            --data "$(jq -nc --arg role "$BAO_JWT_ROLE" --arg jwt "$oidc_jwt" '{role: $role, jwt: $jwt}')" \
+            "${BAO_ADDR%/}/v1/auth/jwt/login")"
+          bao_token="$(jq -er '.auth.client_token' <<<"$login_response")"
+          access_record="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+            --header "X-Vault-Token: ${bao_token}" \
+            "${BAO_ADDR%/}/v1/ops/data/apps/prod/bob/control-plane/operator-access")"
+          access_client_id="$(jq -er '.data.data.CF_ACCESS_CLIENT_ID' <<<"$access_record")"
+          access_client_secret="$(jq -er '.data.data.CF_ACCESS_CLIENT_SECRET' <<<"$access_record")"
+          echo "::add-mask::${access_client_id}"
+          echo "::add-mask::${access_client_secret}"
+          revoke_bao_token
+          bao_token=""
+          trap - EXIT
+
+          request_body="$(jq -nc \
+            --arg sourceRevision "$SOURCE_SHA" \
+            --arg reviewedGitRevision "$DEPLOYMENT_SHA" \
+            --arg agentImageDigest "$AGENT_DIGEST" \
+            --arg backupImageDigest "$BACKUP_DIGEST" \
+            --arg idempotencyKey "$IDEMPOTENCY_KEY" \
+            '{idempotencyKey: $idempotencyKey, release: {sourceRevision: $sourceRevision, reviewedGitRevision: $reviewedGitRevision, agentImageDigest: $agentImageDigest, backupImageDigest: $backupImageDigest}}')"
+          operation="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+            --request POST \
+            --header 'content-type: application/json' \
+            --header "Authorization: Bearer ${access_client_secret}" \
+            --header "CF-Access-Client-Id: ${access_client_id}" \
+            --header "CF-Access-Client-Secret: ${access_client_secret}" \
+            --data "$request_body" \
+            "${CONTROL_PLANE_URL%/}/v1/instances/${BOB_INSTANCE_ID}/releases")"
+          operation_id="$(jq -er '.id' <<<"$operation")"
+          echo "Control Plane Operation: ${operation_id}" >> "$GITHUB_STEP_SUMMARY"
+
+          for attempt in $(seq 1 75); do
+            operation="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+              --header "Authorization: Bearer ${access_client_secret}" \
+              --header "CF-Access-Client-Id: ${access_client_id}" \
+              --header "CF-Access-Client-Secret: ${access_client_secret}" \
+              "${CONTROL_PLANE_URL%/}/v1/operations/${operation_id}")"
+            state="$(jq -er '.status' <<<"$operation")"
+            case "$state" in
+              succeeded)
+                {
+                  echo "Automatic Coolify release succeeded."
+                  echo "Source SHA: ${SOURCE_SHA}"
+                  echo "Deployment SHA: ${DEPLOYMENT_SHA}"
+                  echo "Agent digest: ${AGENT_DIGEST}"
+                  echo "Backup digest: ${BACKUP_DIGEST}"
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 0
+                ;;
+              failed)
+                failure_code="$(jq -er '.failureCode // "unknown"' <<<"$operation")"
+                echo "Release Operation failed with code: ${failure_code}" >&2
+                exit 1
+                ;;
+            esac
+            sleep 20
+          done
+          echo "Release Operation did not finish within the acceptance window." >&2
+          exit 1

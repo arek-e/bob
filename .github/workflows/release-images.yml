@@ -1,6 +1,19 @@
 name: Release images
 
 on:
+  workflow_call:
+    inputs:
+      release_sha:
+        description: Full main-branch commit SHA to build and attest
+        required: true
+        type: string
+    outputs:
+      agent_digest:
+        description: Immutable agent image digest
+        value: ${{ jobs.publish-agent.outputs.digest }}
+      backup_digest:
+        description: Immutable backup image digest
+        value: ${{ jobs.publish-backup.outputs.digest }}
   workflow_dispatch:
     inputs:
       release_sha:
