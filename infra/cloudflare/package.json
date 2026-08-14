@@ -5,9 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "deploy": "varlock run --inject all --skip-cache -- node src/run-alchemy.mjs deploy",
     "env:check": "varlock load --agent --path . --skip-cache",
-    "evals:deploy": "varlock run --inject all --skip-cache -- node src/run-alchemy.mjs deploy alchemy.evals.run.ts",
     "evals:load": "ALCHEMY_TELEMETRY_DISABLED=true alchemy plan alchemy.evals.smoke.run.ts --stage prod --log-level error",
     "evals:plan": "varlock run --inject all --skip-cache -- node src/run-alchemy.mjs plan alchemy.evals.run.ts",
     "load:check": "ALCHEMY_TELEMETRY_DISABLED=true alchemy plan alchemy.smoke.run.ts --stage prod --log-level error",

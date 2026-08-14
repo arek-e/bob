@@ -2,22 +2,14 @@ import { spawnSync } from "node:child_process"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 
-const COMMANDS = new Set(["plan", "deploy"])
+const COMMANDS = new Set(["plan"])
 const MAIN_FILES = new Set(["alchemy.run.ts", "alchemy.evals.run.ts"])
 
 export function alchemyCommandArguments(command, main) {
-  if (!COMMANDS.has(command)) throw new Error("Alchemy command must be plan or deploy")
+  if (!COMMANDS.has(command)) throw new Error("Alchemy command must be plan")
   if (main !== undefined && !MAIN_FILES.has(main))
     throw new Error("Alchemy main file is not allowed")
-  return [
-    "exec",
-    "alchemy",
-    command,
-    ...(main === undefined ? [] : [main]),
-    "--stage",
-    "prod",
-    ...(command === "deploy" ? ["--yes"] : [])
-  ]
+  return ["exec", "alchemy", command, ...(main === undefined ? [] : [main]), "--stage", "prod"]
 }
 
 function run(command, main) {

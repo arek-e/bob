@@ -111,7 +111,7 @@ describe("trusted infrastructure plan", () => {
     expect(ci).toContain("BOB_RELEASE_SHA: ${{ github.sha }}")
   })
 
-  it("documents the protected Worker OTLP release path", async () => {
+  it("documents the Control Plane release and OpenTofu ownership paths", async () => {
     const [deployment, operations] = await Promise.all([
       readFile(new URL("../../../docs/runbooks/deployment.md", import.meta.url), "utf8"),
       readFile(new URL("../../../docs/runbooks/operations.md", import.meta.url), "utf8")
@@ -120,9 +120,10 @@ describe("trusted infrastructure plan", () => {
     expect(deployment).toContain("gh workflow run release-gate.yml --ref main")
     expect(deployment).toContain('-f source_sha="$RELEASE_SHA"')
     expect(deployment).toContain('-f deployment_sha="$DEPLOYMENT_SHA"')
-    expect(deployment).toContain('OTLP_URL="https://bob-otel.${BOB_DOMAIN}"')
-    expect(deployment).toContain('export BOB_RELEASE_SHA="$RELEASE_SHA"')
-    expect(deployment).toContain("Do not copy the Worker OTLP token to OpenBao")
+    expect(deployment).toContain("gh workflow run release.yml -R arek-e/bob-control-plane")
+    expect(deployment).toContain("The Control Plane selects `DEPLOYMENT_SHA`")
+    expect(deployment).toContain("`teampitch-ops` OpenTofu owns")
+    expect(deployment).toContain("Do not apply Runtime Alchemy in production")
     expect(operations).toContain("`https://bob-otel.<BOB_DOMAIN>/v1/traces`")
     expect(operations).toContain("The Node agent does not use this Access token")
   })

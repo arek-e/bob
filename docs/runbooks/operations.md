@@ -50,7 +50,9 @@ The existing Tunnel sends that host to collector port 4318. The collector has no
 
 Core, Sendblue ingress, and Sendblue egress use the same reviewed release SHA.
 
-Alchemy binds the Worker OTLP token directly to those three Workers.
+The `teampitch-ops` OpenTofu stacks own the Worker metadata and bindings.
+
+Runtime Alchemy provides a read-only compatibility plan. It cannot apply changes.
 
 The Node agent sends OTLP to the in-cluster collector address. The Node agent does not use this Access token.
 

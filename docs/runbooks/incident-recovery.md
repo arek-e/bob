@@ -49,11 +49,11 @@ Warn the owner before any later manual retry.
 
 ## Runtime rollback
 
-Select the last healthy deployment in Coolify.
+Request rollback through the Bob Control Plane.
 
-Restore its source SHA and immutable image digests.
+The Control Plane selects the previous accepted Runtime Release.
 
-Deploy it without changing Compose or Cloudflare resources.
+Do not change Compose or Cloudflare resources during rollback.
 
 Require the private readiness check to pass.
 
