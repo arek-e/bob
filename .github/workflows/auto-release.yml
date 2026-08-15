@@ -91,6 +91,7 @@ jobs:
       BAO_ADDR: ${{ vars.BAO_ADDR }}
       BAO_JWT_ROLE: ${{ vars.BAO_JWT_ROLE_AUTO_RELEASE }}
       COOLIFY_BASE_URL: ${{ vars.COOLIFY_BASE_URL }}
+      COOLIFY_HOST_ADDRESS: ${{ vars.COOLIFY_HOST_ADDRESS }}
       COOLIFY_RUNTIME_APPLICATION_UUID: ${{ vars.COOLIFY_RUNTIME_APPLICATION_UUID }}
     steps:
       - uses: actions/checkout@v4
@@ -133,9 +134,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for name in BAO_ADDR BAO_JWT_ROLE COOLIFY_BASE_URL COOLIFY_RUNTIME_APPLICATION_UUID; do
+          for name in BAO_ADDR BAO_JWT_ROLE COOLIFY_BASE_URL COOLIFY_HOST_ADDRESS COOLIFY_RUNTIME_APPLICATION_UUID; do
             test -n "${!name}" || { echo "Missing production variable: ${name}" >&2; exit 1; }
           done
+          coolify_host="$(node -e 'process.stdout.write(new URL(process.env.COOLIFY_BASE_URL).hostname)')"
+          printf '%s %s\n' "$COOLIFY_HOST_ADDRESS" "$coolify_host" | sudo tee -a /etc/hosts >/dev/null
+          tailscale ping --timeout=10s "$COOLIFY_HOST_ADDRESS" >/dev/null
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_SOURCE_SHA"
 
           bao_token=""
