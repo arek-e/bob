@@ -48,6 +48,7 @@ import {
   memoryCandidates
 } from "../src/modules/memory/schema.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
+import { makeReminderDeliveryTarget } from "../src/modules/reminders/delivery-target.ts"
 import { reminderOccurrences, reminders } from "../src/modules/reminders/schema.ts"
 import { makeReminderStore } from "../src/modules/reminders/store.ts"
 import { searchDocuments } from "../src/modules/retrieval/schema.ts"
@@ -1330,7 +1331,13 @@ describe("D1 migrations and durability", () => {
     ])
     const delivery = makeDeliveryStore(database, protection, {
       now: () => new Date(at),
-      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`,
+      targetAdapters: [
+        makeReminderDeliveryTarget(
+          database,
+          () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+        )
+      ]
     })
     const outboxId = await delivery.createOutbox({
       ownerId,

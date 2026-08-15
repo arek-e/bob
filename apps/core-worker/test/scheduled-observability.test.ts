@@ -9,6 +9,8 @@ import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
 import { handleScheduled } from "../src/entrypoints/scheduled.ts"
+import { makeReminderScheduledWorkflow } from "../src/modules/reminders/scheduled-workflow.ts"
+import { makeRuntimeModules } from "../src/modules/runtime/module.ts"
 import { testFixture } from "./test-fixture.ts"
 
 const compositionHarness = vi.hoisted(() => ({
@@ -125,6 +127,19 @@ describe("Core scheduled telemetry", () => {
       SENDBLUE_EGRESS_URL: "https://egress.example.invalid",
       EGRESS_CALLER_SECRET: "c".repeat(64)
     })
+    compositionHarness.current = {
+      ...compositionHarness.current,
+      runtime: makeRuntimeModules({
+        scheduledTasks: [
+          makeReminderScheduledWorkflow({
+            bindings,
+            database: compositionHarness.current.database,
+            reminders: compositionHarness.current.services.reminders,
+            ownerId: scheduledCorrelationId
+          })
+        ]
+      })
+    }
 
     await handleScheduled(
       bindings,
@@ -167,7 +182,7 @@ describe("Core scheduled telemetry", () => {
     expect(outboxPublishes[0]?.attributes).toMatchObject({
       "bob.correlation.id": firstCorrelationId,
       "bob.outbox.id": firstOutboxId,
-      "bob.reminder.occurrence_id": occurrenceId
+      "bob.feature": "delivery"
     })
     expect(outboxPublishes[1]?.attributes).toMatchObject({
       "bob.correlation.id": secondCorrelationId,
@@ -260,6 +275,19 @@ describe("Core scheduled telemetry", () => {
       REMINDER_CLOCK: { jurisdiction: vi.fn(() => namespace) },
       OUTBOUND_QUEUE: { send }
     })
+    compositionHarness.current = {
+      ...compositionHarness.current,
+      runtime: makeRuntimeModules({
+        scheduledTasks: [
+          makeReminderScheduledWorkflow({
+            bindings,
+            database: compositionHarness.current.database,
+            reminders: compositionHarness.current.services.reminders,
+            ownerId: scheduledCorrelationId
+          })
+        ]
+      })
+    }
 
     await expect(
       handleScheduled(

@@ -148,7 +148,7 @@ const mutationHesitationPhrases = [
 const mutationReviewQuestion =
   /^(?:what|why|how|when|where|who|which|will|would|can|could|should|does|do|did|is|are|am|vad|varför|hur|när|var|vem|vilken|vilka|kommer|skulle|kan|bör|gör|gjorde|är)\b/u
 const directMutationRequestQuestion =
-  /^(?:(?:(?:can|could|would|will) you(?: please)?|(?:kan|skulle) du(?: snälla)?)\s+)(?:remind|create|set|add|schedule|mark|acknowledge|complete|finish|snooze|postpone|delay|move|cancel|delete|remove|stop|update|change|switch|use|påminn|skapa|lägg|schemalägg|sätt|markera|bekräfta|slutför|snooza|senarelägg|skjut|flytta|avbryt|radera|stoppa|uppdatera|byt|använd)\b/u
+  /^(?:(?:can|could|would|will) you(?: please)?|(?:kan|skulle) du(?: snälla)?)\s+(?!(?:explain|describe|clarify|tell|show|förklara|beskriv)\b)\S+/u
 
 function latestFragmentText(request: typeof AgentRunRequest.Type): string {
   return request.currentTurnMessages?.at(-1)?.text ?? request.userText

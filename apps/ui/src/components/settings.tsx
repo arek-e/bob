@@ -1,7 +1,11 @@
 import {
+  ConnectionList,
+  type ConnectionProvider,
+  type ConnectionStatus
+} from "@bob/contracts/capabilities/connections"
+import {
   OwnerSettingsUpdate,
   OwnerSettingsView,
-  type ConnectionProvider,
   type HourCycle,
   type SettingsConnection
 } from "@bob/contracts/settings"
@@ -263,7 +267,7 @@ function LocalitySection(props: ClientProps) {
             Local time and language
           </h2>
           <p id="locality-description" class={styles.formIntro}>
-            Bob uses these settings for new reminders, replies, and calendar dates.
+            Bob uses these settings when it reads or writes local dates and times.
           </p>
         </div>
         <div class={styles.formCardContent}>
@@ -363,10 +367,9 @@ function LocalitySection(props: ClientProps) {
         </div>
         <div class={styles.formCardFooter}>
           <div class={styles.footerCopy}>
-            <p class={styles.footerTitle}>Existing reminders stay unchanged</p>
+            <p class={styles.footerTitle}>Existing records stay unchanged</p>
             <p class={styles.footerText}>
-              A new time zone applies to future requests. Existing reminders keep their saved date,
-              time, and time zone.
+              A new time zone applies to future requests. Existing records keep their saved values.
             </p>
           </div>
           <Button class="w-full sm:w-auto" type="submit" disabled={saving()}>
@@ -385,6 +388,10 @@ function ConnectionsSection(props: ClientProps) {
     () => (props.enabled() ? "ready" : undefined),
     async () => parseJson(OwnerSettingsView, await api("/api/settings"))
   )
+  const [externalConnections, { refetch: refetchExternalConnections }] = createResource(
+    () => (props.enabled() ? "ready" : undefined),
+    async () => parseJson(ConnectionList, await api("/api/connections"))
+  )
   const [authStatus, { refetch: refetchAuth }] = createResource(
     () => (props.enabled() ? "ready" : undefined),
     async () => parseJson(AdminStatus, await api("/api/agent/status"))
@@ -399,17 +406,20 @@ function ConnectionsSection(props: ClientProps) {
     return value?.type === "device_code" ? value : undefined
   }
 
-  function connection(provider: SettingsConnection["provider"]): SettingsConnection["status"] {
-    return (
-      settingsView()?.connections.find((item) => item.provider === provider)?.status ??
-      "not_connected"
-    )
+  function connection(provider: "sendblue"): SettingsConnection["status"]
+  function connection(provider: ConnectionProvider): ConnectionStatus
+  function connection(
+    provider: "sendblue" | ConnectionProvider
+  ): ConnectionStatus | SettingsConnection["status"] {
+    const items =
+      provider === "sendblue" ? settingsView()?.connections : externalConnections()?.connections
+    return items?.find((item) => item.provider === provider)?.status ?? "not_connected"
   }
 
   async function refresh() {
     setRefreshing(true)
     try {
-      await Promise.all([refetchSettings(), refetchAuth()])
+      await Promise.all([refetchSettings(), refetchExternalConnections(), refetchAuth()])
     } catch {
       status.announce("Unable to refresh connections. Check the service and try again.", true)
     } finally {
@@ -561,7 +571,7 @@ function ConnectionsSection(props: ClientProps) {
 function ConnectionCard(props: {
   title: string
   description: string
-  status: SettingsConnection["status"]
+  status: ConnectionStatus | SettingsConnection["status"]
   children: JSX.Element
 }) {
   return (
@@ -583,7 +593,7 @@ function ConnectionCard(props: {
 function CalendarConnectionCard(props: {
   provider: ConnectionProvider
   label: string
-  status: SettingsConnection["status"]
+  status: ConnectionStatus
   linking: ConnectionProvider | undefined
   onLink: () => void
 }) {
@@ -647,7 +657,7 @@ function SendblueHelpSection() {
     <section id="access-help" class={styles.contentSection} aria-labelledby="access-help-title">
       <SectionHeader
         title="Sendblue help"
-        description="Recover message delivery without changing Bob's reminder records."
+        description="Recover message delivery without changing saved records."
         id="access-help-title"
       />
       <Card>
@@ -658,7 +668,9 @@ function SendblueHelpSection() {
           <p class={styles.messageExamples}>
             If messages stop after an opt-out, send <strong>START</strong> to the Bob number.
           </p>
-          <p class={styles.hint}>Delivery does not mean that you saw or completed a reminder.</p>
+          <p class={styles.hint}>
+            Delivery confirms transport only. It does not confirm an action.
+          </p>
         </CardContent>
       </Card>
     </section>

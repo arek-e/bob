@@ -7,6 +7,22 @@ const sourceExtensions = new Set([".ts", ".tsx", ".mts", ".js", ".mjs"])
 const importPattern = /(?:from\s+|import\s*\()["']([^"']+)["']/g
 
 const violations = []
+const generalCoreFiles = new Set([
+  "apps/core-worker/src/core-composition.ts",
+  "apps/core-worker/src/process-inbound.ts",
+  "apps/core-worker/src/entrypoints/http.ts",
+  "apps/core-worker/src/entrypoints/scheduled.ts",
+  "apps/core-worker/src/entrypoints/durable-objects.ts",
+  "packages/contracts/src/deployment-profiles/core.ts"
+])
+
+function isGeneralCoreFile(file) {
+  return (
+    generalCoreFiles.has(file) ||
+    file.startsWith("apps/core-worker/src/modules/policy/") ||
+    file.startsWith("apps/core-worker/src/modules/delivery/")
+  )
+}
 
 async function walk(directory) {
   const entries = await readdir(new URL(`${directory}/`, root), { withFileTypes: true })
@@ -39,6 +55,16 @@ for (const sourceRoot of sourceRoots) {
     for (const match of text.matchAll(importPattern)) {
       const specifier = match[1]
       const workspace = topWorkspace(file)
+
+      if (
+        isGeneralCoreFile(file) &&
+        (specifier.match(/modules\/(?:reminders|journal|training|connections)\//) !== null ||
+          specifier.match(
+            /@bob\/contracts\/(?:capabilities\/(?:reminders|journal|training|connections)|deployment-profiles\/transitional)/
+          ) !== null)
+      ) {
+        violations.push(`${file}: General Core cannot import a Vertical Module`)
+      }
 
       if (workspace.startsWith("packages/") && specifier.startsWith("@bob/") === false) {
         if (specifier.includes("/apps/")) violations.push(`${file}: packages cannot import apps`)

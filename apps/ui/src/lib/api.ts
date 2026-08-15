@@ -1,4 +1,4 @@
-import { ConnectionSession } from "@bob/contracts/settings"
+import { ConnectionSession } from "@bob/contracts/capabilities/connections"
 import { Schema } from "effect"
 
 export interface OwnerSession {

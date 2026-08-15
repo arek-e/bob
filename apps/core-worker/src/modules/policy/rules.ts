@@ -4,9 +4,6 @@ export type DeterministicCommand =
   | "help"
   | "pause"
   | "undo"
-  | "seen"
-  | "done"
-  | "journal"
   | "stop"
   | "start"
   | "cancel"
@@ -17,9 +14,6 @@ const deterministicCommands = [
   "help",
   "pause",
   "undo",
-  "seen",
-  "done",
-  "journal",
   "stop",
   "start",
   "cancel"
@@ -28,15 +22,6 @@ const deterministicCommands = [
 const deterministicCommandAliases = new Map<string, DeterministicCommand>([
   ["hjälp", "help"],
   ["hjalp", "help"],
-  ["klar", "done"],
-  ["klart", "done"],
-  ["färdig", "done"],
-  ["fardig", "done"],
-  ["färdigt", "done"],
-  ["fardigt", "done"],
-  ["sett", "seen"],
-  ["uppfattat", "seen"],
-  ["dagbok", "journal"],
   ["upprepa", "repeat"],
   ["varför", "why"],
   ["varfor", "why"],
@@ -56,7 +41,7 @@ export function classifyDeterministicCommand(text: string): DeterministicCommand
 export function isArtifactResendRequest(text: string): boolean {
   const normalized = text.trim()
   if (normalized.length === 0 || normalized.length > 100) return false
-  return /^(?:(?:please\s+)?(?:send|show)\s+(?:(?:me\s+)?(?:the|that|my)\s+)?(?:plan|workout|artifact|it)\s+again|(?:skicka|visa)\s+(?:mig\s+)?(?:(?:planen|träningsplanen|passet|den|det)\s+)?igen)[.!?]?$/iu.test(
+  return /^(?:(?:please\s+)?(?:send|show)\s+(?:(?:me\s+)?(?:the|that|my)\s+)?(?:plan|artifact|it)\s+again|(?:skicka|visa)\s+(?:mig\s+)?(?:(?:planen|den|det)\s+)?igen)[.!?]?$/iu.test(
     normalized
   )
 }

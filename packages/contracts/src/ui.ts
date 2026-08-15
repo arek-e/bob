@@ -76,17 +76,7 @@ export const AdminStatus = Schema.Struct({
 
 export const OperationalAlert = Schema.Struct({
   id: Uuid,
-  code: Schema.Literals([
-    "inbound_exhausted",
-    "delivery_uncertain",
-    "outbound_exhausted",
-    "delivery_result_exhausted",
-    "agent_authentication_failed",
-    "reminder_missed",
-    "agent_quota_exhausted",
-    "agent_run_failed",
-    "token_budget_exceeded"
-  ]),
+  code: NonEmptyText,
   objectType: NonEmptyText,
   objectId: NonEmptyText,
   state: Schema.Literals(["open", "reconciling", "resolved"]),

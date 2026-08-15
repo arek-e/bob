@@ -16,6 +16,8 @@
     "./channel": "./src/channel.ts",
     "./delivery": "./src/delivery.ts",
     "./deployment-profiles": "./src/deployment-profiles.ts",
+    "./deployment-profiles/core": "./src/deployment-profiles/core.ts",
+    "./deployment-profiles/transitional": "./src/deployment-profiles/transitional.ts",
     "./jobs": "./src/jobs.ts",
     "./interactions": "./src/interactions.ts",
     "./output-safety": "./src/output-safety.ts",

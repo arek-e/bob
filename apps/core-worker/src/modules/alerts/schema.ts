@@ -5,19 +5,7 @@ export const operationalAlerts = sqliteTable(
   {
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
-    code: text("code", {
-      enum: [
-        "inbound_exhausted",
-        "delivery_uncertain",
-        "outbound_exhausted",
-        "delivery_result_exhausted",
-        "agent_authentication_failed",
-        "agent_quota_exhausted",
-        "agent_run_failed",
-        "token_budget_exceeded",
-        "reminder_missed"
-      ]
-    }).notNull(),
+    code: text("code").notNull(),
     objectType: text("object_type").notNull(),
     objectId: text("object_id").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),

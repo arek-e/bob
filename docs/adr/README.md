@@ -24,5 +24,6 @@ Git history keeps removed plans and superseded implementation details.
 | [0014](0014-portable-runner-deployment-contract.md) | Publish portable deployment contracts for Bob Runner         | Accepted                  |
 | [0015](0015-managed-instance-activation.md)         | Support managed Instance activation and channel routing      | Accepted                  |
 | [0016](0016-domain-neutral-core-profile.md)         | Compose a domain-neutral core through static profiles        | Accepted                  |
+| [0017](0017-static-runtime-profile-adapters.md)     | Use static runtime profile Adapters                          | Accepted                  |
 
 ADR 0009 does not define managed orchestration. ADRs 0013 through 0015 own that design.

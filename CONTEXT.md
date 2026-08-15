@@ -83,6 +83,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Vertical Module:** One optional domain-owned set of capability, Context source, workflow, storage, route, schedule, and evaluation Implementations.
 - **Deployment profile:** One reviewed, immutable composition of the core profile and Vertical Modules for a release.
 - **Core profile:** The minimum deployment profile. It contains the General Agent Core and no Vertical Module.
+- **Runtime profile:** One static composition of Tool, evidence, conversation, route, schedule, and delivery target Adapters.
 - **Capability catalogue:** The complete reviewed model tools selected by one deployment profile.
 - **Capability catalogue generation:** The deterministic content identity of one deployment profile and its Capability catalogue.
 - **Context source Module:** One statically registered source of candidate items selected by a deployment profile for a Context pack.

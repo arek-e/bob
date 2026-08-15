@@ -1,15 +1,9 @@
 import { AgentRunResult } from "@bob/contracts/agent"
 import { NormalizedInboundEvent, NormalizedStatusEvent } from "@bob/contracts/channel"
 import { DeliveryReconciliationResponse, DeliveryResult } from "@bob/contracts/delivery"
-import { ConnectionProvider, OwnerSettingsUpdate } from "@bob/contracts/settings"
+import { OwnerSettingsUpdate } from "@bob/contracts/settings"
 import { ToolCommand } from "@bob/contracts/tools"
-import {
-  JournalEntryCreate,
-  JournalEntryUpdate,
-  MemoryCandidateCorrection,
-  ReminderSnoozeRequest,
-  TrainingProposalApproval
-} from "@bob/contracts/ui"
+import { MemoryCandidateCorrection } from "@bob/contracts/ui"
 import { featureForToolName } from "@bob/observability/attribution"
 import { recordDecision, withBobSpan, type BobSpan } from "@bob/observability/effect"
 import { observeHealth } from "@bob/observability/events"
@@ -441,10 +435,7 @@ export async function handleHttp(
     if (request.method === "GET" && url.pathname === "/api/settings") {
       return json({
         settings: await composition.services.settings.get(composition.config.OWNER_ID),
-        connections: [
-          ...(await composition.services.settings.connections(composition.config.OWNER_ID)),
-          ...(await composition.services.connections.list(composition.config.OWNER_ID))
-        ]
+        connections: await composition.services.settings.connections(composition.config.OWNER_ID)
       })
     }
 
@@ -457,74 +448,19 @@ export async function handleHttp(
       )
       return json({
         settings,
-        connections: [
-          ...(await composition.services.settings.connections(composition.config.OWNER_ID)),
-          ...(await composition.services.connections.list(composition.config.OWNER_ID))
-        ]
+        connections: await composition.services.settings.connections(composition.config.OWNER_ID)
       })
     }
 
-    const connectionSession = url.pathname.match(/^\/api\/connections\/([^/]+)\/session$/)
-    if (request.method === "POST" && connectionSession !== null) {
-      const provider = Schema.decodeUnknownSync(ConnectionProvider)(
-        decodeURIComponent(connectionSession[1]!)
-      )
-      return json(
-        await composition.services.connections.createSession(composition.config.OWNER_ID, provider),
-        201
-      )
-    }
-
-    if (request.method === "GET" && url.pathname === "/api/reminders") {
-      return json({
-        reminders: await composition.services.reminders.list(composition.config.OWNER_ID)
+    for (const route of composition.runtime.ownerRoutes) {
+      const result = await route.handle({
+        request,
+        url,
+        ownerId: composition.config.OWNER_ID,
+        readJson: () => readJson(request),
+        idempotencyKey: () => idempotencyKey(request)
       })
-    }
-
-    const reminderOccurrenceAction = url.pathname.match(
-      /^\/api\/reminder-occurrences\/([^/]+)\/(seen|done|snooze)$/
-    )
-    if (request.method === "POST" && reminderOccurrenceAction !== null) {
-      const occurrenceId = decodeURIComponent(reminderOccurrenceAction[1]!)
-      const action = reminderOccurrenceAction[2]!
-      const actionKey = idempotencyKey(request)
-      if (action === "seen") {
-        await composition.services.reminders.acknowledge(
-          composition.config.OWNER_ID,
-          occurrenceId,
-          actionKey
-        )
-        return json({ ok: true })
-      }
-      if (action === "done") {
-        await composition.services.reminders.complete(
-          composition.config.OWNER_ID,
-          occurrenceId,
-          actionKey
-        )
-        return json({ ok: true })
-      }
-      const input = Schema.decodeUnknownSync(ReminderSnoozeRequest)(await readJson(request))
-      if (Date.parse(input.dueAt) <= Date.now())
-        throw new Error("Snooze time must be in the future")
-      const successorOccurrenceId = await composition.services.reminders.snooze(
-        composition.config.OWNER_ID,
-        occurrenceId,
-        input.dueAt,
-        actionKey
-      )
-      return json({ successorOccurrenceId })
-    }
-
-    const reminderCancel = url.pathname.match(/^\/api\/reminders\/([^/]+)\/cancel$/)
-    if (request.method === "POST" && reminderCancel !== null) {
-      await composition.services.reminders.cancel(
-        composition.config.OWNER_ID,
-        decodeURIComponent(reminderCancel[1]!),
-        undefined,
-        idempotencyKey(request)
-      )
-      return json({ ok: true })
+      if (result !== undefined) return json(result.body, result.status)
     }
 
     if (request.method === "GET" && url.pathname === "/api/alerts") {
@@ -645,48 +581,6 @@ export async function handleHttp(
       return json({ status: "manual_action_required" })
     }
 
-    if (request.method === "POST" && url.pathname === "/api/journal/handoffs") {
-      const handoff = await composition.services.journal.createHandoff(
-        composition.config.OWNER_ID,
-        10 * 60_000,
-        idempotencyKey(request)
-      )
-      return json({
-        id: handoff.id,
-        expiresAt: handoff.expiresAt,
-        path: `/journal/${handoff.id}`,
-        bearerToken: false
-      })
-    }
-
-    if (request.method === "POST" && url.pathname === "/api/journal") {
-      const input = Schema.decodeUnknownSync(JournalEntryCreate)(await readJson(request))
-      const entry =
-        input.approvedSummary === undefined
-          ? {
-              ownerId: composition.config.OWNER_ID,
-              handoffId: input.handoffId,
-              text: input.text,
-              tags: input.tags
-            }
-          : {
-              ownerId: composition.config.OWNER_ID,
-              handoffId: input.handoffId,
-              text: input.text,
-              tags: input.tags,
-              approvedSummary: input.approvedSummary
-            }
-      const id = await composition.services.journal.createEntry(entry, idempotencyKey(request))
-      return json({ id }, 201)
-    }
-
-    if (request.method === "GET" && url.pathname === "/api/journal") {
-      const tag = url.searchParams.get("tag") ?? undefined
-      return json({
-        entries: await composition.services.journal.searchMetadata(composition.config.OWNER_ID, tag)
-      })
-    }
-
     if (request.method === "GET" && url.pathname === "/api/memory/candidates") {
       return json({
         candidates: await composition.services.memory.listCandidates(composition.config.OWNER_ID)
@@ -721,66 +615,6 @@ export async function handleHttp(
       await composition.services.memory.reject(
         composition.config.OWNER_ID,
         decodeURIComponent(memoryReject[1]!),
-        idempotencyKey(request)
-      )
-      return json({ ok: true })
-    }
-
-    if (request.method === "GET" && url.pathname === "/api/training/overview") {
-      return json(
-        await composition.services.training.overview(
-          composition.config.OWNER_ID,
-          url.searchParams.get("q") ?? undefined
-        )
-      )
-    }
-
-    if (request.method === "GET" && url.pathname === "/api/training/proposals") {
-      return json({
-        proposals: await composition.services.training.listTrainingProposals(
-          composition.config.OWNER_ID
-        )
-      })
-    }
-
-    const trainingApprove = url.pathname.match(/^\/api\/training\/proposals\/([^/]+)\/approve$/)
-    if (request.method === "POST" && trainingApprove !== null) {
-      const input = Schema.decodeUnknownSync(TrainingProposalApproval)(await readJson(request))
-      return json(
-        await composition.services.training.approveTrainingProposal(
-          composition.config.OWNER_ID,
-          decodeURIComponent(trainingApprove[1]!),
-          input.proposalHash,
-          idempotencyKey(request)
-        )
-      )
-    }
-
-    const journalEntry = url.pathname.match(/^\/api\/journal\/([^/]+)$/)
-    if (request.method === "GET" && journalEntry !== null) {
-      const entry = await composition.services.journal.readEntry(
-        composition.config.OWNER_ID,
-        decodeURIComponent(journalEntry[1]!)
-      )
-      return entry === undefined ? json({ code: "not_found" }, 404) : json(entry)
-    }
-
-    if (request.method === "PUT" && journalEntry !== null) {
-      const input = Schema.decodeUnknownSync(JournalEntryUpdate)(await readJson(request))
-      await composition.services.journal.updateEntry(
-        composition.config.OWNER_ID,
-        decodeURIComponent(journalEntry[1]!),
-        input,
-        idempotencyKey(request)
-      )
-      return json({ ok: true })
-    }
-
-    const journalDelete = journalEntry
-    if (request.method === "DELETE" && journalDelete !== null) {
-      await composition.services.journal.deleteEntry(
-        composition.config.OWNER_ID,
-        decodeURIComponent(journalDelete[1]!),
         idempotencyKey(request)
       )
       return json({ ok: true })

@@ -10,15 +10,13 @@ import type { DataProtection } from "../policy/data-protection.ts"
 
 import { operationalAlerts } from "../alerts/schema.ts"
 import { recordOperationalAlert } from "../alerts/store.ts"
-import {
-  channels,
-  conversationTurns,
-  messages,
-  shortReplyBindings,
-  users
-} from "../conversations/schema.ts"
-import { reminderOccurrences } from "../reminders/schema.ts"
+import { channels, conversationTurns, messages, users } from "../conversations/schema.ts"
 import { deliveryAttempts, outboxMessages, providerEvents } from "./schema.ts"
+import {
+  makeDeliveryTargetRegistry,
+  type DeliveryTargetAdapter,
+  type DeliveryTargetOutcome
+} from "./target-adapter.ts"
 
 export interface CreateOutboxInput {
   readonly ownerId: string
@@ -27,7 +25,7 @@ export interface CreateOutboxInput {
   readonly reasonCode: string
   readonly correlationId: string
   readonly idempotencyKey: string
-  readonly actionTargetType?: "reminder_occurrence"
+  readonly actionTargetType?: string
   readonly actionTargetId?: string
   readonly replyToMessageHandle?: string
   readonly conversationTurnId?: string
@@ -141,10 +139,34 @@ export const recoverablePendingOutbox = and(
 export function makeDeliveryStore(
   database: CoreDatabase,
   protection: DataProtection,
-  options: { readonly now?: () => Date; readonly randomUuid?: () => string }
+  options: {
+    readonly now?: () => Date
+    readonly randomUuid?: () => string
+    readonly targetAdapters?: readonly DeliveryTargetAdapter[]
+  }
 ): DeliveryStore {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
+  const targets = makeDeliveryTargetRegistry(options.targetAdapters)
+  async function targetStatements(input: {
+    readonly outcome: DeliveryTargetOutcome
+    readonly targetType: string | null
+    readonly targetId: string | null
+    readonly ownerId: string
+    readonly messageId: string
+    readonly occurredAt: string
+  }): Promise<readonly BatchItem<"sqlite">[]> {
+    if (input.targetType === null || input.targetId === null) return []
+    const adapter = targets.adapterFor(input.targetType)
+    if (adapter === undefined) return []
+    return adapter.statements({
+      outcome: input.outcome,
+      targetId: input.targetId,
+      ownerId: input.ownerId,
+      messageId: input.messageId,
+      occurredAt: input.occurredAt
+    })
+  }
   async function ownerKey(ownerId: string): Promise<CryptoKey> {
     const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
     if (
@@ -216,45 +238,16 @@ export function makeDeliveryStore(
             )
           )
       )
-      if (
-        next === "failed" &&
-        outbox.actionTargetType === "reminder_occurrence" &&
-        outbox.actionTargetId !== null
-      ) {
+      if (next === "failed") {
         statements.push(
-          database
-            .update(reminderOccurrences)
-            .set({ state: "missed", updatedAt: event.occurredAt })
-            .where(
-              and(
-                eq(reminderOccurrences.id, outbox.actionTargetId),
-                inArray(reminderOccurrences.state, ["awaiting_delivery", "awaiting_response"])
-              )
-            ),
-          database
-            .update(shortReplyBindings)
-            .set({ consumedAt: event.occurredAt })
-            .where(
-              and(
-                eq(shortReplyBindings.targetType, "reminder"),
-                eq(shortReplyBindings.targetId, outbox.actionTargetId),
-                isNull(shortReplyBindings.consumedAt)
-              )
-            ),
-          database
-            .insert(operationalAlerts)
-            .values({
-              id: randomUuid(),
-              userId: outbox.userId,
-              code: "reminder_missed",
-              objectType: "reminder_occurrence",
-              objectId: outbox.actionTargetId,
-              idempotencyKey: `alert:reminder-delivery-failed:${outbox.actionTargetId}`,
-              state: "open",
-              createdAt: event.occurredAt,
-              updatedAt: event.occurredAt
-            })
-            .onConflictDoNothing()
+          ...(await targetStatements({
+            outcome: "failed",
+            targetType: outbox.actionTargetType,
+            targetId: outbox.actionTargetId,
+            ownerId: outbox.userId,
+            messageId: outbox.messageId,
+            occurredAt: event.occurredAt
+          }))
         )
       }
       if (next === "failed") {
@@ -284,6 +277,15 @@ export function makeDeliveryStore(
 
   return {
     async createOutbox(input) {
+      if ((input.actionTargetType === undefined) !== (input.actionTargetId === undefined)) {
+        throw new Error("Delivery target type and ID must be supplied together")
+      }
+      if (
+        input.actionTargetType !== undefined &&
+        targets.adapterFor(input.actionTargetType) === undefined
+      ) {
+        throw new Error(`Unsupported delivery target ${input.actionTargetType}`)
+      }
       if (
         (input.conversationTurnId === undefined) !==
         (input.conversationTurnRevision === undefined)
@@ -429,32 +431,16 @@ export function makeDeliveryStore(
               )
             )
         ]
-        if (
-          candidate.actionTargetType === "reminder_occurrence" &&
-          candidate.actionTargetId !== null
-        ) {
-          statements.push(
-            database
-              .update(reminderOccurrences)
-              .set({ state: "cancelled", updatedAt: cancelledAt })
-              .where(
-                and(
-                  eq(reminderOccurrences.id, candidate.actionTargetId),
-                  inArray(reminderOccurrences.state, ["claimed", "awaiting_delivery"])
-                )
-              ),
-            database
-              .update(shortReplyBindings)
-              .set({ consumedAt: cancelledAt })
-              .where(
-                and(
-                  eq(shortReplyBindings.targetType, "reminder"),
-                  eq(shortReplyBindings.targetId, candidate.actionTargetId),
-                  isNull(shortReplyBindings.consumedAt)
-                )
-              )
-          )
-        }
+        statements.push(
+          ...(await targetStatements({
+            outcome: "cancelled",
+            targetType: candidate.actionTargetType,
+            targetId: candidate.actionTargetId,
+            ownerId: candidate.userId,
+            messageId: candidate.messageId,
+            occurredAt: cancelledAt
+          }))
+        )
         await database.batch(statements)
         return undefined
       }
@@ -615,103 +601,16 @@ export function makeDeliveryStore(
             )
           )
       ]
-      if (
-        outboxState === "accepted" &&
-        outbox.actionTargetType === "reminder_occurrence" &&
-        outbox.actionTargetId !== null
-      ) {
-        const [occurrence] = await database
-          .select({
-            responseDeadlineAt: reminderOccurrences.responseDeadlineAt,
-            state: reminderOccurrences.state
-          })
-          .from(reminderOccurrences)
-          .where(eq(reminderOccurrences.id, outbox.actionTargetId))
-          .limit(1)
-        if (
-          occurrence?.responseDeadlineAt !== null &&
-          occurrence?.responseDeadlineAt !== undefined &&
-          occurrence.state === "awaiting_delivery" &&
-          Date.parse(occurrence.responseDeadlineAt) > Date.parse(result.occurredAt)
-        ) {
-          statements.push(
-            database
-              .update(reminderOccurrences)
-              .set({ state: "awaiting_response", updatedAt: result.occurredAt })
-              .where(
-                and(
-                  eq(reminderOccurrences.id, outbox.actionTargetId),
-                  eq(reminderOccurrences.state, "awaiting_delivery")
-                )
-              ),
-            database
-              .insert(shortReplyBindings)
-              .values({
-                id: randomUuid(),
-                userId: outbox.userId,
-                outboundMessageId: outbox.messageId,
-                command: "seen",
-                targetType: "reminder",
-                targetId: outbox.actionTargetId,
-                expiresAt: occurrence.responseDeadlineAt,
-                createdAt: result.occurredAt
-              })
-              .onConflictDoNothing(),
-            database
-              .insert(shortReplyBindings)
-              .values({
-                id: randomUuid(),
-                userId: outbox.userId,
-                outboundMessageId: outbox.messageId,
-                command: "done",
-                targetType: "reminder",
-                targetId: outbox.actionTargetId,
-                expiresAt: occurrence.responseDeadlineAt,
-                createdAt: result.occurredAt
-              })
-              .onConflictDoNothing()
-          )
-        }
-      }
-      if (
-        outboxState === "failed" &&
-        outbox.actionTargetType === "reminder_occurrence" &&
-        outbox.actionTargetId !== null
-      ) {
+      if (outboxState === "accepted" || outboxState === "failed") {
         statements.push(
-          database
-            .update(reminderOccurrences)
-            .set({ state: "missed", updatedAt: result.occurredAt })
-            .where(
-              and(
-                eq(reminderOccurrences.id, outbox.actionTargetId),
-                inArray(reminderOccurrences.state, ["awaiting_delivery", "awaiting_response"])
-              )
-            ),
-          database
-            .update(shortReplyBindings)
-            .set({ consumedAt: result.occurredAt })
-            .where(
-              and(
-                eq(shortReplyBindings.targetType, "reminder"),
-                eq(shortReplyBindings.targetId, outbox.actionTargetId),
-                isNull(shortReplyBindings.consumedAt)
-              )
-            ),
-          database
-            .insert(operationalAlerts)
-            .values({
-              id: randomUuid(),
-              userId: outbox.userId,
-              code: "reminder_missed",
-              objectType: "reminder_occurrence",
-              objectId: outbox.actionTargetId,
-              idempotencyKey: `alert:reminder-delivery-failed:${outbox.actionTargetId}`,
-              state: "open",
-              createdAt: result.occurredAt,
-              updatedAt: result.occurredAt
-            })
-            .onConflictDoNothing()
+          ...(await targetStatements({
+            outcome: outboxState,
+            targetType: outbox.actionTargetType,
+            targetId: outbox.actionTargetId,
+            ownerId: outbox.userId,
+            messageId: outbox.messageId,
+            occurredAt: result.occurredAt
+          }))
         )
       }
       if (outboxState === "failed") {

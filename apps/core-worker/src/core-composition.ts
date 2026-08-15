@@ -1,0 +1,201 @@
+import { cloudflareEventSink } from "@bob/observability/cloudflare"
+import { Effect, Layer, Schema } from "effect"
+
+import type { GeneralCoreBindings } from "./bindings.ts"
+import type { DeploymentRuntimeProfile } from "./profiles/types.ts"
+
+import { createCoreDatabase } from "./database.ts"
+import { AlertStore, alertStoreLayer, makeAlertStore } from "./modules/alerts/store.ts"
+import { ArtifactStore, artifactStoreLayer, makeArtifactStore } from "./modules/artifacts/store.ts"
+import { makeApplicationContextStore } from "./modules/context/composition.ts"
+import { makePrivateTextReader } from "./modules/context/private-text.ts"
+import { ContextStore, contextStoreLayer } from "./modules/context/store.ts"
+import { makeConversationEvidenceSource } from "./modules/conversations/evidence-source.ts"
+import {
+  AgentRunStore,
+  agentRunStoreLayer,
+  makeAgentRunStore
+} from "./modules/conversations/run-store.ts"
+import {
+  ConversationStore,
+  conversationStoreLayer,
+  makeConversationStore
+} from "./modules/conversations/store.ts"
+import { conversationTiming } from "./modules/conversations/timing.ts"
+import { makeToolAdapterRegistry } from "./modules/conversations/tool-adapter.ts"
+import {
+  ToolExecutor,
+  makeToolExecutor,
+  toolExecutorLayer
+} from "./modules/conversations/tool-executor.ts"
+import {
+  ConversationTurnStore,
+  conversationTurnStoreLayer,
+  makeConversationTurnStore
+} from "./modules/conversations/turn-store.ts"
+import { DeliveryStore, deliveryStoreLayer, makeDeliveryStore } from "./modules/delivery/store.ts"
+import { makeAgentExperienceRegistry } from "./modules/memory/agent-experience.ts"
+import { makeFactEvidenceSource } from "./modules/memory/evidence-source.ts"
+import { makeEvidenceSourceRegistry } from "./modules/memory/evidence.ts"
+import { MemoryStore, makeMemoryStore, memoryStoreLayer } from "./modules/memory/store.ts"
+import { makeMemoryToolAdapter } from "./modules/memory/tool-adapter.ts"
+import { createDataProtection } from "./modules/policy/data-protection.ts"
+import {
+  RetrievalPipeline,
+  makeRetrievalPipeline,
+  retrievalPipelineLayer
+} from "./modules/retrieval/pipeline.ts"
+import {
+  OwnerSettingsStore,
+  makeOwnerSettingsStore,
+  ownerSettingsStoreLayer
+} from "./modules/settings/store.ts"
+import { makeSettingsToolAdapter } from "./modules/settings/tool-adapter.ts"
+import { makeReviewedSkillRegistry } from "./modules/skills/registry.ts"
+
+const Configuration = Schema.Struct({
+  OWNER_ID: Schema.String.check(Schema.isUUID()),
+  OWNER_TIME_ZONE: Schema.String,
+  DATA_KEK_ACTIVE_VERSION: Schema.String,
+  DATA_KEK_KEYRING_JSON: Schema.String.check(Schema.isMinLength(1)),
+  DATA_LOOKUP_KEY: Schema.String.check(Schema.isMinLength(40)),
+  INGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  EGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  SENDBLUE_EGRESS_URL: Schema.String,
+  BETTER_AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  ACCESS_TEAM_DOMAIN: Schema.String.check(Schema.isPattern(/^[a-z0-9-]+\.cloudflareaccess\.com$/)),
+  CORE_ACCESS_AUDIENCE: Schema.String.check(Schema.isMinLength(1)),
+  SETUP_ACCESS_AUDIENCE: Schema.String.check(Schema.isMinLength(1)),
+  OWNER_ACCESS_EMAIL: Schema.String.check(Schema.isMinLength(3)),
+  AGENT_CALLER_SUBJECT: Schema.String.check(Schema.isMinLength(1)),
+  AGENT_URL: Schema.String,
+  AGENT_ACCESS_CLIENT_ID: Schema.String,
+  AGENT_ACCESS_CLIENT_SECRET: Schema.String,
+  AGENT_ADMIN_URL: Schema.String,
+  AGENT_ADMIN_ACCESS_CLIENT_ID: Schema.String,
+  AGENT_ADMIN_ACCESS_CLIENT_SECRET: Schema.String,
+  BOB_MODEL: Schema.String,
+  BOB_PROVIDER: Schema.Literal("openai-codex"),
+  BOB_RUN_TOKEN_BUDGET: Schema.Number.check(
+    Schema.isInt(),
+    Schema.isBetween({ minimum: 1_000, maximum: 1_000_000 })
+  ),
+  BOB_DAILY_TOKEN_BUDGET: Schema.Number.check(
+    Schema.isInt(),
+    Schema.isBetween({ minimum: 1_000, maximum: 10_000_000 })
+  )
+})
+
+export function composeGeneralCore<Extensions extends object>(
+  bindings: GeneralCoreBindings,
+  runtimeProfile: DeploymentRuntimeProfile<Extensions>
+) {
+  const config = Schema.decodeUnknownSync(Configuration)(bindings)
+  const events = cloudflareEventSink()
+  const database = createCoreDatabase(bindings.DB)
+  const activeKekVersion = Number.parseInt(config.DATA_KEK_ACTIVE_VERSION, 10)
+  const keyringInput = Schema.decodeUnknownSync(
+    Schema.Record(Schema.String, Schema.String.check(Schema.isMinLength(40)))
+  )(JSON.parse(config.DATA_KEK_KEYRING_JSON))
+  const keyring = Object.fromEntries(
+    Object.entries(keyringInput).map(([version, value]) => {
+      const parsed = Number.parseInt(version, 10)
+      if (!Number.isInteger(parsed) || parsed < 1) throw new Error("Invalid KEK version")
+      return [parsed, value]
+    })
+  )
+  if (keyring[activeKekVersion] === undefined) throw new Error("Active KEK is missing")
+  const protection = createDataProtection(keyring, activeKekVersion, config.DATA_LOOKUP_KEY)
+  const settings = makeOwnerSettingsStore(database, protection, {
+    defaultTimeZone: config.OWNER_TIME_ZONE
+  })
+  const conversations = makeConversationStore(database, protection, {
+    ownerId: config.OWNER_ID,
+    ownerTimeZone: config.OWNER_TIME_ZONE,
+    dataKeyVersion: activeKekVersion
+  })
+  const turns = makeConversationTurnStore(database, protection, { ownerId: config.OWNER_ID })
+  const prepared = runtimeProfile.prepare({
+    bindings,
+    database,
+    protection,
+    conversations,
+    turns,
+    settings,
+    ownerId: config.OWNER_ID,
+    ownerTimeZone: config.OWNER_TIME_ZONE
+  })
+  const alerts = makeAlertStore(database, {})
+  const artifacts = makeArtifactStore(database, protection, {
+    legacyReaders: prepared.legacyArtifactReaders
+  })
+  const delivery = makeDeliveryStore(database, protection, {
+    targetAdapters: prepared.deliveryTargets
+  })
+  const privateText = makePrivateTextReader(database, protection)
+  const evidenceSources = makeEvidenceSourceRegistry(runtimeProfile.catalogue.profileId, [
+    makeConversationEvidenceSource(database, privateText, protection),
+    makeFactEvidenceSource(database, privateText, protection),
+    ...prepared.evidenceSources
+  ])
+  const memory = makeMemoryStore(database, protection, evidenceSources, {})
+  const retrieval = makeRetrievalPipeline(database)
+  const context = makeApplicationContextStore(database, protection, runtimeProfile.catalogue, {
+    artifacts,
+    retrieval
+  })
+  const runs = makeAgentRunStore(database, protection, {})
+  const toolAdapters = makeToolAdapterRegistry(runtimeProfile.catalogue, [
+    makeMemoryToolAdapter(memory, retrieval),
+    makeSettingsToolAdapter(settings),
+    ...prepared.toolAdapters({ memory, retrieval })
+  ])
+  const tools = makeToolExecutor(database, protection, toolAdapters, {
+    toolLeaseMs: conversationTiming.mutationSettleLeaseMs
+  })
+  const agentExperience = makeAgentExperienceRegistry(runtimeProfile.catalogue.profileId, [])
+  const reviewedSkills = makeReviewedSkillRegistry(runtimeProfile.catalogue.profileId, [])
+
+  const layer = Layer.mergeAll(
+    conversationStoreLayer(conversations),
+    conversationTurnStoreLayer(turns),
+    alertStoreLayer(alerts),
+    artifactStoreLayer(artifacts),
+    deliveryStoreLayer(delivery),
+    memoryStoreLayer(memory),
+    retrievalPipelineLayer(retrieval),
+    ownerSettingsStoreLayer(settings),
+    contextStoreLayer(context),
+    agentRunStoreLayer(runs),
+    toolExecutorLayer(tools)
+  )
+  const services = Effect.runSync(
+    Effect.gen(function* () {
+      return {
+        events,
+        conversations: yield* ConversationStore,
+        turns: yield* ConversationTurnStore,
+        alerts: yield* AlertStore,
+        artifacts: yield* ArtifactStore,
+        delivery: yield* DeliveryStore,
+        memory: yield* MemoryStore,
+        retrieval: yield* RetrievalPipeline,
+        settings: yield* OwnerSettingsStore,
+        context: yield* ContextStore,
+        runs: yield* AgentRunStore,
+        tools: yield* ToolExecutor
+      }
+    }).pipe(Effect.provide(layer))
+  )
+
+  return {
+    config,
+    profile: runtimeProfile.catalogue,
+    runtime: prepared.runtime,
+    extensions: prepared.extensions,
+    memoryClasses: Object.freeze({ agentExperience, reviewedSkills }),
+    database,
+    layer,
+    services
+  }
+}
