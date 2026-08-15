@@ -22,15 +22,15 @@ describe("AgentRunRequest rollout compatibility", () => {
     ).toMatchObject({ kind: "plan", title: "Friday errands" })
   })
 
-  it("keeps legacy training plan artifacts readable", () => {
-    expect(
+  it("rejects legacy vertical artifacts from new Agent output", () => {
+    expect(() =>
       Schema.decodeUnknownSync(AgentArtifact)({
         kind: "training_plan",
         title: "Legacy workout",
         durationMinutes: 30,
         sections: [{ heading: "Workout", items: ["Squats"] }]
       })
-    ).toMatchObject({ kind: "training_plan", title: "Legacy workout" })
+    ).toThrow()
   })
 
   it("decodes ordered messages from the current turn", () => {
@@ -232,12 +232,9 @@ describe("AgentRunRequest rollout compatibility", () => {
           origin: "same_turn",
           toolName: "reminder_create",
           arguments: { text: "PRIVATE_ARGUMENT_CANARY" },
-          result: {
-            ok: true,
-            code: "reminder_created",
-            message: "PRIVATE_RESULT_MESSAGE_CANARY",
-            data: { reminderId: "PRIVATE_RESULT_DATA_CANARY" }
-          }
+          actionOutcome: "confirmed",
+          message: "PRIVATE_RESULT_MESSAGE_CANARY",
+          data: { reminderId: "PRIVATE_RESULT_DATA_CANARY" }
         }
       ],
       contextItems: [],
@@ -254,7 +251,7 @@ describe("AgentRunRequest rollout compatibility", () => {
       {
         origin: "same_turn",
         toolName: "reminder_create",
-        result: { ok: true, code: "reminder_created" }
+        actionOutcome: "confirmed"
       }
     ])
     expect(JSON.stringify(request.priorToolReceipts)).not.toMatch(
@@ -267,53 +264,46 @@ describe("AgentRunRequest rollout compatibility", () => {
       Schema.decodeUnknownSync(PriorToolReceipt)({
         origin: "predecessor_turn",
         toolName: "reminder_create",
-        result: { ok: true, code: "reminder_created" }
+        actionOutcome: "confirmed"
       })
     ).toEqual({
       origin: "predecessor_turn",
       toolName: "reminder_create",
-      result: { ok: true, code: "reminder_created" }
+      actionOutcome: "confirmed"
     })
 
     expect(() =>
       Schema.decodeUnknownSync(PriorToolReceipt)({
         origin: "private_unreviewed_origin",
         toolName: "reminder_create",
-        result: { ok: true, code: "reminder_created" }
+        actionOutcome: "confirmed"
       })
     ).toThrow()
 
     expect(() =>
       Schema.decodeUnknownSync(PriorToolReceipt)({
         toolName: "reminder_create",
-        result: { ok: true, code: "reminder_created" }
+        actionOutcome: "confirmed"
       })
     ).toThrow()
   })
 
-  it("rejects an unknown prior tool receipt name", () => {
-    expect(() =>
+  it("accepts a domain-neutral Tool name", () => {
+    expect(
       Schema.decodeUnknownSync(PriorToolReceipt)({
         origin: "same_turn",
-        toolName: "private_unreviewed_tool",
-        result: { ok: true, code: "private_result" }
+        toolName: "private_reviewed_tool",
+        actionOutcome: "confirmed"
       })
-    ).toThrow()
+    ).toMatchObject({ toolName: "private_reviewed_tool" })
   })
 
-  it("rejects an unknown or mismatched prior tool receipt result", () => {
+  it("rejects an unknown action outcome", () => {
     expect(() =>
       Schema.decodeUnknownSync(PriorToolReceipt)({
         origin: "same_turn",
         toolName: "reminder_create",
-        result: { ok: true, code: "PRIVATE_RESULT_CODE_CANARY" }
-      })
-    ).toThrow()
-    expect(() =>
-      Schema.decodeUnknownSync(PriorToolReceipt)({
-        origin: "same_turn",
-        toolName: "reminder_create",
-        result: { ok: true, code: "owner_settings_updated" }
+        actionOutcome: "private_result"
       })
     ).toThrow()
   })
@@ -323,17 +313,14 @@ describe("AgentRunRequest rollout compatibility", () => {
       Schema.decodeUnknownSync(PriorToolReceipt)({
         origin: "same_turn",
         toolName: "settings_update",
-        result: {
-          ok: false,
-          code: "tool_recovery_failed",
-          message: "PRIVATE_MESSAGE_CANARY",
-          data: { privateId: "PRIVATE_ID_CANARY" }
-        }
+        actionOutcome: "unknown",
+        message: "PRIVATE_MESSAGE_CANARY",
+        data: { privateId: "PRIVATE_ID_CANARY" }
       })
     ).toEqual({
       origin: "same_turn",
       toolName: "settings_update",
-      result: { ok: false, code: "tool_recovery_failed" }
+      actionOutcome: "unknown"
     })
   })
 

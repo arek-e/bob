@@ -1,7 +1,10 @@
 import type { AgentRunRequest } from "@bob/contracts/agent"
 import type { CapabilityModule, ToolCommand, ToolName } from "@bob/contracts/tools"
 
-import { coreCapabilityCatalogue, fullCapabilityCatalogue } from "@bob/contracts/tools"
+import {
+  coreDeploymentProfile,
+  transitionalDeploymentProfile
+} from "@bob/contracts/deployment-profiles"
 import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
@@ -86,8 +89,8 @@ describe("domain-owned Tool command Adapters", () => {
 
   it("composes a core registry without a Training Adapter", () => {
     const registry = makeToolAdapterRegistry(
-      coreCapabilityCatalogue,
-      coreCapabilityCatalogue.modules.map(adapterFor)
+      coreDeploymentProfile,
+      coreDeploymentProfile.modules.map(adapterFor)
     )
 
     expect(registry.adapterFor("memory_search")?.capabilityId).toBe("memory")
@@ -95,22 +98,24 @@ describe("domain-owned Tool command Adapters", () => {
   })
 
   it("rejects missing and unselected Adapters", () => {
-    expect(() => makeToolAdapterRegistry(coreCapabilityCatalogue, [])).toThrow(
-      "Missing Tool Adapter"
+    expect(() => makeToolAdapterRegistry(coreDeploymentProfile, [])).toThrow("Missing Tool Adapter")
+    const training = transitionalDeploymentProfile.modules.find(
+      (module) => module.id === "training"
     )
-    const training = fullCapabilityCatalogue.modules.find((module) => module.id === "training")
     expect(training).toBeDefined()
-    expect(() => makeToolAdapterRegistry(coreCapabilityCatalogue, [adapterFor(training!)])).toThrow(
+    expect(() => makeToolAdapterRegistry(coreDeploymentProfile, [adapterFor(training!)])).toThrow(
       "is not in profile core"
     )
   })
 
   it("stops replay after an expired external mutation lease", () => {
-    expect(expiredToolCallOutcome("connection_link_create")).toMatchObject({
+    expect(
+      expiredToolCallOutcome("connection_link_create", transitionalDeploymentProfile)
+    ).toMatchObject({
       ok: false,
       code: "external_outcome_unknown"
     })
-    expect(expiredToolCallOutcome("reminder_create")).toBeUndefined()
+    expect(expiredToolCallOutcome("reminder_create", transitionalDeploymentProfile)).toBeUndefined()
   })
 
   it("keeps reminder list behavior in the Reminder Adapter", async () => {

@@ -51,7 +51,7 @@ export function makeToolAdapterRegistry(
   for (const adapter of adapters) {
     const capability = catalogueById.get(adapter.capabilityId)
     if (capability === undefined) {
-      throw new Error(`Adapter ${adapter.capabilityId} is not in profile ${catalogue.profile}`)
+      throw new Error(`Adapter ${adapter.capabilityId} is not in profile ${catalogue.profileId}`)
     }
     if (
       adapter.names.length !== capability.names.length ||

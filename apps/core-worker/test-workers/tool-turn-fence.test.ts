@@ -1,6 +1,10 @@
 import type { CurrentTurnMessage } from "@bob/contracts/agent"
 
-import { conversationMutationIdempotencyKey, type ToolName } from "@bob/contracts/tools"
+import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
+import {
+  conversationMutationIdempotencyKey as hashMutation,
+  type ToolName
+} from "@bob/contracts/tools"
 import { applyD1Migrations, reset } from "cloudflare:test"
 import { env } from "cloudflare:workers"
 import { eq } from "drizzle-orm"
@@ -41,6 +45,15 @@ const secondMessageId = "00000000-0000-4000-8000-000000002008"
 const secondInboundId = "00000000-0000-4000-8000-000000002009"
 const secondRunId = "00000000-0000-4000-8000-000000002010"
 const at = "2026-08-11T10:00:00.000Z"
+
+async function conversationMutationIdempotencyKey(
+  input: Parameters<typeof hashMutation>[0]
+): Promise<string> {
+  return hashMutation({
+    ...input,
+    excludedArgumentNames: transitionalDeploymentProfile.mutationArgumentExclusions(input.toolName)
+  })
+}
 
 function key(byte: number): string {
   let binary = ""

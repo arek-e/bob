@@ -1,5 +1,4 @@
-import { settingsCapability } from "@bob/contracts/capabilities/settings"
-import { SettingsUpdateArguments } from "@bob/contracts/tools"
+import { settingsCapability, SettingsUpdateArguments } from "@bob/contracts/capabilities/settings"
 import { Schema } from "effect"
 
 import type {

@@ -1,7 +1,7 @@
 import type { OutboundJob } from "@bob/contracts/jobs"
 
 import { AgentRunRequest } from "@bob/contracts/agent"
-import { capabilityCatalogueGeneration, modelToolNames } from "@bob/contracts/tools"
+import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect, Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -202,7 +202,7 @@ describe("conversation turn processing", () => {
       {
         origin: "same_turn" as const,
         toolName: "reminder_create" as const,
-        result: { ok: true as const, code: "reminder_created" as const }
+        actionOutcome: "confirmed" as const
       }
     ])
     let resolveAgentResponse!: (response: Response) => void
@@ -343,7 +343,7 @@ describe("conversation turn processing", () => {
         {
           origin: "same_turn",
           toolName: "reminder_create",
-          result: { ok: true, code: "reminder_created" }
+          actionOutcome: "confirmed"
         }
       ]
     })
@@ -608,8 +608,9 @@ describe("conversation turn processing", () => {
     expect(capturedRequest).toMatchObject({
       userText: "List",
       currentTurnMessages: [{ sourceMessageId: latestMessageId, text: "List" }],
-      allowedTools: modelToolNames,
-      capabilityCatalogueGeneration
+      allowedTools: transitionalDeploymentProfile.modelToolNames,
+      deploymentProfileId: transitionalDeploymentProfile.profileId,
+      capabilityCatalogueGeneration: transitionalDeploymentProfile.generation
     })
   })
 

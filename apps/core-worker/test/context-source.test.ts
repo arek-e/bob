@@ -13,8 +13,7 @@ describe("Context source Modules", () => {
       "profile",
       "conversation",
       "artifact",
-      "lexical",
-      "tool_receipts"
+      "lexical"
     ])
   })
 
@@ -24,8 +23,7 @@ describe("Context source Modules", () => {
       profile: emptySource,
       conversation: emptySource,
       artifact: emptySource,
-      lexical: emptySource,
-      tool_receipts: emptySource
+      lexical: emptySource
     })
 
     expect(modules.map(({ id, order }) => ({ id, order }))).toEqual(

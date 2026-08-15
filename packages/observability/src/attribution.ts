@@ -1,31 +1,29 @@
-import { capabilityForToolName, ToolName } from "@bob/contracts/tools"
-import { Schema } from "effect"
+import type { CapabilityCatalogue } from "@bob/contracts/tools"
 
 import type { TelemetryFeature, TelemetrySpanCode } from "./events.ts"
 
-const featureOrder: readonly TelemetryFeature[] = [
-  "reminders",
-  "memory",
-  "journal",
-  "training",
-  "settings"
-]
-
-export function featureForToolName(toolName: string): TelemetryFeature {
-  const name = Schema.decodeUnknownOption(ToolName)(toolName)
-  return name._tag === "None" ? "assistant" : capabilityForToolName(name.value).feature
+export function featureForToolName(
+  catalogue: CapabilityCatalogue,
+  toolName: string
+): TelemetryFeature {
+  return catalogue.moduleFor(toolName)?.feature ?? "assistant"
 }
 
-export function featureForTools(toolNames: readonly string[]): TelemetryFeature {
+export function featureForTools(
+  catalogue: CapabilityCatalogue,
+  toolNames: readonly string[]
+): TelemetryFeature {
   const features = new Set<TelemetryFeature>()
   for (const toolName of toolNames) {
-    const feature = featureForToolName(toolName)
+    const feature = featureForToolName(catalogue, toolName)
     if (feature !== "assistant") features.add(feature)
   }
   if (features.size === 0) return "assistant"
-  if (features.size === featureOrder.length) return "assistant"
+  if (features.size === new Set(catalogue.modules.map((module) => module.feature)).size) {
+    return "assistant"
+  }
   if (features.size > 1) return "mixed"
-  return featureOrder.find((feature) => features.has(feature)) ?? "assistant"
+  return [...features][0] ?? "assistant"
 }
 
 export function agentRunSpanCode(

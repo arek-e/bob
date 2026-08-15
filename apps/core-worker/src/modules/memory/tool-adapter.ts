@@ -1,9 +1,9 @@
-import { memoryCapability } from "@bob/contracts/capabilities/memory"
 import {
+  memoryCapability,
   MemoryProposeArguments,
-  MemorySearchArguments,
-  type ToolResult
-} from "@bob/contracts/tools"
+  MemorySearchArguments
+} from "@bob/contracts/capabilities/memory"
+import { type ToolResult } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
 import type {
@@ -25,7 +25,14 @@ export function makeMemoryToolAdapter(memory: MemoryStore): ToolCommandAdapter {
             ok: true,
             code: "memory_results",
             message: `${matches.length} sources found.`,
-            data: JSON.parse(JSON.stringify({ matches }))
+            data: JSON.parse(JSON.stringify({ matches })),
+            evidence: {
+              sources: matches.map(({ sourceId, sourceLabel, occurredAt }) => {
+                const source = { sourceId, sourceLabel }
+                if (occurredAt !== undefined) Object.assign(source, { occurredAt })
+                return source
+              })
+            }
           }
         }
         case "memory_propose": {
@@ -45,7 +52,8 @@ export function makeMemoryToolAdapter(memory: MemoryStore): ToolCommandAdapter {
             ok: true,
             code: "memory_proposed",
             message: "The memory change is ready for review.",
-            data: result
+            data: result,
+            evidence: { actionOutcome: "proposed" }
           }
         }
         case "memory_confirm":

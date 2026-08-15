@@ -84,10 +84,8 @@ function hasJournalIntent(text: string): boolean {
   )
 }
 
-function contextKind(sourceType: string): ContextItem["kind"] {
-  if (sourceType === "reminder") return "reminder"
-  if (sourceType === "routine" || sourceType === "workout_session") return "training"
-  return "fact"
+function contextKind(_sourceType: string): ContextItem["kind"] {
+  return "record"
 }
 
 function sourceDay(value: string | null | undefined): string {
@@ -366,63 +364,6 @@ export function makeContextStore(
     ]
   }
 
-  async function toolReceiptContext(
-    input: ContextBuildRequest,
-    key: CryptoKey
-  ): Promise<ContextItem[]> {
-    if (
-      input.currentConversationTurnId === undefined ||
-      input.currentConversationTurnRevision === undefined
-    ) {
-      return []
-    }
-    const rows = await database
-      .select({
-        toolName: toolCalls.toolName,
-        resultJson: toolCalls.resultJson
-      })
-      .from(toolCalls)
-      .innerJoin(agentRuns, eq(agentRuns.id, toolCalls.runId))
-      .where(
-        and(
-          eq(agentRuns.userId, input.ownerId),
-          eq(agentRuns.conversationTurnId, input.currentConversationTurnId),
-          lt(agentRuns.conversationTurnRevision, input.currentConversationTurnRevision),
-          inArray(toolCalls.status, ["completed", "failed", "unknown"]),
-          isNotNull(toolCalls.resultJson)
-        )
-      )
-      .orderBy(desc(toolCalls.completedAt), desc(toolCalls.createdAt))
-      .limit(8)
-
-    const receipts: ContextItem[] = []
-    for (const row of rows.toReversed()) {
-      try {
-        if (row.resultJson === null) continue
-        const envelope = Schema.decodeUnknownSync(PrivateEnvelope)(JSON.parse(row.resultJson))
-        const result = Schema.decodeUnknownSync(ToolResult)(
-          JSON.parse(await protection.decryptText(key, envelope))
-        )
-        const toolName = Schema.decodeUnknownSync(ToolName)(row.toolName)
-        const receipt = Schema.decodeUnknownSync(PriorToolReceipt)({
-          origin: "same_turn",
-          toolName,
-          result: { ok: result.ok, code: result.code }
-        })
-        receipts.push({
-          kind: "conversation",
-          text: `Earlier revision action record. Do not repeat an identical completed mutation. ${JSON.stringify(receipt)}`,
-          instruction: false,
-          conflict: false,
-          sources: []
-        })
-      } catch {
-        // A malformed private receipt is skipped. It never changes the workflow.
-      }
-    }
-    return receipts
-  }
-
   async function lexicalContext(ownerId: string, text: string): Promise<ContextItem[]> {
     const query = buildFtsQuery(text)
     if (query === undefined) return []
@@ -526,8 +467,7 @@ export function makeContextStore(
     profile: (input, key) => profileContext(input.ownerId, key),
     conversation: conversationContext,
     artifact: (input, key) => artifactContext(input.ownerId, input.channelId, key),
-    lexical: (input) => lexicalContext(input.ownerId, input.currentUserText),
-    tool_receipts: toolReceiptContext
+    lexical: (input) => lexicalContext(input.ownerId, input.currentUserText)
   })
 
   return {
@@ -626,6 +566,10 @@ export function makeContextStore(
           const result = Schema.decodeUnknownSync(ToolResult)(
             JSON.parse(await protection.decryptText(key, envelope))
           )
+          const actionOutcome =
+            result.evidence?.actionOutcome ??
+            (result.code === "tool_recovery_failed" ? "unknown" : undefined)
+          if (actionOutcome === undefined) continue
           receipts.push(
             Schema.decodeUnknownSync(PriorToolReceipt)({
               origin:
@@ -633,7 +577,7 @@ export function makeContextStore(
                   ? "same_turn"
                   : "predecessor_turn",
               toolName: Schema.decodeUnknownSync(ToolName)(row.toolName),
-              result: { ok: result.ok, code: result.code }
+              actionOutcome
             })
           )
         } catch {
@@ -671,27 +615,20 @@ export function makeContextStore(
       )
       const artifactItems = sourceItems("artifact")
       const lexical = sourceItems("lexical")
-      const toolReceipts = sourceItems("tool_receipts")
       const seenSources = new Set(
-        [...inlineReply, ...profile, ...conversation, ...toolReceipts, ...artifactItems].flatMap(
-          (item) => item.sources.map((source) => source.sourceId)
+        [...inlineReply, ...profile, ...conversation, ...artifactItems].flatMap((item) =>
+          item.sources.map((source) => source.sourceId)
         )
       )
       const uniqueLexical = lexical.filter((item) =>
         item.sources.every((source) => !seenSources.has(source.sourceId))
       )
-      const boundedReceipts = boundContextItems(
-        toolReceipts.toReversed(),
-        totalCharacterBudget,
-        itemCharacterBudget
-      ).toReversed()
-      const receiptCharacters = boundedReceipts.reduce((total, item) => total + item.text.length, 0)
       const otherItems = boundContextItems(
         [...inlineReply, ...profile, ...conversation, ...artifactItems, ...uniqueLexical],
-        totalCharacterBudget - receiptCharacters,
+        totalCharacterBudget,
         itemCharacterBudget
       )
-      return Object.freeze([...otherItems, ...boundedReceipts])
+      return Object.freeze(otherItems)
     }
   }
 }

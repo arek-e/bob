@@ -1,4 +1,4 @@
-import { fullCapabilityCatalogue } from "@bob/contracts/tools"
+import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
 
 import type { CoreDatabase } from "../src/database.ts"
 import type { ConnectionStore } from "../src/modules/connections/store.ts"
@@ -58,7 +58,7 @@ export function makeTestToolExecutor(
         modules.training,
         makeTrainingProposalStore(database, protection, modules.training, options)
       )
-  const registry = makeToolAdapterRegistry(fullCapabilityCatalogue, [
+  const registry = makeToolAdapterRegistry(transitionalDeploymentProfile, [
     makeReminderToolAdapter(modules.reminders),
     makeMemoryToolAdapter(modules.memory),
     makeJournalToolAdapter(modules.journal, { uiBaseUrl: options.uiBaseUrl }),

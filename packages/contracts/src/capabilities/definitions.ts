@@ -1,37 +1,9 @@
 import { Schema } from "effect"
 
-export const ToolName = Schema.Literals([
-  "reminder_create",
-  "reminder_list",
-  "reminder_acknowledge",
-  "reminder_complete",
-  "reminder_snooze",
-  "reminder_cancel",
-  "memory_search",
-  "memory_propose",
-  "memory_confirm",
-  "memory_correct",
-  "journal_link_create",
-  "journal_search_metadata",
-  "gym_list",
-  "gym_create",
-  "equipment_list",
-  "exercise_create",
-  "exercise_list",
-  "gym_add_equipment",
-  "equipment_map_exercise",
-  "routine_save",
-  "routine_get",
-  "workout_start",
-  "workout_log_set",
-  "workout_finish",
-  "workout_last",
-  "workout_history",
-  "settings_get",
-  "settings_update",
-  "connection_list",
-  "connection_link_create"
-])
+export const ToolName = Schema.String.check(
+  Schema.isPattern(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/),
+  Schema.isMaxLength(80)
+)
 
 export interface ToolInputSchema {
   readonly type: "object"
@@ -57,8 +29,8 @@ export interface ToolInputPropertySchema {
 }
 
 export type ToolName = typeof ToolName.Type
-export type ToolDefinitionName = Exclude<ToolName, "memory_correct">
-export type ModelToolName = Exclude<ToolDefinitionName, "memory_confirm">
+export type ToolDefinitionName = ToolName
+export type ModelToolName = ToolName
 
 export interface ToolDefinition<Name extends ToolDefinitionName = ToolDefinitionName> {
   readonly name: Name
@@ -66,25 +38,27 @@ export interface ToolDefinition<Name extends ToolDefinitionName = ToolDefinition
   readonly inputSchema: ToolInputSchema
 }
 
-export type CapabilityId =
-  | "reminders"
-  | "memory"
-  | "journal"
-  | "training"
-  | "settings"
-  | "connections"
+export const CapabilityId = Schema.String.check(
+  Schema.isPattern(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/),
+  Schema.isMaxLength(64)
+)
 
-export type CapabilityFeature = "reminders" | "memory" | "journal" | "training" | "settings"
+export type CapabilityId = typeof CapabilityId.Type
+export type CapabilityFeature = string
 
 export interface CapabilityModule {
   readonly id: CapabilityId
   readonly version: number
   readonly feature: CapabilityFeature
   readonly names: readonly ToolName[]
+  readonly modelTools: readonly ToolName[]
   readonly definitions: Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
   readonly readOnly: readonly ToolName[]
   readonly sourceBound: readonly ToolName[]
   readonly externalOutcomeUnknown: readonly ToolName[]
+  readonly confirmedActionCodes: Readonly<Partial<Record<ToolName, readonly string[]>>>
+  readonly mutationArgumentExclusions: Readonly<Partial<Record<ToolName, readonly string[]>>>
+  readonly sourceMessageArguments: Readonly<Partial<Record<ToolName, string>>>
 }
 
 export const emptyInputSchema = {

@@ -1,10 +1,10 @@
-import { trainingCapability } from "@bob/contracts/capabilities/training"
 import {
   RoutineGetArguments,
+  trainingCapability,
   TrainingLookupArguments,
-  WorkoutHistoryArguments,
-  type ToolResult
-} from "@bob/contracts/tools"
+  WorkoutHistoryArguments
+} from "@bob/contracts/capabilities/training"
+import { type ToolResult } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
 import type {
@@ -43,6 +43,7 @@ export function makeTrainingToolAdapter(training: TrainingModule): ToolCommandAd
           ok: true,
           code: "training_proposed",
           message: "Review this training change in Bob before it is applied.",
+          evidence: { actionOutcome: "proposed" },
           data: {
             proposalId: proposal.id,
             proposalHash: proposal.proposalHash,

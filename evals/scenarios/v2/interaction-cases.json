@@ -390,7 +390,7 @@
           {
             "origin": "predecessor_turn",
             "toolName": "reminder_create",
-            "result": { "ok": true, "code": "reminder_created" }
+            "actionOutcome": "confirmed"
           }
         ]
       },
@@ -458,7 +458,7 @@
           {
             "origin": "same_turn",
             "toolName": "reminder_create",
-            "result": { "ok": true, "code": "reminder_created" }
+            "actionOutcome": "confirmed"
           }
         ]
       },

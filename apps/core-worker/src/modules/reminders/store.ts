@@ -1,4 +1,4 @@
-import type { ReminderCreateArguments } from "@bob/contracts/tools"
+import type { ReminderCreateArguments } from "@bob/contracts/capabilities/reminders"
 import type { BatchItem } from "drizzle-orm/batch"
 
 import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, or, sql, type SQL } from "drizzle-orm"

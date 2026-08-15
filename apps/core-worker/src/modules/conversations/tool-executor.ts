@@ -2,7 +2,6 @@ import { AgentRunRequest } from "@bob/contracts/agent"
 import {
   type CapabilityCatalogue,
   conversationMutationIdempotencyKey,
-  fullCapabilityCatalogue,
   ToolCommand,
   ToolName,
   ToolResult
@@ -198,13 +197,14 @@ function capabilityOwns(
 
 export function expiredToolCallOutcome(
   name: ToolName,
-  catalogue: CapabilityCatalogue = fullCapabilityCatalogue
+  catalogue: CapabilityCatalogue
 ): ToolResult | undefined {
   if (!capabilityOwns(catalogue, name, "externalOutcomeUnknown")) return undefined
   return {
     ok: false,
     code: "external_outcome_unknown",
-    message: "The external action result is unknown. Open Bob before trying again."
+    message: "The external action result is unknown. Open Bob before trying again.",
+    evidence: { actionOutcome: "unknown" }
   }
 }
 
@@ -368,7 +368,22 @@ export function makeToolExecutor(
     const adapterContext: ToolCommandAdapterContext = { command, run }
     const adapter = registry.adapterFor(command.name)
     if (adapter === undefined) return denied()
-    return adapter.execute(adapterContext)
+    const result = await adapter.execute(adapterContext)
+    if (result.evidence?.actionOutcome !== undefined) return result
+    const confirmedCodes = registry.catalogue.confirmedActionCodes(command.name)
+    if (result.ok && confirmedCodes.includes(result.code)) {
+      return {
+        ...result,
+        evidence: { ...result.evidence, actionOutcome: "confirmed" }
+      }
+    }
+    if (result.code === "external_outcome_unknown") {
+      return {
+        ...result,
+        evidence: { ...result.evidence, actionOutcome: "unknown" }
+      }
+    }
+    return result
   }
 
   const executor: ToolExecutor = {
@@ -511,10 +526,10 @@ export function makeToolExecutor(
         !isReadOnly(command.name)
           ? commandRun.conversationTurnId
           : undefined
+      const sourceMessageArgument = registry.catalogue.sourceMessageArgument(command.name)
       if (
-        stableMutationTurnId !== undefined &&
-        command.name === "reminder_create" &&
-        command.arguments.sourceMessageId !== commandRun?.targetMessageId
+        sourceMessageArgument !== undefined &&
+        command.arguments[sourceMessageArgument] !== commandRun?.targetMessageId
       ) {
         return denied()
       }
@@ -525,7 +540,8 @@ export function makeToolExecutor(
             ownerId: command.ownerId,
             conversationTurnId: stableMutationTurnId,
             toolName: command.name,
-            arguments: command.arguments
+            arguments: command.arguments,
+            excludedArgumentNames: registry.catalogue.mutationArgumentExclusions(command.name)
           }))
       ) {
         return denied()

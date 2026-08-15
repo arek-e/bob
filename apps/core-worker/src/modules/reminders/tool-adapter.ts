@@ -1,12 +1,11 @@
-import { reminderCapability } from "@bob/contracts/capabilities/reminders"
 import {
+  reminderCapability,
   ReminderCancelArguments,
   ReminderCreateArguments,
   ReminderOccurrenceArguments,
-  ReminderSnoozeArguments,
-  type ToolName,
-  type ToolResult
-} from "@bob/contracts/tools"
+  ReminderSnoozeArguments
+} from "@bob/contracts/capabilities/reminders"
+import { type ToolName, type ToolResult } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
 import type {
@@ -207,12 +206,30 @@ export function makeReminderToolAdapter(reminders: ReminderStore): ToolCommandAd
         }
         case "reminder_list": {
           const list = await reminders.list(command.ownerId)
-          return {
+          const emptyResponse =
+            run.request.locale?.toLocaleLowerCase().startsWith("sv") === true
+              ? "Du har inga aktiva påminnelser."
+              : "You have no active reminders."
+          const result = {
             ok: true,
             code: "reminder_list",
             message: `${list.length} reminders found.`,
             data: jsonObject({ reminders: list })
           }
+          if (list.length === 0) {
+            Object.assign(result, {
+              evidence: {
+                sources: [
+                  {
+                    sourceId: "bob:active-reminders",
+                    sourceLabel: "Bob active reminders"
+                  }
+                ],
+                responseText: emptyResponse
+              }
+            })
+          }
+          return result
         }
         case "reminder_acknowledge": {
           const args = Schema.decodeUnknownSync(ReminderOccurrenceArguments)(command.arguments)

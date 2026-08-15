@@ -1,5 +1,7 @@
-import { journalCapability } from "@bob/contracts/capabilities/journal"
-import { JournalSearchMetadataArguments } from "@bob/contracts/tools"
+import {
+  journalCapability,
+  JournalSearchMetadataArguments
+} from "@bob/contracts/capabilities/journal"
 import { Schema } from "effect"
 
 import type {

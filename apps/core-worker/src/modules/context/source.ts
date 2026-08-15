@@ -17,8 +17,7 @@ export const contextSourceOrder = Object.freeze([
   "profile",
   "conversation",
   "artifact",
-  "lexical",
-  "tool_receipts"
+  "lexical"
 ] as const)
 
 export type ContextSourceId = (typeof contextSourceOrder)[number]

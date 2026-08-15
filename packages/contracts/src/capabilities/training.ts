@@ -1,3 +1,5 @@
+import { Schema } from "effect"
+
 import type {
   CapabilityModule,
   ToolDefinition,
@@ -6,6 +8,64 @@ import type {
 } from "./definitions.ts"
 
 import { idInputSchema } from "./definitions.ts"
+
+export const TrainingLookupArguments = Schema.Struct({
+  query: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100)))
+})
+export const GymCreateArguments = Schema.Struct({ name: Schema.String })
+export const ExerciseCreateArguments = Schema.Struct({
+  name: Schema.String,
+  instructions: Schema.optionalKey(Schema.String)
+})
+export const GymAddEquipmentArguments = Schema.Struct({
+  gymId: Schema.String,
+  name: Schema.String,
+  identifier: Schema.optionalKey(Schema.String)
+})
+export const EquipmentMapExerciseArguments = Schema.Struct({
+  equipmentId: Schema.String,
+  exerciseId: Schema.String
+})
+export const RoutineSaveArguments = Schema.Struct({
+  name: Schema.String,
+  steps: Schema.Array(
+    Schema.Struct({
+      exerciseId: Schema.String,
+      targetSets: Schema.optionalKey(Schema.Int),
+      targetReps: Schema.optionalKey(Schema.Int),
+      notes: Schema.optionalKey(Schema.String)
+    })
+  )
+})
+export const RoutineGetArguments = Schema.Struct({ id: Schema.optionalKey(Schema.String) })
+export const WorkoutStartArguments = Schema.Struct({
+  routineId: Schema.String,
+  gymId: Schema.optionalKey(Schema.String)
+})
+export const WorkoutLogSetArguments = Schema.Struct({
+  sessionId: Schema.String,
+  routineStepId: Schema.String,
+  equipmentId: Schema.optionalKey(Schema.String),
+  sequence: Schema.Int,
+  repetitions: Schema.Int,
+  weightGrams: Schema.optionalKey(Schema.Int),
+  notes: Schema.optionalKey(Schema.String)
+})
+export const WorkoutFinishArguments = Schema.Struct({ id: Schema.String })
+export const WorkoutHistoryArguments = Schema.Struct({
+  routineId: Schema.optionalKey(Schema.String)
+})
+export type TrainingLookupArguments = typeof TrainingLookupArguments.Type
+export type GymCreateArguments = typeof GymCreateArguments.Type
+export type ExerciseCreateArguments = typeof ExerciseCreateArguments.Type
+export type GymAddEquipmentArguments = typeof GymAddEquipmentArguments.Type
+export type EquipmentMapExerciseArguments = typeof EquipmentMapExerciseArguments.Type
+export type RoutineSaveArguments = typeof RoutineSaveArguments.Type
+export type RoutineGetArguments = typeof RoutineGetArguments.Type
+export type WorkoutStartArguments = typeof WorkoutStartArguments.Type
+export type WorkoutLogSetArguments = typeof WorkoutLogSetArguments.Type
+export type WorkoutFinishArguments = typeof WorkoutFinishArguments.Type
+export type WorkoutHistoryArguments = typeof WorkoutHistoryArguments.Type
 
 const lookup = {
   type: "object",
@@ -182,6 +242,22 @@ export const trainingCapability = {
     "workout_last",
     "workout_history"
   ],
+  modelTools: [
+    "gym_list",
+    "gym_create",
+    "equipment_list",
+    "exercise_create",
+    "exercise_list",
+    "gym_add_equipment",
+    "equipment_map_exercise",
+    "routine_save",
+    "routine_get",
+    "workout_start",
+    "workout_log_set",
+    "workout_finish",
+    "workout_last",
+    "workout_history"
+  ],
   definitions: trainingToolDefinitions,
   readOnly: [
     "gym_list",
@@ -192,5 +268,8 @@ export const trainingCapability = {
     "workout_history"
   ],
   sourceBound: [],
-  externalOutcomeUnknown: []
+  externalOutcomeUnknown: [],
+  confirmedActionCodes: {},
+  mutationArgumentExclusions: {},
+  sourceMessageArguments: {}
 } as const satisfies CapabilityModule

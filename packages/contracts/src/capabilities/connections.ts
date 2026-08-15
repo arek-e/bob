@@ -1,6 +1,13 @@
+import { Schema } from "effect"
+
 import type { CapabilityModule, ToolDefinition, ToolDefinitionName } from "./definitions.ts"
 
 import { emptyInputSchema } from "./definitions.ts"
+
+export const ConnectionProviderArguments = Schema.Struct({
+  provider: Schema.Literals(["google_calendar", "microsoft_calendar"])
+})
+export type ConnectionProviderArguments = typeof ConnectionProviderArguments.Type
 
 export const connectionToolDefinitions = {
   connection_list: {
@@ -26,8 +33,12 @@ export const connectionsCapability = {
   version: 1,
   feature: "settings",
   names: ["connection_list", "connection_link_create"],
+  modelTools: ["connection_list", "connection_link_create"],
   definitions: connectionToolDefinitions,
   readOnly: ["connection_list"],
   sourceBound: [],
-  externalOutcomeUnknown: ["connection_link_create"]
+  externalOutcomeUnknown: ["connection_link_create"],
+  confirmedActionCodes: { connection_link_create: ["connection_link_created"] },
+  mutationArgumentExclusions: {},
+  sourceMessageArguments: {}
 } as const satisfies CapabilityModule

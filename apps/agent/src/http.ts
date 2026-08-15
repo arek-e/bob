@@ -5,7 +5,6 @@ import {
   AgentSteerResult,
   DeviceLoginEvent
 } from "@bob/contracts/agent"
-import { capabilityCatalogueGeneration } from "@bob/contracts/tools"
 import { featureForTools } from "@bob/observability/attribution"
 import { emitHealth, recordDecision, withBobSpan } from "@bob/observability/effect"
 import { externalParentFromTraceparent, formatTraceparent } from "@bob/observability/propagation"
@@ -105,7 +104,8 @@ export async function handleAgentHttp(
           },
           service: "agent",
           version: 1,
-          capabilityCatalogueGeneration
+          deploymentProfileId: composition.profile.profileId,
+          capabilityCatalogueGeneration: composition.profile.generation
         },
         credentialsReady && coreReady ? 200 : 503
       )
@@ -113,12 +113,25 @@ export async function handleAgentHttp(
     if (request.method === "POST" && url.pathname === "/v1/run") {
       const input = Schema.decodeUnknownSync(AgentRunRequest)(await readJson(request))
       if (
+        input.legacySnapshotReplay !== true &&
+        (input.deploymentProfileId === undefined ||
+          input.capabilityCatalogueGeneration === undefined)
+      ) {
+        return json({ code: "deployment_profile_required" }, 409)
+      }
+      if (
+        input.deploymentProfileId !== undefined &&
+        input.deploymentProfileId !== composition.profile.profileId
+      ) {
+        return json({ code: "deployment_profile_mismatch" }, 409)
+      }
+      if (
         input.capabilityCatalogueGeneration !== undefined &&
-        input.capabilityCatalogueGeneration !== capabilityCatalogueGeneration
+        input.capabilityCatalogueGeneration !== composition.profile.generation
       ) {
         return json({ code: "capability_catalogue_mismatch" }, 409)
       }
-      const feature = featureForTools(input.allowedTools)
+      const feature = featureForTools(composition.profile, input.allowedTools)
       const parent = externalParentFromTraceparent(request.headers.get("traceparent"))
       const run = withBobSpan(
         {

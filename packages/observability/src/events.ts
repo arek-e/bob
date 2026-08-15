@@ -18,17 +18,10 @@ const DeliveryCode = Schema.Union([
   Schema.String.check(Schema.isPattern(/^http_[1-5][0-9]{2}$/))
 ])
 
-export const TelemetryFeature = Schema.Literals([
-  "assistant",
-  "reminders",
-  "memory",
-  "journal",
-  "training",
-  "settings",
-  "safety",
-  "delivery",
-  "mixed"
-])
+export const TelemetryFeature = Schema.String.check(
+  Schema.isPattern(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/),
+  Schema.isMaxLength(64)
+)
 
 export const TelemetryWorkflow = Schema.Literals([
   "inbound_message",

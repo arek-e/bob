@@ -162,7 +162,7 @@ describe("general context retrieval", () => {
 
     expect(items).toHaveLength(1)
     expect(items[0]).toMatchObject({
-      kind: "fact",
+      kind: "record",
       text: "My mobility routine uses slow squats.",
       instruction: false,
       conflict: false

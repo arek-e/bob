@@ -2,9 +2,7 @@ import type { AgentRunRequest } from "@bob/contracts/agent"
 
 import {
   conversationMutationIdempotencyKey,
-  isReadOnlyToolName,
-  isSourceBoundToolName,
-  toolDefinitionForName,
+  type CapabilityCatalogue,
   type ToolCommand,
   type ToolInputSchema,
   type ToolName,
@@ -14,6 +12,7 @@ import { Type, type TSchema, type Tool } from "@earendil-works/pi-ai"
 import { Schema } from "effect"
 
 export interface ToolFactoryOptions {
+  readonly catalogue: CapabilityCatalogue
   readonly request: AgentRunRequest
   readonly execute: (command: ToolCommand) => Promise<ToolResult>
 }
@@ -30,6 +29,7 @@ function toPiParameters(inputSchema: ToolInputSchema): TSchema {
 }
 
 export async function toolCommandForCall<Input>(
+  catalogue: CapabilityCatalogue,
   request: AgentRunRequest,
   name: ToolName,
   toolCallId: string,
@@ -37,12 +37,13 @@ export async function toolCommandForCall<Input>(
 ): Promise<ToolCommand> {
   const argumentsValue = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(params)
   const idempotencyKey =
-    request.conversationTurnId !== undefined && !isReadOnlyToolName(name)
+    request.conversationTurnId !== undefined && !catalogue.isReadOnly(name)
       ? await conversationMutationIdempotencyKey({
           ownerId: request.ownerId,
           conversationTurnId: request.conversationTurnId,
           toolName: name,
-          arguments: argumentsValue
+          arguments: argumentsValue,
+          excludedArgumentNames: catalogue.mutationArgumentExclusions(name)
         })
       : `${request.runId}:${toolCallId}`
   return {
@@ -57,10 +58,10 @@ export async function toolCommandForCall<Input>(
 
 export function createTools(options: ToolFactoryOptions): BobPiTool[] {
   return options.request.allowedTools.flatMap((name) => {
-    if (options.request.sourceMessageId === undefined && isSourceBoundToolName(name)) {
+    if (options.request.sourceMessageId === undefined && options.catalogue.isSourceBound(name)) {
       return []
     }
-    const definition = toolDefinitionForName(name)
+    const definition = options.catalogue.definitionFor(name)
     if (definition === undefined) return []
     const tool: BobPiTool = {
       name: definition.name,
@@ -69,7 +70,9 @@ export function createTools(options: ToolFactoryOptions): BobPiTool[] {
       parameters: toPiParameters(definition.inputSchema),
       executionMode: "sequential",
       async execute(toolCallId, params) {
-        return options.execute(await toolCommandForCall(options.request, name, toolCallId, params))
+        return options.execute(
+          await toolCommandForCall(options.catalogue, options.request, name, toolCallId, params)
+        )
       }
     }
     return [tool]

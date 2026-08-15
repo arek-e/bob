@@ -1,5 +1,7 @@
-import { connectionsCapability } from "@bob/contracts/capabilities/connections"
-import { ConnectionProviderArguments } from "@bob/contracts/tools"
+import {
+  connectionsCapability,
+  ConnectionProviderArguments
+} from "@bob/contracts/capabilities/connections"
 import { Schema } from "effect"
 
 import type {

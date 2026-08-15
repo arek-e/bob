@@ -396,7 +396,7 @@ export async function handleHttp(
                 {
                   name: "bob.tool.execute",
                   correlationId,
-                  feature: featureForToolName(command.name),
+                  feature: featureForToolName(composition.profile, command.name),
                   runId: command.runId,
                   toolName: command.name
                 },
@@ -405,7 +405,7 @@ export async function handleHttp(
                     {
                       name: "bob.tool.domain",
                       correlationId,
-                      feature: featureForToolName(command.name),
+                      feature: featureForToolName(composition.profile, command.name),
                       runId: command.runId,
                       toolName: command.name
                     },

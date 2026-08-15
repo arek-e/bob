@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 
+import { DeploymentProfileId } from "./capabilities/catalogue.ts"
 import { HourCycle } from "./settings.ts"
 import { IsoDateTime, Locale, NonEmptyText, ShortText, TimeZone, Uuid } from "./shared.ts"
 import { CapabilityCatalogueGeneration, ToolName } from "./tools.ts"
@@ -26,13 +27,7 @@ export const PlanArtifact = Schema.Struct({
   ...PlanArtifactFields
 })
 
-/** Legacy shape for artifacts saved before plans became domain-neutral. */
-export const TrainingPlanArtifact = Schema.Struct({
-  kind: Schema.Literal("training_plan"),
-  ...PlanArtifactFields
-})
-
-export const AgentArtifact = Schema.Union([PlanArtifact, TrainingPlanArtifact])
+export const AgentArtifact = PlanArtifact
 
 export const ContextSource = Schema.Struct({
   sourceId: NonEmptyText,
@@ -41,15 +36,10 @@ export const ContextSource = Schema.Struct({
 })
 
 export const ContextItem = Schema.Struct({
-  kind: Schema.Literals([
-    "profile",
-    "conversation",
-    "artifact",
-    "reminder",
-    "training",
-    "fact",
-    "skill"
-  ]),
+  kind: Schema.String.check(
+    Schema.isPattern(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/),
+    Schema.isMaxLength(64)
+  ),
   text: ShortText,
   instruction: Schema.Literal(false),
   conflict: Schema.Boolean,
@@ -63,79 +53,16 @@ export const CurrentTurnMessage = Schema.Struct({
 
 export const PriorToolReceiptOrigin = Schema.Literals(["same_turn", "predecessor_turn"])
 
-export const PriorToolReceipt = Schema.Union([
-  Schema.Struct({
-    origin: PriorToolReceiptOrigin,
-    toolName: Schema.Literal("reminder_create"),
-    result: Schema.Struct({
-      ok: Schema.Literal(true),
-      code: Schema.Literals(["reminder_created", "reminder_exists"])
-    })
-  }),
-  Schema.Struct({
-    origin: PriorToolReceiptOrigin,
-    toolName: Schema.Literal("reminder_acknowledge"),
-    result: Schema.Struct({ ok: Schema.Literal(true), code: Schema.Literal("reminder_seen") })
-  }),
-  Schema.Struct({
-    origin: PriorToolReceiptOrigin,
-    toolName: Schema.Literal("reminder_complete"),
-    result: Schema.Struct({ ok: Schema.Literal(true), code: Schema.Literal("reminder_done") })
-  }),
-  Schema.Struct({
-    origin: PriorToolReceiptOrigin,
-    toolName: Schema.Literal("reminder_snooze"),
-    result: Schema.Struct({ ok: Schema.Literal(true), code: Schema.Literal("reminder_snoozed") })
-  }),
-  Schema.Struct({
-    origin: PriorToolReceiptOrigin,
-    toolName: Schema.Literal("reminder_cancel"),
-    result: Schema.Struct({
-      ok: Schema.Literal(true),
-      code: Schema.Literals(["reminder_cancelled", "reminder_occurrence_cancelled"])
-    })
-  }),
-  Schema.Struct({
-    origin: PriorToolReceiptOrigin,
-    toolName: Schema.Literal("memory_propose"),
-    result: Schema.Struct({ ok: Schema.Literal(true), code: Schema.Literal("memory_proposed") })
-  }),
-  Schema.Struct({
-    origin: PriorToolReceiptOrigin,
-    toolName: Schema.Literal("journal_link_create"),
-    result: Schema.Struct({
-      ok: Schema.Literal(true),
-      code: Schema.Literal("journal_link_created")
-    })
-  }),
-  Schema.Struct({
-    origin: PriorToolReceiptOrigin,
-    toolName: Schema.Literal("connection_link_create"),
-    result: Schema.Struct({
-      ok: Schema.Literal(true),
-      code: Schema.Literal("connection_link_created")
-    })
-  }),
-  Schema.Struct({
-    origin: PriorToolReceiptOrigin,
-    toolName: Schema.Literal("settings_update"),
-    result: Schema.Struct({
-      ok: Schema.Literal(true),
-      code: Schema.Literal("owner_settings_updated")
-    })
-  }),
-  Schema.Struct({
-    origin: PriorToolReceiptOrigin,
-    toolName: ToolName,
-    result: Schema.Struct({
-      ok: Schema.Literal(false),
-      code: Schema.Literal("tool_recovery_failed")
-    })
-  })
-])
+export const PriorToolReceipt = Schema.Struct({
+  origin: PriorToolReceiptOrigin,
+  toolName: ToolName,
+  actionOutcome: Schema.Literals(["confirmed", "proposed", "unknown"])
+})
 
 export const AgentRunRequest = Schema.Struct({
   protocolVersion: Schema.Literal(1),
+  legacySnapshotReplay: Schema.optionalKey(Schema.Literal(true)),
+  deploymentProfileId: Schema.optionalKey(DeploymentProfileId),
   capabilityCatalogueGeneration: Schema.optionalKey(CapabilityCatalogueGeneration),
   runId: Uuid,
   ownerId: Uuid,
@@ -156,6 +83,7 @@ export const AgentRunRequest = Schema.Struct({
   priorToolReceipts: Schema.optionalKey(
     Schema.Array(PriorToolReceipt).check(Schema.isMaxLength(8))
   ),
+  grounding: Schema.optionalKey(Schema.Struct({ requiresSources: Schema.Boolean })),
   contextItems: Schema.Array(ContextItem),
   allowedTools: Schema.Array(ToolName),
   limits: Schema.Struct({
@@ -251,7 +179,6 @@ export const DeviceLoginEvent = Schema.Union([
 
 export type ContextSource = typeof ContextSource.Type
 export type PlanArtifact = typeof PlanArtifact.Type
-export type TrainingPlanArtifact = typeof TrainingPlanArtifact.Type
 export type AgentArtifact = typeof AgentArtifact.Type
 export type ContextItem = typeof ContextItem.Type
 export type CurrentTurnMessage = typeof CurrentTurnMessage.Type

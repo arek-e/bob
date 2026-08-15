@@ -1,4 +1,4 @@
-import { fullCapabilityCatalogue } from "@bob/contracts/tools"
+import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
 import { cloudflareEventSink } from "@bob/observability/cloudflare"
 import { Effect, Layer, Schema } from "effect"
 
@@ -51,6 +51,7 @@ import {
   ownerSettingsStoreLayer
 } from "./modules/settings/store.ts"
 import { makeSettingsToolAdapter } from "./modules/settings/tool-adapter.ts"
+import { legacyTrainingArtifactReader } from "./modules/training/legacy-artifact.ts"
 import {
   TrainingModule,
   makeTrainingModule,
@@ -139,7 +140,9 @@ export function composeCore(bindings: CoreBindings) {
   })
   const turns = makeConversationTurnStore(database, protection, { ownerId: config.OWNER_ID })
   const alerts = makeAlertStore(database, {})
-  const artifacts = makeArtifactStore(database, protection)
+  const artifacts = makeArtifactStore(database, protection, {
+    legacyReaders: [legacyTrainingArtifactReader]
+  })
   const delivery = makeDeliveryStore(database, protection, {})
   const reminders = makeReminderStore(database, protection, {
     quietHours: {
@@ -158,7 +161,7 @@ export function composeCore(bindings: CoreBindings) {
   )
   const context = makeContextStore(database, protection, {})
   const runs = makeAgentRunStore(database, protection, {})
-  const toolAdapters = makeToolAdapterRegistry(fullCapabilityCatalogue, [
+  const toolAdapters = makeToolAdapterRegistry(transitionalDeploymentProfile, [
     makeReminderToolAdapter(reminders),
     makeMemoryToolAdapter(memory),
     makeJournalToolAdapter(journal, { uiBaseUrl: config.UI_BASE_URL }),
@@ -211,7 +214,7 @@ export function composeCore(bindings: CoreBindings) {
 
   return {
     config,
-    profile: fullCapabilityCatalogue,
+    profile: transitionalDeploymentProfile,
     database,
     layer,
     services

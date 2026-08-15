@@ -110,7 +110,7 @@ describe("deterministic Swedish replies", () => {
       id: "018e6f65-4d55-7a1b-8df4-4ee15ea1db97",
       revision: 2,
       artifact: {
-        kind: "training_plan",
+        kind: "plan",
         title: "Biceps · Thursday, August 13",
         durationMinutes: null,
         sections: [{ heading: "Workout", items: ["Hammer curl — 3 × 10–12"] }]

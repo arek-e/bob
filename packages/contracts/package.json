@@ -6,6 +6,7 @@
   "exports": {
     "./agent": "./src/agent.ts",
     "./capabilities/connections": "./src/capabilities/connections.ts",
+    "./capabilities/catalogue": "./src/capabilities/catalogue.ts",
     "./capabilities/definitions": "./src/capabilities/definitions.ts",
     "./capabilities/journal": "./src/capabilities/journal.ts",
     "./capabilities/memory": "./src/capabilities/memory.ts",
@@ -14,6 +15,7 @@
     "./capabilities/training": "./src/capabilities/training.ts",
     "./channel": "./src/channel.ts",
     "./delivery": "./src/delivery.ts",
+    "./deployment-profiles": "./src/deployment-profiles.ts",
     "./jobs": "./src/jobs.ts",
     "./interactions": "./src/interactions.ts",
     "./output-safety": "./src/output-safety.ts",

@@ -702,13 +702,14 @@ describe("recent conversation context", () => {
     ).resolves.toEqual([])
   })
 
-  it("carries a completed prior-revision tool receipt without its arguments", async () => {
+  it("does not duplicate a typed prior-revision receipt in Context items", async () => {
     const fixture = await seedOwner()
     const result = {
       ok: true,
       code: "reminder_created",
       message: "The reminder was created.",
-      data: { reminderId: uuid(1110) }
+      data: { reminderId: uuid(1110) },
+      evidence: { actionOutcome: "confirmed" }
     }
     const encryptedResult = await fixture.protection.encryptText(
       fixture.ownerKey,
@@ -756,21 +757,7 @@ describe("recent conversation context", () => {
       timeZone: "Europe/Stockholm"
     })
 
-    expect(items).toEqual([
-      {
-        kind: "conversation",
-        text: `Earlier revision action record. Do not repeat an identical completed mutation. ${JSON.stringify(
-          {
-            origin: "same_turn",
-            toolName: "reminder_create",
-            result: { ok: true, code: "reminder_created" }
-          }
-        )}`,
-        instruction: false,
-        conflict: false,
-        sources: []
-      }
-    ])
+    expect(items).toEqual([])
     expect(JSON.stringify(items)).not.toContain("PRIVATE_ARGUMENT_CANARY")
     expect(JSON.stringify(items)).not.toContain("private-idempotency-key")
     expect(JSON.stringify(items)).not.toContain("provider-call-private")
@@ -787,7 +774,8 @@ describe("recent conversation context", () => {
         ok: true,
         code: "reminder_created",
         message: "PRIVATE_RESULT_MESSAGE_CANARY",
-        data: { reminderId: uuid(1120), note: "PRIVATE_RESULT_DATA_CANARY" }
+        data: { reminderId: uuid(1120), note: "PRIVATE_RESULT_DATA_CANARY" },
+        evidence: { actionOutcome: "confirmed" }
       })
     )
     const encryptedUnknownResult = await fixture.protection.encryptText(
@@ -861,7 +849,7 @@ describe("recent conversation context", () => {
       {
         origin: "same_turn",
         toolName: "reminder_create",
-        result: { ok: true, code: "reminder_created" }
+        actionOutcome: "confirmed"
       }
     ])
     expect(JSON.stringify(receipts)).not.toMatch(
@@ -904,7 +892,8 @@ describe("recent conversation context", () => {
         ok: true,
         code: "reminder_created",
         message: "PRIVATE_PREDECESSOR_RESULT_CANARY",
-        data: { reminderId: uuid(1_145) }
+        data: { reminderId: uuid(1_145) },
+        evidence: { actionOutcome: "confirmed" }
       })
     )
     const priorRunId = uuid(1_146)
@@ -1011,7 +1000,7 @@ describe("recent conversation context", () => {
       {
         origin: "predecessor_turn",
         toolName: "reminder_create",
-        result: { ok: true, code: "reminder_created" }
+        actionOutcome: "confirmed"
       }
     ])
     expect(JSON.stringify(receipts)).not.toMatch(/PRIVATE_/u)
@@ -1072,7 +1061,8 @@ describe("recent conversation context", () => {
           `${index === 0 ? "OLDEST_RECEIPT" : index === 5 ? "NEWEST_RECEIPT" : `receipt-${index}`}-`.padEnd(
             1_200,
             "r"
-          )
+          ),
+        evidence: { actionOutcome: "confirmed" }
       }
       const encryptedResult = await fixture.protection.encryptText(
         fixture.ownerKey,
@@ -1129,8 +1119,8 @@ describe("recent conversation context", () => {
     expect(items.every((item) => item.text.length <= 1_200)).toBe(true)
     expect(
       items.filter((item) => item.text.startsWith("Earlier revision action record"))
-    ).toHaveLength(6)
-    expect(items.map((item) => item.text).join("\n")).toContain('"code":"reminder_created"')
+    ).toHaveLength(0)
+    expect(items.map((item) => item.text).join("\n")).not.toContain('"code":"reminder_created"')
     expect(serialized).not.toContain("NEWEST_RECEIPT")
     expect(serialized).not.toContain("OLDEST_RECEIPT")
     expect(serialized).not.toContain("PRIVATE_ARGUMENT_")

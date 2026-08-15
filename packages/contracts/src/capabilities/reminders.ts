@@ -1,6 +1,36 @@
+import { Schema } from "effect"
+
 import type { CapabilityModule, ToolDefinition, ToolDefinitionName } from "./definitions.ts"
 
+import { IsoDateTime, ShortText, TimeZone, Uuid } from "../shared.ts"
 import { emptyInputSchema, occurrenceInputSchema } from "./definitions.ts"
+
+export const ReminderCreateArguments = Schema.Struct({
+  displayText: ShortText,
+  smsSafeText: ShortText,
+  localDate: Schema.String,
+  localTime: Schema.String,
+  timeZone: TimeZone,
+  dueAt: IsoDateTime,
+  sourceMessageId: Uuid,
+  requiresAcknowledgment: Schema.Boolean
+})
+export const ReminderOccurrenceArguments = Schema.Struct({ occurrenceId: Uuid })
+export const ReminderSnoozeArguments = Schema.Struct({
+  occurrenceId: Uuid,
+  localDate: Schema.String,
+  localTime: Schema.String,
+  timeZone: TimeZone,
+  dueAt: IsoDateTime
+})
+export const ReminderCancelArguments = Schema.Struct({
+  reminderId: Uuid,
+  occurrenceId: Schema.optionalKey(Uuid)
+})
+export type ReminderCreateArguments = typeof ReminderCreateArguments.Type
+export type ReminderOccurrenceArguments = typeof ReminderOccurrenceArguments.Type
+export type ReminderSnoozeArguments = typeof ReminderSnoozeArguments.Type
+export type ReminderCancelArguments = typeof ReminderCancelArguments.Type
 
 export const reminderToolDefinitions = {
   reminder_create: {
@@ -88,8 +118,25 @@ export const reminderCapability = {
     "reminder_snooze",
     "reminder_cancel"
   ],
+  modelTools: [
+    "reminder_create",
+    "reminder_list",
+    "reminder_acknowledge",
+    "reminder_complete",
+    "reminder_snooze",
+    "reminder_cancel"
+  ],
   definitions: reminderToolDefinitions,
   readOnly: ["reminder_list"],
   sourceBound: ["reminder_create"],
-  externalOutcomeUnknown: []
+  externalOutcomeUnknown: [],
+  confirmedActionCodes: {
+    reminder_create: ["reminder_created", "reminder_exists"],
+    reminder_acknowledge: ["reminder_seen"],
+    reminder_complete: ["reminder_done"],
+    reminder_snooze: ["reminder_snoozed"],
+    reminder_cancel: ["reminder_cancelled", "reminder_occurrence_cancelled"]
+  },
+  mutationArgumentExclusions: { reminder_create: ["sourceMessageId"] },
+  sourceMessageArguments: { reminder_create: "sourceMessageId" }
 } as const satisfies CapabilityModule

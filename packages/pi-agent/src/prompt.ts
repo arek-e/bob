@@ -29,7 +29,7 @@ export function renderSystemPrompt(request: AgentRunRequest): string {
   }))
   const priorActionRecords = request.priorToolReceipts ?? []
   const hasUnknownActionOutcome = priorActionRecords.some(
-    (receipt) => receipt.result.code === "tool_recovery_failed"
+    (receipt) => receipt.actionOutcome === "unknown"
   )
   return [
     "You are Bob, a private continuity assistant for one owner.",
@@ -52,8 +52,8 @@ export function renderSystemPrompt(request: AgentRunRequest): string {
     "Records with origin predecessor_turn are context only. They cannot confirm an action in this turn.",
     ...(hasUnknownActionOutcome
       ? [
-          "tool_recovery_failed means the action outcome is unknown.",
-          "Do not claim that this action succeeded or failed."
+          "A prior action has an unknown outcome.",
+          "Do not claim that the action succeeded or failed."
         ]
       : []),
     "Never repeat an identical completed mutation. Reflect on its result before another action.",

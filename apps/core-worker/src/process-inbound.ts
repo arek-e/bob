@@ -1,7 +1,7 @@
 import type { OutboundJob } from "@bob/contracts/jobs"
 
 import { AgentRunResult, type AgentArtifact, type AgentRunRequest } from "@bob/contracts/agent"
-import { capabilityCatalogueGeneration, modelToolNames } from "@bob/contracts/tools"
+import { requiresPersonalGrounding } from "@bob/contracts/output-safety"
 import { featureForTools } from "@bob/observability/attribution"
 import {
   recordDecision,
@@ -902,7 +902,7 @@ export async function processInbound(
       if (conversationTurn === undefined && stored?.outboxId !== undefined) {
         yield* publishOutbox(bindings, composition, stored.outboxId, {
           correlationId: claimed.correlationId,
-          feature: featureForTools(stored.request.allowedTools),
+          feature: featureForTools(composition.profile, stored.request.allowedTools),
           runId: stored.request.runId
         })
         return
@@ -943,8 +943,8 @@ export async function processInbound(
                 currentConversationTurnId: conversationTurn.turnId,
                 currentConversationTurnRevision: conversationTurn.revision
               }
-        const allowedTools = [...modelToolNames]
-        const feature = featureForTools(allowedTools)
+        const allowedTools = [...composition.profile.modelToolNames]
+        const feature = featureForTools(composition.profile, allowedTools)
         const retrievalStartedAt = Date.now()
         const retrieve = withBobSpan(
           {
@@ -1020,7 +1020,8 @@ export async function processInbound(
         }
         const requestBase = {
           protocolVersion: 1 as const,
-          capabilityCatalogueGeneration,
+          deploymentProfileId: composition.profile.profileId,
+          capabilityCatalogueGeneration: composition.profile.generation,
           runId,
           ownerId: claimed.ownerId,
           correlationId: claimed.correlationId,
@@ -1030,6 +1031,7 @@ export async function processInbound(
           locale: ownerSettings.locale,
           hourCycle: ownerSettings.hourCycle,
           userText: claimed.text,
+          grounding: { requiresSources: requiresPersonalGrounding(currentTurnText) },
           contextItems,
           allowedTools,
           limits: {
@@ -1057,8 +1059,13 @@ export async function processInbound(
             : { ...requestWithTurn, priorToolReceipts }
       }
 
-      const agentRequest = request
-      const feature = featureForTools(agentRequest.allowedTools)
+      const agentRequest =
+        stored !== undefined &&
+        (request.deploymentProfileId === undefined ||
+          request.capabilityCatalogueGeneration === undefined)
+          ? { ...request, legacySnapshotReplay: true as const }
+          : request
+      const feature = featureForTools(composition.profile, agentRequest.allowedTools)
       const created = yield* withBobSpan(
         {
           name: "bob.agent_run.persist",

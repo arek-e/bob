@@ -1,6 +1,24 @@
+import { Schema } from "effect"
+
 import type { CapabilityModule, ToolDefinition, ToolDefinitionName } from "./definitions.ts"
 
 import { idInputSchema } from "./definitions.ts"
+
+export const MemorySearchArguments = Schema.Struct({ query: Schema.String })
+export const MemoryProposeArguments = Schema.Struct({
+  scope: Schema.String,
+  key: Schema.String,
+  value: Schema.Json,
+  canonicalText: Schema.String,
+  assertionKind: Schema.Literals(["user_stated", "system_recorded", "inferred"]),
+  extractionConfidence: Schema.Number,
+  importance: Schema.Number,
+  explicitRemember: Schema.Boolean
+})
+export const MemoryConfirmArguments = Schema.Struct({ id: Schema.String })
+export type MemorySearchArguments = typeof MemorySearchArguments.Type
+export type MemoryProposeArguments = typeof MemoryProposeArguments.Type
+export type MemoryConfirmArguments = typeof MemoryConfirmArguments.Type
 
 export const memoryToolDefinitions = {
   memory_search: {
@@ -54,8 +72,14 @@ export const memoryCapability = {
   version: 1,
   feature: "memory",
   names: ["memory_search", "memory_propose", "memory_confirm", "memory_correct"],
+  modelTools: ["memory_search", "memory_propose"],
   definitions: memoryToolDefinitions,
   readOnly: ["memory_search"],
   sourceBound: ["memory_propose"],
-  externalOutcomeUnknown: []
+  externalOutcomeUnknown: [],
+  confirmedActionCodes: {
+    memory_confirm: ["memory_confirmed"]
+  },
+  mutationArgumentExclusions: {},
+  sourceMessageArguments: {}
 } as const satisfies CapabilityModule
