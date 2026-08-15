@@ -255,8 +255,9 @@ jobs:
             --arg cloudflaredImageDigest "$CLOUDFLARED_DIGEST" \
             --arg observerImageDigest "$OBSERVER_DIGEST" \
             --arg deploymentContractDigest "$CONTRACT_DIGEST" \
+            --arg deploymentContractUri "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${SOURCE_SHA}/deployment-contract.json" \
             --arg idempotencyKey "$IDEMPOTENCY_KEY" \
-            '{idempotencyKey: $idempotencyKey, release: {sourceRevision: $sourceRevision, reviewedGitRevision: $reviewedGitRevision, deploymentContractDigest: $deploymentContractDigest, runtimeImages: [{name: "agent", digest: $agentImageDigest}, {name: "backup", digest: $backupImageDigest}, {name: "cloudflared", digest: $cloudflaredImageDigest}, {name: "observer", digest: $observerImageDigest}], agentImageDigest: $agentImageDigest, backupImageDigest: $backupImageDigest}}')"
+            '{idempotencyKey: $idempotencyKey, release: {sourceRevision: $sourceRevision, reviewedGitRevision: $reviewedGitRevision, deploymentContractDigest: $deploymentContractDigest, deploymentContractUri: $deploymentContractUri, runtimeImages: [{name: "agent", digest: $agentImageDigest}, {name: "backup", digest: $backupImageDigest}, {name: "cloudflared", digest: $cloudflaredImageDigest}, {name: "observer", digest: $observerImageDigest}], agentImageDigest: $agentImageDigest, backupImageDigest: $backupImageDigest}}')"
           operation="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
             --request POST \
             --header 'content-type: application/json' \
