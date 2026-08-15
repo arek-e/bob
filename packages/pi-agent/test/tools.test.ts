@@ -177,7 +177,6 @@ describe("Pi catalogue tools", () => {
       "key",
       "value",
       "canonicalText",
-      "assertionKind",
       "extractionConfidence",
       "importance",
       "explicitRemember"

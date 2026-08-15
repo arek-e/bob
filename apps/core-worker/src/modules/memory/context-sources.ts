@@ -3,7 +3,7 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm"
 import type { CoreDatabase } from "../../database.ts"
 import type { PrivateTextReader } from "../context/private-text.ts"
 import type { ContextSourceModule } from "../context/source.ts"
-import type { MemoryStore } from "./store.ts"
+import type { MemoryRecall } from "./store.ts"
 
 import { approvedContextItem } from "../context/source.ts"
 import { factEvidence, factRevisions, facts } from "./schema.ts"
@@ -14,7 +14,7 @@ function sourceDay(value: string | null | undefined): string {
 
 export function makeMemoryContextSources(
   database: CoreDatabase,
-  memory: MemoryStore,
+  memory: MemoryRecall,
   text: PrivateTextReader,
   options: {
     readonly profileCharacterBudget?: number

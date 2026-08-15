@@ -2,7 +2,7 @@ import type { CapabilityCatalogue } from "@bob/contracts/tools"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { ArtifactStore } from "../artifacts/store.ts"
-import type { MemoryStore } from "../memory/store.ts"
+import type { MemoryRecall } from "../memory/store.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
 
 import { makeArtifactContextSource } from "../artifacts/context-source.ts"
@@ -17,7 +17,7 @@ export function makeApplicationContextStore(
   database: CoreDatabase,
   protection: DataProtection,
   catalogue: CapabilityCatalogue,
-  modules: { readonly artifacts: ArtifactStore; readonly memory: MemoryStore }
+  modules: { readonly artifacts: ArtifactStore; readonly memory: MemoryRecall }
 ) {
   const text = makePrivateTextReader(database, protection)
   const [inlineReply, conversation] = makeConversationContextSources(database, text)

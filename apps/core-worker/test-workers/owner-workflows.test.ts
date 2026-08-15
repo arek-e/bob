@@ -17,11 +17,11 @@ import {
   memoryCandidates,
   searchDocuments
 } from "../src/modules/memory/schema.ts"
-import { makeMemoryStore } from "../src/modules/memory/store.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { reminderOccurrences } from "../src/modules/reminders/schema.ts"
 import { makeReminderStore } from "../src/modules/reminders/store.ts"
 import { makeTrainingStore } from "../src/modules/training/store.ts"
+import { makeTestEvidenceSources, makeTestMemoryStore } from "./memory-store-fixture.ts"
 import { decodeTestMigrations } from "./migrations.ts"
 
 declare global {
@@ -93,7 +93,7 @@ async function seedOwner() {
       createdAt: at
     })
   ])
-  return { database, protection }
+  return { database, protection, ownerKey: wrapped.key }
 }
 
 async function ownerApi(path: string, init?: RequestInit): Promise<Response> {
@@ -158,6 +158,17 @@ describe("owner reminder controls", () => {
       },
       "reminder:create:first"
     )
+    await expect(
+      makeTestEvidenceSources(database, protection).verify({
+        ownerId,
+        sourceType: "reminder",
+        sourceId: first.reminderId
+      })
+    ).resolves.toMatchObject({
+      originClass: "system_record",
+      confirmationAuthority: "completed_system_command",
+      disclosure: "model_and_channel"
+    })
     await database
       .update(reminderOccurrences)
       .set({ state: "awaiting_response" })
@@ -229,7 +240,7 @@ describe("owner reminder controls", () => {
 describe("owner memory review", () => {
   it("promotes an owner-reviewed message candidate into sourced recall", async () => {
     const { database, protection } = await seedOwner()
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       now: () => new Date("2026-08-11T10:05:00.000Z"),
       randomUuid: uuidSequence(75)
     })
@@ -281,8 +292,16 @@ describe("owner memory review", () => {
       channelEligible: true
     })
     expect(evidence).toEqual([
-      expect.objectContaining({ sourceType: "message", sourceId: messageId })
+      expect.objectContaining({
+        sourceType: "message",
+        sourceId: messageId,
+        sourceLabel: "Owner message linked on 11 Aug 2026",
+        sourceOccurredAt: "2026-08-11T10:00:00.000Z"
+      })
     ])
+    expect(evidence[0]?.excerptHash).toBe(
+      await protection.contentHash("Please remember my original note.")
+    )
     await expect(memory.search(ownerId, "morning", false)).resolves.toEqual([
       expect.objectContaining({
         sourceId: revisionId,
@@ -301,7 +320,7 @@ describe("owner memory review", () => {
 
   it("binds a correction to its owner source and rejects the old proposal", async () => {
     const { database, protection } = await seedOwner()
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       now: () => new Date("2026-08-11T10:05:00.000Z"),
       randomUuid: uuidSequence(100)
     })
@@ -374,9 +393,39 @@ describe("owner memory review", () => {
     ).resolves.toMatch(/^[0-9a-f-]{36}$/u)
   })
 
+  it("fails closed when source evidence changes before confirmation", async () => {
+    const { database, protection, ownerKey } = await seedOwner()
+    const memory = makeTestMemoryStore(database, protection, { randomUuid: uuidSequence(180) })
+    const proposal = await memory.propose(
+      {
+        ownerId,
+        scope: "profile",
+        key: "stable_source",
+        value: "original",
+        canonicalText: "The source says original.",
+        sourceType: "message",
+        sourceId: messageId,
+        extractionConfidence: 1,
+        importance: 0.5,
+        explicitRemember: false,
+        authority: "agent"
+      },
+      "memory:source-change:propose"
+    )
+    const changed = await protection.encryptText(ownerKey, "Changed source text.")
+    await database
+      .update(messages)
+      .set({ textCiphertext: changed.ciphertext, textIv: changed.iv })
+      .where(eq(messages.id, messageId))
+
+    await expect(
+      memory.confirm(ownerId, proposal.candidateId, "owner_ui", "memory:source-change:confirm")
+    ).rejects.toThrow("changed")
+  })
+
   it("rejects only an owner candidate and keeps the action idempotent", async () => {
     const { database, protection } = await seedOwner()
-    const memory = makeMemoryStore(database, protection, { randomUuid: uuidSequence(200) })
+    const memory = makeTestMemoryStore(database, protection, { randomUuid: uuidSequence(200) })
     const proposal = await memory.propose(
       {
         ownerId,
@@ -423,10 +472,16 @@ describe("owner journal changes", () => {
     })
     const handoff = await journal.createHandoff(ownerId, 60_000, "journal:handoff:one")
     const entryId = await journal.createEntry(
-      { ownerId, handoffId: handoff.id, text: "Original private text", tags: ["day"] },
+      {
+        ownerId,
+        handoffId: handoff.id,
+        text: "Original private text",
+        tags: ["day"],
+        approvedSummary: "Original note"
+      },
       "journal:create:one"
     )
-    const memory = makeMemoryStore(database, protection, { randomUuid: uuidSequence(350) })
+    const memory = makeTestMemoryStore(database, protection, { randomUuid: uuidSequence(350) })
     const proposal = await memory.propose(
       {
         ownerId,
@@ -451,6 +506,24 @@ describe("owner journal changes", () => {
       "owner_ui",
       "journal:memory:confirm"
     )
+    const [privateRevision] = await database
+      .select({
+        sensitivity: factRevisions.sensitivity,
+        modelEligible: factRevisions.modelEligible,
+        channelEligible: factRevisions.channelEligible
+      })
+      .from(factRevisions)
+      .where(eq(factRevisions.id, revisionId))
+    const [privateEvidence] = await database
+      .select()
+      .from(factEvidence)
+      .where(eq(factEvidence.revisionId, revisionId))
+    expect(privateRevision).toEqual({
+      sensitivity: "private",
+      modelEligible: false,
+      channelEligible: false
+    })
+    expect(privateEvidence?.excerptHash).toBe(await protection.contentHash("Original note"))
 
     await expect(
       journal.updateEntry(
@@ -496,6 +569,7 @@ describe("owner journal changes", () => {
     const [projection] = await database
       .select({
         text: searchDocuments.text,
+        memoryClass: searchDocuments.memoryClass,
         modelEligible: searchDocuments.modelEligible,
         channelEligible: searchDocuments.channelEligible
       })
@@ -503,6 +577,7 @@ describe("owner journal changes", () => {
       .where(eq(searchDocuments.sourceId, entryId))
     expect(projection).toEqual({
       text: "I trained today.",
+      memoryClass: "owner_episode",
       modelEligible: false,
       channelEligible: false
     })
@@ -521,7 +596,7 @@ describe("owner journal changes", () => {
 
 describe("owner training overview", () => {
   it("returns owner-scoped catalog matches, the active workout, and history", async () => {
-    const { database } = await seedOwner()
+    const { database, protection } = await seedOwner()
     const training = makeTrainingStore(database, {
       now: () => new Date("2026-08-11T10:15:00.000Z"),
       randomUuid: uuidSequence(400)
@@ -576,6 +651,19 @@ describe("owner training overview", () => {
       gymId,
       "workout:start:two"
     )
+    const evidence = makeTestEvidenceSources(database, protection)
+    await expect(
+      evidence.verify({ ownerId, sourceType: "routine", sourceId: routineId })
+    ).resolves.toMatchObject({
+      originClass: "system_record",
+      confirmationAuthority: "completed_system_command"
+    })
+    await expect(
+      evidence.verify({ ownerId, sourceType: "workout_session", sourceId: completedSessionId })
+    ).resolves.toMatchObject({ originClass: "system_record" })
+    await expect(
+      evidence.verify({ ownerId, sourceType: "workout_session", sourceId: activeSessionId })
+    ).rejects.toThrow("evidence")
 
     const overview = await training.overview(ownerId, "press")
     expect(overview.gyms).toEqual([

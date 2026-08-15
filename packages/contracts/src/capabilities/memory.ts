@@ -10,7 +10,6 @@ export const MemoryProposeArguments = Schema.Struct({
   key: Schema.String,
   value: Schema.Json,
   canonicalText: Schema.String,
-  assertionKind: Schema.Literals(["user_stated", "system_recorded", "inferred"]),
   extractionConfidence: Schema.Number,
   importance: Schema.Number,
   explicitRemember: Schema.Boolean
@@ -42,7 +41,6 @@ export const memoryToolDefinitions = {
         key: { type: "string" },
         value: {},
         canonicalText: { type: "string" },
-        assertionKind: { type: "string", enum: ["user_stated", "system_recorded", "inferred"] },
         extractionConfidence: { type: "number" },
         importance: { type: "number" },
         explicitRemember: { type: "boolean" }
@@ -52,7 +50,6 @@ export const memoryToolDefinitions = {
         "key",
         "value",
         "canonicalText",
-        "assertionKind",
         "extractionConfidence",
         "importance",
         "explicitRemember"
@@ -69,7 +66,7 @@ export const memoryToolDefinitions = {
 
 export const memoryCapability = {
   id: "memory",
-  version: 1,
+  version: 2,
   feature: "memory",
   names: ["memory_search", "memory_propose", "memory_confirm", "memory_correct"],
   modelTools: ["memory_search", "memory_propose"],

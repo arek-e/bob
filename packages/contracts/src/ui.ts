@@ -98,6 +98,7 @@ export const AlertList = Schema.Struct({ alerts: Schema.Array(OperationalAlert) 
 
 export const MemoryCandidateReview = Schema.Struct({
   id: Uuid,
+  memoryClass: Schema.Literal("owner_fact"),
   scope: NonEmptyText,
   key: NonEmptyText,
   value: Schema.Json,

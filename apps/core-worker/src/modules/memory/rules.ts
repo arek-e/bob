@@ -91,23 +91,13 @@ export function deriveMemoryPolicy(input: {
 }
 
 export function deriveConfirmedMemoryPolicy(input: {
-  readonly authority: "owner_ui" | "completed_system_command"
-  readonly originClass: OriginClass
-  readonly sourceType: string
   readonly sensitivity: "normal" | "private" | "high"
+  readonly disclosure: "model_and_channel" | "private"
 }): DerivedMemoryPolicy {
   if (input.sensitivity === "high") {
     return { sensitivity: "high", modelEligible: false, channelEligible: false }
   }
-  const ownerReviewedMessage =
-    input.authority === "owner_ui" &&
-    input.originClass === "owner_input" &&
-    input.sourceType === "message"
-  const completedSystemRecord =
-    input.authority === "completed_system_command" &&
-    input.originClass === "system_record" &&
-    input.sensitivity === "normal"
-  const eligible = ownerReviewedMessage || completedSystemRecord
+  const eligible = input.sensitivity === "normal" && input.disclosure === "model_and_channel"
   return {
     sensitivity: eligible ? "normal" : input.sensitivity,
     modelEligible: eligible,

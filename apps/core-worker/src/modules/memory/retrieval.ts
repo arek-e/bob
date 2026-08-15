@@ -1,8 +1,11 @@
+import type { MemoryClass } from "./evidence.ts"
+
 export interface RetrievalCandidate {
   readonly id: string
   /** Stable Core-owned identifier for response source grounding. */
   readonly sourceId: string
   readonly sourceType: string
+  readonly memoryClass: MemoryClass
   readonly text: string
   readonly sourceLabel: string
   readonly occurredAt?: string
@@ -27,7 +30,7 @@ export function buildFtsQuery(text: string): string | undefined {
 }
 
 function recencyScore(candidate: RetrievalCandidate, nowMs: number): number {
-  if (candidate.sourceType === "fact_revision") return 1
+  if (candidate.memoryClass === "owner_fact") return 1
   if (candidate.occurredAt === undefined) return 0
   const occurredAt = Date.parse(candidate.occurredAt)
   if (!Number.isFinite(occurredAt)) return 0

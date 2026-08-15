@@ -48,7 +48,6 @@ import {
   memoryCandidates,
   searchDocuments
 } from "../src/modules/memory/schema.ts"
-import { makeMemoryStore } from "../src/modules/memory/store.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { reminderOccurrences, reminders } from "../src/modules/reminders/schema.ts"
 import { makeReminderStore } from "../src/modules/reminders/store.ts"
@@ -66,6 +65,7 @@ import {
 import { makeTrainingStore } from "../src/modules/training/store.ts"
 import { processInbound } from "../src/process-inbound.ts"
 import { makeTestContextStore } from "./context-store-fixture.ts"
+import { makeTestMemoryStore } from "./memory-store-fixture.ts"
 import { decodeTestMigrations } from "./migrations.ts"
 import { makeTestToolExecutor } from "./tool-executor-fixture.ts"
 
@@ -1723,6 +1723,7 @@ describe("D1 migrations and durability", () => {
       userId: ownerId,
       sourceType: "journal_summary",
       sourceId: "00000000-0000-4000-8000-000000000703",
+      memoryClass: "owner_episode",
       text: "conflict",
       sourceLabel: "test",
       importance: 1,
@@ -1823,6 +1824,7 @@ describe("D1 migrations and durability", () => {
         userId: ownerId,
         sourceType: "fact_revision",
         sourceId: revisionId,
+        memoryClass: "owner_fact",
         text: "Training day is Tuesday",
         sourceLabel: "journal",
         importance: 500,
@@ -1858,7 +1860,7 @@ describe("D1 migrations and durability", () => {
   it("keeps agent memory proposed and encrypts sensitive fact values", async () => {
     const { database, protection } = await seedRunData()
     let next = 900
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       now: () => new Date("2026-08-11T10:00:00.000Z"),
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
@@ -1941,7 +1943,7 @@ describe("D1 migrations and durability", () => {
     )
     expect(await runStore.claim(runId, 90_000)).toBeDefined()
     let next = 2_000
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
     const executor = makeTestToolExecutor(
@@ -1998,7 +2000,7 @@ describe("D1 migrations and durability", () => {
 
   it("lists memory candidates by owner and validates confirmation evidence", async () => {
     const { database, protection } = await seedRunData()
-    const memory = makeMemoryStore(database, protection, {})
+    const memory = makeTestMemoryStore(database, protection, {})
     const valid = await memory.propose(
       {
         ownerId,
@@ -2034,56 +2036,57 @@ describe("D1 migrations and durability", () => {
         "memory:cross-owner"
       )
     ).rejects.toThrow("not found")
-
-    const unsupported = await memory.propose(
-      {
-        ownerId,
-        scope: "preferences",
-        key: "unsupported",
-        value: true,
-        canonicalText: "An unsupported assistant claim.",
-        assertionKind: "user_stated",
-        originClass: "owner_input",
-        sourceType: "assistant_claim",
-        sourceId: messageId,
-        extractionConfidence: 1,
-        importance: 0.2,
-        explicitRemember: false,
-        authority: "agent"
-      },
-      "memory:list:unsupported"
-    )
+    await database
+      .update(memoryCandidates)
+      .set({ sourceLabel: null, sourceOccurredAt: null, sourceContentHash: null })
+      .where(eq(memoryCandidates.id, valid.candidateId))
     await expect(
-      memory.confirm(ownerId, unsupported.candidateId, "owner_ui", "memory:unsupported-confirm")
+      memory.confirm(ownerId, valid.candidateId, "owner_ui", "memory:legacy-confirm")
+    ).resolves.toMatch(/^[0-9a-f-]{36}$/u)
+
+    await expect(
+      memory.propose(
+        {
+          ownerId,
+          scope: "preferences",
+          key: "unsupported",
+          value: true,
+          canonicalText: "An unsupported assistant claim.",
+          sourceType: "assistant_claim",
+          sourceId: messageId,
+          extractionConfidence: 1,
+          importance: 0.2,
+          explicitRemember: false,
+          authority: "agent"
+        },
+        "memory:list:unsupported"
+      )
     ).rejects.toThrow("source type")
 
-    const missing = await memory.propose(
-      {
-        ownerId,
-        scope: "preferences",
-        key: "missing",
-        value: true,
-        canonicalText: "A claim with missing evidence.",
-        assertionKind: "user_stated",
-        originClass: "owner_input",
-        sourceType: "message",
-        sourceId: "00000000-0000-4000-8000-999999999998",
-        extractionConfidence: 1,
-        importance: 0.2,
-        explicitRemember: false,
-        authority: "agent"
-      },
-      "memory:list:missing"
-    )
     await expect(
-      memory.confirm(ownerId, missing.candidateId, "owner_ui", "memory:missing-confirm")
+      memory.propose(
+        {
+          ownerId,
+          scope: "preferences",
+          key: "missing",
+          value: true,
+          canonicalText: "A claim with missing evidence.",
+          sourceType: "message",
+          sourceId: "00000000-0000-4000-8000-999999999998",
+          extractionConfidence: 1,
+          importance: 0.2,
+          explicitRemember: false,
+          authority: "agent"
+        },
+        "memory:list:missing"
+      )
     ).rejects.toThrow("evidence")
   })
 
   it("does not confirm a rejected memory candidate with a new action key", async () => {
     const { database, protection } = await seedRunData()
     let next = 2_100
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
     const proposal = await memory.propose(
@@ -2121,7 +2124,7 @@ describe("D1 migrations and durability", () => {
   it("does not revise a confirmed candidate through another review action", async () => {
     const { database, protection } = await seedRunData()
     let next = 2_200
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
     const proposal = await memory.propose(
@@ -2173,7 +2176,7 @@ describe("D1 migrations and durability", () => {
   it("does not review an original candidate again after a correction", async () => {
     const { database, protection } = await seedRunData()
     let next = 2_250
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
     const proposal = await memory.propose(
@@ -2228,7 +2231,7 @@ describe("D1 migrations and durability", () => {
   it("lets exactly one concurrent review action claim a memory candidate", async () => {
     const { database, protection } = await seedRunData()
     let next = 2_300
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
     const proposal = await memory.propose(

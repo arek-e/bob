@@ -15,7 +15,9 @@ import {
 } from "./modules/connections/store.ts"
 import { makeConnectionsToolAdapter } from "./modules/connections/tool-adapter.ts"
 import { makeApplicationContextStore } from "./modules/context/composition.ts"
+import { makePrivateTextReader } from "./modules/context/private-text.ts"
 import { ContextStore, contextStoreLayer } from "./modules/context/store.ts"
+import { makeConversationEvidenceSource } from "./modules/conversations/evidence-source.ts"
 import {
   AgentRunStore,
   makeAgentRunStore,
@@ -39,11 +41,16 @@ import {
   makeConversationTurnStore
 } from "./modules/conversations/turn-store.ts"
 import { DeliveryStore, makeDeliveryStore, deliveryStoreLayer } from "./modules/delivery/store.ts"
+import { makeJournalEvidenceSource } from "./modules/journal/evidence-source.ts"
 import { JournalStore, makeJournalStore, journalStoreLayer } from "./modules/journal/store.ts"
 import { makeJournalToolAdapter } from "./modules/journal/tool-adapter.ts"
+import { makeAgentExperienceRegistry } from "./modules/memory/agent-experience.ts"
+import { makeFactEvidenceSource } from "./modules/memory/evidence-source.ts"
+import { makeEvidenceSourceRegistry } from "./modules/memory/evidence.ts"
 import { MemoryStore, makeMemoryStore, memoryStoreLayer } from "./modules/memory/store.ts"
 import { makeMemoryToolAdapter } from "./modules/memory/tool-adapter.ts"
 import { createDataProtection } from "./modules/policy/data-protection.ts"
+import { makeReminderEvidenceSource } from "./modules/reminders/evidence-source.ts"
 import { ReminderStore, makeReminderStore, reminderStoreLayer } from "./modules/reminders/store.ts"
 import { makeReminderToolAdapter } from "./modules/reminders/tool-adapter.ts"
 import {
@@ -52,6 +59,8 @@ import {
   ownerSettingsStoreLayer
 } from "./modules/settings/store.ts"
 import { makeSettingsToolAdapter } from "./modules/settings/tool-adapter.ts"
+import { makeReviewedSkillRegistry } from "./modules/skills/registry.ts"
+import { makeTrainingEvidenceSource } from "./modules/training/evidence-source.ts"
 import { legacyTrainingArtifactReader } from "./modules/training/legacy-artifact.ts"
 import {
   TrainingModule,
@@ -153,7 +162,17 @@ export function composeCore(bindings: CoreBindings) {
     },
     dailyLimit: config.REMINDER_DAILY_LIMIT
   })
-  const memory = makeMemoryStore(database, protection, {})
+  const privateText = makePrivateTextReader(database, protection)
+  const evidenceSources = makeEvidenceSourceRegistry(transitionalDeploymentProfile.profileId, [
+    makeConversationEvidenceSource(database, privateText, protection),
+    makeFactEvidenceSource(database, privateText, protection),
+    makeJournalEvidenceSource(database, protection),
+    makeReminderEvidenceSource(database, protection),
+    makeTrainingEvidenceSource(database, protection)
+  ])
+  const agentExperience = makeAgentExperienceRegistry(transitionalDeploymentProfile.profileId, [])
+  const reviewedSkills = makeReviewedSkillRegistry(transitionalDeploymentProfile.profileId, [])
+  const memory = makeMemoryStore(database, protection, evidenceSources, {})
   const journal = makeJournalStore(database, protection, {})
   const trainingStore = makeTrainingStore(database, {})
   const training = makeTrainingModule(
@@ -219,6 +238,7 @@ export function composeCore(bindings: CoreBindings) {
   return {
     config,
     profile: transitionalDeploymentProfile,
+    memoryClasses: Object.freeze({ agentExperience, reviewedSkills }),
     database,
     layer,
     services

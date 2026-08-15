@@ -10,9 +10,9 @@ import type {
   ToolCommandAdapter,
   ToolCommandAdapterContext
 } from "../conversations/tool-adapter.ts"
-import type { MemoryStore } from "./store.ts"
+import type { MemoryRecall, OwnerFactStore } from "./store.ts"
 
-export function makeMemoryToolAdapter(memory: MemoryStore): ToolCommandAdapter {
+export function makeMemoryToolAdapter(memory: OwnerFactStore & MemoryRecall): ToolCommandAdapter {
   return {
     capabilityId: memoryCapability.id,
     names: memoryCapability.names,
@@ -40,8 +40,13 @@ export function makeMemoryToolAdapter(memory: MemoryStore): ToolCommandAdapter {
           const result = await memory.propose(
             {
               ownerId: command.ownerId,
-              ...args,
-              originClass: "owner_input",
+              scope: args.scope,
+              key: args.key,
+              value: args.value,
+              canonicalText: args.canonicalText,
+              extractionConfidence: args.extractionConfidence,
+              importance: args.importance,
+              explicitRemember: args.explicitRemember,
               sourceType: "message",
               sourceId: run.messageId,
               authority: "agent"
