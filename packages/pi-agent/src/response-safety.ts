@@ -40,7 +40,11 @@ export type AssistantResponseValidation =
   | { readonly ok: true; readonly value: StructuredAssistantResponse }
   | { readonly ok: false; readonly code: OutputValidationCode }
 
-const confirmedActionCodesByTool: Partial<Record<typeof ToolName.Type, ReadonlySet<string>>> = {
+interface ConfirmedActionCodesByTool extends Partial<
+  Record<typeof ToolName.Type, ReadonlySet<string>>
+> {}
+
+const confirmedActionCodesByTool: ConfirmedActionCodesByTool = {
   reminder_create: new Set(["reminder_created", "reminder_exists"]),
   reminder_acknowledge: new Set(["reminder_seen"]),
   reminder_complete: new Set(["reminder_done"]),
@@ -65,6 +69,12 @@ export interface TrustedToolSource {
   readonly occurredAt?: string
 }
 
+const TrustedToolSourceSchema = Schema.Struct({
+  sourceId: NonEmptyText,
+  sourceLabel: NonEmptyText,
+  occurredAt: Schema.optionalKey(Schema.String)
+})
+
 export const emptyReminderListSource: TrustedToolSource = {
   sourceId: "bob:active-reminders",
   sourceLabel: "Bob active reminders"
@@ -76,24 +86,11 @@ export function emptyReminderListResponse(locale: string | undefined): string {
     : "You have no active reminders."
 }
 
-function trustedToolSource(value: unknown): TrustedToolSource | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
-  const sourceId = Reflect.get(value, "sourceId")
-  const sourceLabel = Reflect.get(value, "sourceLabel")
-  const occurredAt = Reflect.get(value, "occurredAt")
-  if (
-    typeof sourceId !== "string" ||
-    sourceId.length === 0 ||
-    typeof sourceLabel !== "string" ||
-    sourceLabel.length === 0 ||
-    (occurredAt !== undefined && typeof occurredAt !== "string")
-  ) {
+function trustedToolSource<Input>(value: Input): TrustedToolSource | undefined {
+  try {
+    return Schema.decodeUnknownSync(TrustedToolSourceSchema)(value)
+  } catch {
     return undefined
-  }
-  return {
-    sourceId,
-    sourceLabel,
-    ...(typeof occurredAt === "string" ? { occurredAt } : {})
   }
 }
 
@@ -227,7 +224,9 @@ function bidirectionalActionScope(subject: RegExp, action: RegExp): RegExp {
   )
 }
 
-const actionScopeByTool: Readonly<Partial<Record<typeof ToolName.Type, RegExp>>> = {
+interface ActionScopeByTool extends Partial<Record<typeof ToolName.Type, RegExp>> {}
+
+const actionScopeByTool: ActionScopeByTool = {
   reminder_create: bidirectionalActionScope(
     /\b(?:reminders?|påminnelse(?:n|r|rna)?)\b/u,
     /\b(?:creat(?:e|ed|ion)|set|made|skapa(?:de|t|nde)?|ställde?\s+in|ställt\s+in|lade\s+till|lagt\s+till)\b/u
@@ -350,8 +349,10 @@ export function validateAssistantResponse(
 ): AssistantResponseValidation {
   try {
     if (raw.length > 16_000) return { ok: false, code: "response_envelope_too_long" }
-    const decoded = JSON.parse(raw) as unknown
-    if (typeof decoded !== "object" || decoded === null || Array.isArray(decoded)) {
+    const decoded = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
+      JSON.parse(raw)
+    )
+    if (Array.isArray(decoded)) {
       return { ok: false, code: "malformed_response" }
     }
     const keys = Object.keys(decoded).toSorted()

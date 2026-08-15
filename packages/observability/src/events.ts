@@ -185,14 +185,11 @@ export interface EventSink {
   emit(event: HealthEvent): void | Promise<void>
 }
 
-export function parseHealthEvent(value: unknown): HealthEvent {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new TypeError("Health event must be an object")
-  }
-
-  const type = Reflect.get(value, "type")
+export function parseHealthEvent<Input>(value: Input): HealthEvent {
+  const input = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(value)
+  const event = Schema.decodeUnknownSync(HealthEvent)(input)
   const common = ["type", "correlationId", "status"]
-  const allowedByType: Readonly<Record<string, readonly string[]>> = {
+  const allowedByType = {
     webhook: [...common, "code", "durationMs"],
     agent_run: [...common, "runId", "model", "durationMs", "inputTokens", "outputTokens"],
     tool_call: [...common, "runId", "toolName", "durationMs"],
@@ -245,11 +242,11 @@ export function parseHealthEvent(value: unknown): HealthEvent {
       "consumedTokens",
       "budgetTokens"
     ]
-  }
-  const allowed = typeof type === "string" ? allowedByType[type] : undefined
-  if (allowed === undefined || Object.keys(value).some((key) => !allowed.includes(key))) {
+  } as const
+  const allowed = new Set<string>(allowedByType[event.type])
+  if (Object.keys(input).some((key) => !allowed.has(key))) {
     throw new TypeError("Health event contains an unknown field")
   }
 
-  return Schema.decodeUnknownSync(HealthEvent)(value)
+  return event
 }

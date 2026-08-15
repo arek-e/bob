@@ -2,7 +2,7 @@ import type { JournalEntry, JournalMetadata } from "@bob/contracts/ui"
 import type { BatchItem } from "drizzle-orm/batch"
 
 import { and, desc, eq, gt, inArray, isNull, like } from "drizzle-orm"
-import { Context, Layer } from "effect"
+import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
@@ -57,6 +57,7 @@ export interface JournalStore {
 export const JournalStore = Context.Service<JournalStore>("bob/JournalStore")
 
 const journalSourceTypes = ["journal", "journal_entry", "journal_summary"] as const
+const JournalTags = Schema.Array(Schema.String)
 
 export function makeJournalStore(
   database: CoreDatabase,
@@ -237,12 +238,16 @@ export function makeJournalStore(
         )
         .orderBy(desc(journalEntries.createdAt))
         .limit(100)
-      return rows.map((row) => ({
-        id: row.id,
-        createdAt: row.createdAt,
-        tags: JSON.parse(row.tagsJson) as string[],
-        ...(row.approvedSummary === null ? {} : { approvedSummary: row.approvedSummary })
-      })) as readonly JournalMetadata[]
+      return rows.map((row) => {
+        const metadata = {
+          id: row.id,
+          createdAt: row.createdAt,
+          tags: Schema.decodeUnknownSync(JournalTags)(JSON.parse(row.tagsJson))
+        }
+        return row.approvedSummary === null
+          ? metadata
+          : { ...metadata, approvedSummary: row.approvedSummary }
+      })
     },
 
     async readEntry(ownerId, entryId) {
@@ -259,16 +264,18 @@ export function makeJournalStore(
         .limit(1)
       if (row === undefined) return undefined
       const key = (await ownerKey(ownerId)).key
-      return {
+      const entry = {
         id: row.id,
         createdAt: row.createdAt,
-        tags: JSON.parse(row.tagsJson) as string[],
+        tags: Schema.decodeUnknownSync(JournalTags)(JSON.parse(row.tagsJson)),
         text: await protection.decryptText(key, {
           ciphertext: row.textCiphertext,
           iv: row.textIv
-        }),
-        ...(row.approvedSummary === null ? {} : { approvedSummary: row.approvedSummary })
+        })
       }
+      return row.approvedSummary === null
+        ? entry
+        : { ...entry, approvedSummary: row.approvedSummary }
     },
 
     async updateEntry(ownerId, entryId, input, idempotencyKey) {
@@ -340,7 +347,7 @@ export function makeJournalStore(
         const hasOtherEvidence = evidence.some(
           (item) =>
             item.evidenceRole === "supports" &&
-            (!journalSourceTypes.includes(item.sourceType as (typeof journalSourceTypes)[number]) ||
+            (!journalSourceTypes.some((sourceType) => sourceType === item.sourceType) ||
               item.sourceId !== entryId)
         )
         if (!hasOtherEvidence) unsupported.push(sourced)
@@ -500,7 +507,7 @@ export function makeJournalStore(
         const hasOtherEvidence = evidence.some(
           (item) =>
             item.evidenceRole === "supports" &&
-            (!journalSourceTypes.includes(item.sourceType as (typeof journalSourceTypes)[number]) ||
+            (!journalSourceTypes.some((sourceType) => sourceType === item.sourceType) ||
               item.sourceId !== entryId)
         )
         if (!hasOtherEvidence) unsupported.push(sourced)

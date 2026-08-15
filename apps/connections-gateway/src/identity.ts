@@ -20,13 +20,13 @@ export async function verifyInstanceAssertion(
   })
   if (
     result.payload.sub !== "" ||
-    typeof result.payload.common_name !== "string" ||
-    result.payload.common_name.length === 0 ||
+    Object.prototype.toString.call(result.payload.common_name) !== "[object String]" ||
+    String(result.payload.common_name).length === 0 ||
     result.payload.email !== undefined
   ) {
     throw new Error("access_denied")
   }
-  return result.payload.common_name
+  return String(result.payload.common_name)
 }
 
 export function createInstanceAuthenticator(options: {

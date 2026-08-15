@@ -280,7 +280,7 @@ function hasVersion2Coverage(suite: typeof Version2EvaluationSuite.Type): boolea
   )
 }
 
-export function decodeEvaluationSuite(input: unknown): EvaluationSuite {
+export function decodeEvaluationSuite<Input>(input: Input): EvaluationSuite {
   try {
     const suite = Schema.decodeUnknownSync(EvaluationSuiteSchema)(input)
     if (suite.cases.length === 0) throw new Error("empty_suite")
@@ -297,22 +297,25 @@ export function decodeEvaluationSuite(input: unknown): EvaluationSuite {
     if (suite.schemaVersion === 2 && !hasVersion2Coverage(suite)) {
       throw new Error("incomplete_interaction_coverage")
     }
+    // SAFETY: The versioned suite schema validates every threshold key and value above.
     const suiteThresholds = suite.thresholds as Readonly<Partial<Record<MetricName, Threshold>>>
     const thresholds = Object.fromEntries(
       metricNames.map((name) => [name, suiteThresholds[name] ?? strictThreshold(name)])
     )
+    // SAFETY: Normalization adds every metric threshold required by EvaluationSuite.
     return { ...suite, thresholds } as EvaluationSuite
   } catch {
     throw new Error("invalid_evaluation_suite")
   }
 }
 
-export function decodeCandidateSet(input: unknown): CandidateSet {
+export function decodeCandidateSet<Input>(input: Input): CandidateSet {
   try {
     const candidates = Schema.decodeUnknownSync(CandidateSetSchema)(input)
     if (hasDuplicates(candidates.candidates.map((candidate) => candidate.caseId))) {
       throw new Error("duplicate_candidate")
     }
+    // SAFETY: CandidateSetSchema validates the complete versioned candidate contract.
     return candidates as CandidateSet
   } catch {
     throw new Error("invalid_candidate_set")

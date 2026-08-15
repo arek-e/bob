@@ -577,9 +577,9 @@ export { toolDefinitions }
 
 /** Every reviewed capability that the model can choose during a turn. */
 export const modelToolNames: readonly ModelToolName[] = Object.freeze(
-  (Object.keys(toolDefinitions) as ToolDefinitionName[]).filter(
-    (name): name is ModelToolName => name !== "memory_confirm"
-  )
+  Object.values(toolDefinitions)
+    .map((definition) => definition.name)
+    .filter((name): name is ModelToolName => name !== "memory_confirm")
 )
 
 /** Stable lookup for adapters that need one reviewed definition. */
@@ -606,20 +606,20 @@ export function isReadOnlyToolName(name: ToolName): boolean {
   return readOnlyToolNames.has(name)
 }
 
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value === "boolean" || typeof value === "number") {
-    return JSON.stringify(value)
-  }
-  if (typeof value === "string") return JSON.stringify(value)
+function isJsonObject(value: typeof Schema.Json.Type): value is typeof JsonObject.Type {
+  return value !== null && !Array.isArray(value) && Object(value) === value
+}
+
+function canonicalJson(value: typeof Schema.Json.Type): string {
+  if (value === null) return JSON.stringify(value)
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>
-    return `{${Object.keys(record)
+  if (isJsonObject(value)) {
+    return `{${Object.keys(value)
       .toSorted()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key] ?? null)}`)
       .join(",")}}`
   }
-  throw new Error("Tool mutation identity contains an unsupported value")
+  return JSON.stringify(value)
 }
 
 function semanticMutationArguments(

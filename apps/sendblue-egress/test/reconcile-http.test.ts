@@ -5,15 +5,27 @@ import type { EgressBindings } from "../src/bindings.ts"
 import { handleReconcileRequest } from "../src/entrypoints/http.ts"
 
 const callerToken = "c".repeat(64)
+// SAFETY: This controlled test fixture matches the asserted contract used by this test.
 const bindings = {
-  INGRESS: { fetch: vi.fn() },
+  CORE: { fetch: vi.fn(), connect: vi.fn() },
+  INGRESS: { fetch: vi.fn(), connect: vi.fn() },
+  DELIVERY_RESULT_QUEUE: {
+    send: vi.fn(),
+    sendBatch: vi.fn(),
+    metrics: vi.fn()
+  },
   SENDBLUE_API_KEY_ID: "key",
   SENDBLUE_API_SECRET_KEY: "secret",
   SENDBLUE_WEBHOOK_SIGNING_SECRET: "s".repeat(64),
   SENDBLUE_FROM_NUMBER: "+46711111111",
   SENDBLUE_ALLOWED_USER_NUMBER: "+46700000000",
-  CORE_CALLER_SECRET: callerToken
-} as unknown as EgressBindings
+  SENDBLUE_STATUS_CALLBACK_URL: "https://ingress.example.invalid/webhooks/outbound",
+  CORE_CALLER_SECRET: callerToken,
+  OTEL_EXPORTER_OTLP_ENDPOINT: "",
+  OTEL_ACCESS_CLIENT_ID: "",
+  OTEL_ACCESS_CLIENT_SECRET: "",
+  BOB_RELEASE_SHA: ""
+} as EgressBindings
 
 function reconcileRequest(token = callerToken) {
   return new Request("https://egress.example.invalid/internal/inbound-reconcile", {

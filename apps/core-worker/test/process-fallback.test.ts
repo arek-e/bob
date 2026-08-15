@@ -5,6 +5,7 @@ import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
 import { processInbound } from "../src/process-inbound.ts"
+import { testFixture } from "./test-fixture.ts"
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -19,7 +20,8 @@ describe("core model failure fallback", () => {
       "fetch",
       vi.fn(async () => new Response(null, { status: 500 }))
     )
-    const composition = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
         AGENT_ACCESS_CLIENT_ID: "client",
@@ -80,10 +82,11 @@ describe("core model failure fallback", () => {
         alerts: { record: vi.fn() },
         delivery: { markEnqueued: vi.fn() }
       }
-    } as unknown as CoreComposition
-    const bindings = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) }
-    } as unknown as CoreBindings
+    })
 
     await processInbound("018e6f65-4d55-7a1b-8df4-4ee15ea1db90", bindings, composition)
 

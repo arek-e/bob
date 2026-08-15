@@ -55,6 +55,7 @@ describe("Sendblue provider recovery", () => {
     )
     vi.spyOn(console, "log").mockImplementation(() => undefined)
 
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const result = await handleScheduledReconcile(new Date("2026-08-13T10:32:00.000Z"), {
       INGRESS: { fetch: ingressFetch },
       SENDBLUE_API_KEY_ID: "key-id",
@@ -91,6 +92,7 @@ describe("Sendblue provider recovery", () => {
     vi.spyOn(console, "error").mockImplementation((line) => errors.push(String(line)))
 
     await expect(
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       handleScheduledReconcile(new Date("2026-08-13T10:32:00.000Z"), {
         INGRESS: { fetch: vi.fn() },
         SENDBLUE_API_KEY_ID: "key-id",

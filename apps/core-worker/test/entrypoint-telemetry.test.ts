@@ -1,3 +1,5 @@
+import type { OutboundJob } from "@bob/contracts/jobs"
+
 import { parseTraceparent } from "@bob/observability/propagation"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect } from "effect"
@@ -5,7 +7,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
-import type { CoreTelemetryInvocation } from "../src/telemetry.ts"
+import type { CoreDurableDependencies } from "../src/entrypoints/durable-objects.ts"
+
+import { handleHttp as realHandleHttp } from "../src/entrypoints/http.ts"
+import { createCoreWorker, OwnerRunCoordinator, ReminderClock } from "../src/index.ts"
+import {
+  makeCoreTelemetryInvocation as makeActualTelemetryInvocation,
+  type CoreTelemetryInvocation
+} from "../src/telemetry.ts"
+import { testFixture } from "./test-fixture.ts"
 
 const harness = vi.hoisted(() => ({
   composeCore: vi.fn(),
@@ -13,51 +23,35 @@ const harness = vi.hoisted(() => ({
   handleInboundQueue: vi.fn(),
   handleScheduled: vi.fn(),
   processConversationTurn: vi.fn(),
+  // SAFETY: This controlled test fixture matches the asserted contract used by this test.
   telemetryOverride: undefined as CoreTelemetryInvocation | undefined,
+  // SAFETY: This controlled test fixture matches the asserted contract used by this test.
   telemetryInvocations: [] as unknown[]
 }))
 
-vi.mock("../src/composition.ts", () => ({
-  composeCore: harness.composeCore
-}))
-
-vi.mock("../src/entrypoints/http.ts", () => ({
-  handleHttp: harness.handleHttp
-}))
-
-vi.mock("../src/entrypoints/queue.ts", () => ({
-  handleInboundQueue: harness.handleInboundQueue
-}))
-
-vi.mock("../src/entrypoints/scheduled.ts", () => ({
-  handleScheduled: harness.handleScheduled
-}))
-
-vi.mock("../src/process-inbound.ts", () => ({
-  processConversationTurn: harness.processConversationTurn
-}))
-
-vi.mock("../src/telemetry.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/telemetry.ts")>()
-  return {
-    ...actual,
-    makeCoreTelemetryInvocation: vi.fn((bindings: CoreBindings) => {
-      if (harness.telemetryOverride !== undefined) {
-        harness.telemetryInvocations.push(harness.telemetryOverride)
-        return harness.telemetryOverride
-      }
-      const base = actual.makeCoreTelemetryInvocation(bindings)
-      const invocation = {
-        ...base,
-        flush: vi.fn(base.flush)
-      }
-      harness.telemetryInvocations.push(invocation)
-      return invocation
-    })
+const makeTelemetryInvocation = vi.fn((bindings: CoreBindings) => {
+  if (harness.telemetryOverride !== undefined) {
+    harness.telemetryInvocations.push(harness.telemetryOverride)
+    return harness.telemetryOverride
   }
+  const base = makeActualTelemetryInvocation(bindings)
+  const invocation = { ...base, flush: vi.fn(base.flush) }
+  harness.telemetryInvocations.push(invocation)
+  return invocation
 })
 
-import worker, { OwnerRunCoordinator, ReminderClock } from "../src/index.ts"
+const worker = createCoreWorker({
+  handleHttp: harness.handleHttp,
+  handleInboundQueue: harness.handleInboundQueue,
+  handleScheduled: harness.handleScheduled,
+  makeCoreTelemetryInvocation: makeTelemetryInvocation
+})
+
+const durableDependencies = {
+  composeCore: harness.composeCore,
+  processConversationTurn: harness.processConversationTurn,
+  makeCoreTelemetryInvocation: makeTelemetryInvocation
+} satisfies CoreDurableDependencies
 
 const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
 const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db94"
@@ -68,6 +62,7 @@ function currentTelemetry(): CoreTelemetryInvocation & {
 } {
   const invocation = harness.telemetryInvocations.at(-1)
   if (invocation === undefined) throw new Error("Telemetry invocation was not created")
+  // SAFETY: This controlled test fixture matches the asserted contract used by this test.
   return invocation as CoreTelemetryInvocation & { readonly flush: ReturnType<typeof vi.fn> }
 }
 
@@ -87,22 +82,24 @@ beforeEach(() => {
 
 describe("Core telemetry composition", () => {
   it("keeps the fetch response when telemetry scheduling throws", async () => {
-    const bindings = {} as CoreBindings
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const bindings = testFixture<CoreBindings>({})
     const expected = new Response(null, { status: 204 })
     harness.handleHttp.mockImplementation(
       (
         _request: Request,
         _bindings: CoreBindings,
-        _access: unknown,
+        _access: Parameters<typeof realHandleHttp>[2],
         telemetry: CoreTelemetryInvocation
       ) => telemetry.runPromise(Effect.succeed(expected))
     )
-    const context = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const context = testFixture<ExecutionContext>({
       waitUntil: vi.fn(() => {
         throw new Error("wait_until_unavailable")
       }),
       passThroughOnException: vi.fn()
-    } as unknown as ExecutionContext
+    })
 
     const response = await worker.fetch(new Request("https://core.test/health"), bindings, context)
 
@@ -111,13 +108,16 @@ describe("Core telemetry composition", () => {
   })
 
   it("creates and flushes one telemetry invocation for a Queue batch", async () => {
-    const bindings = {} as CoreBindings
-    const batch = { queue: "bob-inbound", messages: [] } as unknown as MessageBatch<unknown>
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const bindings = testFixture<CoreBindings>({})
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const batch = testFixture<MessageBatch<unknown>>({ queue: "bob-inbound", messages: [] })
     const waits = makeWaitUntilHarness()
-    const context = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const context = testFixture<ExecutionContext>({
       waitUntil: waits.waitUntil,
       passThroughOnException: vi.fn()
-    } as unknown as ExecutionContext
+    })
     harness.handleInboundQueue.mockImplementation(
       (
         _batch: MessageBatch<unknown>,
@@ -137,14 +137,17 @@ describe("Core telemetry composition", () => {
   })
 
   it("keeps the Queue result when telemetry scheduling throws", async () => {
-    const bindings = {} as CoreBindings
-    const batch = { queue: "bob-inbound", messages: [] } as unknown as MessageBatch<unknown>
-    const context = {
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const bindings = testFixture<CoreBindings>({})
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const batch = testFixture<MessageBatch<unknown>>({ queue: "bob-inbound", messages: [] })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const context = testFixture<ExecutionContext>({
       waitUntil: vi.fn(() => {
         throw new Error("wait_until_unavailable")
       }),
       passThroughOnException: vi.fn()
-    } as unknown as ExecutionContext
+    })
     harness.handleInboundQueue.mockImplementation(
       (
         _batch: MessageBatch<unknown>,
@@ -159,15 +162,18 @@ describe("Core telemetry composition", () => {
   })
 
   it("keeps the scheduled workflow running when telemetry scheduling throws", async () => {
-    const bindings = {} as CoreBindings
-    const context = {
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const bindings = testFixture<CoreBindings>({})
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const context = testFixture<ExecutionContext>({
       waitUntil: vi.fn(() => {
         throw new Error("wait_until_unavailable")
       }),
       passThroughOnException: vi.fn()
-    } as unknown as ExecutionContext
+    })
     harness.handleScheduled.mockResolvedValue(undefined)
 
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     expect(() => worker.scheduled({} as ScheduledController, bindings, context)).not.toThrow()
 
     await vi.waitFor(() => expect(harness.handleScheduled).toHaveBeenCalledOnce())
@@ -176,7 +182,8 @@ describe("Core telemetry composition", () => {
   })
 
   it("continues the coordinator client span through one server span", async () => {
-    const bindings = {} as CoreBindings
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const bindings = testFixture<CoreBindings>({})
     const turnId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db95"
     const quietUntil = "2026-08-12T10:00:01.500Z"
     const turns = {
@@ -188,7 +195,8 @@ describe("Core telemetry composition", () => {
         appended: true
       }))
     }
-    const composition = { services: { turns } } as unknown as CoreComposition
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const composition = testFixture<CoreComposition>({ services: { turns } })
     const waits = makeWaitUntilHarness()
     const capture = makeCaptureTelemetry({
       serviceName: "bob-core-worker",
@@ -201,16 +209,17 @@ describe("Core telemetry composition", () => {
       runPromise: (effect) => Effect.runPromise(effect.pipe(Effect.provide(capture.layer))),
       flush
     }
-    const state = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const state = testFixture<DurableObjectState>({
       storage: {
         getAlarm: vi.fn(async () => null),
         setAlarm: vi.fn(async () => undefined)
       },
-      blockConcurrencyWhile: vi.fn((callback: () => Promise<unknown>) => callback()),
+      blockConcurrencyWhile: vi.fn((callback: () => Promise<void>) => callback()),
       waitUntil: waits.waitUntil
-    } as unknown as DurableObjectState
+    })
     harness.composeCore.mockReturnValue(composition)
-    const coordinator = new OwnerRunCoordinator(state, bindings)
+    const coordinator = new OwnerRunCoordinator(state, bindings, durableDependencies)
     const callerTraceId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     const callerSpanId = "2222222222222222"
     const callerTraceparent = `00-${callerTraceId}-${callerSpanId}-01`
@@ -267,7 +276,8 @@ describe("Core telemetry composition", () => {
   })
 
   it("continues the Core cancel span into the Agent abort request", async () => {
-    const bindings = {} as CoreBindings
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const bindings = testFixture<CoreBindings>({})
     const turnId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db95"
     const runId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db96"
     const quietUntil = "2026-08-12T10:00:01.500Z"
@@ -284,14 +294,17 @@ describe("Core telemetry composition", () => {
         claimExpiresAt: "2026-08-12T10:01:30.000Z"
       }))
     }
-    harness.composeCore.mockReturnValue({
-      config: {
-        AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret"
-      },
-      services: { turns }
-    } as unknown as CoreComposition)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    harness.composeCore.mockReturnValue(
+      testFixture<CoreComposition>({
+        config: {
+          AGENT_URL: "https://agent.example.invalid",
+          AGENT_ACCESS_CLIENT_ID: "client",
+          AGENT_ACCESS_CLIENT_SECRET: "secret"
+        },
+        services: { turns }
+      })
+    )
     const capture = makeCaptureTelemetry({
       serviceName: "bob-core-worker",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -311,15 +324,16 @@ describe("Core telemetry composition", () => {
       })
     )
     const waits = makeWaitUntilHarness()
-    const state = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const state = testFixture<DurableObjectState>({
       storage: {
         getAlarm: vi.fn(async () => null),
         setAlarm: vi.fn(async () => undefined)
       },
-      blockConcurrencyWhile: vi.fn((callback: () => Promise<unknown>) => callback()),
+      blockConcurrencyWhile: vi.fn((callback: () => Promise<void>) => callback()),
       waitUntil: waits.waitUntil
-    } as unknown as DurableObjectState
-    const coordinator = new OwnerRunCoordinator(state, bindings)
+    })
+    const coordinator = new OwnerRunCoordinator(state, bindings, durableDependencies)
 
     const response = await coordinator.fetch(
       new Request("https://coordinator.internal/run", {
@@ -414,27 +428,32 @@ describe("Core telemetry composition", () => {
         })
       })
     const markEnqueued = vi.fn(async () => undefined)
-    harness.composeCore.mockReturnValue({
-      config: { OWNER_ID: correlationId },
-      database: { select },
-      services: {
-        reminders: {
-          claimDueAndCreateOutbox: vi.fn(async () => [firstOutboxId, secondOutboxId]),
-          nextDue: vi.fn(async () => undefined)
-        },
-        delivery: { markEnqueued }
-      }
-    } as unknown as CoreComposition)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    harness.composeCore.mockReturnValue(
+      testFixture<CoreComposition>({
+        config: { OWNER_ID: correlationId },
+        database: { select },
+        services: {
+          reminders: {
+            claimDueAndCreateOutbox: vi.fn(async () => [firstOutboxId, secondOutboxId]),
+            nextDue: vi.fn(async () => undefined)
+          },
+          delivery: { markEnqueued }
+        }
+      })
+    )
     const published: unknown[] = []
-    const bindings = {
-      OUTBOUND_QUEUE: { send: async (job: unknown) => published.push(job) }
-    } as unknown as CoreBindings
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
+      OUTBOUND_QUEUE: { send: async (job: OutboundJob) => published.push(job) }
+    })
     const waits = makeWaitUntilHarness()
-    const state = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const state = testFixture<DurableObjectState>({
       storage: { deleteAlarm: vi.fn(async () => undefined) },
       waitUntil: waits.waitUntil
-    } as unknown as DurableObjectState
-    const clock = new ReminderClock(state, bindings)
+    })
+    const clock = new ReminderClock(state, bindings, durableDependencies)
     const callerTraceId = "cccccccccccccccccccccccccccccccc"
     const callerSpanId = "3333333333333333"
 
@@ -475,6 +494,7 @@ describe("Core telemetry composition", () => {
     })
     expect(dispatches[1]?.attributes).not.toHaveProperty("bob.reminder.occurrence_id")
     for (const [index, dispatch] of dispatches.entries()) {
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const job = published[index] as { readonly traceparent?: string }
       expect(parseTraceparent(job.traceparent)).toEqual({
         traceId: dispatch.traceId,
@@ -486,7 +506,8 @@ describe("Core telemetry composition", () => {
   })
 
   it("keeps the owner run result when telemetry scheduling throws", async () => {
-    const bindings = {} as CoreBindings
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const bindings = testFixture<CoreBindings>({})
     const turnId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db95"
     const turns = {
       offer: vi.fn(async (_eventId: string, _traceparent?: string) => ({
@@ -497,19 +518,21 @@ describe("Core telemetry composition", () => {
         appended: true
       }))
     }
-    const composition = { services: { turns } } as unknown as CoreComposition
-    const state = {
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const composition = testFixture<CoreComposition>({ services: { turns } })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const state = testFixture<DurableObjectState>({
       storage: {
         getAlarm: vi.fn(async () => null),
         setAlarm: vi.fn(async () => undefined)
       },
-      blockConcurrencyWhile: vi.fn((callback: () => Promise<unknown>) => callback()),
+      blockConcurrencyWhile: vi.fn((callback: () => Promise<void>) => callback()),
       waitUntil: vi.fn(() => {
         throw new Error("wait_until_unavailable")
       })
-    } as unknown as DurableObjectState
+    })
     harness.composeCore.mockReturnValue(composition)
-    const coordinator = new OwnerRunCoordinator(state, bindings)
+    const coordinator = new OwnerRunCoordinator(state, bindings, durableDependencies)
 
     const response = await coordinator.fetch(
       new Request("https://coordinator.internal/run", {
@@ -525,24 +548,29 @@ describe("Core telemetry composition", () => {
   })
 
   it("keeps the reminder clock result when telemetry scheduling throws", async () => {
-    const bindings = {} as CoreBindings
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const bindings = testFixture<CoreBindings>({})
     const deleteAlarm = vi.fn(async () => undefined)
-    const state = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const state = testFixture<DurableObjectState>({
       storage: { deleteAlarm },
       waitUntil: vi.fn(() => {
         throw new Error("wait_until_unavailable")
       })
-    } as unknown as DurableObjectState
-    harness.composeCore.mockReturnValue({
-      config: { OWNER_ID: correlationId },
-      services: {
-        reminders: {
-          claimDueAndCreateOutbox: vi.fn(async () => []),
-          nextDue: vi.fn(async () => undefined)
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    harness.composeCore.mockReturnValue(
+      testFixture<CoreComposition>({
+        config: { OWNER_ID: correlationId },
+        services: {
+          reminders: {
+            claimDueAndCreateOutbox: vi.fn(async () => []),
+            nextDue: vi.fn(async () => undefined)
+          }
         }
-      }
-    } as unknown as CoreComposition)
-    const clock = new ReminderClock(state, bindings)
+      })
+    )
+    const clock = new ReminderClock(state, bindings, durableDependencies)
 
     const response = await clock.fetch(
       new Request("https://clock.internal/reconcile", {

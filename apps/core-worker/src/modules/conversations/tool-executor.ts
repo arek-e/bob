@@ -4,7 +4,7 @@ import {
   isReadOnlyToolName,
   ToolCommand,
   ToolName,
-  type ToolResult
+  ToolResult
 } from "@bob/contracts/tools"
 import { and, eq, exists, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
@@ -18,6 +18,7 @@ import type { ReminderStore } from "../reminders/store.ts"
 import type { OwnerSettingsStore } from "../settings/store.ts"
 import type { TrainingStore } from "../training/store.ts"
 
+import { JsonObject } from "../../json.ts"
 import { makeConnectionsToolAdapter } from "../connections/tool-adapter.ts"
 import { makeJournalToolAdapter } from "../journal/tool-adapter.ts"
 import { makeMemoryToolAdapter } from "../memory/tool-adapter.ts"
@@ -52,20 +53,20 @@ export async function toolCommandHash(command: typeof ToolCommand.Type): Promise
     .join("")}`
 }
 
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value === "boolean" || typeof value === "number") {
-    return JSON.stringify(value)
-  }
-  if (typeof value === "string") return JSON.stringify(value)
+function isJsonObject(value: typeof Schema.Json.Type): value is typeof JsonObject.Type {
+  return value !== null && !Array.isArray(value) && Object(value) === value
+}
+
+function canonicalJson(value: typeof Schema.Json.Type): string {
+  if (value === null) return JSON.stringify(value)
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>
-    return `{${Object.keys(record)
+  if (isJsonObject(value)) {
+    return `{${Object.keys(value)
       .toSorted()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key] ?? null)}`)
       .join(",")}}`
   }
-  throw new Error("Tool command contains an unsupported value")
+  return JSON.stringify(value)
 }
 
 export type MutationActivity =
@@ -84,7 +85,7 @@ export type MutationActivity =
     }
 
 export interface ToolExecutor {
-  execute(input: unknown): Promise<ToolResult>
+  execute<Input>(input: Input): Promise<ToolResult>
   mutationActivity(runId: string): Promise<MutationActivity>
   expireMutationRecovery(runId: string): Promise<boolean>
 }
@@ -114,11 +115,8 @@ type ToolExecutorImplementation = ToolExecutor & LegacyTrainingProposalAccess
 function hasTrainingModule(training: ToolServices["training"]): training is TrainingModule {
   return (
     "proposeTraining" in training &&
-    typeof training.proposeTraining === "function" &&
     "listTrainingProposals" in training &&
-    typeof training.listTrainingProposals === "function" &&
-    "approveTrainingProposal" in training &&
-    typeof training.approveTrainingProposal === "function"
+    "approveTrainingProposal" in training
   )
 }
 
@@ -295,14 +293,17 @@ export function makeToolExecutor(
     })
   }
 
-  async function encodePrivate(ownerId: string, value: unknown): Promise<string> {
+  async function encodePrivate<Input>(ownerId: string, value: Input): Promise<string> {
     const encrypted = await protection.encryptText(await ownerKey(ownerId), JSON.stringify(value))
     return JSON.stringify(encrypted)
   }
 
-  async function decodePrivate<T>(ownerId: string, value: string): Promise<T> {
-    const encrypted = JSON.parse(value) as { ciphertext: string; iv: string }
-    return JSON.parse(await protection.decryptText(await ownerKey(ownerId), encrypted)) as T
+  async function decodePrivate(ownerId: string, value: string): Promise<ToolResult> {
+    const encrypted = Schema.decodeUnknownSync(
+      Schema.Struct({ ciphertext: Schema.String, iv: Schema.String })
+    )(JSON.parse(value))
+    const plaintext = await protection.decryptText(await ownerKey(ownerId), encrypted)
+    return Schema.decodeUnknownSync(ToolResult)(JSON.parse(plaintext))
   }
 
   async function runContext(runId: string) {
@@ -313,11 +314,9 @@ export function makeToolExecutor(
       .where(eq(agentRuns.id, runId))
       .limit(1)
     if (row === undefined) throw new Error("Agent run not found")
-    const envelope = JSON.parse(row.run.inputSnapshotJson) as {
-      ciphertext: string
-      iv: string
-      keyVersion: number
-    }
+    const envelope = Schema.decodeUnknownSync(
+      Schema.Struct({ ciphertext: Schema.String, iv: Schema.String, keyVersion: Schema.Number })
+    )(JSON.parse(row.run.inputSnapshotJson))
     const request = Schema.decodeUnknownSync(AgentRunRequest)(
       JSON.parse(await protection.decryptText(await ownerKey(row.run.userId), envelope))
     )
@@ -515,13 +514,13 @@ export function makeToolExecutor(
                 : earliest,
           undefined
         )
-        return {
+        const activity = {
           status: "active",
           retryAt,
           recoveryRequired,
-          recoveryExhausted: active.some((row) => row.attemptNumber >= 2),
-          ...(originRevision === undefined ? {} : { originRevision })
-        }
+          recoveryExhausted: active.some((row) => row.attemptNumber >= 2)
+        } as const
+        return originRevision === undefined ? activity : { ...activity, originRevision }
       }
       const completed = rows.filter((row) => row.status === "completed" && row.resultJson !== null)
       if (completed.length > 0) {
@@ -685,7 +684,7 @@ export function makeToolExecutor(
               )
             )
         }
-        return decodePrivate<ToolResult>(command.ownerId, existing.resultJson)
+        return decodePrivate(command.ownerId, existing.resultJson)
       }
 
       const id = randomUuid()
@@ -734,7 +733,7 @@ export function makeToolExecutor(
               )
             )
         }
-        return decodePrivate<ToolResult>(command.ownerId, winner.resultJson)
+        return decodePrivate(command.ownerId, winner.resultJson)
       }
 
       const claimedAt = now()
@@ -769,7 +768,7 @@ export function makeToolExecutor(
           .where(eq(toolCalls.id, winner.id))
           .limit(1)
         if (settled?.resultJson !== null && settled?.resultJson !== undefined) {
-          return decodePrivate<ToolResult>(command.ownerId, settled.resultJson)
+          return decodePrivate(command.ownerId, settled.resultJson)
         }
         return {
           ok: false,
@@ -787,21 +786,27 @@ export function makeToolExecutor(
       )
       const [claimed] = await database
         .update(toolCalls)
-        .set({
-          ...(stableMutationTurnId === undefined
-            ? {}
+        .set(
+          stableMutationTurnId === undefined
+            ? {
+                status: "executing",
+                claimToken,
+                claimedAt: claimedAt.toISOString(),
+                claimExpiresAt: new Date(claimedAt.getTime() + toolLeaseMs).toISOString(),
+                attemptNumber: sql`${toolCalls.attemptNumber} + 1`
+              }
             : {
                 runId: command.runId,
                 toolCallId: command.toolCallId,
                 commandHash,
-                argumentsJson
-              }),
-          status: "executing",
-          claimToken,
-          claimedAt: claimedAt.toISOString(),
-          claimExpiresAt: new Date(claimedAt.getTime() + toolLeaseMs).toISOString(),
-          attemptNumber: sql`${toolCalls.attemptNumber} + 1`
-        })
+                argumentsJson,
+                status: "executing",
+                claimToken,
+                claimedAt: claimedAt.toISOString(),
+                claimExpiresAt: new Date(claimedAt.getTime() + toolLeaseMs).toISOString(),
+                attemptNumber: sql`${toolCalls.attemptNumber} + 1`
+              }
+        )
         .where(
           and(
             eq(toolCalls.id, winner.id),
@@ -847,7 +852,7 @@ export function makeToolExecutor(
             : ((await conversationTurnForRun(settled.runId))?.conversationTurnId ?? undefined)
         if (settled === undefined || !ownsCommand(settled, settledTurnId)) return denied()
         if (settled.resultJson !== null) {
-          return decodePrivate<ToolResult>(command.ownerId, settled.resultJson)
+          return decodePrivate(command.ownerId, settled.resultJson)
         }
         return {
           ok: false,

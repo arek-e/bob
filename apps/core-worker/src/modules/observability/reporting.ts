@@ -1,5 +1,5 @@
 import type { AgentRunResult } from "@bob/contracts/agent"
-import type { EventSink, TelemetryFeature } from "@bob/observability/events"
+import type { EventSink } from "@bob/observability/events"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { AlertStore } from "../alerts/store.ts"
@@ -32,7 +32,7 @@ export async function reportAgentUsage(
     const common = {
       correlationId: input.correlationId,
       runId: input.runId,
-      feature: input.feature as TelemetryFeature,
+      feature: input.feature,
       workflow: "agent_turn" as const
     }
     await emitSafely(events, {

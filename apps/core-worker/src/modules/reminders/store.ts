@@ -403,20 +403,25 @@ export function makeReminderStore(
       }
       const key = (await ownerKey(ownerId)).key
       return Promise.all(
-        rows.map(async (row) => ({
-          id: row.id,
-          displayText: await protection.decryptText(key, {
+        rows.map(async (row) => {
+          const displayText = await protection.decryptText(key, {
             ciphertext: row.displayTextCiphertext,
             iv: row.displayTextIv
-          }),
-          ...(row.nextDueAt === null ? {} : { nextDueAt: row.nextDueAt }),
-          ...(row.nextDueAt === null
-            ? {}
-            : { localDisplayTime: localDisplay(row.nextDueAt, row.timeZone) }),
-          timeZone: row.timeZone,
-          state: row.state,
-          actionTargets: targetsByReminder.get(row.id) ?? []
-        }))
+          })
+          const summary = {
+            id: row.id,
+            displayText,
+            timeZone: row.timeZone,
+            state: row.state,
+            actionTargets: targetsByReminder.get(row.id) ?? []
+          }
+          if (row.nextDueAt === null) return summary
+          return {
+            ...summary,
+            nextDueAt: row.nextDueAt,
+            localDisplayTime: localDisplay(row.nextDueAt, row.timeZone)
+          }
+        })
       )
     },
 

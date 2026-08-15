@@ -1,5 +1,7 @@
 import type { ConnectionProvider } from "@bob/contracts/settings"
 
+import { Schema } from "effect"
+
 export interface ProviderConnection {
   readonly connectionId: string
   readonly provider: ConnectionProvider
@@ -28,25 +30,22 @@ interface ConnectionsGatewayClientOptions {
   readonly timeoutMs?: number
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
-}
-
-function requiredString(value: unknown, field: string): string {
-  if (typeof value !== "string" || value.length === 0) {
-    throw new Error(`Connections Gateway returned an invalid ${field}`)
-  }
-  return value
-}
-
-function provider(value: unknown): ConnectionProvider {
-  if (value !== "google_calendar" && value !== "microsoft_calendar") {
-    throw new Error("Connections Gateway returned an invalid provider")
-  }
-  return value
-}
+const NonEmptyString = Schema.String.check(Schema.isMinLength(1))
+const Provider = Schema.Literals(["google_calendar", "microsoft_calendar"])
+const ConnectSessionResponse = Schema.Struct({
+  connectUrl: NonEmptyString,
+  expiresAt: NonEmptyString
+})
+const ConnectionsResponse = Schema.Struct({
+  connections: Schema.Array(
+    Schema.Struct({
+      connectionId: NonEmptyString,
+      provider: Provider,
+      createdAt: NonEmptyString,
+      healthy: Schema.Boolean
+    })
+  )
+})
 
 export function makeConnectionsGatewayClient(
   options: ConnectionsGatewayClientOptions
@@ -58,55 +57,43 @@ export function makeConnectionsGatewayClient(
   }
   const timeoutMs = options.timeoutMs ?? 10_000
 
-  async function call(path: string, init?: RequestInit): Promise<unknown> {
+  async function call<S extends Schema.ConstraintDecoder<unknown>>(
+    schema: S,
+    path: string,
+    init?: RequestInit
+  ): Promise<S["Type"]> {
+    const headers = new Headers({
+      accept: "application/json",
+      "cf-access-client-id": options.accessClientId,
+      "cf-access-client-secret": options.accessClientSecret
+    })
+    if (init?.body !== undefined) headers.set("content-type", "application/json")
     const response = await request(new URL(path, baseUrl), {
       ...init,
-      headers: {
-        accept: "application/json",
-        "cf-access-client-id": options.accessClientId,
-        "cf-access-client-secret": options.accessClientSecret,
-        ...(init?.body === undefined ? {} : { "content-type": "application/json" })
-      },
+      headers,
       signal: AbortSignal.timeout(timeoutMs)
     })
     if (!response.ok)
       throw new Error(`Connections Gateway request failed with status ${response.status}`)
-    return response.status === 204 ? undefined : response.json()
+    return Schema.decodeUnknownSync(schema)(await response.json())
   }
 
   return {
     async createConnectSession(input) {
-      const response = record(
-        await call("/v1/connect-sessions", {
-          method: "POST",
-          body: JSON.stringify(input)
-        })
-      )
+      const response = await call(ConnectSessionResponse, "/v1/connect-sessions", {
+        method: "POST",
+        body: JSON.stringify(input)
+      })
       return {
-        connectUrl: requiredString(response?.connectUrl, "connect URL"),
-        expiresAt: requiredString(response?.expiresAt, "connect session expiry")
+        connectUrl: response.connectUrl,
+        expiresAt: response.expiresAt
       }
     },
 
     async listConnections(ownerId) {
       const query = new URLSearchParams({ ownerId })
-      const response = record(await call(`/v1/connections?${query.toString()}`))
-      const connections = response?.connections
-      if (!Array.isArray(connections)) {
-        throw new Error("Connections Gateway returned an invalid connection list")
-      }
-      return connections.map((value) => {
-        const connection = record(value)
-        if (connection === undefined) {
-          throw new Error("Connections Gateway returned an invalid connection")
-        }
-        return {
-          connectionId: requiredString(connection.connectionId, "connection ID"),
-          provider: provider(connection.provider),
-          createdAt: requiredString(connection.createdAt, "connection date"),
-          healthy: connection.healthy === true
-        }
-      })
+      const response = await call(ConnectionsResponse, `/v1/connections?${query.toString()}`)
+      return response.connections
     }
   }
 }

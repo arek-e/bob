@@ -51,9 +51,9 @@ export function completeEffect(
 export async function completedEffectAfterConflict(
   database: CoreDatabase,
   identity: EffectIdentity,
-  error: unknown
+  cause: unknown
 ): Promise<string> {
   const completed = await completedEffect(database, identity)
   if (completed !== undefined) return completed
-  throw error
+  throw cause
 }

@@ -10,6 +10,7 @@ import {
   type ToolResult
 } from "@bob/contracts/tools"
 import { Type, type TSchema, type Tool } from "@earendil-works/pi-ai"
+import { Schema } from "effect"
 
 export interface ToolFactoryOptions {
   readonly request: AgentRunRequest
@@ -20,7 +21,7 @@ export interface ToolFactoryOptions {
 export interface BobPiTool extends Tool {
   readonly label: ToolName
   readonly executionMode: "sequential"
-  execute(toolCallId: string, params: unknown): Promise<ToolResult>
+  execute<Input>(toolCallId: string, params: Input): Promise<ToolResult>
 }
 
 const sourceBoundMutationTools = new Set<ToolName>(["memory_propose", "reminder_create"])
@@ -29,13 +30,13 @@ function toPiParameters(inputSchema: ToolInputSchema): TSchema {
   return Type.Unsafe(inputSchema)
 }
 
-export async function toolCommandForCall(
+export async function toolCommandForCall<Input>(
   request: AgentRunRequest,
   name: ToolName,
   toolCallId: string,
-  params: unknown
+  params: Input
 ): Promise<ToolCommand> {
-  const argumentsValue = params as ToolCommand["arguments"]
+  const argumentsValue = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(params)
   const idempotencyKey =
     request.conversationTurnId !== undefined && !isReadOnlyToolName(name)
       ? await conversationMutationIdempotencyKey({

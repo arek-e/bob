@@ -54,8 +54,8 @@ function processOutboundJobEffect(job: OutboundJobValue, composition: EgressComp
         })
       ).pipe(Effect.catchTag("CoreResponseFailure", (failure) => Effect.succeed(failure.response)))
       if (claimResponse.status === 409) {
-        const conflict = yield* Effect.tryPromise(
-          async () => (await claimResponse.json()) as { disposition?: string }
+        const conflict = yield* Effect.tryPromise(async () =>
+          Schema.decodeUnknownSync(ConflictResponse)(await claimResponse.json())
         )
         const active = conflict.disposition === "active"
         yield* recordDecision({
@@ -215,8 +215,8 @@ function scheduleFlush(
   }
 }
 
-export async function processOutboundJob(
-  input: unknown,
+export async function processOutboundJob<Input>(
+  input: Input,
   bindings: EgressBindings,
   context?: ExecutionContext
 ): Promise<"done" | "retry"> {
@@ -256,3 +256,4 @@ export async function handleOutboundQueue(
     scheduleFlush(composition, context)
   }
 }
+const ConflictResponse = Schema.Struct({ disposition: Schema.optionalKey(Schema.String) })

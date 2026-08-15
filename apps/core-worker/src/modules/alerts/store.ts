@@ -104,7 +104,9 @@ export function makeAlertStore(
       const at = now().toISOString()
       await database
         .update(operationalAlerts)
-        .set({ state, updatedAt: at, ...(state === "resolved" ? { resolvedAt: at } : {}) })
+        .set(
+          state === "resolved" ? { state, updatedAt: at, resolvedAt: at } : { state, updatedAt: at }
+        )
         .where(and(eq(operationalAlerts.id, alertId), eq(operationalAlerts.userId, ownerId)))
     }
   }

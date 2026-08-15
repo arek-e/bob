@@ -136,9 +136,13 @@ async function reminderToolFixture(userText = "Remind me at 13:00.") {
     protection,
     {
       reminders,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       memory: {} as never,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       journal: {} as never,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       training: {} as never,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       settings: {} as never
     },
     { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }

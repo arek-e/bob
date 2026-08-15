@@ -1,35 +1,31 @@
 import { AwsClient } from "aws4fetch"
+import { Schema } from "effect"
 import { readdir, readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 
 import {
   sha256,
   tableHash,
+  BackupRowValue,
   type BackupArchive,
   type BackupRow,
   type BackupTable
 } from "./archive.ts"
 import { DEFAULT_REQUEST_TIMEOUT_MS, requestTimeoutSignal } from "./request.ts"
 
-interface CloudflareEnvelope<T> {
-  readonly success?: boolean
-  readonly result?: T
-}
-
-interface D1DatabaseResult {
-  readonly uuid?: string
-  readonly jurisdiction?: string
-}
-
-interface R2BucketResult {
-  readonly name?: string
-  readonly jurisdiction?: string
-}
-
-interface QueryResult {
-  readonly success?: boolean
-  readonly results?: readonly Record<string, unknown>[]
-}
+const D1DatabaseResult = Schema.Struct({
+  uuid: Schema.optionalKey(Schema.String),
+  jurisdiction: Schema.optionalKey(Schema.String)
+})
+const R2BucketResult = Schema.Struct({
+  name: Schema.optionalKey(Schema.String),
+  jurisdiction: Schema.optionalKey(Schema.String)
+})
+const QueryResult = Schema.Struct({
+  success: Schema.optionalKey(Schema.Boolean),
+  results: Schema.optionalKey(Schema.Array(BackupRowValue))
+})
+const EmptyResult = Schema.Record(Schema.String, Schema.Json)
 
 export interface RestoreDrillOptions {
   readonly accountId: string
@@ -193,28 +189,6 @@ function safeIdentifier(name: string): string {
   return `"${name}"`
 }
 
-function rowValue(value: unknown): BackupRow[string] {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value
-  }
-  if (
-    Array.isArray(value) &&
-    value.every((item) => Number.isInteger(item) && item >= 0 && item < 256)
-  ) {
-    return value as number[]
-  }
-  throw new Error("Restore drill D1 query returned an unsupported value")
-}
-
-function normalizeRow(row: Record<string, unknown>): BackupRow {
-  return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, rowValue(value)]))
-}
-
 function unquotedIdentifier(match: RegExpMatchArray): string | undefined {
   return match[1] ?? match[2]
 }
@@ -289,10 +263,12 @@ function migrationLedgerStatements(
   ]
 }
 
-function insertStatement(
-  table: string,
-  row: BackupRow
-): { sql: string; params: readonly unknown[] } {
+interface SqlStatement {
+  sql: string
+  params: readonly unknown[]
+}
+
+function insertStatement(table: string, row: BackupRow): SqlStatement {
   const columns = Object.keys(row).sort((left, right) => left.localeCompare(right))
   if (columns.length === 0) throw new Error("Backup row has no columns")
   return {
@@ -328,18 +304,21 @@ export function makeRestoreDrill(options: RestoreDrillOptions) {
     return timedRequest(await aws.sign(input, init))
   }
 
-  async function cloudflare<T>(url: string, init: RequestInit): Promise<T> {
+  async function cloudflare<S extends Schema.ConstraintDecoder<unknown>>(
+    schema: S,
+    url: string,
+    init: RequestInit
+  ): Promise<S["Type"]> {
     const response = await timedRequest(url, {
       ...init,
       headers: { ...headers, ...init.headers }
     })
     if (!response.ok)
       throw new Error(`Restore drill API request failed with status ${response.status}`)
-    const body = (await response.json()) as CloudflareEnvelope<T>
-    if (body.success !== true || body.result === undefined) {
-      throw new Error("Restore drill API returned an invalid result")
-    }
-    return body.result
+    const body = Schema.decodeUnknownSync(
+      Schema.Struct({ success: Schema.Literal(true), result: Schema.Json })
+    )(await response.json())
+    return Schema.decodeUnknownSync(schema)(body.result)
   }
 
   async function execute(
@@ -347,7 +326,8 @@ export function makeRestoreDrill(options: RestoreDrillOptions) {
     batch: readonly { sql: string; params: readonly unknown[] }[]
   ) {
     if (batch.length === 0) return
-    const results = await cloudflare<readonly QueryResult[]>(
+    const results = await cloudflare(
+      Schema.Array(QueryResult),
       `${accountBase}/${encodeURIComponent(databaseId)}/query`,
       { method: "POST", body: JSON.stringify({ batch }) }
     )
@@ -357,7 +337,8 @@ export function makeRestoreDrill(options: RestoreDrillOptions) {
   }
 
   async function queryRows(databaseId: string, sql: string): Promise<readonly BackupRow[]> {
-    const results = await cloudflare<readonly QueryResult[]>(
+    const results = await cloudflare(
+      Schema.Array(QueryResult),
       `${accountBase}/${encodeURIComponent(databaseId)}/query`,
       { method: "POST", body: JSON.stringify({ sql, params: [] }) }
     )
@@ -365,7 +346,7 @@ export function makeRestoreDrill(options: RestoreDrillOptions) {
     if (result?.success !== true || !Array.isArray(result.results)) {
       throw new Error("Restore drill D1 query returned an invalid result")
     }
-    return result.results.map(normalizeRow)
+    return result.results
   }
 
   return {
@@ -374,7 +355,7 @@ export function makeRestoreDrill(options: RestoreDrillOptions) {
       const suffix = randomUuid().replaceAll("-", "").slice(0, 12)
       const name = `${options.databasePrefix}-${suffix}`
       const bucketName = `${options.r2BucketPrefix}-${suffix}-objects`
-      const created = await cloudflare<D1DatabaseResult>(accountBase, {
+      const created = await cloudflare(D1DatabaseResult, accountBase, {
         method: "POST",
         body: JSON.stringify({
           name,
@@ -422,7 +403,7 @@ export function makeRestoreDrill(options: RestoreDrillOptions) {
           }
         }
         if (archive.objects.length > 0) {
-          const bucket = await cloudflare<R2BucketResult>(r2ControlBase, {
+          const bucket = await cloudflare(R2BucketResult, r2ControlBase, {
             method: "POST",
             headers: { "cf-r2-jurisdiction": "eu" },
             body: JSON.stringify({ name: bucketName, locationHint: "eeur" })
@@ -470,20 +451,19 @@ export function makeRestoreDrill(options: RestoreDrillOptions) {
         }
         if (bucketCreated) {
           try {
-            await cloudflare<Record<string, never>>(
-              `${r2ControlBase}/${encodeURIComponent(bucketName)}`,
-              { method: "DELETE", headers: { "cf-r2-jurisdiction": "eu" } }
-            )
+            await cloudflare(EmptyResult, `${r2ControlBase}/${encodeURIComponent(bucketName)}`, {
+              method: "DELETE",
+              headers: { "cf-r2-jurisdiction": "eu" }
+            })
             bucketDeleted = true
           } catch (error) {
             cleanupErrors.push(error)
           }
         }
         try {
-          await cloudflare<Record<string, never>>(
-            `${accountBase}/${encodeURIComponent(databaseId)}`,
-            { method: "DELETE" }
-          )
+          await cloudflare(EmptyResult, `${accountBase}/${encodeURIComponent(databaseId)}`, {
+            method: "DELETE"
+          })
           deleted = true
         } catch (error) {
           cleanupErrors.push(error)

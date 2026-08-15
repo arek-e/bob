@@ -33,6 +33,7 @@ const collection: Provider.ProviderCollectionService = {
   kind: "ProviderCollection",
   providers,
   get<ResolvedResource extends Resource.ResourceLike>(type: string) {
+    // SAFETY: Every mapped provider is the same resource-agnostic offline provider.
     return providers[type] as Provider.ProviderService<ResolvedResource> | undefined
   }
 }
@@ -42,6 +43,7 @@ const collection: Provider.ProviderCollectionService = {
  * observe resource declarations, but they fail closed if an apply is attempted.
  */
 export function smokeProviders(): ReturnType<typeof Cloudflare.providers> {
+  // SAFETY: The merged layer provides the two services in Cloudflare.providers' return contract.
   return Layer.merge(
     Layer.succeed(Cloudflare.Providers, collection),
     Random.RandomProvider()

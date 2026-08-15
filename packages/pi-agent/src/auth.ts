@@ -126,14 +126,15 @@ export class OpenBaoCredentialStore implements CredentialStore {
             }
       const authMethod = this.options.authMethod ?? "kubernetes"
       const requestSignal = combineSignals(signal, controller.signal)
+      const requestInit: RequestInit = {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      }
+      if (requestSignal !== undefined) Object.assign(requestInit, { signal: requestSignal })
       const response = await this.request(
         `${this.options.address}/v1/auth/${this.authMount}/login`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-          ...(requestSignal === undefined ? {} : { signal: requestSignal })
-        }
+        requestInit
       )
       if (!response.ok)
         throw new Error(`OpenBao ${authMethod} authentication failed: ${response.status}`)
@@ -154,14 +155,18 @@ export class OpenBaoCredentialStore implements CredentialStore {
   ): Promise<VersionedCredential | undefined> {
     const path = this.providerPath(providerId)
     if (path === undefined) return undefined
-    const response = await this.request(`${this.options.address}/v1/${this.mount}/data/${path}`, {
-      headers: { "X-Vault-Token": await this.vaultToken(options?.signal) },
-      ...(options?.signal === undefined ? {} : { signal: options.signal })
-    })
+    const requestInit: RequestInit = {
+      headers: { "X-Vault-Token": await this.vaultToken(options?.signal) }
+    }
+    if (options?.signal !== undefined) Object.assign(requestInit, { signal: options.signal })
+    const response = await this.request(
+      `${this.options.address}/v1/${this.mount}/data/${path}`,
+      requestInit
+    )
     if (response.status === 404) return undefined
     if (!response.ok) throw new Error(`OpenBao credential read failed: ${response.status}`)
     const value = Schema.decodeUnknownSync(KvReadResponse)(await response.json())
-    return { credential: value.data.data as Credential, version: value.data.metadata.version }
+    return { credential: value.data.data, version: value.data.metadata.version }
   }
 
   async read(providerId: string, options?: AuthOperationOptions): Promise<Credential | undefined> {
@@ -185,21 +190,25 @@ export class OpenBaoCredentialStore implements CredentialStore {
       const next = await fn(current?.credential)
       if (next === undefined) return current?.credential
       const validated = Schema.decodeUnknownSync(OAuthRecord)(next)
-      const response = await this.request(`${this.options.address}/v1/${this.mount}/data/${path}`, {
+      const requestInit: RequestInit = {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "X-Vault-Token": await this.vaultToken(options?.signal)
         },
-        body: JSON.stringify({ data: validated, options: { cas: current?.version ?? 0 } }),
-        ...(options?.signal === undefined ? {} : { signal: options.signal })
-      })
+        body: JSON.stringify({ data: validated, options: { cas: current?.version ?? 0 } })
+      }
+      if (options?.signal !== undefined) Object.assign(requestInit, { signal: options.signal })
+      const response = await this.request(
+        `${this.options.address}/v1/${this.mount}/data/${path}`,
+        requestInit
+      )
       if (response.status === 400 || response.status === 409) {
         await this.readVersioned(providerId, options)
         throw new CredentialConflictError()
       }
       if (!response.ok) throw new Error(`OpenBao credential write failed: ${response.status}`)
-      return validated as Credential
+      return validated
     })
   }
 
@@ -209,13 +218,14 @@ export class OpenBaoCredentialStore implements CredentialStore {
     const path = this.providerPath(providerId)
     if (path === undefined) return
     await this.withLock(providerId, async () => {
+      const requestInit: RequestInit = {
+        method: "DELETE",
+        headers: { "X-Vault-Token": await this.vaultToken(options?.signal) }
+      }
+      if (options?.signal !== undefined) Object.assign(requestInit, { signal: options.signal })
       const response = await this.request(
         `${this.options.address}/v1/${this.mount}/metadata/${path}`,
-        {
-          method: "DELETE",
-          headers: { "X-Vault-Token": await this.vaultToken(options?.signal) },
-          ...(options?.signal === undefined ? {} : { signal: options.signal })
-        }
+        requestInit
       )
       if (!response.ok && response.status !== 404) {
         throw new Error(`OpenBao credential deletion failed: ${response.status}`)

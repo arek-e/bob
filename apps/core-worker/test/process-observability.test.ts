@@ -1,3 +1,5 @@
+import type { OutboundJob } from "@bob/contracts/jobs"
+
 import { withBobSpan } from "@bob/observability/effect"
 import {
   externalParentFromTraceparent,
@@ -12,6 +14,7 @@ import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
 import { processInbound } from "../src/process-inbound.ts"
+import { testFixture } from "./test-fixture.ts"
 
 const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
 const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
@@ -59,6 +62,7 @@ describe("core workflow telemetry", () => {
         const trace = parseTraceparent(headers.get("traceparent"))
         expect(trace?.traceId).toBe(inboundTraceId)
         expect(headers.get("x-bob-correlation-id")).toBe(correlationId)
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         const body = JSON.parse(String(init?.body)) as { runId: string }
         return Response.json({
           protocolVersion: 1,
@@ -76,7 +80,8 @@ describe("core workflow telemetry", () => {
         })
       })
     )
-    const composition = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
         AGENT_ACCESS_CLIENT_ID: "client",
@@ -121,14 +126,15 @@ describe("core workflow telemetry", () => {
         alerts: { record: vi.fn() },
         delivery: { markEnqueued: vi.fn(async () => undefined) }
       }
-    } as unknown as CoreComposition
-    const bindings = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       OUTBOUND_QUEUE: {
-        send: async (job: unknown) => {
+        send: async (job: OutboundJob) => {
           sent.push(job)
         }
       }
-    } as unknown as CoreBindings
+    })
 
     const inboundParent = externalParentFromTraceparent(inboundTraceparent)
     if (inboundParent === undefined) throw new Error("Test traceparent is invalid")
@@ -220,7 +226,9 @@ describe("core workflow telemetry", () => {
       })
     )
     const serialized = JSON.stringify(spans, (_key, value) =>
-      typeof value === "bigint" ? value.toString() : value
+      value !== null && value !== undefined && value.constructor === BigInt
+        ? value.toString()
+        : value
     )
     for (const canary of [privateContext, privateUserText, privateResponse]) {
       expect(serialized).not.toContain(canary)

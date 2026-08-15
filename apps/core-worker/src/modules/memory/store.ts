@@ -1,7 +1,7 @@
 import type { BatchItem } from "drizzle-orm/batch"
 
 import { and, desc, eq, isNull, sql } from "drizzle-orm"
-import { Context, Layer } from "effect"
+import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
@@ -110,6 +110,17 @@ const monthLabels = [
   "Nov",
   "Dec"
 ] as const
+
+const OriginClassValue = Schema.Literals([
+  "owner_input",
+  "system_record",
+  "recalled_content",
+  "tool_output",
+  "assistant_output",
+  "background_model"
+])
+const MemorySensitivity = Schema.Literals(["normal", "private", "high"])
+const CandidateStatus = Schema.Literals(["proposed", "disputed"])
 
 function candidateSourceLabel(sourceType: string, createdAt: string): string {
   const [year = "", month = "", day = ""] = createdAt.slice(0, 10).split("-")
@@ -405,7 +416,8 @@ export function makeMemoryStore(
       if (candidate.status !== "proposed" && candidate.status !== "disputed") {
         throw new Error("Memory candidate was already reviewed")
       }
-      if (!canPromoteOrigin(candidate.originClass as OriginClass)) {
+      const originClass = Schema.decodeUnknownSync(OriginClassValue)(candidate.originClass)
+      if (!canPromoteOrigin(originClass)) {
         throw new Error("This memory origin cannot confirm a fact")
       }
       if (
@@ -468,9 +480,9 @@ export function makeMemoryStore(
             }
       const confirmedPolicy = deriveConfirmedMemoryPolicy({
         authority,
-        originClass: candidate.originClass as OriginClass,
+        originClass,
         sourceType: candidate.sourceType,
-        sensitivity: candidate.sensitivity as "normal" | "private" | "high"
+        sensitivity: Schema.decodeUnknownSync(MemorySensitivity)(candidate.sensitivity)
       })
       const previousRevisionId = fact.currentRevisionId
       const statements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
@@ -485,7 +497,7 @@ export function makeMemoryStore(
           dataKeyVersion: owner.version,
           assertionKind:
             candidate.originClass === "system_record" ? "system_recorded" : "user_stated",
-          originClass: candidate.originClass as OriginClass,
+          originClass,
           observedAt: candidate.createdAt,
           extractionConfidence: candidate.extractionConfidence,
           importance: 500,
@@ -695,20 +707,21 @@ export function makeMemoryStore(
                   ciphertext: candidate.proposedValueCiphertext,
                   iv: candidate.proposedValueIv
                 })
-          return {
+          const review = {
             id: candidate.id,
             scope: candidate.scope,
             key: candidate.key,
-            value: JSON.parse(serializedValue) as unknown,
+            value: Schema.decodeUnknownSync(Schema.Json)(JSON.parse(serializedValue)),
             canonicalText,
-            originClass: candidate.originClass as OriginClass,
+            originClass: Schema.decodeUnknownSync(OriginClassValue)(candidate.originClass),
             sourceType: candidate.sourceType,
             sourceId: candidate.sourceId,
             sourceLabel: candidateSourceLabel(candidate.sourceType, candidate.createdAt),
-            sensitivity: candidate.sensitivity as "normal" | "private" | "high",
-            status: candidate.status as "proposed" | "disputed",
+            sensitivity: Schema.decodeUnknownSync(MemorySensitivity)(candidate.sensitivity),
+            status: Schema.decodeUnknownSync(CandidateStatus)(candidate.status),
             createdAt: candidate.createdAt
           }
+          return review
         })
       )
     },
@@ -744,23 +757,24 @@ export function makeMemoryStore(
         LIMIT 36
       `)
       return rankRetrievalCandidates(
-        rows.map((row, lexicalPosition) => ({
-          id: row.document_id,
-          sourceId: row.source_id,
-          sourceType: row.source_type,
-          text: row.text,
-          sourceLabel: row.source_label,
-          ...(row.occurred_at === null ? {} : { occurredAt: row.occurred_at }),
-          importance: row.importance,
-          lexicalPosition
-        }))
-      ).map(({ id, sourceId, text, sourceLabel, occurredAt }) => ({
-        id,
-        sourceId,
-        text,
-        sourceLabel,
-        ...(occurredAt === undefined ? {} : { occurredAt })
-      }))
+        rows.map((row, lexicalPosition) => {
+          const candidate = {
+            id: row.document_id,
+            sourceId: row.source_id,
+            sourceType: row.source_type,
+            text: row.text,
+            sourceLabel: row.source_label,
+            importance: row.importance,
+            lexicalPosition
+          }
+          return row.occurred_at === null
+            ? candidate
+            : { ...candidate, occurredAt: row.occurred_at }
+        })
+      ).map(({ id, sourceId, text, sourceLabel, occurredAt }) => {
+        const result = { id, sourceId, text, sourceLabel }
+        return occurredAt === undefined ? result : { ...result, occurredAt }
+      })
     }
   }
 }

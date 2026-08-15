@@ -1,8 +1,9 @@
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { makeCloudflareBackupSource } from "../src/cloudflare.ts"
 
-function json(value: unknown): Response {
+function json(value: typeof Schema.Json.Type): Response {
   return Response.json({ success: true, result: [{ success: true, results: value }] })
 }
 
@@ -12,6 +13,7 @@ describe("Cloudflare backup source", () => {
       const request = input instanceof Request ? input : new Request(input, init)
       const url = new URL(request.url)
       if (url.hostname === "api.cloudflare.com") {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         const body = (await request.json()) as {
           readonly sql?: string
           readonly batch?: readonly { readonly sql: string }[]
@@ -56,6 +58,7 @@ describe("Cloudflare backup source", () => {
       const url = new URL(request.url)
       requests.push(`${request.method} ${url.pathname}${url.search}`)
       if (url.hostname === "api.cloudflare.com") {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         const body = (await request.json()) as {
           readonly sql?: string
           readonly batch?: readonly { readonly sql: string }[]

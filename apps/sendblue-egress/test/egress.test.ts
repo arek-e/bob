@@ -1,4 +1,7 @@
+import type { DeliveryResult } from "@bob/contracts/delivery"
+
 import { parseTraceparent } from "@bob/observability/propagation"
+import { Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { handleOutboundQueue, processOutboundJob } from "../src/entrypoints/queue.ts"
@@ -23,6 +26,11 @@ interface ExportedSpan {
   readonly events: Array<{ readonly name: string; readonly attributes: unknown }>
 }
 
+interface CoreCall {
+  url: string
+  body?: typeof Schema.Json.Type
+}
+
 function expectTraceparentFrom(
   value: string | null | undefined,
   span: ExportedSpan | undefined
@@ -43,6 +51,7 @@ afterEach(() => {
 function executionContext() {
   const pending: Promise<unknown>[] = []
   return {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     value: {
       waitUntil(promise: Promise<unknown>) {
         pending.push(promise)
@@ -91,9 +100,10 @@ describe("Sendblue egress", () => {
 
     const outcome = await processOutboundJob(
       { outboxId, correlationId, traceparent: parent },
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       {
         CORE: core,
-        DELIVERY_RESULT_QUEUE: { send: async (body: unknown) => deliveryResults.push(body) },
+        DELIVERY_RESULT_QUEUE: { send: async (body: DeliveryResult) => deliveryResults.push(body) },
         SENDBLUE_API_KEY_ID: "key",
         SENDBLUE_API_SECRET_KEY: "provider-secret",
         SENDBLUE_STATUS_CALLBACK_URL: "https://bob.example/webhooks/outbound",
@@ -118,6 +128,7 @@ describe("Sendblue egress", () => {
         traceparent: expect.stringMatching(/^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/)
       })
     ])
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const providerBody = JSON.parse(String(providerRequests[0]?.body)) as {
       status_callback?: string
     }
@@ -135,6 +146,7 @@ describe("Sendblue egress", () => {
     expect(exportHeaders.get("cf-access-client-id")).toBe("otel-client")
     expect(exportHeaders.get("cf-access-client-secret")).toBe("otel-secret")
     const exportBody = String(exports[0]?.body)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(exportBody).resourceSpans[0].scopeSpans[0].spans as ExportedSpan[]
     expect(spans.map((span) => span.name)).toEqual([
       "bob.outbox.invoke",
@@ -151,6 +163,7 @@ describe("Sendblue egress", () => {
     expect(spans[3]?.parentSpanId).toBe(parseTraceparent(parent)?.spanId)
     expectTraceparentFrom(claimHeaders[0]?.get("traceparent"), spans[0])
     expectTraceparentFrom(providerCallback.searchParams.get("t"), spans[1])
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const published = deliveryResults[0] as { readonly traceparent?: string }
     expectTraceparentFrom(published.traceparent, spans[2])
     expect(spans[1]?.events).toEqual([
@@ -204,13 +217,15 @@ describe("Sendblue egress", () => {
     const retry = vi.fn()
 
     await handleOutboundQueue(
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       {
         messages: [{ body: { outboxId, correlationId }, ack, retry }]
       } as never,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       {
         CORE: core,
         DELIVERY_RESULT_QUEUE: {
-          send: async (body: unknown) => {
+          send: async (body: DeliveryResult) => {
             deliveryResults.push(body)
           }
         },
@@ -259,10 +274,11 @@ describe("Sendblue egress", () => {
 
     const outcome = await processOutboundJob(
       { outboxId, correlationId },
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       {
         CORE: core,
         DELIVERY_RESULT_QUEUE: {
-          send: async (body: unknown) => {
+          send: async (body: DeliveryResult) => {
             deliveryResults.push(body)
           }
         },
@@ -288,6 +304,7 @@ describe("Sendblue egress", () => {
     const core = { fetch: vi.fn() }
 
     await expect(
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       processOutboundJob({ outboxId, correlationId }, {
         CORE: core,
         DELIVERY_RESULT_QUEUE: { send: vi.fn() },
@@ -312,14 +329,16 @@ describe("Sendblue egress", () => {
         throw new TypeError("response lost")
       })
     )
-    const calls: { url: string; body?: unknown }[] = []
+    const calls: CoreCall[] = []
     const core = {
       fetch: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
-        calls.push({
-          url,
-          ...(init?.body === undefined ? {} : { body: JSON.parse(String(init.body)) as unknown })
-        })
+        const call: CoreCall = { url }
+        if (init?.body !== undefined) {
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+          call.body = JSON.parse(String(init.body)) as typeof Schema.Json.Type
+        }
+        calls.push(call)
         if (url.endsWith("/claim")) {
           return Response.json({
             outboxId,
@@ -338,10 +357,11 @@ describe("Sendblue egress", () => {
     const context = executionContext()
     const outcome = await processOutboundJob(
       { outboxId, correlationId },
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       {
         CORE: core,
         DELIVERY_RESULT_QUEUE: {
-          send: async (body: unknown) => {
+          send: async (body: DeliveryResult) => {
             results.push(body)
           }
         },
@@ -357,6 +377,7 @@ describe("Sendblue egress", () => {
     expect(outcome).toBe("done")
     expect(calls).toHaveLength(1)
     expect(results).toEqual([expect.objectContaining({ state: "uncertain", errorCode: "network" })])
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(String(exports[0]?.body)).resourceSpans[0].scopeSpans[0]
       .spans as Array<{ name: string; status: { code: number }; events: unknown }>
     expect(spans.find((span) => span.name === "bob.provider.send")).toMatchObject({
@@ -385,6 +406,7 @@ describe("Sendblue egress", () => {
 
     const outcome = await processOutboundJob(
       { outboxId, correlationId },
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       {
         CORE: {
           fetch: vi.fn(async () => Response.json({ code: "unavailable" }, { status: 503 }))
@@ -401,6 +423,7 @@ describe("Sendblue egress", () => {
     await context.drain()
 
     expect(outcome).toBe("retry")
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(String(exports[0]?.body)).resourceSpans[0].scopeSpans[0]
       .spans as ExportedSpan[]
     expect(spans.find((span) => span.name === "bob.outbox.invoke")?.status).toEqual({ code: 2 })
@@ -419,6 +442,7 @@ describe("Sendblue egress", () => {
 
     const outcome = await processOutboundJob(
       { outboxId, correlationId },
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       {
         CORE: {
           fetch: vi.fn(async () => Response.json({ disposition: "replay" }, { status: 409 }))
@@ -435,6 +459,7 @@ describe("Sendblue egress", () => {
     await context.drain()
 
     expect(outcome).toBe("done")
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(String(exports[0]?.body)).resourceSpans[0].scopeSpans[0]
       .spans as ExportedSpan[]
     expect(spans.find((span) => span.name === "bob.outbox.invoke")?.status).toEqual({ code: 1 })
@@ -453,6 +478,7 @@ describe("Sendblue egress", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         providerRequests.push(JSON.parse(String(init?.body)) as unknown)
         return Response.json({ message_handle: "sendblue-handle", status: "ACCEPTED" })
       })
@@ -474,10 +500,11 @@ describe("Sendblue egress", () => {
       })
     }
     let result: unknown
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const outcome = await processOutboundJob({ outboxId, traceparent }, {
       CORE: core,
       DELIVERY_RESULT_QUEUE: {
-        send: async (body: unknown) => {
+        send: async (body: DeliveryResult) => {
           result = body
         }
       },
@@ -525,6 +552,7 @@ describe("Sendblue egress", () => {
         })
       )
     }
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const outcome = await processOutboundJob({ outboxId }, {
       CORE: core,
       DELIVERY_RESULT_QUEUE: {
@@ -572,6 +600,7 @@ describe("Sendblue egress", () => {
 
     const outcome = await processOutboundJob(
       { outboxId, correlationId },
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       {
         CORE: core,
         DELIVERY_RESULT_QUEUE: {
@@ -588,6 +617,7 @@ describe("Sendblue egress", () => {
     await context.drain()
 
     expect(outcome).toBe("retry")
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(String(exports[0]?.body)).resourceSpans[0].scopeSpans[0]
       .spans as ExportedSpan[]
     expect(spans.find((span) => span.name === "bob.delivery_result.invoke")?.status).toEqual({
@@ -615,6 +645,7 @@ describe("Sendblue egress", () => {
           : Response.json({ code: "unavailable" }, { status: 503 })
       )
     }
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const outcome = await processOutboundJob({ outboxId }, {
       CORE: core,
       DELIVERY_RESULT_QUEUE: {

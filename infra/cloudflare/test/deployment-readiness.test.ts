@@ -39,6 +39,7 @@ describe("Coolify production deployment readiness", () => {
 
   it("rejects a backup schedule that exceeds the four-hour RPO", async () => {
     const input = await contract()
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const runtime = JSON.parse(input.runtimeContract) as { backup: { schedule: string } }
     runtime.backup.schedule = "15 */8 * * *"
     expect(() =>

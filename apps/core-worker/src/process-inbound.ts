@@ -1,10 +1,15 @@
 import type { OutboundJob } from "@bob/contracts/jobs"
 import type { TelemetryFeature } from "@bob/observability/events"
 
-import { AgentRunResult, type AgentRunRequest } from "@bob/contracts/agent"
+import { AgentRunResult, type AgentArtifact, type AgentRunRequest } from "@bob/contracts/agent"
 import { modelToolNames } from "@bob/contracts/tools"
 import { featureForTools } from "@bob/observability/attribution"
-import { recordDecision, withBobSpan, type BobDecisionCode } from "@bob/observability/effect"
+import {
+  recordDecision,
+  withBobSpan,
+  type BobDecisionCode,
+  type BobSpan
+} from "@bob/observability/effect"
 import {
   externalParentFromTraceparent,
   formatTraceparent,
@@ -144,6 +149,57 @@ interface OutboxTelemetry {
   readonly runId?: string
 }
 
+function outboxSpan(
+  name: "bob.outbox.create" | "bob.outbox.publish",
+  telemetry: OutboxTelemetry,
+  outboxId?: string
+): BobSpan {
+  const common = {
+    name,
+    correlationId: telemetry.correlationId,
+    feature: telemetry.feature
+  }
+  if (telemetry.runId === undefined && outboxId === undefined) return common
+  if (telemetry.runId === undefined && outboxId !== undefined) return { ...common, outboxId }
+  if (telemetry.runId !== undefined && outboxId === undefined) {
+    return { ...common, runId: telemetry.runId }
+  }
+  if (telemetry.runId === undefined || outboxId === undefined) return common
+  return { ...common, runId: telemetry.runId, outboxId }
+}
+
+function withReplyTarget<Input extends object>(
+  input: Input,
+  replyToMessageHandle: string | undefined
+): Input | (Input & { replyToMessageHandle: string }) {
+  return replyToMessageHandle === undefined ? input : { ...input, replyToMessageHandle }
+}
+
+interface AgentResponseInput {
+  channelId: string
+  text: string
+  reasonCode: string
+  artifact?: AgentArtifact
+  replyToMessageHandle?: string
+}
+
+function agentResponseInput(
+  channelId: string,
+  text: string,
+  reasonCode: string,
+  artifact: AgentArtifact | undefined,
+  replyToMessageHandle: string | undefined
+): AgentResponseInput {
+  const common = { channelId, text, reasonCode }
+  if (artifact === undefined && replyToMessageHandle === undefined) return common
+  if (artifact === undefined && replyToMessageHandle !== undefined) {
+    return { ...common, replyToMessageHandle }
+  }
+  if (artifact !== undefined && replyToMessageHandle === undefined) return { ...common, artifact }
+  if (artifact === undefined || replyToMessageHandle === undefined) return common
+  return { ...common, artifact, replyToMessageHandle }
+}
+
 function publishOutbox(
   bindings: CoreBindings,
   composition: CoreComposition,
@@ -151,13 +207,7 @@ function publishOutbox(
   telemetry: OutboxTelemetry
 ) {
   return withBobSpan(
-    {
-      name: "bob.outbox.publish",
-      correlationId: telemetry.correlationId,
-      feature: telemetry.feature,
-      outboxId,
-      ...(telemetry.runId === undefined ? {} : { runId: telemetry.runId })
-    },
+    outboxSpan("bob.outbox.publish", telemetry, outboxId),
     Effect.gen(function* () {
       const span = yield* Effect.currentSpan
       yield* promiseEffect(() =>
@@ -181,12 +231,7 @@ function createAndPublishOutbox(
   create: () => Promise<string | undefined>
 ) {
   return withBobSpan(
-    {
-      name: "bob.outbox.create",
-      correlationId: telemetry.correlationId,
-      feature: telemetry.feature,
-      ...(telemetry.runId === undefined ? {} : { runId: telemetry.runId })
-    },
+    outboxSpan("bob.outbox.create", telemetry),
     Effect.gen(function* () {
       const outboxId = yield* promiseEffect(create)
       if (outboxId === undefined) return undefined
@@ -213,11 +258,9 @@ function enqueueOutbox(
   return createAndPublishOutbox(
     bindings,
     composition,
-    {
-      correlationId: input.correlationId,
-      feature: featureForReason(input.reasonCode),
-      ...(runId === undefined ? {} : { runId })
-    },
+    runId === undefined
+      ? { correlationId: input.correlationId, feature: featureForReason(input.reasonCode) }
+      : { correlationId: input.correlationId, feature: featureForReason(input.reasonCode), runId },
     () => composition.services.delivery.createOutbox(input)
   )
 }
@@ -235,11 +278,11 @@ function nativeReplyTarget(claimed: ClaimedInbound): string | undefined {
 function messageInteractionLifecycle(composition: CoreComposition, claimed: ClaimedInbound) {
   const eligible = nativeReplyTarget(claimed) !== undefined
   const egressUrl = composition.config.SENDBLUE_EGRESS_URL
-  if (!eligible || typeof egressUrl !== "string" || egressUrl.length === 0) {
+  if (!eligible || egressUrl.length === 0) {
     return { start: Effect.void, stop: Effect.void }
   }
 
-  const post = (body: unknown) =>
+  const post = <Input>(body: Input) =>
     Effect.promise(async () => {
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort("message_interaction_timeout"), 3_000)
@@ -310,15 +353,19 @@ function deterministicReply(
         outcome: "selected"
       })
       if (!(yield* begin())) return true
-      yield* enqueue({
-        ownerId: claimed.ownerId,
-        channelId: claimed.channelId,
-        text: urgent,
-        reasonCode: "urgent_safety",
-        correlationId: claimed.correlationId,
-        idempotencyKey: `${replyIdempotencyScope}:urgent`,
-        ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
-      })
+      yield* enqueue(
+        withReplyTarget(
+          {
+            ownerId: claimed.ownerId,
+            channelId: claimed.channelId,
+            text: urgent,
+            reasonCode: "urgent_safety",
+            correlationId: claimed.correlationId,
+            idempotencyKey: `${replyIdempotencyScope}:urgent`
+          },
+          replyToMessageHandle
+        )
+      )
       return true
     }
 
@@ -337,15 +384,21 @@ function deterministicReply(
           `${actionIdempotencyScope}:training-safety-stop`
         )
       )
-      yield* enqueue({
-        ownerId: claimed.ownerId,
-        channelId: claimed.channelId,
-        text: trainingSafetyResponse(safetyText)!,
-        reasonCode: "training_safety_stop",
-        correlationId: claimed.correlationId,
-        idempotencyKey: `${replyIdempotencyScope}:training-safety-reply`,
-        ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
-      })
+      const safetyResponse = trainingSafetyResponse(safetyText)
+      if (safetyResponse === undefined) return true
+      yield* enqueue(
+        withReplyTarget(
+          {
+            ownerId: claimed.ownerId,
+            channelId: claimed.channelId,
+            text: safetyResponse,
+            reasonCode: "training_safety_stop",
+            correlationId: claimed.correlationId,
+            idempotencyKey: `${replyIdempotencyScope}:training-safety-reply`
+          },
+          replyToMessageHandle
+        )
+      )
       return true
     }
 
@@ -469,15 +522,19 @@ function deterministicReply(
           : "I cannot match UNDO to one safe inverse action. Open Bob to choose an item."
         break
     }
-    yield* enqueue({
-      ownerId: claimed.ownerId,
-      channelId: claimed.channelId,
-      text: response,
-      reasonCode: `command_${command}`,
-      correlationId: claimed.correlationId,
-      idempotencyKey: `${replyIdempotencyScope}:command`,
-      ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
-    })
+    yield* enqueue(
+      withReplyTarget(
+        {
+          ownerId: claimed.ownerId,
+          channelId: claimed.channelId,
+          text: response,
+          reasonCode: `command_${command}`,
+          correlationId: claimed.correlationId,
+          idempotencyKey: `${replyIdempotencyScope}:command`
+        },
+        replyToMessageHandle
+      )
+    )
     return true
   })
 }
@@ -492,13 +549,9 @@ function agentDecisionCode(
   return "provider_failure"
 }
 
-function agentCallErrorCode(error: unknown): NonNullable<AgentRunResult["errorCode"]> {
-  if (error instanceof AgentCallError) return error.code
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    Reflect.get(error, "_tag") === "TimeoutException"
-  ) {
+function agentCallErrorCode(cause: unknown): NonNullable<AgentRunResult["errorCode"]> {
+  if (cause instanceof AgentCallError) return cause.code
+  if (Schema.is(Schema.Struct({ _tag: Schema.Literal("TimeoutException") }))(cause)) {
     return "timeout"
   }
   return "provider"
@@ -507,14 +560,14 @@ function agentCallErrorCode(error: unknown): NonNullable<AgentRunResult["errorCo
 function failedAgentResult(
   request: AgentRunRequest,
   model: string,
-  error: unknown
+  cause: unknown
 ): AgentRunResult {
   return {
     protocolVersion: 1,
     runId: request.runId,
     correlationId: request.correlationId,
     status: "failed",
-    errorCode: agentCallErrorCode(error),
+    errorCode: agentCallErrorCode(cause),
     model,
     durationMs: request.limits.maxDurationMs,
     inputTokens: 0,
@@ -885,20 +938,22 @@ export async function processInbound(
               ]
             : boundedTurnMessages(conversationTurn.messages)
         const currentTurnText = turnMessages.map((message) => message.text).join("\n")
-        const contextBuildRequest = {
+        const contextBuildBase = {
           ownerId: claimed.ownerId,
           channelId: claimed.channelId,
-          ...(conversationTurn === undefined
-            ? {}
-            : {
-                currentConversationTurnId: conversationTurn.turnId,
-                currentConversationTurnRevision: conversationTurn.revision
-              }),
           currentMessageId: claimed.messageId,
           currentUserText: currentTurnText,
           localTime,
           timeZone: ownerSettings.timeZone
         }
+        const contextBuildRequest =
+          conversationTurn === undefined
+            ? contextBuildBase
+            : {
+                ...contextBuildBase,
+                currentConversationTurnId: conversationTurn.turnId,
+                currentConversationTurnRevision: conversationTurn.revision
+              }
         const allowedTools = [...modelToolNames]
         const feature = featureForTools(allowedTools)
         const retrievalStartedAt = Date.now()
@@ -962,39 +1017,30 @@ export async function processInbound(
                 () => composition.services.context.priorToolReceipts?.(contextBuildRequest) ?? []
               )
         if (priorToolReceipts.length > 0) {
-          yield* recordDecision({
+          const decision = {
             name: "bob.decision.steering",
             code: "restart_with_receipts",
             outcome: "applied",
-            selectedCount: priorToolReceipts.length,
-            ...(conversationTurn === undefined
-              ? {}
-              : { conversationRevision: conversationTurn.revision })
-          })
+            selectedCount: priorToolReceipts.length
+          } as const
+          yield* recordDecision(
+            conversationTurn === undefined
+              ? decision
+              : { ...decision, conversationRevision: conversationTurn.revision }
+          )
         }
-        request = {
-          protocolVersion: 1,
+        const requestBase = {
+          protocolVersion: 1 as const,
           runId,
           ownerId: claimed.ownerId,
           correlationId: claimed.correlationId,
           sourceMessageId: claimed.messageId,
-          ...(conversationTurn === undefined
-            ? {}
-            : {
-                conversationTurnId: conversationTurn.turnId,
-                conversationTurnRevision: conversationTurn.revision,
-                currentTurnMessages: turnMessages.map((message) => ({
-                  sourceMessageId: message.messageId,
-                  text: message.text
-                }))
-              }),
           localTime,
           timeZone: ownerSettings.timeZone,
           locale: ownerSettings.locale,
           hourCycle: ownerSettings.hourCycle,
           userText: claimed.text,
           contextItems,
-          ...(priorToolReceipts.length === 0 ? {} : { priorToolReceipts }),
           allowedTools,
           limits: {
             maxTurns: 4,
@@ -1003,6 +1049,22 @@ export async function processInbound(
             maxResponseCharacters: 1_200
           }
         }
+        const requestWithTurn =
+          conversationTurn === undefined
+            ? requestBase
+            : {
+                ...requestBase,
+                conversationTurnId: conversationTurn.turnId,
+                conversationTurnRevision: conversationTurn.revision,
+                currentTurnMessages: turnMessages.map((message) => ({
+                  sourceMessageId: message.messageId,
+                  text: message.text
+                }))
+              }
+        request =
+          priorToolReceipts.length === 0
+            ? requestWithTurn
+            : { ...requestWithTurn, priorToolReceipts }
       }
 
       const agentRequest = request
@@ -1093,12 +1155,16 @@ export async function processInbound(
             runId: agentRequest.runId
           },
           () =>
-            composition.services.runs.completeWithResponse(recovered, {
-              channelId: claimed.channelId,
-              text: "I recovered your request, but its prior response was unavailable. I made no automatic provider change.",
-              reasonCode: "agent_recovery",
-              ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
-            })
+            composition.services.runs.completeWithResponse(
+              recovered,
+              agentResponseInput(
+                claimed.channelId,
+                "I recovered your request, but its prior response was unavailable. I made no automatic provider change.",
+                "agent_recovery",
+                undefined,
+                replyToMessageHandle
+              )
+            )
         )
         return
       }
@@ -1197,24 +1263,33 @@ export async function processInbound(
           (mutationActivity.completedInRun || mutationCompletedDuringRecovery) &&
           !receiptBackedRun)
       ) {
-        yield* recordDecision({
+        const decision = {
           name: "bob.decision.steering",
           code: mutationActivity.status === "active" ? "wait_effect" : "restart_with_receipts",
           outcome: "applied",
-          selectedCount: 1,
-          ...(conversationTurn === undefined
-            ? {}
-            : { conversationRevision: conversationTurn.revision })
-        })
+          selectedCount: 1
+        } as const
+        yield* recordDecision(
+          conversationTurn === undefined
+            ? decision
+            : { ...decision, conversationRevision: conversationTurn.revision }
+        )
         if (conversationTurn === undefined) return
         const transition = yield* promiseEffect(() =>
-          composition.services.runs.completeForReflection(result, runAttemptId, {
-            conversationTurnId: conversationTurn.turnId,
-            conversationTurnRevision: conversationTurn.revision,
-            ...(mutationActivity.status === "active"
-              ? { settleUntil: mutationActivity.retryAt }
-              : {})
-          })
+          composition.services.runs.completeForReflection(
+            result,
+            runAttemptId,
+            mutationActivity.status === "active"
+              ? {
+                  conversationTurnId: conversationTurn.turnId,
+                  conversationTurnRevision: conversationTurn.revision,
+                  settleUntil: mutationActivity.retryAt
+                }
+              : {
+                  conversationTurnId: conversationTurn.turnId,
+                  conversationTurnRevision: conversationTurn.revision
+                }
+          )
         )
         if (transition.status === "lost") return
         if (transition.status === "settling") {
@@ -1260,13 +1335,13 @@ export async function processInbound(
         yield* createAndPublishOutbox(bindings, composition, outboxTelemetry, () =>
           composition.services.runs.completeWithResponse(
             result,
-            {
-              channelId: claimed.channelId,
-              text: response.text,
-              reasonCode: response.reasonCode,
-              ...(response.artifact === undefined ? {} : { artifact: response.artifact }),
-              ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
-            },
+            agentResponseInput(
+              claimed.channelId,
+              response.text,
+              response.reasonCode,
+              response.artifact,
+              replyToMessageHandle
+            ),
             undefined,
             runAttemptId
           )
@@ -1283,13 +1358,13 @@ export async function processInbound(
         promiseEffect(() =>
           composition.services.runs.completeWithResponse(
             result,
-            {
-              channelId: claimed.channelId,
-              text: response.text,
-              reasonCode: response.reasonCode,
-              ...(response.artifact === undefined ? {} : { artifact: response.artifact }),
-              ...(replyToMessageHandle === undefined ? {} : { replyToMessageHandle })
-            },
+            agentResponseInput(
+              claimed.channelId,
+              response.text,
+              response.reasonCode,
+              response.artifact,
+              replyToMessageHandle
+            ),
             {
               conversationTurnId: conversationTurn.turnId,
               conversationTurnRevision: conversationTurn.revision

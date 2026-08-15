@@ -14,6 +14,10 @@ export function useOwnerSession(): OwnerSession {
 
 export function ProtectedLayout(props: { children: JSX.Element }) {
   const [session, setSession] = createSignal<OwnerSession | "loading">("loading")
+  const ownerSession = () => {
+    const value = session()
+    return value === "loading" ? undefined : value
+  }
 
   onMount(async () => {
     try {
@@ -31,16 +35,19 @@ export function ProtectedLayout(props: { children: JSX.Element }) {
 
   return (
     <Show
-      when={session() !== "loading"}
+      when={ownerSession()}
+      keyed
       fallback={
         <div class={styles.routeLoading} role="status" aria-live="polite">
           Loading your private workspace…
         </div>
       }
     >
-      <OwnerSessionContext.Provider value={session() as OwnerSession}>
-        <AppShell session={session() as OwnerSession}>{props.children}</AppShell>
-      </OwnerSessionContext.Provider>
+      {(value) => (
+        <OwnerSessionContext.Provider value={value}>
+          <AppShell session={value}>{props.children}</AppShell>
+        </OwnerSessionContext.Provider>
+      )}
     </Show>
   )
 }

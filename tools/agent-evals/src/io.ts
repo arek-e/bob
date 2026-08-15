@@ -1,3 +1,4 @@
+import { Schema } from "effect"
 import { readFile, stat } from "node:fs/promises"
 
 import type { BenchmarkCatalog, BenchmarkRunLedger } from "./benchmark-tracking.ts"
@@ -8,12 +9,12 @@ import { decodeCandidateSet, decodeEvaluationSuite } from "./schemas.ts"
 
 const MAX_EVALUATION_FILE_BYTES = 1_000_000
 
-async function readJson(path: string | URL): Promise<unknown> {
+async function readJson(path: string | URL): Promise<typeof Schema.Json.Type> {
   const metadata = await stat(path)
   if (!metadata.isFile()) throw new Error("evaluation_input_not_a_file")
   if (metadata.size > MAX_EVALUATION_FILE_BYTES) throw new Error("evaluation_input_too_large")
   try {
-    return JSON.parse(await readFile(path, "utf8")) as unknown
+    return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(await readFile(path, "utf8")))
   } catch (error) {
     if (error instanceof SyntaxError) throw new Error("evaluation_input_invalid_json")
     throw error

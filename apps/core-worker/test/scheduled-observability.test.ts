@@ -1,3 +1,5 @@
+import type { OutboundJob } from "@bob/contracts/jobs"
+
 import { parseTraceparent } from "@bob/observability/propagation"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect } from "effect"
@@ -7,14 +9,17 @@ import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
 import { handleScheduled } from "../src/entrypoints/scheduled.ts"
+import { testFixture } from "./test-fixture.ts"
 
 const compositionHarness = vi.hoisted(() => ({
+  // SAFETY: This focused test double implements every platform member exercised by this test.
   current: undefined as CoreComposition | undefined
 }))
 
-vi.mock("../src/composition.ts", () => ({
-  composeCore: () => compositionHarness.current
-}))
+function composeTestCore(): CoreComposition {
+  if (compositionHarness.current === undefined) throw new Error("Test composition is not set")
+  return compositionHarness.current
+}
 
 const scheduledCorrelationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
 const firstCorrelationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
@@ -82,7 +87,8 @@ describe("Core scheduled telemetry", () => {
       set: () => ({ where: async () => undefined })
     }))
     const markEnqueued = vi.fn(async () => undefined)
-    compositionHarness.current = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    compositionHarness.current = testFixture<CoreComposition>({
       config: { OWNER_ID: scheduledCorrelationId },
       database: { select, update },
       services: {
@@ -95,7 +101,7 @@ describe("Core scheduled telemetry", () => {
           markExpiredResponseDeadlines: vi.fn(async () => 0)
         }
       }
-    } as unknown as CoreComposition
+    })
     const clockRequests: RequestInit[] = []
     const clock = {
       fetch: vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -112,12 +118,13 @@ describe("Core scheduled telemetry", () => {
       Response.json({ retrieved: 0, replayed: 0, skipped: 0 })
     )
     vi.stubGlobal("fetch", recoveryFetch)
-    const bindings = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       REMINDER_CLOCK: { jurisdiction: vi.fn(() => namespace) },
-      OUTBOUND_QUEUE: { send: async (job: unknown) => published.push(job) },
+      OUTBOUND_QUEUE: { send: async (job: OutboundJob) => published.push(job) },
       SENDBLUE_EGRESS_URL: "https://egress.example.invalid",
       EGRESS_CALLER_SECRET: "c".repeat(64)
-    } as unknown as CoreBindings
+    })
 
     await handleScheduled(
       bindings,
@@ -126,7 +133,8 @@ describe("Core scheduled telemetry", () => {
         traceparent,
         scheduledAt: new Date("2026-08-13T10:32:00.000Z")
       },
-      captureRunner(telemetry)
+      captureRunner(telemetry),
+      composeTestCore
     )
 
     const spans = telemetry.finishedSpans()
@@ -148,6 +156,7 @@ describe("Core scheduled telemetry", () => {
       })
     }
     for (const [index, publish] of outboxPublishes.entries()) {
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const job = published[index] as { readonly traceparent?: string }
       expect(parseTraceparent(job.traceparent)).toEqual({
         traceId: publish.traceId,
@@ -216,7 +225,8 @@ describe("Core scheduled telemetry", () => {
         from: () => ({ where: () => ({ limit: async () => pendingOutbox }) })
       })
     const markEnqueued = vi.fn(async () => undefined)
-    compositionHarness.current = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    compositionHarness.current = testFixture<CoreComposition>({
       config: { OWNER_ID: scheduledCorrelationId },
       database: {
         select,
@@ -229,7 +239,7 @@ describe("Core scheduled telemetry", () => {
           markExpiredResponseDeadlines: vi.fn(async () => 0)
         }
       }
-    } as unknown as CoreComposition
+    })
     let commandCount = 0
     const clock = {
       fetch: vi.fn(async (input: RequestInfo | URL) => {
@@ -245,16 +255,22 @@ describe("Core scheduled telemetry", () => {
       get: vi.fn(() => clock)
     }
     const send = vi.fn(async () => undefined)
-    const bindings = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       REMINDER_CLOCK: { jurisdiction: vi.fn(() => namespace) },
       OUTBOUND_QUEUE: { send }
-    } as unknown as CoreBindings
+    })
 
     await expect(
-      handleScheduled(bindings, {
-        correlationId: scheduledCorrelationId,
-        scheduledAt: new Date("2026-08-13T10:31:00.000Z")
-      })
+      handleScheduled(
+        bindings,
+        {
+          correlationId: scheduledCorrelationId,
+          scheduledAt: new Date("2026-08-13T10:31:00.000Z")
+        },
+        undefined,
+        composeTestCore
+      )
     ).rejects.toThrow("scheduled_recovery_failed")
 
     expect(commandCount).toBe(2)

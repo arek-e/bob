@@ -1,9 +1,9 @@
-import type { NormalizedStatusEvent } from "@bob/contracts/channel"
 import type { DeliveryResult, OutboxClaim } from "@bob/contracts/delivery"
 import type { BatchItem } from "drizzle-orm/batch"
 
+import { ProviderDeliveryStatus, type NormalizedStatusEvent } from "@bob/contracts/channel"
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
-import { Context, Layer } from "effect"
+import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
@@ -193,7 +193,11 @@ export function makeDeliveryStore(
     const statements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
       database
         .update(deliveryAttempts)
-        .set({ ...(canAdvance ? { state: next } : {}), updatedAt: event.occurredAt })
+        .set(
+          canAdvance
+            ? { state: next, updatedAt: event.occurredAt }
+            : { updatedAt: event.occurredAt }
+        )
         .where(and(eq(deliveryAttempts.id, attempt.id), eq(deliveryAttempts.state, attempt.state)))
     ]
     if (canAdvance && (next === "delivered" || next === "failed")) {
@@ -545,18 +549,18 @@ export function makeDeliveryStore(
           )
         return undefined
       }
-      return {
+      const claim = {
         outboxId: candidate.id,
         attemptId,
         number,
         fromNumber,
         smsSafeText,
-        ...(candidate.replyToProviderMessageHandle === null
-          ? {}
-          : { replyToMessageHandle: candidate.replyToProviderMessageHandle }),
         correlationId: candidate.correlationId,
         claimedAt: claimedAt.toISOString()
-      } as OutboxClaim
+      }
+      return candidate.replyToProviderMessageHandle === null
+        ? claim
+        : { ...claim, replyToMessageHandle: candidate.replyToProviderMessageHandle }
     },
 
     async recordResult(result) {
@@ -764,7 +768,7 @@ export function makeDeliveryStore(
             accountId: "stored",
             lineId: "stored",
             messageHandle: event.providerMessageHandle,
-            status: event.providerStatus as NormalizedStatusEvent["status"],
+            status: Schema.decodeUnknownSync(ProviderDeliveryStatus)(event.providerStatus),
             occurredAt: event.occurredAt,
             correlationId: event.correlationId
           })
@@ -829,14 +833,16 @@ export function makeDeliveryStore(
                 event.status === "opted_out"
               ? ("failed" as const)
               : ("accepted" as const)
-        readyFollowups = await this.recordResult({
+        const result = {
           outboxId: event.outboxId,
           attemptId: event.attemptId,
           state,
           providerMessageHandle: event.messageHandle,
-          ...(state === "failed" ? { errorCode: event.status } : {}),
           occurredAt: event.occurredAt
-        })
+        }
+        readyFollowups = await this.recordResult(
+          state === "failed" ? { ...result, errorCode: event.status } : result
+        )
       }
 
       await applyProviderEvent(event)
@@ -916,7 +922,7 @@ export function makeDeliveryStore(
             accountId: "stored",
             lineId: "stored",
             messageHandle: event.providerMessageHandle,
-            status: event.providerStatus as NormalizedStatusEvent["status"],
+            status: Schema.decodeUnknownSync(ProviderDeliveryStatus)(event.providerStatus),
             occurredAt: event.occurredAt,
             correlationId: event.correlationId
           })

@@ -1,31 +1,21 @@
 import type { InstanceAuthenticator } from "./identity.ts"
 import type { ConnectionProvider, ConnectionsProvider } from "./nango.ts"
 
-const MAX_BODY_BYTES = 16 * 1024
-const providers = new Set<ConnectionProvider>(["google_calendar", "microsoft_calendar"])
+import { requiredJsonObject, requiredText, type JsonObject } from "./json.ts"
 
-function json(body: unknown, status = 200): Response {
+const MAX_BODY_BYTES = 16 * 1024
+
+function json<Body>(body: Body, status = 200): Response {
   return Response.json(body, {
     status,
     headers: { "cache-control": "no-store" }
   })
 }
 
-function requiredText(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0 || value.length > 200) {
-    throw new Error("invalid_request")
-  }
-  return value
-}
-
-async function readBody(request: Request): Promise<Record<string, unknown>> {
+async function readBody(request: Request): Promise<JsonObject> {
   const text = await request.text()
   if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) throw new Error("body_too_large")
-  const value: unknown = JSON.parse(text)
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("invalid_request")
-  }
-  return value as Record<string, unknown>
+  return requiredJsonObject(JSON.parse(text))
 }
 
 export function createConnectionsGateway(options: {
@@ -42,13 +32,16 @@ export function createConnectionsGateway(options: {
       if (request.method === "POST" && url.pathname === "/v1/connect-sessions") {
         const body = await readBody(request)
         const ownerId = requiredText(body.ownerId)
-        const provider = requiredText(body.provider)
-        if (!providers.has(provider as ConnectionProvider)) throw new Error("invalid_request")
+        const providerValue = requiredText(body.provider)
+        if (providerValue !== "google_calendar" && providerValue !== "microsoft_calendar")
+          throw new Error("invalid_request")
+        const provider: ConnectionProvider =
+          providerValue === "google_calendar" ? "google_calendar" : "microsoft_calendar"
         return json(
           await options.connections.createSession({
             instanceId: identity.instanceId,
             ownerId,
-            provider: provider as ConnectionProvider
+            provider
           }),
           201
         )

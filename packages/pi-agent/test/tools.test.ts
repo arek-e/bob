@@ -134,9 +134,10 @@ describe("Pi training tools", () => {
     })
     if (tool === undefined) throw new Error("Expected memory proposal tool")
 
-    expect(
-      Object.keys((tool.parameters as { properties: Record<string, unknown> }).properties)
-    ).toEqual([
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const parameters = tool.parameters as { properties: typeof Schema.Json.Type }
+    if (!(parameters.properties instanceof Object)) throw new Error("Expected tool properties")
+    expect(Object.keys(parameters.properties)).toEqual([
       "scope",
       "key",
       "value",
@@ -181,6 +182,7 @@ describe("Pi training tools", () => {
     })
     expect(tools.map((tool) => tool.name)).toEqual([...allowedTools])
     for (const tool of tools.slice(0, 3)) {
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const query = (tool.parameters as { properties: { query: { maxLength?: number } } })
         .properties.query
       expect(query.maxLength).toBe(100)

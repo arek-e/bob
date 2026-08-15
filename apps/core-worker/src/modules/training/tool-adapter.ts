@@ -12,12 +12,9 @@ import type {
 } from "../conversations/tool-adapter.ts"
 import type { TrainingModule } from "./module.ts"
 
+import { jsonObject } from "../../json.ts"
 import { isTrainingMutationTool } from "./proposal-store.ts"
 import { isTrainingMutationRequest } from "./rules.ts"
-
-function jsonObject(value: unknown): { readonly [key: string]: typeof Schema.Json.Type } {
-  return JSON.parse(JSON.stringify(value)) as { readonly [key: string]: typeof Schema.Json.Type }
-}
 
 export function makeTrainingToolAdapter(training: TrainingModule): ToolCommandAdapter {
   return {

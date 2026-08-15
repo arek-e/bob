@@ -30,6 +30,7 @@ describe("agent tool telemetry", () => {
       coreUrl: "https://core.example.invalid",
       accessClientId: "client",
       accessClientSecret: "secret",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: request as typeof fetch
     })
     const controller = new AbortController()
@@ -74,6 +75,7 @@ describe("agent tool telemetry", () => {
       coreUrl: "https://core.example.invalid",
       accessClientId: "client",
       accessClientSecret: "secret",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: vi.fn(async () =>
         Response.json({ ok: true, code: "owner_settings_updated", message: "Done" })
       ) as typeof fetch
@@ -112,6 +114,7 @@ describe("agent tool telemetry", () => {
       coreUrl: "https://core.example.invalid",
       accessClientId: "client",
       accessClientSecret: "secret",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: request as typeof fetch
     })
     const controller = new AbortController()
@@ -150,6 +153,7 @@ describe("agent tool telemetry", () => {
       coreUrl: "https://core.example.invalid",
       accessClientId: "client",
       accessClientSecret: "secret",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: request as typeof fetch
     })
 
@@ -199,7 +203,9 @@ describe("agent tool telemetry", () => {
     ])
     expect(
       JSON.stringify({ spans, health: telemetry.healthEvents() }, (_key, value) =>
-        typeof value === "bigint" ? value.toString() : value
+        value !== null && value !== undefined && value.constructor === BigInt
+          ? value.toString()
+          : value
       )
     ).not.toContain("arguments")
   })

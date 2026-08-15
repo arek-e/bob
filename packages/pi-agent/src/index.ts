@@ -16,6 +16,7 @@ import {
   annotateModelUsage,
   recordDecision,
   withBobSpan,
+  type BobDecision,
   type BobTurnPhase
 } from "@bob/observability/effect"
 import {
@@ -34,7 +35,7 @@ import {
 } from "@earendil-works/pi-ai"
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth"
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex"
-import { Cause, Effect } from "effect"
+import { Cause, Effect, Schema } from "effect"
 
 import { waitForDeviceLoginStart } from "./device-login.ts"
 import { classifyProviderError } from "./errors.ts"
@@ -52,15 +53,20 @@ import {
 } from "./response-safety.ts"
 import { createTools, toolCommandForCall } from "./tools.ts"
 
-registerBunOAuthFlows()
-
 const pendingSteerRetentionMs = 140_000
 
+interface UnrefTimer {
+  unref(): void
+}
+
+function hasUnref(
+  timer: ReturnType<typeof setTimeout>
+): timer is ReturnType<typeof setTimeout> & UnrefTimer {
+  return timer instanceof Object && "unref" in timer
+}
+
 function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
-  const handle: unknown = timer
-  if (typeof handle !== "object" || handle === null) return
-  const unref = Reflect.get(handle, "unref")
-  if (typeof unref === "function") Reflect.apply(unref, handle, [])
+  if (hasUnref(timer)) timer.unref()
 }
 
 export interface BobPiAgentOptions {
@@ -75,6 +81,28 @@ export interface BobPiAgentOptions {
   ) => Effect.Effect<ToolResult, unknown>
   readonly now?: () => number
   readonly deviceLoginStartTimeoutMs?: number
+  readonly dependencies?: BobPiAgentDependencies
+}
+
+export interface BobPiAgentDependencies {
+  readonly createModels: (options: {
+    readonly credentials: CredentialStore
+  }) => Pick<
+    ReturnType<typeof createModels>,
+    "setProvider" | "getModel" | "completeSimple" | "login"
+  >
+  readonly openaiCodexProvider: typeof openaiCodexProvider
+  readonly registerOAuthFlows: typeof registerBunOAuthFlows
+}
+
+function registerDefaultOAuthFlows(): void {
+  registerBunOAuthFlows()
+}
+
+const defaultDependencies: BobPiAgentDependencies = {
+  createModels,
+  openaiCodexProvider,
+  registerOAuthFlows: registerDefaultOAuthFlows
 }
 
 export interface AuthStatus {
@@ -146,11 +174,10 @@ function failedCompletion(
   errorMessage: string | undefined,
   errorCode?: AgentRunResult["errorCode"]
 ): FailedCompletion {
-  return {
-    type: "failed",
-    ...(errorMessage === undefined ? {} : { errorMessage }),
-    ...(errorCode === undefined ? {} : { errorCode })
-  }
+  const completion: FailedCompletion = { type: "failed" }
+  if (errorMessage !== undefined) Object.assign(completion, { errorMessage })
+  if (errorCode !== undefined) Object.assign(completion, { errorCode })
+  return completion
 }
 
 function safeToolFailure(): ToolResult {
@@ -203,20 +230,16 @@ function toolCallsFromAssistant(message: AssistantMessage): ToolCall[] {
   return message.content.flatMap((block) => (block.type === "toolCall" ? [block] : []))
 }
 
+const TextSignature = Schema.Struct({
+  v: Schema.Literal(1),
+  id: Schema.String,
+  phase: Schema.Literals(["commentary", "final_answer"])
+})
+
 function textPhase(signature: string | undefined): "commentary" | "final_answer" | undefined {
   if (signature === undefined || !signature.startsWith("{")) return undefined
   try {
-    const decoded = JSON.parse(signature) as unknown
-    if (
-      typeof decoded !== "object" ||
-      decoded === null ||
-      Reflect.get(decoded, "v") !== 1 ||
-      typeof Reflect.get(decoded, "id") !== "string"
-    ) {
-      return undefined
-    }
-    const phase = Reflect.get(decoded, "phase")
-    return phase === "commentary" || phase === "final_answer" ? phase : undefined
+    return Schema.decodeUnknownSync(TextSignature)(JSON.parse(signature)).phase
   } catch {
     return undefined
   }
@@ -248,8 +271,10 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
   if (!options.allowedModels.includes(options.model))
     throw new Error("Configured model is not allowlisted")
 
-  const models = createModels({ credentials: options.credentials })
-  models.setProvider(openaiCodexProvider())
+  const dependencies = options.dependencies ?? defaultDependencies
+  dependencies.registerOAuthFlows()
+  const models = dependencies.createModels({ credentials: options.credentials })
+  models.setProvider(dependencies.openaiCodexProvider())
   const model = models.getModel(options.provider, options.model)
   if (model === undefined)
     throw new Error("Configured model is unavailable in the pinned Pi catalog")
@@ -336,19 +361,22 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         status: AgentRunResult["status"],
         responseText: string | undefined,
         errorCode: AgentRunResult["errorCode"] | undefined
-      ): AgentRunResult => ({
-        protocolVersion: 1,
-        runId: request.runId,
-        correlationId: request.correlationId,
-        status,
-        ...(responseText === undefined ? {} : { responseText }),
-        ...(errorCode === undefined ? {} : { errorCode }),
-        model: options.model,
-        durationMs: Math.max(0, now() - startedAt),
-        inputTokens,
-        outputTokens,
-        toolCalls
-      })
+      ): AgentRunResult => {
+        const output: AgentRunResult = {
+          protocolVersion: 1,
+          runId: request.runId,
+          correlationId: request.correlationId,
+          status,
+          model: options.model,
+          durationMs: Math.max(0, now() - startedAt),
+          inputTokens,
+          outputTokens,
+          toolCalls
+        }
+        if (responseText !== undefined) Object.assign(output, { responseText })
+        if (errorCode !== undefined) Object.assign(output, { errorCode })
+        return output
+      }
 
       const tools = createTools({
         request,
@@ -836,29 +864,33 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
           },
           Effect.gen(function* () {
             const validation = validateAssistantResponse(raw, responsePolicy)
-            yield* recordDecision({
+            const decision: BobDecision = {
               name: "bob.decision.output",
               code: validation.ok ? "valid_output" : "repair_required",
-              outcome: validation.ok ? "allowed" : "selected",
-              ...(validation.ok ? {} : { validationCode: validation.code })
-            })
+              outcome: validation.ok ? "allowed" : "selected"
+            }
+            if (!validation.ok) Object.assign(decision, { validationCode: validation.code })
+            yield* recordDecision(decision)
             return validation
           })
         )
 
       const completeResult = (
         value: Extract<ReturnType<typeof validateAssistantResponse>, { readonly ok: true }>["value"]
-      ): AgentRunResult => ({
-        ...result("completed", value.responseText, undefined),
-        sourceIds: value.sourceIds,
-        ...(trustedToolSources.size === 0
-          ? {}
-          : { trustedToolSources: [...trustedToolSources.values()].slice(0, 24) }),
-        conflict: value.conflict,
-        ...(value.artifact === undefined || value.artifact === null
-          ? {}
-          : { artifact: value.artifact })
-      })
+      ): AgentRunResult => {
+        const output: AgentRunResult = {
+          ...result("completed", value.responseText, undefined),
+          sourceIds: value.sourceIds,
+          conflict: value.conflict
+        }
+        if (trustedToolSources.size > 0)
+          Object.assign(output, {
+            trustedToolSources: [...trustedToolSources.values()].slice(0, 24)
+          })
+        if (value.artifact !== undefined && value.artifact !== null)
+          Object.assign(output, { artifact: value.artifact })
+        return output
+      }
 
       const validateAndRepair = (message: AssistantMessage): Effect.Effect<AgentRunResult> =>
         Effect.gen(function* () {
@@ -1117,15 +1149,19 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
     async getAuthStatus() {
       const credential = await options.credentials.read("openai-codex")
       if (credential?.type !== "oauth") return { configured: false, provider: "openai-codex" }
-      const accountId = typeof credential.accountId === "string" ? credential.accountId : undefined
-      return {
+      const accountId = Schema.is(Schema.String)(credential.accountId)
+        ? credential.accountId
+        : undefined
+      const status: AuthStatus = {
         configured: true,
         provider: "openai-codex",
-        ...(accountId === undefined
-          ? {}
-          : { accountIdRedacted: `…${accountId.slice(Math.max(0, accountId.length - 4))}` }),
         expiresAt: new Date(credential.expires).toISOString()
       }
+      if (accountId !== undefined)
+        Object.assign(status, {
+          accountIdRedacted: `…${accountId.slice(Math.max(0, accountId.length - 4))}`
+        })
+      return status
     },
 
     async startDeviceLogin() {

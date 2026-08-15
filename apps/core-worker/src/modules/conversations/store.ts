@@ -190,7 +190,7 @@ export function makeConversationStore(
           eventId: existing.id,
           duplicate: true,
           shouldEnqueue: existing.enqueuedAt === null && existing.processedAt === null
-        } as InboundAcceptance
+        }
       }
 
       const key = await ownerKey()
@@ -226,7 +226,7 @@ export function makeConversationStore(
           service: event.service,
           isGroup: event.isGroup,
           correlationId: event.correlationId,
-          ...(consumedControl ? { processedAt: createdAt } : {}),
+          processedAt: consumedControl ? createdAt : null,
           createdAt
         })
       ]
@@ -268,13 +268,13 @@ export function makeConversationStore(
           eventId: winner.id,
           duplicate: true,
           shouldEnqueue: winner.enqueuedAt === null && winner.processedAt === null
-        } as InboundAcceptance
+        }
       }
       return {
         eventId: event.id,
         duplicate: false,
         shouldEnqueue: !consumedControl
-      } as InboundAcceptance
+      }
     },
 
     async markEnqueued(eventId, at) {

@@ -14,8 +14,9 @@ const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
 describe("Cloudflare Effect telemetry", () => {
   it("batches one invocation into one safe OTLP trace request", async () => {
     const requests: Array<{ readonly url: string; readonly init?: RequestInit }> = []
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      requests.push({ url: String(input), ...(init === undefined ? {} : { init }) })
+      requests.push(init === undefined ? { url: String(input) } : { url: String(input), init })
       return new Response(null, { status: 200 })
     }) as typeof fetch
     const processor = makeCloudflareSpanProcessor({
@@ -53,10 +54,21 @@ describe("Cloudflare Effect telemetry", () => {
     expect(requests[0]?.url).toBe("https://otel.example.test/v1/traces")
     expect(requests[0]?.init?.method).toBe("POST")
     expect(new Headers(requests[0]?.init?.headers).get("content-type")).toBe("application/json")
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const payload = JSON.parse(String(requests[0]?.init?.body)) as {
       resourceSpans: Array<{
-        resource: { attributes: Array<{ key: string; value: unknown }> }
-        scopeSpans: Array<{ spans: Array<Record<string, unknown>> }>
+        resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
+        scopeSpans: Array<{
+          spans: Array<{
+            name: string
+            traceId: string
+            spanId: string
+            parentSpanId?: string
+            kind: number
+            flags: number
+            status: { code: number }
+          }>
+        }>
       }>
     }
     expect(payload.resourceSpans[0]?.resource.attributes).toEqual(
@@ -91,6 +103,7 @@ describe("Cloudflare Effect telemetry", () => {
   it("keeps the workflow successful when an authenticated collector request fails", async () => {
     const privateCanary = "private-collector-response"
     const requests: RequestInit[] = []
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init !== undefined) requests.push(init)
       throw new Error(privateCanary)
@@ -130,6 +143,7 @@ describe("Cloudflare Effect telemetry", () => {
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: vi.fn(async () => new Response(null, { status: 200 })) as typeof fetch
     })
     const layer = cloudflareTelemetryLayer({

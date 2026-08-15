@@ -33,12 +33,12 @@ function response(code: string, status: number): Response {
   )
 }
 
-async function readJson(request: Request): Promise<unknown> {
+async function readJson(request: Request): Promise<typeof Schema.Json.Type> {
   const declaredLength = Number(request.headers.get("content-length") ?? "0")
   if (declaredLength > MAX_BODY_BYTES) throw new Error("body_too_large")
   const bytes = new Uint8Array(await request.arrayBuffer())
   if (bytes.byteLength > MAX_BODY_BYTES) throw new Error("body_too_large")
-  return JSON.parse(new TextDecoder().decode(bytes)) as unknown
+  return JSON.parse(new TextDecoder().decode(bytes))
 }
 
 function persistInbound(
@@ -90,13 +90,14 @@ function persistInbound(
         Effect.gen(function* () {
           const headers = yield* injectCurrentTraceparent()
           const traceparent = headers.get("traceparent")
-          yield* Effect.tryPromise(() =>
-            composition.ports.queue.send({
+          yield* Effect.tryPromise(() => {
+            const job = {
               eventId: acceptance.eventId,
-              correlationId: event.correlationId,
-              ...(traceparent === null ? {} : { traceparent })
-            })
-          )
+              correlationId: event.correlationId
+            }
+            if (traceparent !== null) Object.assign(job, { traceparent })
+            return composition.ports.queue.send(job)
+          })
         })
       ).pipe(
         Effect.as(true),
@@ -205,7 +206,9 @@ export async function handleIngressHttp(
         composition,
         context
       )
-      const resultBody = (await result.clone().json()) as { code?: string }
+      const resultBody = Schema.decodeUnknownSync(
+        Schema.Struct({ code: Schema.optionalKey(Schema.String) })
+      )(await result.clone().json())
       const healthCode =
         resultBody.code === "accepted" ||
         resultBody.code === "duplicate" ||
@@ -253,14 +256,17 @@ export async function handleIngressHttp(
             feature: "delivery"
           },
           Effect.gen(function* () {
+            const span = {
+              name: "bob.delivery_result.invoke",
+              correlationId: event.correlationId,
+              feature: "delivery"
+            } as const
+            const spanInput = { ...span }
+            if (event.outboxId !== undefined) Object.assign(spanInput, { outboxId: event.outboxId })
+            if (event.attemptId !== undefined)
+              Object.assign(spanInput, { deliveryAttemptId: event.attemptId })
             const response = yield* withBobSpan(
-              {
-                name: "bob.delivery_result.invoke",
-                correlationId: event.correlationId,
-                feature: "delivery",
-                ...(event.outboxId === undefined ? {} : { outboxId: event.outboxId }),
-                ...(event.attemptId === undefined ? {} : { deliveryAttemptId: event.attemptId })
-              },
+              spanInput,
               Effect.gen(function* () {
                 const headers = yield* injectCurrentTraceparent({
                   "content-type": "application/json",

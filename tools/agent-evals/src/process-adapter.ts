@@ -1,3 +1,4 @@
+import { Schema } from "effect"
 import { spawn } from "node:child_process"
 
 import type { LiveEvaluationInput } from "./live.ts"
@@ -9,9 +10,9 @@ const PROCESS_TIMEOUT_MS = 32_000
 export function createProcessAdapter(
   executable: string,
   args: readonly string[]
-): (input: LiveEvaluationInput) => Promise<unknown> {
+): (input: LiveEvaluationInput) => Promise<typeof Schema.Json.Type> {
   return (input) =>
-    new Promise<unknown>((resolve, reject) => {
+    new Promise<typeof Schema.Json.Type>((resolve, reject) => {
       const child = spawn(executable, [...args], {
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
@@ -22,7 +23,7 @@ export function createProcessAdapter(
       let settled = false
       const finish = (
         result:
-          | { readonly ok: true; readonly value: unknown }
+          | { readonly ok: true; readonly value: typeof Schema.Json.Type }
           | { readonly ok: false; readonly code: string }
       ) => {
         if (settled) return
@@ -56,7 +57,7 @@ export function createProcessAdapter(
         if (settled) return
         if (code !== 0) return finish({ ok: false, code: "live_adapter_failed" })
         try {
-          finish({ ok: true, value: JSON.parse(stdout) as unknown })
+          finish({ ok: true, value: Schema.decodeUnknownSync(Schema.Json)(JSON.parse(stdout)) })
         } catch {
           finish({ ok: false, code: "live_adapter_invalid_json" })
         }

@@ -24,6 +24,7 @@ function deploymentManifest(source: string) {
 describe("Coolify release manifest delta", () => {
   it("accepts only two image digests and the exact source SHA", async () => {
     const source = await sourceManifest()
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const current = JSON.parse(source) as {
       cloudflaredDigest: string
       observerDigest: string
@@ -45,7 +46,10 @@ describe("Coolify release manifest delta", () => {
 
   it("rejects another runtime change", async () => {
     const source = await sourceManifest()
-    const deployment = JSON.parse(deploymentManifest(source)) as Record<string, unknown>
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const deployment = JSON.parse(deploymentManifest(source)) as {
+      unreviewed?: boolean
+    }
     deployment.unreviewed = true
     expect(() =>
       assertReleaseManifestDelta({
@@ -58,6 +62,7 @@ describe("Coolify release manifest delta", () => {
 
   it("rejects an unchanged pin or a different source SHA", async () => {
     const source = await sourceManifest()
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const current = JSON.parse(source) as { agentDigest: string }
     expect(() =>
       assertReleaseManifestDelta({

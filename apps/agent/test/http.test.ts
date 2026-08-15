@@ -73,6 +73,7 @@ function composition(
   )
   activeRuntimes.push(runtime)
   return {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     config: {} as never,
     runtime,
     telemetry,

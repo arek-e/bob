@@ -26,6 +26,7 @@ describe("Coolify production stack", () => {
   })
 
   it("uses Coolify AppRole login and a persistent backup volume", () => {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const model = JSON.parse(
       execFileSync("docker", ["compose", "-f", composeUrl.pathname, "config", "--format", "json"], {
         env: fixtureEnvironment(),
@@ -71,6 +72,7 @@ describe("Coolify production stack", () => {
   })
 
   it("exports content-free host, container, service, and backup metrics", () => {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const model = JSON.parse(
       execFileSync("docker", ["compose", "-f", composeUrl.pathname, "config", "--format", "json"], {
         env: fixtureEnvironment(),

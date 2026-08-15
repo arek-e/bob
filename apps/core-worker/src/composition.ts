@@ -102,7 +102,7 @@ export function composeCore(bindings: CoreBindings) {
   const activeKekVersion = Number.parseInt(config.DATA_KEK_ACTIVE_VERSION, 10)
   const keyringInput = Schema.decodeUnknownSync(
     Schema.Record(Schema.String, Schema.String.check(Schema.isMinLength(40)))
-  )(JSON.parse(config.DATA_KEK_KEYRING_JSON) as unknown)
+  )(JSON.parse(config.DATA_KEK_KEYRING_JSON))
   const keyring = Object.fromEntries(
     Object.entries(keyringInput).map(([version, value]) => {
       const parsed = Number.parseInt(version, 10)

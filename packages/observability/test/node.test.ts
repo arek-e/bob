@@ -22,6 +22,7 @@ describe("Node OpenTelemetry export", () => {
       readonly input: RequestInfo | URL
       readonly init: RequestInit | undefined
     }> = []
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({ input, init })
       return new Response(null, { status: 200 })
@@ -46,10 +47,25 @@ describe("Node OpenTelemetry export", () => {
       method: "POST",
       headers: { "content-type": "application/json" }
     })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const payload = JSON.parse(String(requests[0]?.init?.body)) as {
       resourceSpans: Array<{
-        resource: { attributes: Array<{ key: string; value: unknown }> }
-        scopeSpans: Array<{ spans: Array<Record<string, unknown>> }>
+        resource: {
+          attributes: Array<{ key: string; value: { stringValue: string } }>
+        }
+        scopeSpans: Array<{
+          spans: Array<{
+            traceId: string
+            spanId: string
+            parentSpanId: string
+            name: string
+            kind: number
+            startTimeUnixNano: string
+            endTimeUnixNano: string
+            status: { code: number }
+            attributes: Array<{ key: string; value: { stringValue: string } }>
+          }>
+        }>
       }>
     }
     expect(payload.resourceSpans[0]?.resource.attributes).toEqual([

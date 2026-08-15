@@ -61,9 +61,10 @@ function reminderOccurrence(item: PendingOutbox): string | undefined {
 export async function handleScheduled(
   bindings: CoreBindings,
   trace?: ScheduledTraceContext,
-  telemetry?: ScheduledTelemetryRunner
+  telemetry?: ScheduledTelemetryRunner,
+  compose: typeof composeCore = composeCore
 ): Promise<void> {
-  const composition = composeCore(bindings)
+  const composition = compose(bindings)
   const runTelemetry = telemetry?.runPromise ?? Effect.runPromise
   const scheduledTrace: ScheduledTraceContext = trace ?? { correlationId: crypto.randomUUID() }
   const startedAt = new Date().toISOString()
@@ -177,26 +178,32 @@ export async function handleScheduled(
   for (const item of pendingOutbox) {
     await recover(async () => {
       const occurrenceId = reminderOccurrence(item)
-      const span: BobSpan = {
-        name: "bob.outbox.publish",
-        correlationId: item.correlationId,
-        feature: item.actionTargetType === "reminder_occurrence" ? "reminders" : "assistant",
-        outboxId: item.id,
-        ...(occurrenceId === undefined ? {} : { reminderOccurrenceId: occurrenceId })
-      }
+      const span: BobSpan =
+        occurrenceId === undefined
+          ? {
+              name: "bob.outbox.publish",
+              correlationId: item.correlationId,
+              feature: item.actionTargetType === "reminder_occurrence" ? "reminders" : "assistant",
+              outboxId: item.id
+            }
+          : {
+              name: "bob.outbox.publish",
+              correlationId: item.correlationId,
+              feature: item.actionTargetType === "reminder_occurrence" ? "reminders" : "assistant",
+              outboxId: item.id,
+              reminderOccurrenceId: occurrenceId
+            }
       await runTelemetry(
         withBobRootSpan(
           span,
           Effect.gen(function* () {
             const headers = yield* injectCurrentTraceparent()
             const traceparent = headers.get("traceparent")
-            yield* promiseEffect(() =>
-              bindings.OUTBOUND_QUEUE.send({
-                outboxId: item.id,
-                correlationId: item.correlationId,
-                ...(traceparent === null ? {} : { traceparent })
-              })
-            )
+            const message =
+              traceparent === null
+                ? { outboxId: item.id, correlationId: item.correlationId }
+                : { outboxId: item.id, correlationId: item.correlationId, traceparent }
+            yield* promiseEffect(() => bindings.OUTBOUND_QUEUE.send(message))
             yield* promiseEffect(() =>
               composition.services.delivery.markEnqueued(item.id, new Date().toISOString())
             )

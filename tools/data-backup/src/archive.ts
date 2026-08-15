@@ -1,4 +1,5 @@
 import { Decrypter, Encrypter } from "age-encryption"
+import { Schema } from "effect"
 import { createHash } from "node:crypto"
 import { gunzipSync, gzipSync } from "node:zlib"
 
@@ -34,9 +35,48 @@ export interface BackupArchive {
   readonly manifestSha256: string
 }
 
-function sortJson(value: unknown): unknown {
+const BackupScalarValue = Schema.Union([Schema.String, Schema.Number, Schema.Boolean, Schema.Null])
+const BackupByte = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 255 }))
+export const BackupRowValue = Schema.Record(
+  Schema.String,
+  Schema.Union([BackupScalarValue, Schema.Array(BackupByte)])
+)
+const BackupTableValue = Schema.Struct({
+  name: Schema.String,
+  rows: Schema.Array(BackupRowValue),
+  sha256: Schema.String
+})
+const BackupObjectValue = Schema.Struct({
+  key: Schema.String,
+  etag: Schema.optionalKey(Schema.String),
+  contentType: Schema.optionalKey(Schema.String),
+  bytesBase64: Schema.String,
+  sha256: Schema.String
+})
+const BackupArchiveValue = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  createdAt: Schema.String,
+  cutoffStartedAt: Schema.String,
+  cutoffFinishedAt: Schema.String,
+  source: Schema.Struct({
+    accountId: Schema.String,
+    databaseId: Schema.String,
+    bucket: Schema.String
+  }),
+  tables: Schema.Array(BackupTableValue),
+  objects: Schema.Array(BackupObjectValue),
+  manifestSha256: Schema.String
+})
+
+function isJsonObject(
+  value: typeof Schema.Json.Type
+): value is { readonly [key: string]: typeof Schema.Json.Type } {
+  return value !== null && !Array.isArray(value) && Object(value) === value
+}
+
+function sortJson(value: typeof Schema.Json.Type): typeof Schema.Json.Type {
   if (Array.isArray(value)) return value.map(sortJson)
-  if (typeof value !== "object" || value === null) return value
+  if (!isJsonObject(value)) return value
   return Object.fromEntries(
     Object.entries(value)
       .sort(([left], [right]) => left.localeCompare(right))
@@ -44,8 +84,8 @@ function sortJson(value: unknown): unknown {
   )
 }
 
-export function canonicalJson(value: unknown): string {
-  return JSON.stringify(sortJson(value))
+export function canonicalJson<Input>(value: Input): string {
+  return JSON.stringify(sortJson(Schema.decodeUnknownSync(Schema.Json)(value)))
 }
 
 export function sha256(value: string | Uint8Array): string {
@@ -68,13 +108,18 @@ function archiveManifest(archive: Omit<BackupArchive, "manifestSha256">): string
       rowCount: rows.length,
       sha256: hash
     })),
-    objects: archive.objects.map(({ key, etag, contentType, bytesBase64, sha256: hash }) => ({
-      key,
-      ...(etag === undefined ? {} : { etag }),
-      ...(contentType === undefined ? {} : { contentType }),
-      byteLength: Buffer.from(bytesBase64, "base64").byteLength,
-      sha256: hash
-    }))
+    objects: archive.objects.map(({ key, etag, contentType, bytesBase64, sha256: hash }) => {
+      const base = {
+        key,
+        byteLength: Buffer.from(bytesBase64, "base64").byteLength,
+        sha256: hash
+      }
+      if (etag === undefined && contentType === undefined) return base
+      if (etag === undefined && contentType !== undefined) return { ...base, contentType }
+      if (etag !== undefined && contentType === undefined) return { ...base, etag }
+      if (etag === undefined || contentType === undefined) return base
+      return { ...base, etag, contentType }
+    })
   })
 }
 
@@ -85,40 +130,15 @@ export function createArchive(
   return { ...withoutHash, manifestSha256: sha256(archiveManifest(withoutHash)) }
 }
 
-export function validateArchive(value: unknown): BackupArchive {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Backup archive is not an object")
-  }
-  const archive = value as Partial<BackupArchive>
-  if (
-    archive.schemaVersion !== 1 ||
-    typeof archive.createdAt !== "string" ||
-    typeof archive.cutoffStartedAt !== "string" ||
-    typeof archive.cutoffFinishedAt !== "string" ||
-    typeof archive.source !== "object" ||
-    archive.source === null ||
-    !Array.isArray(archive.tables) ||
-    !Array.isArray(archive.objects) ||
-    typeof archive.manifestSha256 !== "string"
-  ) {
-    throw new Error("Backup archive shape is invalid")
-  }
-  const candidate = archive as BackupArchive
+export function validateArchive<Input>(value: Input): BackupArchive {
+  const candidate = Schema.decodeUnknownSync(BackupArchiveValue)(value)
   for (const table of candidate.tables) {
-    if (
-      typeof table.name !== "string" ||
-      !Array.isArray(table.rows) ||
-      table.sha256 !== tableHash(table.rows)
-    ) {
+    if (table.sha256 !== tableHash(table.rows)) {
       throw new Error("Backup table integrity check failed")
     }
   }
   for (const object of candidate.objects) {
-    if (
-      typeof object.key !== "string" ||
-      typeof object.bytesBase64 !== "string" ||
-      object.sha256 !== sha256(Buffer.from(object.bytesBase64, "base64"))
-    ) {
+    if (object.sha256 !== sha256(Buffer.from(object.bytesBase64, "base64"))) {
       throw new Error("Backup object integrity check failed")
     }
   }
@@ -148,6 +168,6 @@ export async function decryptArchive(
   const decrypter = new Decrypter()
   decrypter.addIdentity(identity.trim())
   const compressed = await decrypter.decrypt(ciphertext)
-  const decoded = JSON.parse(gunzipSync(compressed).toString("utf8")) as unknown
+  const decoded = JSON.parse(gunzipSync(compressed).toString("utf8"))
   return validateArchive(decoded)
 }

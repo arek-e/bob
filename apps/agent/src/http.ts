@@ -22,15 +22,15 @@ const securityHeaders = {
   "x-content-type-options": "nosniff"
 }
 
-function json(
-  value: unknown,
+function json<Value>(
+  value: Value,
   status = 200,
   extraHeaders: Readonly<Record<string, string>> = {}
 ): Response {
   return Response.json(value, { status, headers: { ...securityHeaders, ...extraHeaders } })
 }
 
-async function readJson(request: Request): Promise<unknown> {
+async function readJson(request: Request): Promise<typeof Schema.Json.Type> {
   const declaredLength = Number(request.headers.get("content-length") ?? "0")
   if (declaredLength > MAX_BODY_BYTES) throw new Error("body_too_large")
   if (request.body === null) throw new Error("invalid_body")
@@ -57,7 +57,7 @@ async function readJson(request: Request): Promise<unknown> {
     body.set(chunk, offset)
     offset += chunk.byteLength
   }
-  return JSON.parse(new TextDecoder().decode(body)) as unknown
+  return JSON.parse(new TextDecoder().decode(body))
 }
 
 export async function handleAgentHttp(

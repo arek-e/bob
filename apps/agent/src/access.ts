@@ -1,4 +1,4 @@
-import { Context, Layer } from "effect"
+import { Context, Layer, Schema } from "effect"
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey, type KeyInput } from "jose"
 
 export interface AccessIdentity {
@@ -32,7 +32,7 @@ export async function verifyServiceTokenAssertion(
   })
   if (
     result.payload.sub !== "" ||
-    typeof result.payload.common_name !== "string" ||
+    !Schema.is(Schema.String)(result.payload.common_name) ||
     result.payload.common_name !== policy.clientId ||
     result.payload.email !== undefined
   ) {

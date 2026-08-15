@@ -6,13 +6,21 @@ export interface JournalRecord {
   readonly rawText: string
 }
 
+interface JournalMetadata {
+  id: string
+  createdAt: string
+  tags: readonly string[]
+  approvedSummary?: string
+}
+
 export function journalMetadata(record: JournalRecord) {
-  return {
+  const metadata: JournalMetadata = {
     id: record.id,
     createdAt: record.createdAt,
-    tags: record.tags,
-    ...(record.approvedSummary === undefined ? {} : { approvedSummary: record.approvedSummary })
+    tags: record.tags
   }
+  if (record.approvedSummary !== undefined) metadata.approvedSummary = record.approvedSummary
+  return metadata
 }
 
 export function journalModelContext(record: JournalRecord): string | undefined {

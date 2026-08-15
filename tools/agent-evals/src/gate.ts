@@ -38,6 +38,8 @@ export const metricNames = [...version1MetricNames, ...interactionMetricNames] a
 export type MetricName = (typeof metricNames)[number]
 export type Version1MetricName = (typeof version1MetricNames)[number]
 export type InteractionMetricName = (typeof interactionMetricNames)[number]
+type JsonValue = typeof Schema.Json.Type
+type JsonObject = { readonly [key: string]: JsonValue }
 export type EvaluationCategory =
   | "reminder_datetime"
   | "memory_grounding"
@@ -72,7 +74,7 @@ export interface EvaluationRequest {
 
 export interface ToolArgumentExpectation {
   readonly tool: ToolName
-  readonly values: Readonly<Record<string, unknown>>
+  readonly values: JsonObject
 }
 
 export interface ClaimExpectation {
@@ -138,7 +140,7 @@ export interface EvaluationSuite {
 
 export interface ToolCallObservation {
   readonly name: ToolName
-  readonly arguments: Readonly<Record<string, unknown>>
+  readonly arguments: JsonObject
 }
 
 export interface ClaimObservation {
@@ -218,7 +220,11 @@ function sameStringSet(left: readonly string[], right: readonly string[]): boole
   )
 }
 
-function containsExpected(actual: unknown, expected: unknown): boolean {
+function isJsonObject(value: JsonValue): value is JsonObject {
+  return value !== null && !Array.isArray(value) && Object(value) === value
+}
+
+function containsExpected(actual: JsonValue | undefined, expected: JsonValue): boolean {
   if (Array.isArray(expected)) {
     return (
       Array.isArray(actual) &&
@@ -226,11 +232,9 @@ function containsExpected(actual: unknown, expected: unknown): boolean {
       expected.every((item, index) => containsExpected(actual[index], item))
     )
   }
-  if (expected !== null && typeof expected === "object") {
-    if (actual === null || typeof actual !== "object" || Array.isArray(actual)) return false
-    return Object.entries(expected).every(([key, value]) =>
-      containsExpected((actual as Record<string, unknown>)[key], value)
-    )
+  if (isJsonObject(expected)) {
+    if (actual === undefined || !isJsonObject(actual)) return false
+    return Object.entries(expected).every(([key, value]) => containsExpected(actual[key], value))
   }
   return Object.is(actual, expected)
 }
@@ -263,12 +267,9 @@ function includesText(text: string, expected: string): boolean {
 
 export function isStructuredToolOutputValid(raw: string): boolean {
   try {
-    const value = JSON.parse(raw) as unknown
-    if (value === null || typeof value !== "object" || Array.isArray(value)) return false
-    const record = value as Record<string, unknown>
-    Schema.decodeUnknownSync(ToolName)(record.name)
-    if (record.arguments === null || typeof record.arguments !== "object") return false
-    if (Array.isArray(record.arguments)) return false
+    Schema.decodeUnknownSync(
+      Schema.Struct({ name: ToolName, arguments: Schema.Record(Schema.String, Schema.Json) })
+    )(JSON.parse(raw))
     return true
   } catch {
     return false
@@ -296,6 +297,7 @@ export function evaluateSuite(
   const candidates = new Map(
     candidateSet.candidates.map((candidate) => [candidate.caseId, candidate])
   )
+  // SAFETY: metricNames supplies every MetricName exactly once.
   const counters = Object.fromEntries(
     metricNames.map((name) => [name, { numerator: 0, denominator: 0 } satisfies Counter])
   ) as Record<MetricName, Counter>
@@ -573,6 +575,7 @@ export function evaluateSuite(
     results.push({ caseId: scenario.id, category: scenario.category, passed, failures })
   }
 
+  // SAFETY: metricNames supplies every MetricName exactly once.
   const metrics = Object.fromEntries(
     metricNames.map((name) => {
       const counter = counters[name]
@@ -590,7 +593,7 @@ export function evaluateSuite(
         } satisfies MetricResult
       ]
     })
-  ) as unknown as Record<MetricName, MetricResult>
+  ) as Record<MetricName, MetricResult>
   const failures = [
     ...results.flatMap((result) => result.failures.map((code) => `${result.caseId}:${code}`)),
     ...candidateSet.candidates

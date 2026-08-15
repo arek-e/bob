@@ -22,7 +22,25 @@ if (!statusResponse.ok) throw new Error(`Agent status failed: ${statusResponse.s
 const status = Schema.decodeUnknownSync(AdminStatus)(await statusResponse.json())
 if (!status.configured) throw new Error("Pi openai-codex credential is not configured")
 
-const report: Record<string, unknown> = {
+interface SmokeResult {
+  id: string
+  status: AgentRunResult["status"]
+  model: string
+  durationMs: number
+  toolCalls: number
+}
+
+interface SmokeReport {
+  authentication: string
+  provider: string
+  completion?: AgentRunResult["status"]
+  model?: string
+  durationMs?: number
+  cases?: SmokeResult[]
+  predeploy?: string
+}
+
+const report: SmokeReport = {
   authentication: "configured",
   provider: status.provider
 }
@@ -81,7 +99,7 @@ const conflictDiscipline: SmokeCase = {
   validate: (result) => result.toolCalls === 0 && result.conflict === "none"
 }
 
-async function runSmokeCase(smokeCase: SmokeCase): Promise<Record<string, unknown>> {
+async function runSmokeCase(smokeCase: SmokeCase): Promise<SmokeResult> {
   const runId = crypto.randomUUID()
   const correlationId = crypto.randomUUID()
   const response = await fetch(`${ENV.AGENT_URL}/v1/run`, {
@@ -135,9 +153,10 @@ if (process.argv.includes("--completion")) {
 }
 
 if (process.argv.includes("--predeploy")) {
-  report.cases = []
+  const cases: SmokeResult[] = []
+  report.cases = cases
   for (const smokeCase of [structuredCompletion, trainingSafety, conflictDiscipline]) {
-    ;(report.cases as Record<string, unknown>[]).push(await runSmokeCase(smokeCase))
+    cases.push(await runSmokeCase(smokeCase))
   }
   report.predeploy = "completed"
 }

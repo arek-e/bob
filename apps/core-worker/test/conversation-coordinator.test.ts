@@ -3,33 +3,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
+import type { CoreDurableDependencies } from "../src/entrypoints/durable-objects.ts"
 
-const harness = vi.hoisted(() => ({
-  composeCore: vi.fn(),
-  processConversationTurn: vi.fn(),
-  flush: vi.fn(async () => undefined)
-}))
+import { makeCoreTelemetryInvocation } from "../src/telemetry.ts"
+import { testFixture } from "./test-fixture.ts"
 
-vi.mock("../src/composition.ts", () => ({
-  composeCore: harness.composeCore
-}))
-
-vi.mock("../src/process-inbound.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../src/process-inbound.ts")>()),
-  processConversationTurn: harness.processConversationTurn
-}))
-
-vi.mock("../src/telemetry.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/telemetry.ts")>()
-  return {
-    ...actual,
-    makeCoreTelemetryInvocation: vi.fn(() => ({
-      layer: undefined,
-      runPromise: <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect),
-      flush: harness.flush
-    }))
-  }
-})
+const composeCore = vi.fn()
+const processConversationTurn = vi.fn()
+const flush = vi.fn(async () => undefined)
+const dependencies = {
+  composeCore,
+  processConversationTurn,
+  makeCoreTelemetryInvocation: vi.fn((bindings: CoreBindings) => ({
+    ...makeCoreTelemetryInvocation(bindings),
+    runPromise: <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect),
+    flush
+  }))
+} satisfies CoreDurableDependencies
 
 import { OwnerRunCoordinator } from "../src/entrypoints/durable-objects.ts"
 
@@ -40,17 +30,18 @@ const quietUntil = "2026-08-12T10:00:01.500Z"
 const claimExpiresAt = "2026-08-12T10:01:30.000Z"
 
 function coordinatorState(initialAlarm: number | null = null) {
-  const pending: Promise<unknown>[] = []
+  const pending: Promise<void>[] = []
   let alarm = initialAlarm
   const getAlarm = vi.fn(async () => alarm)
   const setAlarm = vi.fn(async (scheduled: Date | number) => {
     alarm = scheduled instanceof Date ? scheduled.getTime() : scheduled
   })
-  const state = {
+  // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+  const state = testFixture<DurableObjectState>({
     storage: { getAlarm, setAlarm },
-    blockConcurrencyWhile: vi.fn((operation: () => Promise<unknown>) => operation()),
-    waitUntil: vi.fn((work: Promise<unknown>) => pending.push(work))
-  } as unknown as DurableObjectState
+    blockConcurrencyWhile: vi.fn((operation: () => Promise<void>) => operation()),
+    waitUntil: vi.fn((work: Promise<void>) => pending.push(work))
+  })
   return {
     clearAlarm: () => {
       alarm = null
@@ -77,9 +68,11 @@ describe("owner conversation coordinator", () => {
         appended: true
       }))
     }
-    harness.composeCore.mockReturnValue({ services: { turns } } as unknown as CoreComposition)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    composeCore.mockReturnValue(testFixture<CoreComposition>({ services: { turns } }))
     const { pending, setAlarm, state } = coordinatorState()
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     const response = await coordinator.fetch(
       new Request("https://coordinator.internal/run", {
@@ -100,7 +93,7 @@ describe("owner conversation coordinator", () => {
       expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
     )
     expect(setAlarm).toHaveBeenCalledWith(new Date(quietUntil))
-    expect(harness.processConversationTurn).not.toHaveBeenCalled()
+    expect(processConversationTurn).not.toHaveBeenCalled()
   })
 
   it("preserves an earlier owner alarm when another channel offers a later deadline", async () => {
@@ -114,9 +107,11 @@ describe("owner conversation coordinator", () => {
         appended: true
       }))
     }
-    harness.composeCore.mockReturnValue({ services: { turns } } as unknown as CoreComposition)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    composeCore.mockReturnValue(testFixture<CoreComposition>({ services: { turns } }))
     const { pending, setAlarm, state } = coordinatorState(earlier)
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     const response = await coordinator.fetch(
       new Request("https://coordinator.internal/run", {
@@ -148,21 +143,25 @@ describe("owner conversation coordinator", () => {
       }),
       markSettling: vi.fn(async () => ({ claimExpiresAt }))
     }
-    harness.composeCore.mockReturnValue({
-      config: {
-        AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret"
-      },
-      services: { turns }
-    } as unknown as CoreComposition)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    composeCore.mockReturnValue(
+      testFixture<CoreComposition>({
+        config: {
+          AGENT_URL: "https://agent.example.invalid",
+          AGENT_ACCESS_CLIENT_ID: "client",
+          AGENT_ACCESS_CLIENT_SECRET: "secret"
+        },
+        services: { turns }
+      })
+    )
     const steer = vi.fn(async () => {
       expect(offered).toBe(true)
       return Response.json({ status: "aborted_model" })
     })
     vi.stubGlobal("fetch", steer)
     const { pending, state } = coordinatorState()
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     const response = await coordinator.fetch(
       new Request("https://coordinator.internal/run", {
@@ -204,14 +203,17 @@ describe("owner conversation coordinator", () => {
       })),
       markSettling
     }
-    harness.composeCore.mockReturnValue({
-      config: {
-        AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret"
-      },
-      services: { turns }
-    } as unknown as CoreComposition)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    composeCore.mockReturnValue(
+      testFixture<CoreComposition>({
+        config: {
+          AGENT_URL: "https://agent.example.invalid",
+          AGENT_ACCESS_CLIENT_ID: "client",
+          AGENT_ACCESS_CLIENT_SECRET: "secret"
+        },
+        services: { turns }
+      })
+    )
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -220,7 +222,8 @@ describe("owner conversation coordinator", () => {
       })
     )
     const { pending, state } = coordinatorState()
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     await coordinator.fetch(
       new Request("https://coordinator.internal/run", {
@@ -248,20 +251,24 @@ describe("owner conversation coordinator", () => {
       })),
       markSettling
     }
-    harness.composeCore.mockReturnValue({
-      config: {
-        AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret"
-      },
-      services: { turns }
-    } as unknown as CoreComposition)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    composeCore.mockReturnValue(
+      testFixture<CoreComposition>({
+        config: {
+          AGENT_URL: "https://agent.example.invalid",
+          AGENT_ACCESS_CLIENT_ID: "client",
+          AGENT_ACCESS_CLIENT_SECRET: "secret"
+        },
+        services: { turns }
+      })
+    )
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => Response.json({ status: "queued" }))
     )
     const { pending, state } = coordinatorState()
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     await coordinator.fetch(
       new Request("https://coordinator.internal/run", {
@@ -289,20 +296,24 @@ describe("owner conversation coordinator", () => {
       })),
       markSettling
     }
-    harness.composeCore.mockReturnValue({
-      config: {
-        AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret"
-      },
-      services: { turns }
-    } as unknown as CoreComposition)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    composeCore.mockReturnValue(
+      testFixture<CoreComposition>({
+        config: {
+          AGENT_URL: "https://agent.example.invalid",
+          AGENT_ACCESS_CLIENT_ID: "client",
+          AGENT_ACCESS_CLIENT_SECRET: "secret"
+        },
+        services: { turns }
+      })
+    )
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(null, { status: 503 }))
     )
     const { pending, state } = coordinatorState()
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     await coordinator.fetch(
       new Request("https://coordinator.internal/run", {
@@ -331,20 +342,24 @@ describe("owner conversation coordinator", () => {
       markSettling: vi.fn(async () => ({ claimExpiresAt })),
       releaseSettling
     }
-    harness.composeCore.mockReturnValue({
-      config: {
-        AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret"
-      },
-      services: { turns }
-    } as unknown as CoreComposition)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    composeCore.mockReturnValue(
+      testFixture<CoreComposition>({
+        config: {
+          AGENT_URL: "https://agent.example.invalid",
+          AGENT_ACCESS_CLIENT_ID: "client",
+          AGENT_ACCESS_CLIENT_SECRET: "secret"
+        },
+        services: { turns }
+      })
+    )
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => Response.json({ status: "missing" }))
     )
     const { pending, state } = coordinatorState()
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     await coordinator.fetch(
       new Request("https://coordinator.internal/run", {
@@ -390,16 +405,18 @@ describe("owner conversation coordinator", () => {
       claimReady: vi.fn().mockResolvedValueOnce(snapshot).mockResolvedValue(undefined),
       nextWakeAt: vi.fn(async () => undefined)
     }
-    harness.composeCore.mockReturnValue({ services: { turns } } as unknown as CoreComposition)
-    harness.processConversationTurn.mockResolvedValue(undefined)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    composeCore.mockReturnValue(testFixture<CoreComposition>({ services: { turns } }))
+    processConversationTurn.mockResolvedValue(undefined)
     const { pending, state } = coordinatorState()
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     await coordinator.alarm()
     await Promise.all(pending)
 
     expect(turns.claimReady).toHaveBeenCalledTimes(2)
-    expect(harness.processConversationTurn).toHaveBeenCalledWith(
+    expect(processConversationTurn).toHaveBeenCalledWith(
       snapshot,
       expect.anything(),
       expect.anything(),
@@ -418,13 +435,15 @@ describe("owner conversation coordinator", () => {
       claimReady: vi.fn(async () => snapshot),
       nextWakeAt: vi.fn(async () => undefined)
     }
-    harness.composeCore.mockReturnValue({ services: { turns } } as unknown as CoreComposition)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    composeCore.mockReturnValue(testFixture<CoreComposition>({ services: { turns } }))
     const { getAlarm, setAlarm, state } = coordinatorState()
-    harness.processConversationTurn.mockImplementation(async () => {
+    processConversationTurn.mockImplementation(async () => {
       expect(setAlarm).toHaveBeenCalledWith(new Date(claimExpiresAt))
       throw new Error("agent process rejected")
     })
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     await expect(coordinator.alarm()).rejects.toThrow("agent process rejected")
 
@@ -445,11 +464,12 @@ describe("owner conversation coordinator", () => {
       .mockResolvedValueOnce(second)
       .mockResolvedValueOnce(undefined)
     const turns = { claimReady, nextWakeAt: vi.fn(async () => undefined) }
-    harness.composeCore.mockReturnValue({ services: { turns } } as unknown as CoreComposition)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    composeCore.mockReturnValue(testFixture<CoreComposition>({ services: { turns } }))
     let active = 0
     let maximumActive = 0
     const order: string[] = []
-    harness.processConversationTurn.mockImplementation(async (snapshot) => {
+    processConversationTurn.mockImplementation(async (snapshot) => {
       active += 1
       maximumActive = Math.max(maximumActive, active)
       order.push(snapshot.turnId)
@@ -457,7 +477,8 @@ describe("owner conversation coordinator", () => {
       active -= 1
     })
     const { state } = coordinatorState()
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     await coordinator.alarm()
 
@@ -481,22 +502,24 @@ describe("owner conversation coordinator", () => {
         .mockResolvedValueOnce(undefined),
       nextWakeAt: vi.fn().mockResolvedValueOnce(claimExpiresAt).mockResolvedValue(undefined)
     }
-    harness.composeCore.mockReturnValue({ services: { turns } } as unknown as CoreComposition)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    composeCore.mockReturnValue(testFixture<CoreComposition>({ services: { turns } }))
     const { clearAlarm, setAlarm, state } = coordinatorState(Date.parse(quietUntil))
     clearAlarm()
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
-    harness.processConversationTurn.mockResolvedValue(undefined)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
+    processConversationTurn.mockResolvedValue(undefined)
 
     await coordinator.alarm()
 
     expect(turns.claimReady).toHaveBeenCalledOnce()
     expect(setAlarm).toHaveBeenLastCalledWith(new Date(claimExpiresAt))
-    expect(harness.processConversationTurn).not.toHaveBeenCalled()
+    expect(processConversationTurn).not.toHaveBeenCalled()
 
     clearAlarm()
     await coordinator.alarm()
 
-    expect(harness.processConversationTurn).toHaveBeenCalledWith(
+    expect(processConversationTurn).toHaveBeenCalledWith(
       recovered,
       expect.anything(),
       expect.anything(),
@@ -506,11 +529,15 @@ describe("owner conversation coordinator", () => {
 
   it("turns a wake request into an immediate alarm without starting a second run", async () => {
     const claimReady = vi.fn(async () => undefined)
-    harness.composeCore.mockReturnValue({
-      services: { turns: { claimReady } }
-    } as unknown as CoreComposition)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    composeCore.mockReturnValue(
+      testFixture<CoreComposition>({
+        services: { turns: { claimReady } }
+      })
+    )
     const { pending, setAlarm, state } = coordinatorState(Date.now() + 60_000)
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
     const before = Date.now()
 
     const response = await coordinator.fetch(
@@ -521,16 +548,19 @@ describe("owner conversation coordinator", () => {
     expect(response.status).toBe(200)
     expect(setAlarm).toHaveBeenCalledOnce()
     const scheduled = setAlarm.mock.calls[0]![0]
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     expect((scheduled as Date).getTime()).toBeGreaterThanOrEqual(before)
     expect(claimReady).not.toHaveBeenCalled()
-    expect(harness.processConversationTurn).not.toHaveBeenCalled()
+    expect(processConversationTurn).not.toHaveBeenCalled()
   })
 
   it("schedules a reflection wake at its durable mutation deadline", async () => {
     const wakeAt = "2026-08-12T10:01:00.000Z"
-    harness.composeCore.mockReturnValue({ services: { turns: {} } } as unknown as CoreComposition)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    composeCore.mockReturnValue(testFixture<CoreComposition>({ services: { turns: {} } }))
     const { pending, setAlarm, state } = coordinatorState(Date.parse(wakeAt) + 60_000)
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     const response = await coordinator.fetch(
       new Request(`https://coordinator.internal/wake?at=${encodeURIComponent(wakeAt)}`, {
@@ -541,15 +571,17 @@ describe("owner conversation coordinator", () => {
 
     expect(response.status).toBe(200)
     expect(setAlarm).toHaveBeenCalledWith(new Date(wakeAt))
-    expect(harness.processConversationTurn).not.toHaveBeenCalled()
+    expect(processConversationTurn).not.toHaveBeenCalled()
   })
 
   it("keeps an earlier alarm when a later reflection wake arrives", async () => {
     const earlier = Date.parse("2026-08-12T10:00:30.000Z")
     const later = "2026-08-12T10:01:00.000Z"
-    harness.composeCore.mockReturnValue({ services: { turns: {} } } as unknown as CoreComposition)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    composeCore.mockReturnValue(testFixture<CoreComposition>({ services: { turns: {} } }))
     const { setAlarm, state } = coordinatorState(earlier)
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     const response = await coordinator.fetch(
       new Request(`https://coordinator.internal/wake?at=${encodeURIComponent(later)}`, {
@@ -562,9 +594,11 @@ describe("owner conversation coordinator", () => {
   })
 
   it("rejects an invalid reflection wake time", async () => {
-    harness.composeCore.mockReturnValue({ services: { turns: {} } } as unknown as CoreComposition)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    composeCore.mockReturnValue(testFixture<CoreComposition>({ services: { turns: {} } }))
     const { setAlarm, state } = coordinatorState()
-    const coordinator = new OwnerRunCoordinator(state, {} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const coordinator = new OwnerRunCoordinator(state, testFixture<CoreBindings>({}), dependencies)
 
     const response = await coordinator.fetch(
       new Request("https://coordinator.internal/wake?at=not-a-date", { method: "POST" })

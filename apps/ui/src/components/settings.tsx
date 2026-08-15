@@ -67,6 +67,8 @@ const AdminStatus = Schema.Struct({
   accountIdRedacted: Schema.optionalKey(Schema.String)
 })
 
+const HourCycleInput = Schema.Literals(["auto", "h12", "h23"])
+
 function SectionHeader(props: {
   title: string
   description: string
@@ -153,11 +155,8 @@ export function SettingsPage() {
 }
 
 function sectionFromHash(): SettingsSectionId {
-  if (typeof window === "undefined") return "locality"
   const hash = window.location.hash.slice(1)
-  return settingsSections.some((section) => section.id === hash)
-    ? (hash as SettingsSectionId)
-    : "locality"
+  return settingsSections.find((section) => section.id === hash)?.id ?? "locality"
 }
 
 function LocalitySection(props: ClientProps) {
@@ -167,11 +166,9 @@ function LocalitySection(props: ClientProps) {
     async () => parseJson(OwnerSettingsView, await api("/api/settings"))
   )
   const [timeZone, setTimeZone] = createSignal(
-    typeof Intl === "undefined" ? "UTC" : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
   )
-  const [locale, setLocale] = createSignal(
-    typeof navigator === "undefined" ? "en" : navigator.language || "en"
-  )
+  const [locale, setLocale] = createSignal(navigator.language || "en")
   const [hourCycle, setHourCycle] = createSignal<HourCycle>("auto")
   const [timeZoneError, setTimeZoneError] = createSignal("")
   const [localeError, setLocaleError] = createSignal("")
@@ -353,7 +350,7 @@ function LocalitySection(props: ClientProps) {
                 name="hourCycle"
                 value={hourCycle()}
                 onChange={(event) => {
-                  setHourCycle(event.currentTarget.value as HourCycle)
+                  setHourCycle(Schema.decodeUnknownSync(HourCycleInput)(event.currentTarget.value))
                   setDirty(true)
                 }}
               >
