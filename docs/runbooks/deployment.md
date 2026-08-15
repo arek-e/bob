@@ -82,6 +82,10 @@ Set the repository variable `BOB_RUNNER_RELEASE_ENABLED` to `true` only after th
 
 Leave the variable unset during the migration. A `main` merge will not deploy Runtime changes.
 
+The trusted production infrastructure plan uses the same gate.
+
+Offline infrastructure checks continue to run on every pull request and `main` push.
+
 It performs these actions:
 
 1. Confirm that the successful commit is still the tip of `main`.

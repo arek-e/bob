@@ -68,7 +68,7 @@ jobs:
           test "$ALCHEMY_RESULT" = success
 
   trusted-infra-plan:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && vars.BOB_RUNNER_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production-readonly
