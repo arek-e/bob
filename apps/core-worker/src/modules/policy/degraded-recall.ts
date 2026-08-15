@@ -9,25 +9,16 @@ export interface DegradedRecallInput {
 }
 
 const mutationVerb =
-  "(?:create|add|save|set|update|change|start|finish|log|cancel|snooze|complete|mark|delete|remove|remind|acknowledge|map|record|correct|propose|make)"
+  "(?:create|add|save|set|update|change|start|finish|log|cancel|complete|mark|delete|remove|record|correct|propose|make)"
 const mutationPatterns = [
   new RegExp(`^\\s*(?:please\\s+)?${mutationVerb}\\b`, "iu"),
   new RegExp(`^\\s*(?:can|could|would|will)\\s+you\\s+${mutationVerb}\\b`, "iu"),
+  /^\s*(?:can|could|would|will)\s+you\s+(?!(?:show|list|tell|recall|repeat)\b)/iu,
   new RegExp(`^\\s*i\\s+(?:want|need)\\s+(?:you\\s+to\\s+|to\\s+)?${mutationVerb}\\b`, "iu")
 ]
 
 function containsUnsafeRecall(value: string): boolean {
   return scanUnsafeOutput(value) !== undefined || internalToolReferences(value).length > 0
-}
-
-function relevantKinds(text: string): ReadonlySet<ContextItem["kind"]> {
-  if (/\bgym|routine|workout|exercise|training|sets?\b/iu.test(text)) {
-    return new Set(["training"])
-  }
-  if (/\bremind(?:er|ers|ing)?|snooze|due\b/iu.test(text)) {
-    return new Set(["reminder"])
-  }
-  return new Set(["profile", "fact", "conversation"])
 }
 
 function isRecallQuestion(text: string): boolean {
@@ -49,10 +40,8 @@ function withinLimit(text: string, maximum: number): string | undefined {
 
 export function degradedRecall(input: DegradedRecallInput): string | undefined {
   if (!isRecallQuestion(input.userText) || isMutationRequest(input.userText)) return undefined
-  const kinds = relevantKinds(input.userText)
   const candidates = input.contextItems.filter(
-    (candidate) =>
-      candidate.instruction === false && candidate.sources.length > 0 && kinds.has(candidate.kind)
+    (candidate) => candidate.instruction === false && candidate.sources.length > 0
   )
   const conflicts = candidates.filter((candidate) => candidate.conflict)
   if (conflicts.length > 0) {
@@ -62,13 +51,8 @@ export function degradedRecall(input: DegradedRecallInput): string | undefined {
     )
   }
   if (candidates.length > 1) {
-    const recordType = candidates.every((item) => item.kind === "reminder")
-      ? "saved reminders"
-      : candidates.every((item) => item.kind === "training")
-        ? "saved training records"
-        : "saved records"
     return withinLimit(
-      `I found ${candidates.length} ${recordType}. Open Bob to choose the correct one.`,
+      `I found ${candidates.length} saved records. Open Bob to choose the correct one.`,
       input.maxResponseCharacters
     )
   }

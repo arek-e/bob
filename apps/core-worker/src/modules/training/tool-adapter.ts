@@ -1,9 +1,10 @@
 import {
   RoutineGetArguments,
+  trainingCapability,
   TrainingLookupArguments,
-  WorkoutHistoryArguments,
-  type ToolResult
-} from "@bob/contracts/tools"
+  WorkoutHistoryArguments
+} from "@bob/contracts/capabilities/training"
+import { type ToolResult } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
 import type {
@@ -18,6 +19,8 @@ import { isTrainingMutationRequest } from "./rules.ts"
 
 export function makeTrainingToolAdapter(training: TrainingModule): ToolCommandAdapter {
   return {
+    capabilityId: trainingCapability.id,
+    names: trainingCapability.names,
     async execute({ command, run }: ToolCommandAdapterContext): Promise<ToolResult> {
       if (isTrainingMutationTool(command.name)) {
         if (!isTrainingMutationRequest(run.request.userText)) {
@@ -40,6 +43,7 @@ export function makeTrainingToolAdapter(training: TrainingModule): ToolCommandAd
           ok: true,
           code: "training_proposed",
           message: "Review this training change in Bob before it is applied.",
+          evidence: { actionOutcome: "proposed" },
           data: {
             proposalId: proposal.id,
             proposalHash: proposal.proposalHash,

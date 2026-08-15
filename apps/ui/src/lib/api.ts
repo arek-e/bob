@@ -1,4 +1,3 @@
-import { ConnectionSession } from "@bob/contracts/settings"
 import { Schema } from "effect"
 
 export interface OwnerSession {
@@ -59,7 +58,3 @@ export function parseJson<S extends Schema.ConstraintDecoder<unknown>, Input>(
 ): S["Type"] {
   return Schema.decodeUnknownSync(schema)(value)
 }
-
-export const schemas = {
-  connectionSession: ConnectionSession
-} as const

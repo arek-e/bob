@@ -3,12 +3,13 @@ import { env } from "cloudflare:workers"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createCoreDatabase } from "../src/database.ts"
-import { makeContextStore } from "../src/modules/context/store.ts"
 import { users } from "../src/modules/conversations/schema.ts"
-import { factRevisions, facts, searchDocuments } from "../src/modules/memory/schema.ts"
+import { factRevisions, facts } from "../src/modules/memory/schema.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { reminderOccurrences, reminders } from "../src/modules/reminders/schema.ts"
+import { searchDocuments } from "../src/modules/retrieval/schema.ts"
 import { exercises, routines, routineSteps } from "../src/modules/training/schema.ts"
+import { makeTestContextStore } from "./context-store-fixture.ts"
 import { decodeTestMigrations } from "./migrations.ts"
 
 declare global {
@@ -101,7 +102,7 @@ describe("general context retrieval", () => {
       })
     ])
 
-    const context = makeContextStore(database, protection, {})
+    const context = makeTestContextStore(database, protection)
 
     await expect(context.build(request("Hello"))).resolves.toEqual([])
   })
@@ -115,7 +116,9 @@ describe("general context retrieval", () => {
         userId: ownerId,
         sourceType: "fact_revision",
         sourceId: "00000000-0000-4000-8000-000000000312",
+        memoryClass: "owner_fact",
         text: "My mobility routine uses slow squats.",
+        searchText: "mobility routine slow squats",
         sourceLabel: "message 2026-08-10",
         occurredAt: createdAt,
         importance: 800,
@@ -130,7 +133,9 @@ describe("general context retrieval", () => {
         userId: ownerId,
         sourceType: "journal_summary",
         sourceId: "00000000-0000-4000-8000-000000000314",
+        memoryClass: "owner_episode",
         text: "Private mobility routine details.",
+        searchText: "private mobility routine details",
         sourceLabel: "journal 2026-08-10",
         occurredAt: createdAt,
         importance: 900,
@@ -145,7 +150,9 @@ describe("general context retrieval", () => {
         userId: ownerId,
         sourceType: "fact_revision",
         sourceId: "00000000-0000-4000-8000-000000000316",
+        memoryClass: "owner_fact",
         text: "My private mobility plan uses a hidden exercise.",
+        searchText: "private mobility plan hidden exercise",
         sourceLabel: "private memory 2026-08-10",
         occurredAt: createdAt,
         importance: 950,
@@ -154,15 +161,32 @@ describe("general context retrieval", () => {
         channelEligible: false,
         createdAt,
         updatedAt: createdAt
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000317",
+        userId: ownerId,
+        sourceType: "fact_revision",
+        sourceId: "00000000-0000-4000-8000-000000000319",
+        memoryClass: "owner_fact",
+        text: "My favorite tea is mint.",
+        searchText: "favorite tea mint",
+        sourceLabel: "message 2026-08-10",
+        occurredAt: createdAt,
+        importance: 1_000,
+        sensitivity: "normal",
+        modelEligible: true,
+        channelEligible: true,
+        createdAt,
+        updatedAt: createdAt
       }
     ])
 
-    const context = makeContextStore(database, protection, {})
+    const context = makeTestContextStore(database, protection)
     const items = await context.build(request("What is my mobility plan?"))
 
     expect(items).toHaveLength(1)
     expect(items[0]).toMatchObject({
-      kind: "fact",
+      kind: "record",
       text: "My mobility routine uses slow squats.",
       instruction: false,
       conflict: false
@@ -237,7 +261,7 @@ describe("general context retrieval", () => {
       })
     }
 
-    const context = makeContextStore(database, protection, {})
+    const context = makeTestContextStore(database, protection)
     await expect(context.build(request("Which reminders are due?"))).resolves.toEqual([])
     await expect(context.build(request("Vilka påminnelser ska snart skickas?"))).resolves.toEqual(
       []
@@ -278,7 +302,7 @@ describe("general context retrieval", () => {
       })
     ])
 
-    const context = makeContextStore(database, protection, {})
+    const context = makeTestContextStore(database, protection)
     await expect(context.build(request("Show my training routine."))).resolves.toEqual([])
     await expect(context.build(request("Visa min träningsrutin."))).resolves.toEqual([])
   })

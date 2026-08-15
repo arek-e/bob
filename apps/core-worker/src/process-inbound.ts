@@ -1,7 +1,7 @@
 import type { OutboundJob } from "@bob/contracts/jobs"
 
 import { AgentRunResult, type AgentArtifact, type AgentRunRequest } from "@bob/contracts/agent"
-import { capabilityCatalogueGeneration, modelToolNames } from "@bob/contracts/tools"
+import { requiresPersonalGrounding } from "@bob/contracts/output-safety"
 import { featureForTools } from "@bob/observability/attribution"
 import {
   recordDecision,
@@ -29,10 +29,8 @@ import {
   deterministicCommandLanguage,
   fixedHelpText,
   isArtifactResendRequest,
-  resolveShortReply,
   urgentSafetyResponse
 } from "./modules/policy/rules.ts"
-import { trainingSafetyResponse, trainingSafetySignal } from "./modules/training/rules.ts"
 
 class AgentCallError extends Error {
   readonly _tag = "AgentCallError"
@@ -72,16 +70,7 @@ function withTraceparentParent<A, E>(
 }
 
 function featureForReason(reasonCode: string): TelemetryFeature {
-  if (
-    reasonCode.includes("reminder") ||
-    reasonCode.includes("command_done") ||
-    reasonCode.includes("command_seen")
-  ) {
-    return "reminders"
-  }
-  if (reasonCode.includes("journal")) return "journal"
   if (reasonCode.includes("safety")) return "safety"
-  if (reasonCode.includes("training")) return "training"
   return "assistant"
 }
 
@@ -241,6 +230,7 @@ function enqueueOutbox(
     correlationId: string
     idempotencyKey: string
     replyToMessageHandle?: string
+    feature?: TelemetryFeature
   },
   runId?: string
 ) {
@@ -248,8 +238,15 @@ function enqueueOutbox(
     bindings,
     composition,
     runId === undefined
-      ? { correlationId: input.correlationId, feature: featureForReason(input.reasonCode) }
-      : { correlationId: input.correlationId, feature: featureForReason(input.reasonCode), runId },
+      ? {
+          correlationId: input.correlationId,
+          feature: input.feature ?? featureForReason(input.reasonCode)
+        }
+      : {
+          correlationId: input.correlationId,
+          feature: input.feature ?? featureForReason(input.reasonCode),
+          runId
+        },
     () => composition.services.delivery.createOutbox(input)
   )
 }
@@ -330,6 +327,7 @@ function deterministicReply(
     readonly correlationId: string
     readonly idempotencyKey: string
     readonly replyToMessageHandle?: string
+    readonly feature?: TelemetryFeature
   }) => Effect.Effect<void, unknown>
 ) {
   const replyToMessageHandle = nativeReplyTarget(claimed)
@@ -358,36 +356,42 @@ function deterministicReply(
       return true
     }
 
-    const trainingSignal = trainingSafetySignal(safetyText)
-    if (trainingSignal !== undefined) {
+    for (const workflow of composition.runtime.conversations) {
+      const prepared = yield* promiseEffect(() =>
+        workflow.prepare({
+          ownerId: claimed.ownerId,
+          channelId: claimed.channelId,
+          messageId: claimed.messageId,
+          text: claimed.text,
+          policyText: safetyText,
+          actionIdempotencyScope,
+          now: new Date()
+        })
+      )
+      if (prepared === undefined) continue
       yield* recordDecision({
         name: "bob.decision.route",
-        code: "training_safety",
+        code: "deterministic_command",
         outcome: "selected"
       })
       if (!(yield* begin())) return true
-      yield* promiseEffect(() =>
-        composition.services.training.stopActiveForSafety(
-          claimed.ownerId,
-          trainingSignal,
-          `${actionIdempotencyScope}:training-safety-stop`
+      const result = yield* promiseEffect(() => prepared.execute())
+      if (result.text !== undefined) {
+        yield* enqueue(
+          withReplyTarget(
+            {
+              ownerId: claimed.ownerId,
+              channelId: claimed.channelId,
+              text: result.text,
+              reasonCode: result.reasonCode,
+              correlationId: claimed.correlationId,
+              idempotencyKey: `${replyIdempotencyScope}:${workflow.id}`,
+              feature: result.feature
+            },
+            replyToMessageHandle
+          )
         )
-      )
-      const safetyResponse = trainingSafetyResponse(safetyText)
-      if (safetyResponse === undefined) return true
-      yield* enqueue(
-        withReplyTarget(
-          {
-            ownerId: claimed.ownerId,
-            channelId: claimed.channelId,
-            text: safetyResponse,
-            reasonCode: "training_safety_stop",
-            correlationId: claimed.correlationId,
-            idempotencyKey: `${replyIdempotencyScope}:training-safety-reply`
-          },
-          replyToMessageHandle
-        )
-      )
+      }
       return true
     }
 
@@ -422,64 +426,6 @@ function deterministicReply(
       case "help":
         response = fixedHelpText(language)
         break
-      case "journal": {
-        const handoff = yield* promiseEffect(() =>
-          composition.services.journal.createHandoff(
-            claimed.ownerId,
-            10 * 60_000,
-            `${actionIdempotencyScope}:journal-handoff`
-          )
-        )
-        response = swedish
-          ? `Öppna din privata dagbok: ${composition.config.UI_BASE_URL}/journal/${handoff.id}`
-          : `Open your private journal: ${composition.config.UI_BASE_URL}/journal/${handoff.id}`
-        break
-      }
-      case "done":
-      case "seen": {
-        const bindingsForReply = yield* promiseEffect(() =>
-          composition.services.conversations.pendingBindings(
-            claimed.ownerId,
-            command,
-            new Date().toISOString()
-          )
-        )
-        const resolution = resolveShortReply(command, bindingsForReply, new Date())
-        if (resolution.kind === "ambiguous") {
-          response = swedish
-            ? "Fler än en åtgärd matchar. Öppna Bob och välj rätt post."
-            : "More than one action matches. Open Bob to choose the correct item."
-        } else if (resolution.kind === "none") {
-          response = swedish
-            ? `Jag kan inte koppla ${claimed.text.trim().toUpperCase()} till en aktuell post.`
-            : `I cannot match ${command.toUpperCase()} to one current item.`
-        } else if (resolution.binding.targetType !== "reminder") {
-          response = swedish
-            ? "Svaret är inte kopplat till en påminnelse. Öppna Bob och välj posten."
-            : "That reply is not linked to a reminder. Open Bob to choose the item."
-        } else {
-          const applied = yield* promiseEffect(() =>
-            composition.services.reminders.applyBoundReply(
-              claimed.ownerId,
-              resolution.binding.id,
-              command
-            )
-          )
-          response =
-            applied === "invalid"
-              ? swedish
-                ? "Åtgärden är inte längre tillgänglig. Öppna Bob och välj posten."
-                : "That action is no longer available. Open Bob to choose the item."
-              : command === "done"
-                ? swedish
-                  ? "Påminnelsen är markerad som klar."
-                  : "Marked complete."
-                : swedish
-                  ? "Påminnelsen är markerad som sedd."
-                  : "Marked as seen."
-        }
-        break
-      }
       case "stop":
       case "cancel":
         response =
@@ -497,13 +443,13 @@ function deterministicReply(
         break
       case "why":
         response = swedish
-          ? "Öppna Bob för att se den sparade orsaken och källan för den senaste påminnelsen."
-          : "Open Bob to view the stored reason and source for the last reminder."
+          ? "Öppna Bob för att se den sparade orsaken och källan för den senaste åtgärden."
+          : "Open Bob to view the stored reason and source for the last action."
         break
       case "pause":
         response = swedish
-          ? "Den här interaktionen är pausad. Dina schemalagda påminnelser ändras inte."
-          : "This interaction is paused. Your scheduled reminders are unchanged."
+          ? "Den här interaktionen är pausad. Inga sparade åtgärder ändras."
+          : "This interaction is paused. No saved actions changed."
         break
       case "undo":
         response = swedish
@@ -794,11 +740,12 @@ export async function processInbound(
         readonly correlationId: string
         readonly idempotencyKey: string
         readonly replyToMessageHandle?: string
+        readonly feature?: TelemetryFeature
       }) => {
         if (turn === undefined) {
           return enqueueOutbox(bindings, composition, input).pipe(Effect.asVoid)
         }
-        const feature = featureForReason(input.reasonCode)
+        const feature = input.feature ?? featureForReason(input.reasonCode)
         return Effect.gen(function* () {
           if (
             (yield* promiseEffect(() =>
@@ -902,7 +849,7 @@ export async function processInbound(
       if (conversationTurn === undefined && stored?.outboxId !== undefined) {
         yield* publishOutbox(bindings, composition, stored.outboxId, {
           correlationId: claimed.correlationId,
-          feature: featureForTools(stored.request.allowedTools),
+          feature: featureForTools(composition.profile, stored.request.allowedTools),
           runId: stored.request.runId
         })
         return
@@ -943,8 +890,8 @@ export async function processInbound(
                 currentConversationTurnId: conversationTurn.turnId,
                 currentConversationTurnRevision: conversationTurn.revision
               }
-        const allowedTools = [...modelToolNames]
-        const feature = featureForTools(allowedTools)
+        const allowedTools = [...composition.profile.modelToolNames]
+        const feature = featureForTools(composition.profile, allowedTools)
         const retrievalStartedAt = Date.now()
         const retrieve = withBobSpan(
           {
@@ -1020,7 +967,8 @@ export async function processInbound(
         }
         const requestBase = {
           protocolVersion: 1 as const,
-          capabilityCatalogueGeneration,
+          deploymentProfileId: composition.profile.profileId,
+          capabilityCatalogueGeneration: composition.profile.generation,
           runId,
           ownerId: claimed.ownerId,
           correlationId: claimed.correlationId,
@@ -1030,6 +978,7 @@ export async function processInbound(
           locale: ownerSettings.locale,
           hourCycle: ownerSettings.hourCycle,
           userText: claimed.text,
+          grounding: { requiresSources: requiresPersonalGrounding(currentTurnText) },
           contextItems,
           allowedTools,
           limits: {
@@ -1057,8 +1006,13 @@ export async function processInbound(
             : { ...requestWithTurn, priorToolReceipts }
       }
 
-      const agentRequest = request
-      const feature = featureForTools(agentRequest.allowedTools)
+      const agentRequest =
+        stored !== undefined &&
+        (request.deploymentProfileId === undefined ||
+          request.capabilityCatalogueGeneration === undefined)
+          ? { ...request, legacySnapshotReplay: true as const }
+          : request
+      const feature = featureForTools(composition.profile, agentRequest.allowedTools)
       const created = yield* withBobSpan(
         {
           name: "bob.agent_run.persist",

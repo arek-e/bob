@@ -4,6 +4,7 @@
 - Date: 2026-08-12
 - Scope: Sendblue conversation collection, agent runs, and recent context
 - Amends: ADR 0003
+- Amended by: ADR 0016
 
 ## Context
 
@@ -21,7 +22,7 @@ Bob needs one durable response target and a safe delivery boundary.
 
 Bob also needs limited recent context after a delivered reply.
 
-That context must not weaken the journal privacy rule.
+That context must not weaken source privacy policy.
 
 ## Decision
 
@@ -123,9 +124,9 @@ Attach the source message IDs.
 
 Do not put message text in logs, traces, or metrics.
 
-Conservatively exclude a complete turn when its messages show journal intent.
+Exclude a complete turn when an owning Context source marks it as private and ineligible.
 
-Do not load raw journal text or journal summaries.
+Do not infer privacy eligibility from domain words in message text.
 
 Calls without a current turn ID keep the old context behavior.
 
@@ -182,7 +183,7 @@ The application must test races at run, tool, reply, and delivery boundaries.
 5. A delivery claim closes only its exact current turn revision.
 6. A newer revision after delivery claim stays open for follow-up.
 7. Recent context uses only delivered prior same-channel turns.
-8. Recent context excludes the current turn and journal-intent turns.
+8. Recent context excludes the current turn and source-ineligible private turns.
 9. A completed mutation opens one fresh receipt-backed revision.
 10. An active mutation keeps the turn settling until its Tool lease deadline.
 11. Recent context stays within all time, turn, message, and character limits.

@@ -131,7 +131,7 @@ for Cloudflare updates.
 
 ## Observe
 
-Observe delivery errors, queue depth, reminder misses, and agent failures.
+Observe delivery errors, queue depth, Agent failures, and failures from enabled Vertical Modules.
 
 Keep the release under observation for at least 30 minutes.
 

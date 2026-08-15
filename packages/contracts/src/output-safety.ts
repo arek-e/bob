@@ -1,7 +1,5 @@
 import { Schema } from "effect"
 
-import { ToolName } from "./tools.ts"
-
 export const OutputValidationCode = Schema.Literals([
   "response_envelope_too_long",
   "malformed_response",
@@ -54,10 +52,10 @@ function normalizeUserText(text: string): string {
 }
 
 const englishPersonalRecall =
-  /\b(?:do you remember|what do you know about me|what (?:did|do) i (?:say|tell|save|store|have)|what (?:is|are) (?:the )?(?:routine|plan|record|information) i (?:saved|stored)|what(?:'s| is| are) my|(?:what|which|when|where|who)\b(?:\s+\p{L}+){0,5}\s+my\b|when do i (?:train|work out|exercise)|(?:show|list) (?:me )?my|tell me (?:about )?my)\b/iu
+  /\b(?:do you remember|what do you know about me|what (?:did|do) i (?:say|tell|save|store|have)|what(?:'s| is| are) my|(?:what|which|when|where|who)\b(?:\s+\p{L}+){0,5}\s+(?:my|i)\b|(?:show|list) (?:me )?my|tell me (?:about )?my)\b/iu
 
 const swedishPersonalRecall =
-  /\b(?:kommer du ihåg|minns du|vad vet du om mig|vad (?:sa|berättade|har) jag|(?:vilken|vad) (?:tränings)?rutin (?:har jag )?(?:sparat|lagrat)|vad (?:är|har) (?:min|mitt|mina)|(?:vad|vilken|vilka|när|var)\b(?:\s+\p{L}+){0,5}\s+(?:min|mitt|mina)\b|när tränar jag|(?:visa|lista) (?:mig )?(?:min|mitt|mina)|påminn mig (?:om )?vad)\b/iu
+  /\b(?:kommer du ihåg|minns du|vad vet du om mig|vad (?:sa|berättade|har) jag|vad (?:är|har) (?:min|mitt|mina)|(?:vad|vilken|vilka|när|var)\b(?:\s+\p{L}+){0,5}\s+(?:min|mitt|mina|jag)\b|(?:visa|lista) (?:mig )?(?:min|mitt|mina))\b/iu
 
 /** Require citations only for a direct request to recall the owner's saved information. */
 export function requiresPersonalGrounding(userText: string): boolean {
@@ -80,9 +78,11 @@ export function scanUnsafeOutput(text: string): UnsafeOutputCode | undefined {
   return undefined
 }
 
-export function internalToolReferences(text: string): readonly string[] {
-  const registered = new Set<string>(ToolName.literals)
-  return (text.match(/\b[a-z][a-z0-9]*_[a-z0-9_]+\b/giu) ?? []).filter((name) =>
-    registered.has(name.toLowerCase())
-  )
+export function internalToolReferences(
+  text: string,
+  registeredToolNames?: ReadonlySet<string>
+): readonly string[] {
+  const candidates = text.match(/\b[a-z][a-z0-9]*_[a-z0-9_]+\b/giu) ?? []
+  if (registeredToolNames === undefined) return candidates
+  return candidates.filter((name) => registeredToolNames.has(name.toLowerCase()))
 }

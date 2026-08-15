@@ -1,4 +1,4 @@
-import { isReadOnlyToolName, ToolResult, type ToolCommand } from "@bob/contracts/tools"
+import { ToolResult, type CapabilityCatalogue, type ToolCommand } from "@bob/contracts/tools"
 import { currentBobCorrelationId, Telemetry } from "@bob/observability/effect"
 import { injectCurrentTraceparent } from "@bob/observability/propagation"
 import { Context, Effect, Layer, Option, Schema } from "effect"
@@ -15,6 +15,7 @@ export interface CoreToolClient {
 export const CoreToolClient = Context.Service<CoreToolClient>("bob/CoreToolClient")
 
 export function createCoreToolClient(options: {
+  readonly catalogue: CapabilityCatalogue
   readonly coreUrl: string
   readonly accessClientId: string
   readonly accessClientSecret: string
@@ -41,7 +42,7 @@ export function createCoreToolClient(options: {
           })
           const result = yield* Effect.tryPromise({
             try: async () => {
-              const requestSignal = isReadOnlyToolName(command.name)
+              const requestSignal = options.catalogue.isReadOnly(command.name)
                 ? signal === undefined
                   ? AbortSignal.timeout(15_000)
                   : AbortSignal.any([signal, AbortSignal.timeout(15_000)])

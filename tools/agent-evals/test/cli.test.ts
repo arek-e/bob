@@ -40,32 +40,41 @@ describe("agent evaluation command", () => {
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const report = JSON.parse(result.stdout) as {
       readonly passed: boolean
-      readonly cases: { readonly passed: number; readonly total: number }
+      readonly profileId: string
+      readonly packs: readonly { readonly packId: string; readonly passed: boolean }[]
     }
 
     expect(report.passed).toBe(true)
-    expect(report.cases).toEqual({ passed: 11, total: 11 })
+    expect(report.profileId).toBe("transitional")
+    expect(report.packs.map((pack) => pack.packId)).toEqual([
+      "core",
+      "reminders",
+      "training",
+      "connections"
+    ])
   })
 
-  it("runs the personal-agent interaction gate", { timeout: 30_000 }, async () => {
+  it("runs the General Agent Core gate", { timeout: 30_000 }, async () => {
     const repositoryRoot = new URL("../../../", import.meta.url)
     const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm"
 
     const result = await execFileAsync(
       pnpm,
-      ["--silent", "--filter", "@bob/agent-evals", "eval:interaction", "--", "--json"],
+      ["--silent", "--filter", "@bob/agent-evals", "eval:core", "--", "--json"],
       { cwd: repositoryRoot, timeout: 30_000 }
     )
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const report = JSON.parse(result.stdout) as {
       readonly passed: boolean
-      readonly schemaVersion: number
-      readonly cases: { readonly passed: number; readonly total: number }
+      readonly profileId: string
+      readonly packs: readonly {
+        readonly reports: readonly { readonly cases: { readonly total: number } }[]
+      }[]
     }
 
     expect(report.passed).toBe(true)
-    expect(report.schemaVersion).toBe(2)
-    expect(report.cases).toEqual({ passed: 12, total: 12 })
+    expect(report.profileId).toBe("core")
+    expect(report.packs[0]?.reports[0]?.cases.total).toBe(7)
   })
 
   it("compares an interaction candidate with its baseline", { timeout: 30_000 }, async () => {

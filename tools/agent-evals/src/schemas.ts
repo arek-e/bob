@@ -42,7 +42,6 @@ const Version1ThresholdFields = {
   citationCoverage: Threshold,
   conflictDisclosureRate: Threshold,
   promptInjectionResistanceRate: Threshold,
-  trainingSafetyRate: Threshold,
   structuredOutputRejectionRate: Threshold,
   staleLeakRate: Threshold
 } as const
@@ -56,9 +55,9 @@ const InteractionThresholdFields = {
   proactivePrecision: Threshold,
   proactiveRecall: Threshold,
   unnecessaryInterruptionRate: Threshold,
-  connectorGroundedActionRate: Threshold,
+  externalGroundingRate: Threshold,
   unknownOutcomeDisclosureRate: Threshold,
-  undoCancellationSuccessRate: Threshold
+  reversibleActionSuccessRate: Threshold
 } as const
 
 const Version1Thresholds = Schema.Struct(Version1ThresholdFields)
@@ -122,7 +121,7 @@ const InteractionExpectation = Schema.Struct({
     })
   ),
   proactive: Schema.optionalKey(Schema.Literals(["required", "not_required"])),
-  connectorGrounding: Schema.optionalKey(
+  externalGrounding: Schema.optionalKey(
     Schema.Struct({
       requiredSourceIds: Schema.Array(NonEmptyString).check(Schema.isMinLength(1))
     })
@@ -139,15 +138,7 @@ const Version2Expectation = Schema.Struct({
 
 const Version1GoldenCase = Schema.Struct({
   id: NonEmptyString,
-  category: Schema.Literals([
-    "reminder_datetime",
-    "memory_grounding",
-    "prompt_injection",
-    "training_safety",
-    "tool_selection",
-    "structured_output",
-    "stale_retrieval"
-  ]),
+  category: NonEmptyString,
   safetyCritical: Schema.Boolean,
   liveEligible: Schema.Boolean,
   request: Request,
@@ -156,21 +147,7 @@ const Version1GoldenCase = Schema.Struct({
 
 const Version2GoldenCase = Schema.Struct({
   id: NonEmptyString,
-  category: Schema.Literals([
-    "reminder_datetime",
-    "memory_grounding",
-    "prompt_injection",
-    "training_safety",
-    "tool_selection",
-    "structured_output",
-    "stale_retrieval",
-    "reminder_clarification",
-    "connector_grounding",
-    "correction_recovery",
-    "preference_adaptation",
-    "proactive_assistance",
-    "action_recovery"
-  ]),
+  category: NonEmptyString,
   safetyCritical: Schema.Boolean,
   liveEligible: Schema.Boolean,
   request: Request,
@@ -182,6 +159,7 @@ const Version1EvaluationSuite = Schema.Struct({
   suiteId: NonEmptyString,
   dataClass: Schema.Literal("synthetic"),
   thresholds: Version1Thresholds,
+  requiredMetrics: Schema.optionalKey(Schema.Array(Schema.Literals(metricNames))),
   cases: Schema.Array(Version1GoldenCase)
 })
 
@@ -190,6 +168,7 @@ const Version2EvaluationSuite = Schema.Struct({
   suiteId: NonEmptyString,
   dataClass: Schema.Literal("synthetic"),
   thresholds: Version2Thresholds,
+  requiredMetrics: Schema.optionalKey(Schema.Array(Schema.Literals(metricNames))),
   cases: Schema.Array(Version2GoldenCase)
 })
 
@@ -217,7 +196,7 @@ const InteractionObservation = Schema.Struct({
   ),
   appliedPreferenceRecordIds: Schema.optionalKey(Schema.Array(NonEmptyString)),
   proactiveIntervention: Schema.optionalKey(Schema.Boolean),
-  connectorSourceIds: Schema.optionalKey(Schema.Array(NonEmptyString)),
+  externalSourceIds: Schema.optionalKey(Schema.Array(NonEmptyString)),
   unknownOutcomeDisclosed: Schema.optionalKey(Schema.Boolean),
   reversibleActionSucceeded: Schema.optionalKey(Schema.Boolean)
 })
@@ -262,24 +241,6 @@ function thresholdsAreStrict(
   return names.every((name) => thresholds[name]?.value === strictThreshold(name).value)
 }
 
-function hasVersion2Coverage(suite: typeof Version2EvaluationSuite.Type): boolean {
-  const interactions = suite.cases.flatMap((scenario) =>
-    scenario.expected.interaction === undefined ? [] : [scenario.expected.interaction]
-  )
-  return (
-    interactions.some((value) => value.clarification === "required") &&
-    interactions.some((value) => value.clarification === "not_required") &&
-    interactions.some((value) => value.correctionRecovery !== undefined) &&
-    interactions.some((value) => value.preferenceChange !== undefined) &&
-    interactions.some((value) => value.proactive === "required") &&
-    interactions.some((value) => value.proactive === "not_required") &&
-    interactions.some((value) => value.connectorGrounding !== undefined) &&
-    interactions.some((value) => value.unknownOutcomeDisclosure === "required") &&
-    interactions.some((value) => value.reversibleAction === "undo") &&
-    interactions.some((value) => value.reversibleAction === "cancel")
-  )
-}
-
 export function decodeEvaluationSuite<Input>(input: Input): EvaluationSuite {
   try {
     const suite = Schema.decodeUnknownSync(EvaluationSuiteSchema)(input)
@@ -294,8 +255,8 @@ export function decodeEvaluationSuite<Input>(input: Input): EvaluationSuite {
     if (!thresholdsAreStrict(suite.thresholds, activeMetricNames)) {
       throw new Error("weakened_threshold")
     }
-    if (suite.schemaVersion === 2 && !hasVersion2Coverage(suite)) {
-      throw new Error("incomplete_interaction_coverage")
+    if (suite.requiredMetrics !== undefined && hasDuplicates(suite.requiredMetrics)) {
+      throw new Error("duplicate_required_metric")
     }
     // SAFETY: The versioned suite schema validates every threshold key and value above.
     const suiteThresholds = suite.thresholds as Readonly<Partial<Record<MetricName, Threshold>>>

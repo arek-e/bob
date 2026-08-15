@@ -1,3 +1,4 @@
+import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
 import { withBobSpan } from "@bob/observability/effect"
 import { parseTraceparent } from "@bob/observability/propagation"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
@@ -27,6 +28,7 @@ describe("agent tool telemetry", () => {
       return response
     })
     const client = createCoreToolClient({
+      catalogue: transitionalDeploymentProfile,
       coreUrl: "https://core.example.invalid",
       accessClientId: "client",
       accessClientSecret: "secret",
@@ -72,6 +74,7 @@ describe("agent tool telemetry", () => {
       return new AbortController().signal
     })
     const client = createCoreToolClient({
+      catalogue: transitionalDeploymentProfile,
       coreUrl: "https://core.example.invalid",
       accessClientId: "client",
       accessClientSecret: "secret",
@@ -111,6 +114,7 @@ describe("agent tool telemetry", () => {
       })
     })
     const client = createCoreToolClient({
+      catalogue: transitionalDeploymentProfile,
       coreUrl: "https://core.example.invalid",
       accessClientId: "client",
       accessClientSecret: "secret",
@@ -150,6 +154,7 @@ describe("agent tool telemetry", () => {
       return Response.json({ ok: true, code: "reminder_list", message: "Done" })
     })
     const client = createCoreToolClient({
+      catalogue: transitionalDeploymentProfile,
       coreUrl: "https://core.example.invalid",
       accessClientId: "client",
       accessClientSecret: "secret",

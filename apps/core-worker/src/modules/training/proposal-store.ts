@@ -6,11 +6,9 @@ import {
   RoutineSaveArguments,
   WorkoutFinishArguments,
   WorkoutLogSetArguments,
-  WorkoutStartArguments,
-  type ToolCommand,
-  type ToolName,
-  ToolResult
-} from "@bob/contracts/tools"
+  WorkoutStartArguments
+} from "@bob/contracts/capabilities/training"
+import { type ToolCommand, type ToolName, ToolResult } from "@bob/contracts/tools"
 import { and, desc, eq } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
 

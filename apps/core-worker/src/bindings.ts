@@ -1,7 +1,20 @@
 import type { DeliveryResult } from "@bob/contracts/delivery"
 import type { InboundJob, OutboundJob } from "@bob/contracts/jobs"
 
-export interface CoreBindings {
+export interface ReminderBindings {
+  REMINDER_CLOCK: DurableObjectNamespace
+  REMINDER_QUIET_HOURS_START: string
+  REMINDER_QUIET_HOURS_END: string
+  REMINDER_DAILY_LIMIT: number
+}
+
+export interface ConnectionsBindings {
+  CONNECTIONS_GATEWAY_URL: string
+  CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID: string
+  CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET: string
+}
+
+export interface GeneralCoreBindings {
   ASSETS?: Fetcher
   DB: D1Database
   PRIVATE_OBJECTS: R2Bucket
@@ -12,12 +25,8 @@ export interface CoreBindings {
   OUTBOUND_DEAD_LETTER_QUEUE_NAME: string
   OUTBOUND_QUEUE: Queue<OutboundJob>
   OWNER_RUN_COORDINATOR: DurableObjectNamespace
-  REMINDER_CLOCK: DurableObjectNamespace
   OWNER_ID: string
   OWNER_TIME_ZONE: string
-  REMINDER_QUIET_HOURS_START: string
-  REMINDER_QUIET_HOURS_END: string
-  REMINDER_DAILY_LIMIT: number
   DATA_KEK_ACTIVE_VERSION: string
   DATA_KEK_KEYRING_JSON: string
   DATA_LOOKUP_KEY: string
@@ -37,9 +46,6 @@ export interface CoreBindings {
   AGENT_ADMIN_ACCESS_CLIENT_ID: string
   AGENT_ADMIN_ACCESS_CLIENT_SECRET: string
   UI_BASE_URL: string
-  CONNECTIONS_GATEWAY_URL: string
-  CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID: string
-  CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET: string
   BOB_MODEL: string
   BOB_PROVIDER: string
   BOB_RUN_TOKEN_BUDGET: number
@@ -49,6 +55,11 @@ export interface CoreBindings {
   OTEL_ACCESS_CLIENT_ID?: string
   OTEL_ACCESS_CLIENT_SECRET?: string
 }
+
+export interface TransitionalBindings
+  extends GeneralCoreBindings, ReminderBindings, ConnectionsBindings {}
+
+export interface CoreBindings extends GeneralCoreBindings {}
 
 export interface IngressBindings {
   CORE: Fetcher

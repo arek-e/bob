@@ -40,9 +40,13 @@ Run the live suite after a candidate agent is reachable through Cloudflare Acces
 pnpm agent:smoke:predeploy
 ```
 
-The suite checks authentication, structured output, repair, conflict handling, and training safety. It does not prove the Sendblue channel.
+The suite checks authentication, structured output, repair, conflict handling, retrieval, and
+grounding. Vertical evaluation packs add their own safety checks. The suite does not prove the
+Sendblue channel.
 
-Complete acceptance starts with `List my reminders.` from the allowlisted owner. It requires a completed run, `reminder_list`, an `agent_reply` outbox, and delivered Sendblue status. Follow [deployment.md](docs/runbooks/deployment.md).
+Complete core acceptance starts with one bounded conversational request from the allowlisted owner.
+It requires a completed run, an `agent_reply` outbox, and delivered Sendblue status. Run the extra
+acceptance checks for each enabled Vertical Module. Follow [deployment.md](docs/runbooks/deployment.md).
 
 Do not put secrets in local environment files. Use Varlock and OpenBao.
 

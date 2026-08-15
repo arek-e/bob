@@ -1,8 +1,8 @@
 import type {
   ConnectionProvider,
   ConnectionSession,
-  SettingsConnection
-} from "@bob/contracts/settings"
+  ConnectionView
+} from "@bob/contracts/capabilities/connections"
 
 import { and, eq } from "drizzle-orm"
 import { Context, Layer } from "effect"
@@ -13,7 +13,7 @@ import type { ConnectionsGatewayClient, ProviderConnection } from "./gateway.ts"
 import { externalConnections } from "./schema.ts"
 
 export interface ConnectionStore {
-  list(ownerId: string): Promise<readonly SettingsConnection[]>
+  list(ownerId: string): Promise<readonly ConnectionView[]>
   createSession(ownerId: string, provider: ConnectionProvider): Promise<ConnectionSession>
 }
 

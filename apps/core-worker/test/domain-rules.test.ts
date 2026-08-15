@@ -55,8 +55,8 @@ describe("deterministic domain rules", () => {
       resolveShortReply(
         "done",
         [
-          { id: "1", command: "done", targetType: "reminder", targetId: "1", expiresAt },
-          { id: "2", command: "done", targetType: "workout", targetId: "2", expiresAt }
+          { id: "1", command: "done", targetType: "record", targetId: "1", expiresAt },
+          { id: "2", command: "done", targetType: "task", targetId: "2", expiresAt }
         ],
         new Date("2026-08-11T00:00:00.000Z")
       ).kind
@@ -65,9 +65,6 @@ describe("deterministic domain rules", () => {
 
   it.each([
     ["HJÄLP", "help"],
-    ["KLART", "done"],
-    ["SETT", "seen"],
-    ["DAGBOK", "journal"],
     ["UPPREPA", "repeat"],
     ["VARFÖR", "why"],
     ["PAUSA", "pause"],
@@ -83,15 +80,15 @@ describe("deterministic domain rules", () => {
 
   it.each([
     "Send the plan again",
-    "Please show me that workout again.",
-    "Skicka träningsplanen igen",
+    "Please show me that artifact again.",
+    "Skicka planen igen",
     "Visa den igen"
   ])("recognizes an artifact resend request: %s", (text) => {
     expect(isArtifactResendRequest(text)).toBe(true)
   })
 
   it("does not capture a normal request as an artifact resend", () => {
-    expect(isArtifactResendRequest("Make me another workout plan")).toBe(false)
+    expect(isArtifactResendRequest("Make me another plan")).toBe(false)
   })
 
   it.each([

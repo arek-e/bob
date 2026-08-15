@@ -5,23 +5,22 @@ Updated: 2026-08-15
 
 ## Product
 
-Bob is a private continuity assistant for one owner.
+Bob is a private general continuity agent for one owner.
 
-The primary interface is iMessage through Sendblue.
+Bob's core purpose is continuity through retrieval, memory, and a bounded agent harness.
 
-Bob supports reminders, personal recall, gym routines, workouts, and private journals.
+Bob starts with the General Agent Core. A deployment can add Vertical Modules without changing the
+agent harness.
 
-Bob helps a person who can have memory impairment.
+The first Channel Adapter uses iMessage through Sendblue.
 
 Bob must stay simple, predictable, source-based, and easy to correct.
 
 ## Long-term vision
 
-Bob aims to become a general personal continuity agent for one owner.
-
 Bob is general in understanding and planning across day-to-day life.
 
-Bob gains broad capability through reviewed domain tools and approved service connections.
+Bob gains broad capability through reviewed Capability Modules and approved connections.
 
 Bob keeps explicit and bounded authority as its capability grows.
 
@@ -70,18 +69,27 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 ## Domain language
 
 - **Owner:** The one person Bob serves.
-- **Owner settings:** The owner's time zone, locale, time format, and connection summaries.
-- **Channel event:** One normalized provider event from Sendblue.
+- **Owner settings:** The owner's time zone, locale, and time format.
+- **Channel Adapter:** One reviewed transport Adapter that converts provider traffic to and from Bob's channel Interface.
+- **Channel event:** One normalized provider event from a Channel Adapter.
 - **Conversation:** Ordered messages for one owner and channel session.
 - **Conversation turn:** One revisioned message burst with one latest response target.
 - **Agent run:** One bounded Bob-owned Pi turn over an immutable input snapshot.
 - **External action attempt:** One durable attempt to change state or call an external system.
 - **Context pack:** Confirmed and policy-cleared data supplied to one agent run.
-- **Tool command:** One typed request from Bob's Pi loop to a Bob domain module.
-- **Capability Module:** One statically registered domain group of Tool definitions and safety metadata.
-- **Capability catalogue:** The reviewed model tools available to every agent run.
-- **Capability catalogue generation:** The deterministic content identity of one Capability catalogue.
-- **Context source Module:** One statically registered source of candidate items for a Context pack.
+- **Tool command:** One typed request from Bob's Pi loop to an owning Capability Module.
+- **Capability Module:** One statically registered group of Tool definitions, execution Adapters, and safety metadata.
+- **General Agent Core:** Domain-neutral Modules for conversation, the Pi harness, retrieval, memory, planning, policy, action evidence, and delivery.
+- **Vertical Module:** One optional domain-owned set of capability, Context source, workflow, storage, route, schedule, and evaluation Implementations.
+- **Deployment profile:** One reviewed, immutable composition of the core profile and Vertical Modules for a release.
+- **Core profile:** The minimum deployment profile. It contains the General Agent Core and no Vertical Module.
+- **Runtime profile:** One static composition of Tool, evidence, conversation, route, schedule, and delivery target Adapters.
+- **Capability catalogue:** The complete reviewed model tools selected by one deployment profile.
+- **Capability catalogue generation:** The deterministic content identity of one deployment profile and its Capability catalogue.
+- **Context source Module:** One statically registered source of candidate items selected by a deployment profile for a Context pack.
+- **Retrieval pipeline:** Indexing, candidate retrieval, relevance checks, conflict handling, and bounded reading.
+- **Owner memory:** Confirmed owner facts, preferences, corrections, and personal episodes.
+- **Agent experience:** Reviewed evidence about workflows, environment behavior, outcomes, and recurring failures.
 - **Health observation:** One read-only, content-free event sent through a fail-open telemetry seam.
 - **Plan artifact:** One reusable structured draft for any owner planning task.
 - **Short reply binding:** An expiring link from one reply to one pending action.
@@ -122,8 +130,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Cloudflare Access protects only Core internal routes and the one-time owner setup route.
 - Better Auth sessions protect owner API routes.
 - The owner record is authoritative for live locality settings.
-- A locality change affects new requests. Existing reminders keep their saved schedules.
-- Durable Objects coordinate run order and reminder wake-ups.
+- A locality change affects new requests. An installed scheduling Module keeps saved schedules stable.
+- Durable Objects coordinate run order and any installed scheduled wake-ups.
 - Durable Object state is not authoritative application data.
 - Bob's Pi loop owns the single model and tool loop policy.
 - Pi permanently owns provider streaming, model normalization, and OAuth support.
@@ -133,15 +141,18 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - A receipt-backed reflection can add one internal revision without a new message.
 - The run attempt and reflection revision change in one D1 batch.
 - Only the current turn revision can commit and deliver its reply.
-- The core Worker enforces every domain invariant.
-- Every agent run receives the same reviewed capability catalogue.
+- The core Worker enforces cross-capability invariants. Each Capability Module enforces its own invariants.
+- Every agent run in one deployment profile receives the same reviewed capability catalogue.
 - Every Tool belongs to exactly one statically registered Capability Module.
 - The capability catalogue and its safety metadata produce one deterministic generation.
 - Each new agent run records that generation. Core and Agent must agree before model execution.
-- Context source Modules form one complete, ordered, static registry.
+- Context source Modules form one complete, ordered, static registry for each deployment profile.
 - ContextStore owns source precedence, deduplication, budgets, and final Context pack assembly.
+- The Retrieval pipeline owns its index, relevance threshold, temporal validity, conflict grouping,
+  typed abstention, and whole-record reading budget.
+- Context assembly never slices a recalled claim or splits one unresolved conflict group.
 - Runtime discovery, package installation, or mutable hooks cannot add capability or authority.
-- Message wording does not grant Tool authority. Domain modules enforce each action invariant.
+- Message wording does not grant Tool authority. Owning Capability Modules enforce each action invariant.
 - The agent never calls Sendblue directly.
 - A Bob Instance never receives a shared Nango environment secret.
 - One managed Owner runs in one Bob Instance.
@@ -180,12 +191,12 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Deterministic channel commands run outside Pi.
 - Only confirmed and model-eligible facts enter context packs.
 - Each recalled personal fact includes a source label.
-- Raw journal text does not enter Pi in the first release.
+- Raw private records from an installed journal Module do not enter Pi.
 - Recent conversation context contains only bounded delivered same-channel turns.
-- Journal-intent turns do not enter recent conversation context.
+- An installed private-record Module can exclude its turns from recent conversation context.
 - Memory extraction creates candidates. It never confirms them.
 - Skills require review and cannot grant new tools.
-- Reminders run outside the model.
+- Installed scheduling workflows run outside the model.
 - Delivery does not imply acknowledgment or completion.
 - A provider timeout does not cause an automatic duplicate send.
 - A delivery claim and its first attempt enter D1 in one atomic batch.

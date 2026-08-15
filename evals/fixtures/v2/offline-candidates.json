@@ -75,7 +75,7 @@
       "claims": [],
       "interaction": {
         "proactiveIntervention": true,
-        "connectorSourceIds": [
+        "externalSourceIds": [
           "synthetic-calendar-event-project-review",
           "synthetic-calendar-event-physio"
         ]
@@ -96,7 +96,7 @@
       "retrievedRecordIds": [],
       "claims": [],
       "interaction": {
-        "connectorSourceIds": ["synthetic-calendar-conflict-result"]
+        "externalSourceIds": ["synthetic-calendar-conflict-result"]
       }
     },
     {
@@ -106,7 +106,7 @@
       "retrievedRecordIds": [],
       "claims": [],
       "interaction": {
-        "connectorSourceIds": ["synthetic-google-calendar-revoked"]
+        "externalSourceIds": ["synthetic-google-calendar-revoked"]
       }
     },
     {

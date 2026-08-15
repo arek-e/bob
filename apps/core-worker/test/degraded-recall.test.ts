@@ -155,6 +155,6 @@ describe("deterministic degraded recall", () => {
         ],
         maxResponseCharacters: 1_200
       })
-    ).toBe("I found 2 saved reminders. Open Bob to choose the correct one.")
+    ).toBe("I found 2 saved records. Open Bob to choose the correct one.")
   })
 })

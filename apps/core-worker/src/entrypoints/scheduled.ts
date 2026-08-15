@@ -3,15 +3,13 @@ import {
   externalParentFromTraceparent,
   injectCurrentTraceparent
 } from "@bob/observability/propagation"
-import { and, eq, isNull } from "drizzle-orm"
-import { Effect, Schema } from "effect"
+import { Effect } from "effect"
 
 import type { CoreBindings } from "../bindings.ts"
 
 import { composeCore } from "../composition.ts"
 import { outboxMessages } from "../modules/delivery/schema.ts"
 import { recoverablePendingOutbox } from "../modules/delivery/store.ts"
-import { schedulerOutbox } from "../modules/reminders/schema.ts"
 
 export interface ScheduledTraceContext {
   readonly correlationId: string
@@ -26,8 +24,6 @@ export interface ScheduledTelemetryRunner {
 interface PendingOutbox {
   readonly id: string
   readonly correlationId: string
-  readonly actionTargetType: string | null
-  readonly actionTargetId: string | null
 }
 
 function promiseEffect<A>(operation: (signal: AbortSignal) => PromiseLike<A>) {
@@ -43,19 +39,6 @@ function withTraceparentParent<A, E>(
 ): Effect.Effect<A, E> {
   const parent = externalParentFromTraceparent(traceparent)
   return parent === undefined ? effect : Effect.withParentSpan(effect, parent)
-}
-
-function safeUuid(value: string | null): string | undefined {
-  if (value === null) return undefined
-  try {
-    return Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(value)
-  } catch {
-    return undefined
-  }
-}
-
-function reminderOccurrence(item: PendingOutbox): string | undefined {
-  return item.actionTargetType === "reminder_occurrence" ? safeUuid(item.actionTargetId) : undefined
 }
 
 export async function handleScheduled(
@@ -80,96 +63,28 @@ export async function handleScheduled(
   await recover(async () => {
     await composition.services.delivery.reconcileExpiredClaims(startedAt)
   })
-  await recover(async () => {
-    await composition.services.reminders.releaseExpiredClaims(startedAt)
-  })
-  await recover(async () => {
-    await composition.services.reminders.markExpiredResponseDeadlines(startedAt)
-  })
-
-  const euClock = bindings.REMINDER_CLOCK.jurisdiction("eu")
-  const clock = euClock.get(euClock.idFromName(composition.config.OWNER_ID))
-  let pendingScheduler: (typeof schedulerOutbox.$inferSelect)[] = []
-  await recover(async () => {
-    pendingScheduler = await composition.database
-      .select()
-      .from(schedulerOutbox)
-      .where(isNull(schedulerOutbox.processedAt))
-      .orderBy(schedulerOutbox.createdAt)
-      .limit(100)
-  })
-  for (const item of pendingScheduler) {
-    await recover(async () => {
-      const response = await runTelemetry(
-        withTraceparentParent(
-          scheduledTrace.traceparent,
-          withBobSpan(
-            {
-              name: "bob.reminder.invoke",
-              correlationId: scheduledTrace.correlationId,
-              feature: "reminders"
-            },
-            Effect.gen(function* () {
-              const headers = yield* injectCurrentTraceparent({
-                "content-type": "application/json",
-                "x-bob-correlation-id": scheduledTrace.correlationId
-              })
-              return yield* promiseEffect(() =>
-                clock.fetch("https://clock.internal/command", {
-                  method: "POST",
-                  headers,
-                  body: JSON.stringify({
-                    id: item.id,
-                    reminderId: item.reminderId,
-                    scheduleRevision: item.scheduleRevision,
-                    command: item.command
-                  })
-                })
-              )
-            })
-          )
-        )
-      )
-      if (!response.ok) throw new Error("reminder_clock_command_failed")
-      await composition.database
-        .update(schedulerOutbox)
-        .set({ processedAt: new Date().toISOString() })
-        .where(and(eq(schedulerOutbox.id, item.id), isNull(schedulerOutbox.processedAt)))
-    })
-  }
-
-  await recover(async () => {
-    const response = await runTelemetry(
-      withTraceparentParent(
-        scheduledTrace.traceparent,
-        withBobSpan(
-          {
-            name: "bob.reminder.invoke",
-            correlationId: scheduledTrace.correlationId,
-            feature: "reminders"
-          },
-          Effect.gen(function* () {
-            const headers = yield* injectCurrentTraceparent({
-              "x-bob-correlation-id": scheduledTrace.correlationId
-            })
-            return yield* promiseEffect(() =>
-              clock.fetch("https://clock.internal/reconcile", { method: "POST", headers })
-            )
-          })
-        )
+  for (const task of composition.runtime.scheduledTasks) {
+    const taskContext = {
+      correlationId: scheduledTrace.correlationId,
+      scheduledAt: scheduledTrace.scheduledAt ?? new Date(startedAt),
+      runPromise: <A, E>(effect: Effect.Effect<A, E>) =>
+        runTelemetry(withTraceparentParent(scheduledTrace.traceparent, effect))
+    }
+    await recover(() =>
+      task.run(
+        scheduledTrace.traceparent === undefined
+          ? taskContext
+          : { ...taskContext, traceparent: scheduledTrace.traceparent }
       )
     )
-    if (!response.ok) throw new Error("reminder_clock_reconcile_failed")
-  })
+  }
 
   let pendingOutbox: PendingOutbox[] = []
   await recover(async () => {
     pendingOutbox = await composition.database
       .select({
         id: outboxMessages.id,
-        correlationId: outboxMessages.correlationId,
-        actionTargetType: outboxMessages.actionTargetType,
-        actionTargetId: outboxMessages.actionTargetId
+        correlationId: outboxMessages.correlationId
       })
       .from(outboxMessages)
       .where(recoverablePendingOutbox)
@@ -177,22 +92,12 @@ export async function handleScheduled(
   })
   for (const item of pendingOutbox) {
     await recover(async () => {
-      const occurrenceId = reminderOccurrence(item)
-      const span: BobSpan =
-        occurrenceId === undefined
-          ? {
-              name: "bob.outbox.publish",
-              correlationId: item.correlationId,
-              feature: item.actionTargetType === "reminder_occurrence" ? "reminders" : "assistant",
-              outboxId: item.id
-            }
-          : {
-              name: "bob.outbox.publish",
-              correlationId: item.correlationId,
-              feature: item.actionTargetType === "reminder_occurrence" ? "reminders" : "assistant",
-              outboxId: item.id,
-              reminderOccurrenceId: occurrenceId
-            }
+      const span: BobSpan = {
+        name: "bob.outbox.publish",
+        correlationId: item.correlationId,
+        feature: "delivery",
+        outboxId: item.id
+      }
       await runTelemetry(
         withBobRootSpan(
           span,

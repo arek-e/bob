@@ -517,7 +517,7 @@ describe("Effect telemetry", () => {
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
-    const privateCanary = "private_name_46700000000"
+    const privateCanary = "private name +46700000000"
     const effect = Effect.withSpan(Effect.void, "bob.tool.invoke", {
       kind: "internal",
       attributes: {

@@ -5,20 +5,9 @@ import type { CoreDatabase } from "../../database.ts"
 
 import { operationalAlerts } from "./schema.ts"
 
-export type OperationalAlertCode =
-  | "inbound_exhausted"
-  | "delivery_uncertain"
-  | "outbound_exhausted"
-  | "delivery_result_exhausted"
-  | "agent_authentication_failed"
-  | "agent_quota_exhausted"
-  | "agent_run_failed"
-  | "token_budget_exceeded"
-  | "reminder_missed"
-
 export interface AlertInput {
   readonly ownerId: string
-  readonly code: OperationalAlertCode
+  readonly code: string
   readonly objectType: string
   readonly objectId: string
   readonly idempotencyKey: string
@@ -38,6 +27,9 @@ export async function recordOperationalAlert(
   input: AlertInput,
   options: { readonly now?: () => Date; readonly randomUuid?: () => string } = {}
 ): Promise<string> {
+  if (input.code.trim().length === 0 || input.code.length > 100) {
+    throw new Error("Operational alert code is invalid")
+  }
   const existing = await database
     .select({ id: operationalAlerts.id })
     .from(operationalAlerts)

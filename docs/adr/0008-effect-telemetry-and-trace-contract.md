@@ -3,10 +3,12 @@
 - Status: Accepted
 - Date: 2026-08-11
 - Scope: Application tracing, telemetry privacy, and OTLP export
+- Capability composition: Amended by ADR 0016
 
 ## Context
 
-Bob needs one trace across Sendblue, Cloudflare, Pi, tools, reminders, and delivery.
+Bob needs one trace across the Channel Adapter, Core, Pi, Tools, installed Capability workflows, and
+delivery.
 
 The trace must show agent decisions without storing private content or model reasoning.
 
@@ -113,7 +115,7 @@ Export token counts, durations, states, and stable result codes.
 
 Do not export these values:
 
-- prompts, replies, journal text, reminder text, or memory text;
+- prompts, replies, private source text, Capability record text, or memory text;
 - Tool arguments, Tool results, model reasoning, or provider bodies;
 - phone numbers, addresses, URLs, query strings, headers, or cookies;
 - access tokens, refresh tokens, passwords, secrets, or key material;

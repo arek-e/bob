@@ -5,10 +5,13 @@ import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { CoreBindings } from "../src/bindings.ts"
+import type { TransitionalBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
+import type { ReminderStore } from "../src/modules/reminders/store.ts"
 
 import { handleScheduled } from "../src/entrypoints/scheduled.ts"
+import { makeReminderScheduledWorkflow } from "../src/modules/reminders/scheduled-workflow.ts"
+import { makeRuntimeModules } from "../src/modules/runtime/module.ts"
 import { testFixture } from "./test-fixture.ts"
 
 const compositionHarness = vi.hoisted(() => ({
@@ -88,6 +91,10 @@ describe("Core scheduled telemetry", () => {
     }))
     const markEnqueued = vi.fn(async () => undefined)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const reminders = testFixture<ReminderStore>({
+      releaseExpiredClaims: vi.fn(async () => 0),
+      markExpiredResponseDeadlines: vi.fn(async () => 0)
+    })
     compositionHarness.current = testFixture<CoreComposition>({
       config: { OWNER_ID: scheduledCorrelationId },
       database: { select, update },
@@ -96,10 +103,7 @@ describe("Core scheduled telemetry", () => {
           reconcileExpiredClaims: vi.fn(async () => 0),
           markEnqueued
         },
-        reminders: {
-          releaseExpiredClaims: vi.fn(async () => 0),
-          markExpiredResponseDeadlines: vi.fn(async () => 0)
-        }
+        reminders
       }
     })
     const clockRequests: RequestInit[] = []
@@ -119,12 +123,25 @@ describe("Core scheduled telemetry", () => {
     )
     vi.stubGlobal("fetch", recoveryFetch)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-    const bindings = testFixture<CoreBindings>({
+    const bindings = testFixture<TransitionalBindings>({
       REMINDER_CLOCK: { jurisdiction: vi.fn(() => namespace) },
       OUTBOUND_QUEUE: { send: async (job: OutboundJob) => published.push(job) },
       SENDBLUE_EGRESS_URL: "https://egress.example.invalid",
       EGRESS_CALLER_SECRET: "c".repeat(64)
     })
+    compositionHarness.current = {
+      ...compositionHarness.current,
+      runtime: makeRuntimeModules({
+        scheduledTasks: [
+          makeReminderScheduledWorkflow({
+            bindings,
+            database: compositionHarness.current.database,
+            reminders,
+            ownerId: scheduledCorrelationId
+          })
+        ]
+      })
+    }
 
     await handleScheduled(
       bindings,
@@ -167,7 +184,7 @@ describe("Core scheduled telemetry", () => {
     expect(outboxPublishes[0]?.attributes).toMatchObject({
       "bob.correlation.id": firstCorrelationId,
       "bob.outbox.id": firstOutboxId,
-      "bob.reminder.occurrence_id": occurrenceId
+      "bob.feature": "delivery"
     })
     expect(outboxPublishes[1]?.attributes).toMatchObject({
       "bob.correlation.id": secondCorrelationId,
@@ -226,6 +243,10 @@ describe("Core scheduled telemetry", () => {
       })
     const markEnqueued = vi.fn(async () => undefined)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const reminders = testFixture<ReminderStore>({
+      releaseExpiredClaims: vi.fn(async () => 0),
+      markExpiredResponseDeadlines: vi.fn(async () => 0)
+    })
     compositionHarness.current = testFixture<CoreComposition>({
       config: { OWNER_ID: scheduledCorrelationId },
       database: {
@@ -234,10 +255,7 @@ describe("Core scheduled telemetry", () => {
       },
       services: {
         delivery: { reconcileExpiredClaims: vi.fn(async () => 0), markEnqueued },
-        reminders: {
-          releaseExpiredClaims: vi.fn(async () => 0),
-          markExpiredResponseDeadlines: vi.fn(async () => 0)
-        }
+        reminders
       }
     })
     let commandCount = 0
@@ -256,10 +274,23 @@ describe("Core scheduled telemetry", () => {
     }
     const send = vi.fn(async () => undefined)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-    const bindings = testFixture<CoreBindings>({
+    const bindings = testFixture<TransitionalBindings>({
       REMINDER_CLOCK: { jurisdiction: vi.fn(() => namespace) },
       OUTBOUND_QUEUE: { send }
     })
+    compositionHarness.current = {
+      ...compositionHarness.current,
+      runtime: makeRuntimeModules({
+        scheduledTasks: [
+          makeReminderScheduledWorkflow({
+            bindings,
+            database: compositionHarness.current.database,
+            reminders,
+            ownerId: scheduledCorrelationId
+          })
+        ]
+      })
+    }
 
     await expect(
       handleScheduled(

@@ -1,22 +1,21 @@
 import type { BatchItem } from "drizzle-orm/batch"
 
-import { and, desc, eq, isNull, sql } from "drizzle-orm"
+import { and, desc, eq, sql } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { EvidenceSourceRegistry } from "./evidence.ts"
 
-import { messages, users } from "../conversations/schema.ts"
-import { journalEntries } from "../journal/schema.ts"
+import { users } from "../conversations/schema.ts"
 import {
   completeEffect,
   completedEffect,
   completedEffectAfterConflict,
   type EffectIdentity
 } from "../policy/effect-outcome.ts"
-import { reminders } from "../reminders/schema.ts"
-import { routines, workoutSessions } from "../training/schema.ts"
-import { buildFtsQuery, rankRetrievalCandidates } from "./retrieval.ts"
+import { retrievalProjection } from "../retrieval/projection.ts"
+import { searchDocuments } from "../retrieval/schema.ts"
 import {
   canPromoteOrigin,
   decideCandidate,
@@ -24,14 +23,7 @@ import {
   deriveMemoryPolicy,
   type OriginClass
 } from "./rules.ts"
-import {
-  factEvidence,
-  factRelations,
-  factRevisions,
-  facts,
-  memoryCandidates,
-  searchDocuments
-} from "./schema.ts"
+import { factEvidence, factRelations, factRevisions, facts, memoryCandidates } from "./schema.ts"
 
 export interface MemoryProposal {
   readonly ownerId: string
@@ -39,8 +31,6 @@ export interface MemoryProposal {
   readonly key: string
   readonly value: unknown
   readonly canonicalText: string
-  readonly assertionKind: "user_stated" | "system_recorded" | "inferred"
-  readonly originClass: OriginClass
   readonly sourceType: string
   readonly sourceId: string
   readonly extractionConfidence: number
@@ -49,16 +39,9 @@ export interface MemoryProposal {
   readonly authority: "agent" | "owner_deterministic" | "completed_system_command"
 }
 
-export interface MemorySearchResult {
-  readonly id: string
-  readonly sourceId: string
-  readonly text: string
-  readonly sourceLabel: string
-  readonly occurredAt?: string
-}
-
 export interface MemoryCandidateReview {
   readonly id: string
+  readonly memoryClass: "owner_fact"
   readonly scope: string
   readonly key: string
   readonly value: unknown
@@ -72,7 +55,7 @@ export interface MemoryCandidateReview {
   readonly createdAt: string
 }
 
-export interface MemoryStore {
+export interface OwnerFactStore {
   propose(
     input: MemoryProposal,
     idempotencyKey: string
@@ -91,8 +74,9 @@ export interface MemoryStore {
   ): Promise<string>
   reject(ownerId: string, candidateId: string, idempotencyKey: string): Promise<void>
   listCandidates(ownerId: string): Promise<readonly MemoryCandidateReview[]>
-  search(ownerId: string, query: string, channel: boolean): Promise<readonly MemorySearchResult[]>
 }
+
+export type MemoryStore = OwnerFactStore
 
 export const MemoryStore = Context.Service<MemoryStore>("bob/MemoryStore")
 
@@ -122,31 +106,17 @@ const OriginClassValue = Schema.Literals([
 const MemorySensitivity = Schema.Literals(["normal", "private", "high"])
 const CandidateStatus = Schema.Literals(["proposed", "disputed"])
 
-function candidateSourceLabel(sourceType: string, createdAt: string): string {
+function legacyCandidateSourceLabel(createdAt: string): string {
   const [year = "", month = "", day = ""] = createdAt.slice(0, 10).split("-")
   const monthLabel = monthLabels[Number(month) - 1] ?? month
   const date = `${Number(day)} ${monthLabel} ${year}`
-  switch (sourceType) {
-    case "message":
-      return `Owner message linked on ${date}`
-    case "journal":
-    case "journal_entry":
-    case "journal_summary":
-      return `Journal entry linked on ${date}`
-    case "reminder":
-      return `Saved reminder linked on ${date}`
-    case "routine":
-      return `Saved routine linked on ${date}`
-    case "workout_session":
-      return `Workout record linked on ${date}`
-    default:
-      return `Saved source linked on ${date}`
-  }
+  return `Saved source linked on ${date}`
 }
 
 export function makeMemoryStore(
   database: CoreDatabase,
   protection: DataProtection,
+  evidenceSources: EvidenceSourceRegistry,
   options: { readonly now?: () => Date; readonly randomUuid?: () => string }
 ): MemoryStore {
   const now = options.now ?? (() => new Date())
@@ -172,79 +142,6 @@ export function makeMemoryStore(
       }),
       version: owner.dataKeyVersion
     }
-  }
-
-  async function validateEvidence(candidate: typeof memoryCandidates.$inferSelect): Promise<void> {
-    let evidence: readonly { id: string }[]
-    switch (candidate.sourceType) {
-      case "message":
-        if (candidate.originClass !== "owner_input")
-          throw new Error("Memory evidence source type does not match its origin")
-        evidence = await database
-          .select({ id: messages.id })
-          .from(messages)
-          .where(
-            and(
-              eq(messages.id, candidate.sourceId),
-              eq(messages.userId, candidate.userId),
-              eq(messages.direction, "inbound")
-            )
-          )
-          .limit(1)
-        break
-      case "journal":
-      case "journal_entry":
-      case "journal_summary":
-        if (candidate.originClass !== "owner_input")
-          throw new Error("Memory evidence source type does not match its origin")
-        evidence = await database
-          .select({ id: journalEntries.id })
-          .from(journalEntries)
-          .where(
-            and(
-              eq(journalEntries.id, candidate.sourceId),
-              eq(journalEntries.userId, candidate.userId),
-              isNull(journalEntries.redactedAt)
-            )
-          )
-          .limit(1)
-        break
-      case "reminder":
-        if (candidate.originClass !== "system_record")
-          throw new Error("Memory evidence source type does not match its origin")
-        evidence = await database
-          .select({ id: reminders.id })
-          .from(reminders)
-          .where(and(eq(reminders.id, candidate.sourceId), eq(reminders.userId, candidate.userId)))
-          .limit(1)
-        break
-      case "routine":
-        if (candidate.originClass !== "system_record")
-          throw new Error("Memory evidence source type does not match its origin")
-        evidence = await database
-          .select({ id: routines.id })
-          .from(routines)
-          .where(and(eq(routines.id, candidate.sourceId), eq(routines.userId, candidate.userId)))
-          .limit(1)
-        break
-      case "workout_session":
-        if (candidate.originClass !== "system_record")
-          throw new Error("Memory evidence source type does not match its origin")
-        evidence = await database
-          .select({ id: workoutSessions.id })
-          .from(workoutSessions)
-          .where(
-            and(
-              eq(workoutSessions.id, candidate.sourceId),
-              eq(workoutSessions.userId, candidate.userId)
-            )
-          )
-          .limit(1)
-        break
-      default:
-        throw new Error("Memory evidence source type is not supported")
-    }
-    if (evidence[0] === undefined) throw new Error("Memory evidence does not exist for the owner")
   }
 
   async function claimReview(
@@ -301,7 +198,38 @@ export function makeMemoryStore(
         if (candidate === undefined) throw new Error("The prior memory proposal is unavailable")
         return { candidateId: previous, status: candidate.status }
       }
-      const policy = deriveMemoryPolicy(input)
+      const sourceEvidence = await evidenceSources.verify({
+        ownerId: input.ownerId,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId
+      })
+      const assertionKind =
+        sourceEvidence.originClass === "owner_input"
+          ? "user_stated"
+          : sourceEvidence.originClass === "system_record"
+            ? "system_recorded"
+            : "inferred"
+      const derivedPolicy = deriveMemoryPolicy({
+        ...input,
+        originClass: sourceEvidence.originClass
+      })
+      const sensitivity =
+        sourceEvidence.sensitivity === "high" || derivedPolicy.sensitivity === "high"
+          ? "high"
+          : sourceEvidence.sensitivity === "private" || derivedPolicy.sensitivity === "private"
+            ? "private"
+            : "normal"
+      const policy = {
+        sensitivity,
+        modelEligible:
+          sensitivity === "normal" &&
+          derivedPolicy.modelEligible &&
+          sourceEvidence.disclosure === "model_and_channel",
+        channelEligible:
+          sensitivity === "normal" &&
+          derivedPolicy.channelEligible &&
+          sourceEvidence.disclosure === "model_and_channel"
+      }
       const owner = await ownerKey(input.ownerId)
       const [current] = await database
         .select({ revisionId: facts.currentRevisionId })
@@ -337,8 +265,8 @@ export function makeMemoryStore(
         conflictsWithConfirmed = currentValue !== JSON.stringify(input.value)
       }
       const status = decideCandidate({
-        assertionKind: input.assertionKind,
-        originClass: input.originClass,
+        assertionKind,
+        originClass: sourceEvidence.originClass,
         sensitive: policy.sensitivity !== "normal",
         highImpact: policy.sensitivity === "high",
         explicitRemember:
@@ -368,9 +296,13 @@ export function makeMemoryStore(
             proposedValueIv: encryptedValue?.iv,
             canonicalTextCiphertext: encrypted.ciphertext,
             canonicalTextIv: encrypted.iv,
-            originClass: input.originClass,
+            memoryClass: "owner_fact",
+            originClass: sourceEvidence.originClass,
             sourceType: input.sourceType,
             sourceId: input.sourceId,
+            sourceLabel: sourceEvidence.sourceLabel,
+            sourceOccurredAt: sourceEvidence.occurredAt,
+            sourceContentHash: sourceEvidence.contentHash,
             extractionConfidence: Math.round(input.extractionConfidence * 1_000),
             sensitivity: policy.sensitivity,
             status: initialStatus,
@@ -426,7 +358,21 @@ export function makeMemoryStore(
       ) {
         throw new Error("This caller cannot confirm the memory candidate")
       }
-      await validateEvidence(candidate)
+      const sourceEvidence = await evidenceSources.verify({
+        ownerId: candidate.userId,
+        sourceType: candidate.sourceType,
+        sourceId: candidate.sourceId
+      })
+      if (
+        sourceEvidence.originClass !== originClass ||
+        (candidate.sourceContentHash !== null &&
+          candidate.sourceContentHash !== sourceEvidence.contentHash)
+      ) {
+        throw new Error("Memory evidence changed after proposal")
+      }
+      if (sourceEvidence.confirmationAuthority !== authority) {
+        throw new Error("This evidence source cannot confirm the memory candidate")
+      }
       let [fact] = await database
         .select()
         .from(facts)
@@ -470,7 +416,8 @@ export function makeMemoryStore(
       })
       const revisionId = randomUuid()
       const createdAt = now().toISOString()
-      const excerptHash = await protection.contentHash(canonicalText)
+      const excerptHash = sourceEvidence.contentHash
+      const canonicalContentHash = await protection.contentHash(canonicalText)
       const sensitiveValue =
         candidate.proposedValueCiphertext === null || candidate.proposedValueIv === null
           ? undefined
@@ -479,10 +426,8 @@ export function makeMemoryStore(
               iv: candidate.proposedValueIv
             }
       const confirmedPolicy = deriveConfirmedMemoryPolicy({
-        authority,
-        originClass,
-        sourceType: candidate.sourceType,
-        sensitivity: Schema.decodeUnknownSync(MemorySensitivity)(candidate.sensitivity)
+        sensitivity: candidate.sensitivity === "high" ? "high" : sourceEvidence.sensitivity,
+        disclosure: sourceEvidence.disclosure
       })
       const previousRevisionId = fact.currentRevisionId
       const statements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
@@ -498,7 +443,8 @@ export function makeMemoryStore(
           assertionKind:
             candidate.originClass === "system_record" ? "system_recorded" : "user_stated",
           originClass,
-          observedAt: candidate.createdAt,
+          observedAt: sourceEvidence.occurredAt ?? candidate.createdAt,
+          validFrom: createdAt,
           extractionConfidence: candidate.extractionConfidence,
           importance: 500,
           verificationStatus: "confirmed" as const,
@@ -513,6 +459,8 @@ export function makeMemoryStore(
           revisionId,
           sourceType: candidate.sourceType,
           sourceId: candidate.sourceId,
+          sourceLabel: candidate.sourceLabel ?? sourceEvidence.sourceLabel,
+          sourceOccurredAt: candidate.sourceOccurredAt ?? sourceEvidence.occurredAt,
           evidenceRole: "supports" as const,
           excerptHash,
           createdAt
@@ -521,21 +469,27 @@ export function makeMemoryStore(
       ]
       if (confirmedPolicy.modelEligible) {
         statements.push(
-          database.insert(searchDocuments).values({
-            id: randomUuid(),
-            userId: candidate.userId,
-            sourceType: "fact_revision",
-            sourceId: revisionId,
-            text: canonicalText,
-            sourceLabel: candidateSourceLabel(candidate.sourceType, candidate.createdAt),
-            occurredAt: candidate.createdAt,
-            importance: 500,
-            sensitivity: confirmedPolicy.sensitivity,
-            modelEligible: confirmedPolicy.modelEligible,
-            channelEligible: confirmedPolicy.channelEligible,
-            createdAt,
-            updatedAt: createdAt
-          })
+          database.insert(searchDocuments).values(
+            retrievalProjection({
+              id: randomUuid(),
+              ownerId: candidate.userId,
+              sourceType: "fact_revision",
+              sourceId: revisionId,
+              memoryClass: "owner_fact",
+              text: canonicalText,
+              searchText: `${candidate.scope} ${candidate.key} ${canonicalText}`,
+              contentHash: canonicalContentHash,
+              sourceLabel: candidate.sourceLabel ?? sourceEvidence.sourceLabel,
+              occurredAt: sourceEvidence.occurredAt ?? candidate.createdAt,
+              conflictKey: fact.id,
+              validFrom: createdAt,
+              importance: 500,
+              sensitivity: confirmedPolicy.sensitivity,
+              modelEligible: confirmedPolicy.modelEligible,
+              channelEligible: confirmedPolicy.channelEligible,
+              createdAt
+            })
+          )
         )
       }
       if (previousRevisionId !== null) {
@@ -546,7 +500,7 @@ export function makeMemoryStore(
             .where(eq(factRevisions.id, previousRevisionId)),
           database
             .update(searchDocuments)
-            .set({ deletedAt: createdAt, updatedAt: createdAt })
+            .set({ validTo: createdAt, updatedAt: createdAt })
             .where(
               and(
                 eq(searchDocuments.sourceType, "fact_revision"),
@@ -597,7 +551,18 @@ export function makeMemoryStore(
       if (candidate.originClass !== "owner_input") {
         throw new Error("Only an owner statement can be corrected here")
       }
-      await validateEvidence(candidate)
+      const sourceEvidence = await evidenceSources.verify({
+        ownerId: candidate.userId,
+        sourceType: candidate.sourceType,
+        sourceId: candidate.sourceId
+      })
+      if (
+        sourceEvidence.originClass !== "owner_input" ||
+        (candidate.sourceContentHash !== null &&
+          candidate.sourceContentHash !== sourceEvidence.contentHash)
+      ) {
+        throw new Error("Memory evidence changed after proposal")
+      }
       const trimmed = canonicalText.trim()
       if (trimmed.length === 0 || trimmed.length > 8_000) {
         throw new Error("Corrected memory text is invalid")
@@ -628,9 +593,13 @@ export function makeMemoryStore(
             proposedValueIv: encryptedValue?.iv,
             canonicalTextCiphertext: encryptedText.ciphertext,
             canonicalTextIv: encryptedText.iv,
+            memoryClass: "owner_fact",
             originClass: "owner_input",
             sourceType: candidate.sourceType,
             sourceId: candidate.sourceId,
+            sourceLabel: candidate.sourceLabel,
+            sourceOccurredAt: candidate.sourceOccurredAt,
+            sourceContentHash: candidate.sourceContentHash,
             extractionConfidence: 1_000,
             sensitivity: candidate.sensitivity,
             status: "proposed",
@@ -709,6 +678,7 @@ export function makeMemoryStore(
                 })
           const review = {
             id: candidate.id,
+            memoryClass: "owner_fact" as const,
             scope: candidate.scope,
             key: candidate.key,
             value: Schema.decodeUnknownSync(Schema.Json)(JSON.parse(serializedValue)),
@@ -716,7 +686,7 @@ export function makeMemoryStore(
             originClass: Schema.decodeUnknownSync(OriginClassValue)(candidate.originClass),
             sourceType: candidate.sourceType,
             sourceId: candidate.sourceId,
-            sourceLabel: candidateSourceLabel(candidate.sourceType, candidate.createdAt),
+            sourceLabel: candidate.sourceLabel ?? legacyCandidateSourceLabel(candidate.createdAt),
             sensitivity: Schema.decodeUnknownSync(MemorySensitivity)(candidate.sensitivity),
             status: Schema.decodeUnknownSync(CandidateStatus)(candidate.status),
             createdAt: candidate.createdAt
@@ -724,57 +694,6 @@ export function makeMemoryStore(
           return review
         })
       )
-    },
-
-    async search(ownerId, query, channel) {
-      const ftsQuery = buildFtsQuery(query)
-      if (ftsQuery === undefined) return []
-      const rows = await database.all<{
-        document_id: string
-        source_id: string
-        text: string
-        source_type: string
-        source_label: string
-        occurred_at: string | null
-        importance: number
-      }>(sql`
-        SELECT
-          f.document_id,
-          d.source_id,
-          f.text,
-          d.source_type,
-          f.source_label,
-          d.occurred_at,
-          d.importance
-        FROM search_documents_fts AS f
-        JOIN search_documents AS d ON d.id = f.document_id
-        WHERE search_documents_fts MATCH ${ftsQuery}
-          AND f.user_id = ${ownerId}
-          AND d.deleted_at IS NULL
-          AND d.model_eligible = 1
-          AND (${channel ? 1 : 0} = 0 OR d.channel_eligible = 1)
-        ORDER BY bm25(search_documents_fts), d.importance DESC
-        LIMIT 36
-      `)
-      return rankRetrievalCandidates(
-        rows.map((row, lexicalPosition) => {
-          const candidate = {
-            id: row.document_id,
-            sourceId: row.source_id,
-            sourceType: row.source_type,
-            text: row.text,
-            sourceLabel: row.source_label,
-            importance: row.importance,
-            lexicalPosition
-          }
-          return row.occurred_at === null
-            ? candidate
-            : { ...candidate, occurredAt: row.occurred_at }
-        })
-      ).map(({ id, sourceId, text, sourceLabel, occurredAt }) => {
-        const result = { id, sourceId, text, sourceLabel }
-        return occurredAt === undefined ? result : { ...result, occurredAt }
-      })
     }
   }
 }

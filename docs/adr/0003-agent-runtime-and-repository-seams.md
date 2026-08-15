@@ -8,9 +8,9 @@
 
 Bob needs a legible agent implementation with strong safety controls.
 
-The implementation must support reminders, memory, training, and journals.
+The implementation must support the domain-neutral core profile defined by ADR 0016.
 
-It must also support a person who can have memory impairment.
+Optional Capability Modules can add reminders, journals, training, and connections.
 
 We reviewed Pi, Waku Agent, OpenClaw, Hermes Agent, and Boop Agent.
 
@@ -124,7 +124,7 @@ The current request supplies the current user text separately.
 
 ADR 0010 permits one bounded current turn and recent delivered same-channel turns.
 
-Outside that contract, never send stored raw messages or journal text to Pi.
+Outside that contract, never send stored raw messages or private source text to Pi.
 
 Do not send journal summaries to Pi.
 
@@ -165,11 +165,7 @@ Do not rely on prompt text to prevent duplicate mutations.
 
 Keep these Tool groups in the reviewed capability catalogue:
 
-- Reminders
-- Memory proposals and recall
-- Journal metadata and private links
-- Gym, routines, and workouts
-- Owner locality settings
+Load other Tool groups only through optional Capability Modules selected by the deployment profile.
 
 Do not expose transport, authentication, shell, browser, filesystem, or package tools.
 
@@ -178,7 +174,7 @@ Do not expose transport, authentication, shell, browser, filesystem, or package 
 Adopt Waku's three useful memory views with safer records.
 
 - Semantic memory maps to confirmed fact revisions and evidence.
-- Episodic memory maps to dated messages, reminders, workouts, and approved summaries.
+- Episodic memory maps to dated interactions, action receipts, and approved summaries.
 - Procedural memory maps to reviewed `SKILL.md` files.
 
 The application database remains authoritative.
@@ -209,7 +205,7 @@ Do not let Pi edit its persona or create skills.
 
 ### Workflows
 
-Use plain domain state machines for reminders, delivery, and memory review.
+Use plain state machines for delivery, memory review, and installed Vertical Modules.
 
 The reminder module already defines its durable workflow.
 
@@ -219,7 +215,7 @@ The memory module already defines its review workflow.
 
 Add a graph Module only after two real workflows need shared graph behavior.
 
-Scheduled reminders do not need Pi.
+Scheduled Vertical Module work does not need Pi unless its reviewed workflow starts an Agent run.
 
 Scheduled summaries use a fresh agent run and the reviewed capability catalogue.
 
@@ -261,18 +257,19 @@ A judge cannot waive a deterministic failure.
 
 The release gate requires all deterministic safety cases to pass.
 
-Required suites include:
+The core release gate includes:
 
 - Tool selection and argument shape
-- Reminder state transitions and time zones
 - Duplicate tool and webhook delivery
 - Ambiguous short replies
 - Conflicting and unsupported memories
 - Source labels and uncertainty language
-- Journal privacy policy
-- Training pain and machine-confusion stops
+- Retrieval relevance, temporal updates, and abstention
+- Private source policy
 - Provider authentication and quota failures
 - Redaction and content-free telemetry
+
+Each Vertical Module adds its own deterministic and judged evaluation pack.
 
 Run deterministic checks with offline fixtures.
 
@@ -353,12 +350,11 @@ The modules own these records:
 
 - Conversations owns messages, inbound events, agent runs, and short replies.
 - Delivery owns outbox messages, delivery attempts, callbacks, and opt-out state.
-- Reminders owns reminders, occurrences, actions, and scheduler outbox rows.
 - Context owns context plans and context-pack construction.
 - Memory owns candidates, facts, revisions, evidence, and search projections.
-- Journal owns entries, attachments, handoffs, and privacy deletion effects.
-- Training owns gyms, equipment, routines, workouts, and sets.
 - Policy owns stable authorization and disclosure decision codes.
+
+When selected, each Vertical Module owns its records, deterministic workflows, and deletion effects.
 
 ### Cross-runtime packages
 
@@ -449,9 +445,10 @@ Do not add a task runner yet.
 9. Fault tests stop after each durable write and external call.
 10. Trace fixtures contain no personal content.
 11. A memory extractor creates only proposed candidates.
-12. A scheduled reminder can complete without starting Pi.
+12. The core profile compiles, tests, and deploys without a Vertical Module.
 13. An owner coordinator prevents concurrent Pi runs for one owner.
 14. An unknown external action cannot retry before reconciliation.
+15. A selected scheduled Vertical Module can complete deterministic work without starting Pi.
 
 ## Consequences
 

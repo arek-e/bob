@@ -1,21 +1,28 @@
 import type { AgentRunRequest } from "@bob/contracts/agent"
-import type { ToolCommand, ToolName } from "@bob/contracts/tools"
+import type { CapabilityModule, ToolCommand, ToolName } from "@bob/contracts/tools"
 
+import {
+  coreDeploymentProfile,
+  transitionalDeploymentProfile
+} from "@bob/contracts/deployment-profiles"
 import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import type { ConnectionStore } from "../src/modules/connections/store.ts"
 import type {
+  ToolCommandAdapter,
   ToolCommandAdapterContext,
   ToolRunContext
 } from "../src/modules/conversations/tool-adapter.ts"
 import type { JournalStore } from "../src/modules/journal/store.ts"
 import type { MemoryStore } from "../src/modules/memory/store.ts"
 import type { ReminderStore } from "../src/modules/reminders/store.ts"
+import type { RetrievalPipeline } from "../src/modules/retrieval/pipeline.ts"
 import type { OwnerSettingsStore } from "../src/modules/settings/store.ts"
 import type { TrainingModule } from "../src/modules/training/module.ts"
 
 import { makeConnectionsToolAdapter } from "../src/modules/connections/tool-adapter.ts"
+import { makeToolAdapterRegistry } from "../src/modules/conversations/tool-adapter.ts"
 import { expiredToolCallOutcome } from "../src/modules/conversations/tool-executor.ts"
 import { makeJournalToolAdapter } from "../src/modules/journal/tool-adapter.ts"
 import { makeMemoryToolAdapter } from "../src/modules/memory/tool-adapter.ts"
@@ -40,6 +47,8 @@ function run(userText: string): ToolRunContext {
       allowedTools: [],
       protocolVersion: 1,
       correlationId: "00000000-0000-4000-8000-000000000004",
+      conversationTurnId: "00000000-0000-4000-8000-000000000005",
+      conversationTurnRevision: 1,
       contextItems: [],
       limits: {
         maxTurns: 4,
@@ -73,12 +82,43 @@ function commandContext(
 }
 
 describe("domain-owned Tool command Adapters", () => {
+  function adapterFor(module: CapabilityModule): ToolCommandAdapter {
+    return {
+      capabilityId: module.id,
+      names: module.names,
+      execute: vi.fn().mockResolvedValue({ ok: true, code: "ok", message: "Done." })
+    }
+  }
+
+  it("composes a core registry without a Training Adapter", () => {
+    const registry = makeToolAdapterRegistry(
+      coreDeploymentProfile,
+      coreDeploymentProfile.modules.map(adapterFor)
+    )
+
+    expect(registry.adapterFor("memory_search")?.capabilityId).toBe("memory")
+    expect(registry.adapterFor("workout_start")).toBeUndefined()
+  })
+
+  it("rejects missing and unselected Adapters", () => {
+    expect(() => makeToolAdapterRegistry(coreDeploymentProfile, [])).toThrow("Missing Tool Adapter")
+    const training = transitionalDeploymentProfile.modules.find(
+      (module) => module.id === "training"
+    )
+    expect(training).toBeDefined()
+    expect(() => makeToolAdapterRegistry(coreDeploymentProfile, [adapterFor(training!)])).toThrow(
+      "is not in profile core"
+    )
+  })
+
   it("stops replay after an expired external mutation lease", () => {
-    expect(expiredToolCallOutcome("connection_link_create")).toMatchObject({
+    expect(
+      expiredToolCallOutcome("connection_link_create", transitionalDeploymentProfile)
+    ).toMatchObject({
       ok: false,
       code: "external_outcome_unknown"
     })
-    expect(expiredToolCallOutcome("reminder_create")).toBeUndefined()
+    expect(expiredToolCallOutcome("reminder_create", transitionalDeploymentProfile)).toBeUndefined()
   })
 
   it("keeps reminder list behavior in the Reminder Adapter", async () => {
@@ -122,28 +162,53 @@ describe("domain-owned Tool command Adapters", () => {
         expiresAt: "2026-08-11T10:10:00.000Z"
       })
     })
-    const result = await makeJournalToolAdapter(journal, {
-      uiBaseUrl: "https://bob.example.invalid"
-    }).execute(commandContext("journal_link_create", {}))
+    const excludeFromContext = vi.fn().mockResolvedValue(true)
+    const result = await makeJournalToolAdapter(
+      journal,
+      { excludeFromContext },
+      { uiBaseUrl: "https://bob.example.invalid" }
+    ).execute(commandContext("journal_link_create", {}))
 
     expect(result).toMatchObject({
       ok: true,
       code: "journal_link_created",
       data: { path: "https://bob.example.invalid/journal/handoff", bearerToken: false }
     })
+    expect(excludeFromContext).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000005", 1)
+  })
+
+  it("fails a private Tool before execution when turn exclusion fails", async () => {
+    const createHandoff = vi.fn()
+    const journal = testFixture<JournalStore>({ createHandoff })
+    const result = await makeJournalToolAdapter(
+      journal,
+      { excludeFromContext: vi.fn().mockResolvedValue(false) },
+      { uiBaseUrl: "https://bob.example.invalid" }
+    ).execute(commandContext("journal_link_create", {}))
+
+    expect(result).toMatchObject({ ok: false, code: "privacy_policy_failed" })
+    expect(createHandoff).not.toHaveBeenCalled()
   })
 
   it("keeps recall behavior in the Memory Adapter", async () => {
-    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-    const memory = testFixture<MemoryStore>({
-      search: vi.fn().mockResolvedValue([])
+    const memory = testFixture<MemoryStore>({})
+    const retrieve = vi.fn().mockResolvedValue({
+      status: "abstain",
+      reason: "no_candidates",
+      items: [],
+      candidateCount: 0,
+      relevantCount: 0,
+      temporal: { mode: "current", at: "2026-08-11T10:00:00.000Z" }
     })
-    const result = await makeMemoryToolAdapter(memory).execute(
+    const retrieval = testFixture<RetrievalPipeline>({ retrieve })
+    const result = await makeMemoryToolAdapter(memory, retrieval).execute(
       commandContext("memory_search", { query: "gym" })
     )
 
     expect(result).toMatchObject({ ok: true, code: "memory_results", data: { matches: [] } })
-    expect(memory.search).toHaveBeenCalledWith(ownerId, "gym", true)
+    expect(retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerId, query: "gym", channel: true })
+    )
   })
 
   it("keeps owner settings and connection commands in their Adapters", async () => {
@@ -167,10 +232,10 @@ describe("domain-owned Tool command Adapters", () => {
       })
     })
 
-    const settingsResult = await makeSettingsToolAdapter(settings, connections).execute(
+    const settingsResult = await makeSettingsToolAdapter(settings).execute(
       commandContext("settings_get", {})
     )
-    const connectionResult = await makeConnectionsToolAdapter(connections, settings).execute(
+    const connectionResult = await makeConnectionsToolAdapter(connections).execute(
       commandContext("connection_list", {})
     )
 

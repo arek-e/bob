@@ -1,5 +1,6 @@
 import type { Telemetry } from "@bob/observability/effect"
 
+import { coreDeploymentProfile } from "@bob/contracts/deployment-profiles/core"
 import { nodeTelemetryLayer } from "@bob/observability/node"
 import { createBobPiAgent, type BobPiAgent } from "@bob/pi-agent"
 import { OpenBaoCredentialStore } from "@bob/pi-agent/auth"
@@ -10,8 +11,11 @@ import { AccessVerifier, accessVerifierLayer, createAccessVerifier } from "./acc
 import { readAgentConfiguration, type AgentConfiguration } from "./configuration.ts"
 import { CoreToolClient, coreToolClientLayer, createCoreToolClient } from "./core-tools.ts"
 
+export const defaultAgentProfile = coreDeploymentProfile
+
 export interface AgentComposition {
   readonly config: AgentConfiguration
+  readonly profile: typeof coreDeploymentProfile
   readonly runtime: ManagedRuntime.ManagedRuntime<
     AccessVerifier | CoreToolClient | Telemetry,
     never
@@ -33,6 +37,7 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
     adminSubject: config.adminAccessSubject
   })
   const coreTools = createCoreToolClient({
+    catalogue: defaultAgentProfile,
     coreUrl: config.coreUrl,
     accessClientId: config.coreAccessClientId,
     accessClientSecret: config.coreAccessClientSecret
@@ -55,6 +60,7 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
         })
   })
   const agent = createBobPiAgent({
+    catalogue: defaultAgentProfile,
     credentials,
     provider: config.provider,
     model: config.model,
@@ -76,6 +82,7 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
   )
   return {
     config,
+    profile: defaultAgentProfile,
     runtime,
     services: { access, agent, coreTools }
   }

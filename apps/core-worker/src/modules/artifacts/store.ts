@@ -21,10 +21,26 @@ export interface ArtifactStore {
 
 export const ArtifactStore = Context.Service<ArtifactStore>("bob/ArtifactStore")
 
+export interface LegacyArtifactReader {
+  read(value: typeof Schema.Json.Type): AgentArtifactValue | undefined
+}
+
 export function makeArtifactStore(
   database: CoreDatabase,
-  protection: DataProtection
+  protection: DataProtection,
+  options: { readonly legacyReaders?: readonly LegacyArtifactReader[] } = {}
 ): ArtifactStore {
+  function decodeArtifact(value: typeof Schema.Json.Type): AgentArtifactValue {
+    try {
+      return Schema.decodeUnknownSync(AgentArtifact)(value)
+    } catch (error) {
+      for (const reader of options.legacyReaders ?? []) {
+        const artifact = reader.read(value)
+        if (artifact !== undefined) return artifact
+      }
+      throw error
+    }
+  }
   async function ownerKey(ownerId: string): Promise<CryptoKey> {
     const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
     if (
@@ -74,7 +90,7 @@ export function makeArtifactStore(
       return {
         id: row.artifact.id,
         revision: row.revision.revision,
-        artifact: Schema.decodeUnknownSync(AgentArtifact)(JSON.parse(content)),
+        artifact: decodeArtifact(Schema.decodeUnknownSync(Schema.Json)(JSON.parse(content))),
         renderedText
       }
     }

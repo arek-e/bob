@@ -117,6 +117,7 @@ export const conversationTurns = sqliteTable(
       enum: ["collecting", "running", "settling", "committing", "replied"]
     }).notNull(),
     revision: integer("revision").notNull(),
+    contextEligible: integer("context_eligible", { mode: "boolean" }),
     latestInboundEventId: text("latest_inbound_event_id").notNull(),
     latestMessageId: text("latest_message_id").notNull(),
     activeRunId: text("active_run_id"),

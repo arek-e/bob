@@ -132,6 +132,7 @@ describe("agent response selection", () => {
     const groundedRequest = {
       ...request,
       userText: "When do I train?",
+      grounding: { requiresSources: true },
       contextItems: [
         {
           kind: "fact" as const,

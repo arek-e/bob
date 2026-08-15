@@ -37,7 +37,7 @@ Update the relevant tests when behavior changes. Report failed checks and their 
 ## Architecture guardrails
 
 - Treat `CONTEXT.md` and accepted ADRs as authoritative.
-- Register Capability Modules and Context source Modules in static, reviewed source lists.
+- Register Capability Modules and Context source Modules in static, reviewed deployment profiles.
 - Keep every Tool in exactly one Capability Module.
 - Update Tool definitions, safety metadata, and conformance tests together.
 - Keep domain Modules authoritative for policy and mutation rules.

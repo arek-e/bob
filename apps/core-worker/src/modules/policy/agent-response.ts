@@ -21,6 +21,7 @@ export interface AgentResponseDecision {
 }
 
 function requestRequiresPersonalGrounding(request: AgentRunRequest): boolean {
+  if (request.grounding !== undefined) return request.grounding.requiresSources
   const orderedTurnText = request.currentTurnMessages?.map((message) => message.text).join("\n")
   return requiresPersonalGrounding(orderedTurnText ?? request.userText)
 }

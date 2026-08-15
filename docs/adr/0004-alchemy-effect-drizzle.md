@@ -4,6 +4,7 @@
 - Date: 2026-08-11
 - Scope: Cloudflare infrastructure, effectful TypeScript, and D1 access
 - Managed ownership: Amended by ADR 0015
+- Capability composition: Amended by ADR 0016
 
 ## Context
 
@@ -78,7 +79,7 @@ Use `infra/cloudflare/alchemy.run.ts` as the visible stack composition.
 
 Use one Alchemy stage named `prod`.
 
-Keep the reminder Cron active in production.
+Keep the reminder Cron active only when the deployment profile includes the reminder Vertical Module.
 
 Enable Sendblue only after its live URLs and reconciliation checks are ready.
 

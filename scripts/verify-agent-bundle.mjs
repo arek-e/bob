@@ -12,3 +12,15 @@ for (const required of [
     throw new Error(`Agent bundle is missing the static OAuth marker: ${required}`)
   }
 }
+
+for (const verticalMarker of [
+  "reminder_create",
+  "journal_link_create",
+  "workout_start",
+  "connection_list",
+  "training_plan"
+]) {
+  if (bundle.includes(verticalMarker)) {
+    throw new Error(`Agent bundle contains an optional Vertical marker: ${verticalMarker}`)
+  }
+}

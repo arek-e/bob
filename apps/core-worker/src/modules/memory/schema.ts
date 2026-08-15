@@ -10,9 +10,15 @@ export const memoryCandidates = sqliteTable("memory_candidates", {
   proposedValueIv: text("proposed_value_iv"),
   canonicalTextCiphertext: text("canonical_text_ciphertext").notNull(),
   canonicalTextIv: text("canonical_text_iv").notNull(),
+  memoryClass: text("memory_class", { enum: ["owner_fact"] })
+    .notNull()
+    .default("owner_fact"),
   originClass: text("origin_class").notNull(),
   sourceType: text("source_type").notNull(),
   sourceId: text("source_id").notNull(),
+  sourceLabel: text("source_label"),
+  sourceOccurredAt: text("source_occurred_at"),
+  sourceContentHash: text("source_content_hash"),
   extractionConfidence: integer("extraction_confidence").notNull(),
   sensitivity: text("sensitivity").notNull(),
   status: text("status", { enum: ["proposed", "disputed", "confirmed", "rejected"] }).notNull(),
@@ -81,6 +87,8 @@ export const factEvidence = sqliteTable(
     revisionId: text("revision_id").notNull(),
     sourceType: text("source_type").notNull(),
     sourceId: text("source_id").notNull(),
+    sourceLabel: text("source_label"),
+    sourceOccurredAt: text("source_occurred_at"),
     evidenceRole: text("evidence_role", { enum: ["supports", "contradicts", "context"] }).notNull(),
     excerptHash: text("excerpt_hash").notNull(),
     createdAt: text("created_at").notNull()
@@ -97,24 +105,3 @@ export const factRelations = sqliteTable("fact_relations", {
   relation: text("relation", { enum: ["supports", "contradicts", "supersedes"] }).notNull(),
   createdAt: text("created_at").notNull()
 })
-
-export const searchDocuments = sqliteTable(
-  "search_documents",
-  {
-    id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
-    sourceType: text("source_type").notNull(),
-    sourceId: text("source_id").notNull(),
-    text: text("text").notNull(),
-    sourceLabel: text("source_label").notNull(),
-    occurredAt: text("occurred_at"),
-    importance: integer("importance").notNull(),
-    sensitivity: text("sensitivity").notNull(),
-    modelEligible: integer("model_eligible", { mode: "boolean" }).notNull(),
-    channelEligible: integer("channel_eligible", { mode: "boolean" }).notNull(),
-    deletedAt: text("deleted_at"),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull()
-  },
-  (table) => [uniqueIndex("search_documents_source_uq").on(table.sourceType, table.sourceId)]
-)

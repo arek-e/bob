@@ -1,5 +1,5 @@
 import { AgentRunResult, type AgentRunRequest } from "@bob/contracts/agent"
-import { AdminStatus } from "@bob/contracts/ui"
+import { AdminStatus } from "@bob/contracts/ui/core"
 import { Schema } from "effect"
 
 import { ENV } from "./environment.generated.ts"

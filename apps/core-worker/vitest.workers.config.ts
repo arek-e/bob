@@ -41,8 +41,7 @@ export default defineConfig({
           DELIVERY_RESULT_QUEUE: "bob-delivery-result-test"
         },
         durableObjects: {
-          OWNER_RUN_COORDINATOR: "OwnerRunCoordinator",
-          REMINDER_CLOCK: "ReminderClock"
+          OWNER_RUN_COORDINATOR: "OwnerRunCoordinator"
         },
         bindings: {
           TEST_MIGRATIONS: JSON.stringify(await readNestedMigrations()),
@@ -52,9 +51,6 @@ export default defineConfig({
           OUTBOUND_DEAD_LETTER_QUEUE_NAME: "bob-outbound-dead-letter-test",
           OWNER_ID: "00000000-0000-4000-8000-000000000001",
           OWNER_TIME_ZONE: "Europe/Stockholm",
-          REMINDER_QUIET_HOURS_START: "22:00",
-          REMINDER_QUIET_HOURS_END: "07:00",
-          REMINDER_DAILY_LIMIT: 8,
           DATA_KEK_ACTIVE_VERSION: "1",
           DATA_KEK_KEYRING_JSON: JSON.stringify({ 1: testKey(1) }),
           DATA_LOOKUP_KEY: testKey(2),
@@ -74,9 +70,6 @@ export default defineConfig({
           AGENT_ADMIN_ACCESS_CLIENT_ID: "agent-admin-client-id",
           AGENT_ADMIN_ACCESS_CLIENT_SECRET: "agent-admin-secret-at-least-32-bytes",
           UI_BASE_URL: "https://bob.example.invalid",
-          CONNECTIONS_GATEWAY_URL: "https://connections.example.invalid",
-          CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID: "connections-client-id",
-          CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET: "connections-client-secret",
           BOB_MODEL: "gpt-test",
           BOB_PROVIDER: "openai-codex",
           BOB_RUN_TOKEN_BUDGET: 32_000,

@@ -146,7 +146,6 @@ export function createBobStack(options: BobStackOptions) {
       }).pipe(retain(true))
 
       const ownerRunCoordinator = Cloudflare.DurableObject("OwnerRunCoordinator")
-      const reminderClock = Cloudflare.DurableObject("ReminderClock")
 
       const coreToAgent = yield* Cloudflare.Access.ServiceToken("CoreToAgentRun", {
         name: `bob-core-to-agent-run-${PRODUCTION_STAGE}-v${ENV.ACCESS_SERVICE_TOKEN_ROTATION_VERSION}`,
@@ -262,12 +261,8 @@ export function createBobStack(options: BobStackOptions) {
           OUTBOUND_DEAD_LETTER_QUEUE_NAME: outboundDeadLetter.queueName,
           OUTBOUND_QUEUE: outboundQueue,
           OWNER_RUN_COORDINATOR: ownerRunCoordinator,
-          REMINDER_CLOCK: reminderClock,
           OWNER_ID: Redacted.make(ENV.OWNER_ID),
           OWNER_TIME_ZONE: ENV.OWNER_TIME_ZONE,
-          REMINDER_QUIET_HOURS_START: ENV.REMINDER_QUIET_HOURS_START,
-          REMINDER_QUIET_HOURS_END: ENV.REMINDER_QUIET_HOURS_END,
-          REMINDER_DAILY_LIMIT: ENV.REMINDER_DAILY_LIMIT,
           DATA_KEK_ACTIVE_VERSION: Redacted.make(ENV.DATA_KEK_ACTIVE_VERSION),
           DATA_KEK_KEYRING_JSON: Redacted.make(ENV.DATA_KEK_KEYRING_JSON),
           DATA_LOOKUP_KEY: Redacted.make(ENV.DATA_LOOKUP_KEY),
@@ -291,13 +286,6 @@ export function createBobStack(options: BobStackOptions) {
             requiredGeneratedSecret(value, "CoreToAgentAdmin client secret")
           ),
           UI_BASE_URL: `https://${coreHost}`,
-          CONNECTIONS_GATEWAY_URL: ENV.CONNECTIONS_GATEWAY_URL,
-          CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID: Redacted.make(
-            ENV.CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID
-          ),
-          CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET: Redacted.make(
-            ENV.CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET
-          ),
           BOB_MODEL: ENV.BOB_MODEL,
           BOB_PROVIDER: ENV.BOB_PROVIDER,
           BOB_RUN_TOKEN_BUDGET: ENV.BOB_RUN_TOKEN_BUDGET,

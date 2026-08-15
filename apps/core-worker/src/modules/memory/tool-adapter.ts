@@ -1,28 +1,60 @@
 import {
+  memoryCapability,
   MemoryProposeArguments,
-  MemorySearchArguments,
-  type ToolResult
-} from "@bob/contracts/tools"
+  MemorySearchArguments
+} from "@bob/contracts/capabilities/memory"
+import { type ToolResult } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
 import type {
   ToolCommandAdapter,
   ToolCommandAdapterContext
 } from "../conversations/tool-adapter.ts"
-import type { MemoryStore } from "./store.ts"
+import type { RetrievalPipeline } from "../retrieval/pipeline.ts"
+import type { OwnerFactStore } from "./store.ts"
 
-export function makeMemoryToolAdapter(memory: MemoryStore): ToolCommandAdapter {
+export function makeMemoryToolAdapter(
+  memory: OwnerFactStore,
+  retrieval: RetrievalPipeline
+): ToolCommandAdapter {
   return {
+    capabilityId: memoryCapability.id,
+    names: memoryCapability.names,
     async execute({ command, run }: ToolCommandAdapterContext): Promise<ToolResult> {
       switch (command.name) {
         case "memory_search": {
           const args = Schema.decodeUnknownSync(MemorySearchArguments)(command.arguments)
-          const matches = await memory.search(command.ownerId, args.query, true)
+          const result = await retrieval.retrieve({
+            ownerId: command.ownerId,
+            query: args.query,
+            channel: true,
+            referenceTime: run.request.localTime,
+            timeZone: run.request.timeZone,
+            limit: 12,
+            totalCharacterBudget: 6_000,
+            itemCharacterBudget: 1_200
+          })
+          const matches = result.status === "supported" ? result.items : []
           return {
             ok: true,
             code: "memory_results",
-            message: `${matches.length} sources found.`,
-            data: JSON.parse(JSON.stringify({ matches }))
+            message:
+              result.status === "supported"
+                ? `${matches.length} sources found.`
+                : "No supported source found.",
+            data: JSON.parse(
+              JSON.stringify({
+                matches,
+                retrieval: { status: result.status }
+              })
+            ),
+            evidence: {
+              sources: matches.map(({ sourceId, sourceLabel, occurredAt }) => {
+                const source = { sourceId, sourceLabel }
+                if (occurredAt !== undefined) Object.assign(source, { occurredAt })
+                return source
+              })
+            }
           }
         }
         case "memory_propose": {
@@ -30,8 +62,13 @@ export function makeMemoryToolAdapter(memory: MemoryStore): ToolCommandAdapter {
           const result = await memory.propose(
             {
               ownerId: command.ownerId,
-              ...args,
-              originClass: "owner_input",
+              scope: args.scope,
+              key: args.key,
+              value: args.value,
+              canonicalText: args.canonicalText,
+              extractionConfidence: args.extractionConfidence,
+              importance: args.importance,
+              explicitRemember: args.explicitRemember,
               sourceType: "message",
               sourceId: run.messageId,
               authority: "agent"
@@ -42,7 +79,8 @@ export function makeMemoryToolAdapter(memory: MemoryStore): ToolCommandAdapter {
             ok: true,
             code: "memory_proposed",
             message: "The memory change is ready for review.",
-            data: result
+            data: result,
+            evidence: { actionOutcome: "proposed" }
           }
         }
         case "memory_confirm":

@@ -6,19 +6,7 @@ export const agentUsage = sqliteTable(
     runId: text("run_id").primaryKey(),
     userId: text("user_id").notNull(),
     correlationId: text("correlation_id").notNull(),
-    feature: text("feature", {
-      enum: [
-        "assistant",
-        "reminders",
-        "memory",
-        "journal",
-        "training",
-        "settings",
-        "safety",
-        "delivery",
-        "mixed"
-      ]
-    }).notNull(),
+    feature: text("feature").notNull(),
     workflow: text("workflow", { enum: ["agent_turn"] }).notNull(),
     provider: text("provider", { enum: ["openai-codex"] }).notNull(),
     model: text("model").notNull(),

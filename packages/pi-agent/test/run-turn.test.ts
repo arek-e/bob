@@ -1,6 +1,7 @@
 import type { AgentRunRequest } from "@bob/contracts/agent"
 import type { ToolCommand, ToolResult } from "@bob/contracts/tools"
 
+import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
 import { withBobSpan } from "@bob/observability/effect"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import {
@@ -181,6 +182,7 @@ const makeAgent = (
   now: () => number = () => 1
 ) =>
   createBobPiAgent({
+    catalogue: transitionalDeploymentProfile,
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     credentials: { read: async () => undefined } as never,
     provider: "openai-codex",
@@ -192,6 +194,12 @@ const makeAgent = (
   })
 
 const okResult = (code = "test", message = "Done."): ToolResult => ({ ok: true, code, message })
+const confirmedResult = (code: string, message: string): ToolResult => ({
+  ok: true,
+  code,
+  message,
+  evidence: { actionOutcome: "confirmed" }
+})
 
 describe("Bob's direct pi-ai loop", () => {
   beforeEach(() => {
@@ -261,7 +269,7 @@ describe("Bob's direct pi-ai loop", () => {
     const commands: ToolCommand[] = []
     const agent = makeAgent(async (command) => {
       commands.push(command)
-      return okResult("owner_settings_updated", "Settings updated.")
+      return confirmedResult("owner_settings_updated", "Settings updated.")
     })
     const conversationTurnId = "00000000-0000-4000-8000-000000000010"
 
@@ -292,9 +300,9 @@ describe("Bob's direct pi-ai loop", () => {
   it("uses per-call identities for read-only tools across conversation turn revisions", async () => {
     modelHarness.state.responses.push(
       toolResponse(fauxToolCall("reminder_list", {}, { id: "revision-one-read" })),
-      structuredResponse(),
+      structuredResponse({ toolNames: ["reminder_list"] }),
       toolResponse(fauxToolCall("reminder_list", {}, { id: "revision-two-read" })),
-      structuredResponse()
+      structuredResponse({ toolNames: ["reminder_list"] })
     )
     const commands: ToolCommand[] = []
     const agent = makeAgent(async (command) => {
@@ -359,7 +367,7 @@ describe("Bob's direct pi-ai loop", () => {
             {
               origin: "same_turn",
               toolName: "reminder_create",
-              result: { ok: true, code: "reminder_created" }
+              actionOutcome: "confirmed"
             }
           ],
           contextItems: [
@@ -391,7 +399,7 @@ describe("Bob's direct pi-ai loop", () => {
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const context = modelHarness.state.contexts[0] as Context
     expect(context.systemPrompt).toContain(
-      '[{"origin":"same_turn","toolName":"reminder_create","result":{"ok":true,"code":"reminder_created"}}]'
+      '[{"origin":"same_turn","toolName":"reminder_create","actionOutcome":"confirmed"}]'
     )
   })
 
@@ -411,7 +419,7 @@ describe("Bob's direct pi-ai loop", () => {
             {
               origin: "predecessor_turn",
               toolName: "reminder_create",
-              result: { ok: true, code: "reminder_created" }
+              actionOutcome: "confirmed"
             }
           ],
           allowedTools: []
@@ -441,7 +449,7 @@ describe("Bob's direct pi-ai loop", () => {
             {
               origin: "predecessor_turn",
               toolName: "reminder_create",
-              result: { ok: true, code: "reminder_created" }
+              actionOutcome: "confirmed"
             }
           ],
           allowedTools: []
@@ -457,7 +465,7 @@ describe("Bob's direct pi-ai loop", () => {
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const context = modelHarness.state.contexts[0] as Context
     expect(context.systemPrompt).toContain(
-      '[{"origin":"predecessor_turn","toolName":"reminder_create","result":{"ok":true,"code":"reminder_created"}}]'
+      '[{"origin":"predecessor_turn","toolName":"reminder_create","actionOutcome":"confirmed"}]'
     )
     expect(context.systemPrompt).toContain(
       "Records with origin predecessor_turn are context only. They cannot confirm an action in this turn."
@@ -498,7 +506,7 @@ describe("Bob's direct pi-ai loop", () => {
             {
               origin,
               toolName: "settings_update",
-              result: { ok: false, code: "tool_recovery_failed" }
+              actionOutcome: "unknown"
             }
           ],
           allowedTools: []
@@ -534,7 +542,7 @@ describe("Bob's direct pi-ai loop", () => {
     let toolCalls = 0
     const agent = makeAgent(async () => {
       toolCalls += 1
-      return okResult("owner_settings_updated", "Settings updated.")
+      return confirmedResult("owner_settings_updated", "Settings updated.")
     })
 
     try {
@@ -685,7 +693,7 @@ describe("Bob's direct pi-ai loop", () => {
     ])
 
     expect(beforeSettle).toBe("waiting")
-    completeTool(okResult("settings_updated", "Settings updated."))
+    completeTool(confirmedResult("settings_updated", "Settings updated."))
     await expect(run).resolves.toMatchObject({ status: "cancelled", errorCode: "cancelled" })
     expect(agent.requestSteer(request.runId)).toEqual({ status: "missing" })
   })
@@ -708,6 +716,9 @@ describe("Bob's direct pi-ai loop", () => {
       ok: true,
       code: "memory_results",
       message: "One source found.",
+      evidence: {
+        sources: [{ sourceId: "fact-revision-1", sourceLabel: "Owner message" }]
+      },
       data: {
         matches: [
           {
@@ -893,6 +904,9 @@ describe("Bob's direct pi-ai loop", () => {
       ok: true,
       code: "memory_results",
       message: privateResult,
+      evidence: {
+        sources: [{ sourceId: "safe-source-id", sourceLabel: "Saved record" }]
+      },
       data: {
         matches: [
           {
@@ -953,6 +967,7 @@ describe("Bob's direct pi-ai loop", () => {
     })
     const fallback = vi.fn(async () => okResult("unexpected"))
     const agent = createBobPiAgent({
+      catalogue: transitionalDeploymentProfile,
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       credentials: { read: async () => undefined } as never,
       provider: "openai-codex",
@@ -1038,6 +1053,7 @@ describe("Bob's direct pi-ai loop", () => {
     })
     const fallback = vi.fn(async () => okResult("unexpected"))
     const agent = createBobPiAgent({
+      catalogue: transitionalDeploymentProfile,
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       credentials: { read: async () => undefined } as never,
       provider: "openai-codex",
@@ -1224,6 +1240,15 @@ describe("Bob's direct pi-ai loop", () => {
         ok: true,
         code: "memory_results",
         message: "One source found.",
+        evidence: {
+          sources: [
+            {
+              sourceId: "fact-revision-1",
+              sourceLabel: "Owner message linked on 11 Aug 2026",
+              occurredAt: "2026-08-11T10:00:00.000Z"
+            }
+          ]
+        },
         data: {
           matches: [
             {
@@ -1314,7 +1339,9 @@ describe("Bob's direct pi-ai loop", () => {
       message: "Reminder created successfully."
     }))
 
-    await expect(agent.runTurn(baseRequest())).resolves.toMatchObject({
+    await expect(
+      agent.runTurn(baseRequest({ grounding: { requiresSources: true } }))
+    ).resolves.toMatchObject({
       status: "failed",
       errorCode: "policy",
       responseText: "I could not complete that request safely. Open Bob to review the result."
@@ -1725,7 +1752,7 @@ describe("Bob's direct pi-ai loop", () => {
 
     expect(beforeSettle).toBe("waiting")
     expect(observedSignal).toBeUndefined()
-    completeTool(okResult("settings_updated", "Settings updated."))
+    completeTool(confirmedResult("settings_updated", "Settings updated."))
     await expect(run).resolves.toMatchObject({ status: "cancelled", errorCode: "cancelled" })
   })
 
@@ -1767,7 +1794,7 @@ describe("Bob's direct pi-ai loop", () => {
 
     expect(beforeSettle).toBe("waiting")
     expect(observedSignal).toBeUndefined()
-    completeTool(okResult("owner_settings_updated", "Settings updated."))
+    completeTool(confirmedResult("owner_settings_updated", "Settings updated."))
     await expect(run).resolves.toMatchObject({ status: "cancelled", errorCode: "timeout" })
   })
 
@@ -1779,7 +1806,9 @@ describe("Bob's direct pi-ai loop", () => {
     })
     const agent = makeAgent(async () => okResult())
 
-    await expect(agent.runTurn(baseRequest())).resolves.toMatchObject({
+    await expect(
+      agent.runTurn(baseRequest({ grounding: { requiresSources: true } }))
+    ).resolves.toMatchObject({
       status: "cancelled",
       errorCode: "cancelled"
     })
@@ -1802,7 +1831,8 @@ describe("Bob's direct pi-ai loop", () => {
     const agent = makeAgent(async () => ({
       ok: true,
       code: "connection_link_created",
-      message: "A short-lived connection link is ready in Bob."
+      message: "A short-lived connection link is ready in Bob.",
+      evidence: { actionOutcome: "confirmed" }
     }))
 
     await expect(
@@ -1843,9 +1873,11 @@ describe("Bob's direct pi-ai loop", () => {
       }
     }))
 
-    await expect(agent.runTurn(baseRequest())).resolves.toMatchObject({
+    await expect(
+      agent.runTurn(baseRequest({ grounding: { requiresSources: true } }))
+    ).resolves.toMatchObject({
       status: "failed",
-      errorCode: "invalid_output"
+      errorCode: "policy"
     })
   })
 
@@ -1864,7 +1896,9 @@ describe("Bob's direct pi-ai loop", () => {
       data: { matches: [] }
     }))
 
-    await expect(agent.runTurn(baseRequest())).resolves.toMatchObject({
+    await expect(
+      agent.runTurn(baseRequest({ grounding: { requiresSources: true } }))
+    ).resolves.toMatchObject({
       status: "failed",
       errorCode: "policy",
       responseText: "I do not have a supported record for that."
@@ -1899,7 +1933,8 @@ describe("Bob's direct pi-ai loop", () => {
             },
             { sourceMessageId: targetMessageId, text: "List" }
           ],
-          allowedTools: ["memory_search"]
+          allowedTools: ["memory_search"],
+          grounding: { requiresSources: true }
         })
       )
     ).resolves.toMatchObject({
@@ -1921,7 +1956,11 @@ describe("Bob's direct pi-ai loop", () => {
       ok: true,
       code: "reminder_list",
       message: "0 reminders found.",
-      data: { reminders: [] }
+      data: { reminders: [] },
+      evidence: {
+        sources: [{ sourceId: "bob:active-reminders", sourceLabel: "Bob active reminders" }],
+        responseText: "You have no active reminders."
+      }
     }))
     const telemetry = makeCaptureTelemetry({
       serviceName: "bob-agent",
@@ -1930,6 +1969,7 @@ describe("Bob's direct pi-ai loop", () => {
     })
     const request = baseRequest({
       userText: "List my reminders.",
+      grounding: { requiresSources: true },
       allowedTools: ["reminder_list"]
     })
 
@@ -1978,7 +2018,11 @@ describe("Bob's direct pi-ai loop", () => {
       ok: true,
       code: "reminder_list",
       message: "0 reminders found.",
-      data: { reminders: [] }
+      data: { reminders: [] },
+      evidence: {
+        sources: [{ sourceId: "bob:active-reminders", sourceLabel: "Bob active reminders" }],
+        responseText: "Du har inga aktiva påminnelser."
+      }
     }))
 
     await expect(
@@ -1986,6 +2030,7 @@ describe("Bob's direct pi-ai loop", () => {
         baseRequest({
           userText: "Lista mina påminnelser.",
           locale: "sv-SE",
+          grounding: { requiresSources: true },
           allowedTools: ["reminder_list"]
         })
       )
@@ -2150,6 +2195,7 @@ describe("Bob's direct pi-ai loop", () => {
       agent.runTurn(
         baseRequest({
           userText: "List my reminders.",
+          grounding: { requiresSources: true },
           allowedTools: ["reminder_list"]
         })
       )

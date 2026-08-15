@@ -1,4 +1,4 @@
-import type { ConnectionProvider } from "@bob/contracts/settings"
+import type { ConnectionProvider } from "@bob/contracts/capabilities/connections"
 
 import { Schema } from "effect"
 

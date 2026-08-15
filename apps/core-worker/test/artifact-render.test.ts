@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { renderArtifact } from "../src/modules/artifacts/render.ts"
+import { legacyTrainingArtifactReader } from "../src/modules/training/legacy-artifact.ts"
 
 describe("artifact rendering", () => {
   it("renders a general plan as stable copyable text", () => {
@@ -18,9 +19,9 @@ describe("artifact rendering", () => {
     )
   })
 
-  it("renders a training plan as stable copyable text", () => {
+  it("renders another plan as stable copyable text", () => {
     const artifact = {
-      kind: "training_plan" as const,
+      kind: "plan" as const,
       title: "Biceps · Thursday, August 13",
       durationMinutes: 50,
       sections: [
@@ -51,5 +52,21 @@ describe("artifact rendering", () => {
     )
     expect(renderArtifact(artifact)).toBe(first)
     expect(first).not.toMatch(/Sources?:/u)
+  })
+
+  it("normalizes a stored legacy Training artifact in its owning Module", () => {
+    expect(
+      legacyTrainingArtifactReader.read({
+        kind: "training_plan",
+        title: "Stored plan",
+        durationMinutes: 30,
+        sections: [{ heading: "First", items: ["One stored item"] }]
+      })
+    ).toEqual({
+      kind: "plan",
+      title: "Stored plan",
+      durationMinutes: 30,
+      sections: [{ heading: "First", items: ["One stored item"] }]
+    })
   })
 })

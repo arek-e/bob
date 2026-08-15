@@ -1,3 +1,4 @@
+import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
 import { describe, expect, it, vi } from "vitest"
 
 import { agentRunSpanCode, featureForTools, tokenBudgetState } from "../src/attribution.ts"
@@ -209,11 +210,15 @@ describe("trace context", () => {
 
 describe("usage attribution", () => {
   it("groups tools into stable product features", () => {
-    expect(featureForTools([])).toBe("assistant")
-    expect(featureForTools(["reminder_create", "reminder_list"])).toBe("reminders")
-    expect(featureForTools(["memory_search", "workout_last"])).toBe("mixed")
+    expect(featureForTools(transitionalDeploymentProfile, [])).toBe("assistant")
     expect(
-      featureForTools([
+      featureForTools(transitionalDeploymentProfile, ["reminder_create", "reminder_list"])
+    ).toBe("reminders")
+    expect(featureForTools(transitionalDeploymentProfile, ["memory_search", "workout_last"])).toBe(
+      "mixed"
+    )
+    expect(
+      featureForTools(transitionalDeploymentProfile, [
         "reminder_list",
         "memory_search",
         "journal_search_metadata",

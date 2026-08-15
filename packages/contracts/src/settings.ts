@@ -18,16 +18,8 @@ export const OwnerSettingsUpdate = Schema.Struct({
 })
 
 export const SettingsConnection = Schema.Struct({
-  provider: Schema.Literals(["sendblue", "google_calendar", "microsoft_calendar"]),
+  provider: Schema.Literal("sendblue"),
   status: Schema.Literals(["connected", "not_connected", "paused", "unavailable"])
-})
-
-export const ConnectionProvider = Schema.Literals(["google_calendar", "microsoft_calendar"])
-
-export const ConnectionSession = Schema.Struct({
-  provider: ConnectionProvider,
-  connectUrl: Schema.String,
-  expiresAt: IsoDateTime
 })
 
 export const OwnerSettingsView = Schema.Struct({
@@ -40,5 +32,3 @@ export type OwnerSettings = typeof OwnerSettings.Type
 export type OwnerSettingsUpdate = typeof OwnerSettingsUpdate.Type
 export type SettingsConnection = typeof SettingsConnection.Type
 export type OwnerSettingsView = typeof OwnerSettingsView.Type
-export type ConnectionProvider = typeof ConnectionProvider.Type
-export type ConnectionSession = typeof ConnectionSession.Type

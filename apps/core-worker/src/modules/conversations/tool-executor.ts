@@ -1,9 +1,7 @@
 import { AgentRunRequest } from "@bob/contracts/agent"
 import {
+  type CapabilityCatalogue,
   conversationMutationIdempotencyKey,
-  capabilityForToolName,
-  hasUnknownExternalOutcome,
-  isReadOnlyToolName,
   ToolCommand,
   ToolName,
   ToolResult
@@ -12,27 +10,13 @@ import { and, eq, exists, gte, inArray, isNull, lt, lte, or, sql } from "drizzle
 import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
-import type { ConnectionStore } from "../connections/store.ts"
-import type { JournalStore } from "../journal/store.ts"
-import type { MemoryStore } from "../memory/store.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
-import type { ReminderStore } from "../reminders/store.ts"
-import type { OwnerSettingsStore } from "../settings/store.ts"
-import type { TrainingStore } from "../training/store.ts"
 
 import { JsonObject } from "../../json.ts"
-import { makeConnectionsToolAdapter } from "../connections/tool-adapter.ts"
-import { makeJournalToolAdapter } from "../journal/tool-adapter.ts"
-import { makeMemoryToolAdapter } from "../memory/tool-adapter.ts"
-import { makeReminderToolAdapter } from "../reminders/tool-adapter.ts"
-import { makeSettingsToolAdapter } from "../settings/tool-adapter.ts"
-import { makeTrainingModule, type TrainingModule } from "../training/module.ts"
-import { makeTrainingProposalStore } from "../training/proposal-store.ts"
-import { makeTrainingToolAdapter } from "../training/tool-adapter.ts"
 import { agentRuns, conversationTurns, inboundEvents, toolCalls, users } from "./schema.ts"
 import {
-  type ToolCommandAdapter,
   type ToolCommandAdapterContext,
+  type ToolAdapterRegistry,
   type ToolRunContext
 } from "./tool-adapter.ts"
 
@@ -92,35 +76,7 @@ export interface ToolExecutor {
   expireMutationRecovery(runId: string): Promise<boolean>
 }
 
-/**
- * Temporary factory compatibility for callers that still construct an
- * executor directly. The composed ToolExecutor service does not expose it.
- */
-export interface LegacyTrainingProposalAccess {
-  listTrainingProposals(ownerId: string): ReturnType<TrainingModule["listTrainingProposals"]>
-  approveTrainingProposal: TrainingModule["approveTrainingProposal"]
-}
-
 export const ToolExecutor = Context.Service<ToolExecutor>("bob/ToolExecutor")
-
-type ToolServices = {
-  reminders: ReminderStore
-  memory: MemoryStore
-  journal: JournalStore
-  training: TrainingStore | TrainingModule
-  settings?: OwnerSettingsStore
-  connections?: ConnectionStore
-}
-
-type ToolExecutorImplementation = ToolExecutor & LegacyTrainingProposalAccess
-
-function hasTrainingModule(training: ToolServices["training"]): training is TrainingModule {
-  return (
-    "proposeTraining" in training &&
-    "listTrainingProposals" in training &&
-    "approveTrainingProposal" in training
-  )
-}
 
 function denied(): ToolResult {
   return { ok: false, code: "policy_denied", message: "This tool is not allowed for this run." }
@@ -192,7 +148,7 @@ const mutationHesitationPhrases = [
 const mutationReviewQuestion =
   /^(?:what|why|how|when|where|who|which|will|would|can|could|should|does|do|did|is|are|am|vad|varför|hur|när|var|vem|vilken|vilka|kommer|skulle|kan|bör|gör|gjorde|är)\b/u
 const directMutationRequestQuestion =
-  /^(?:(?:(?:can|could|would|will) you(?: please)?|(?:kan|skulle) du(?: snälla)?)\s+)(?:remind|create|set|add|schedule|mark|acknowledge|complete|finish|snooze|postpone|delay|move|cancel|delete|remove|stop|update|change|switch|use|påminn|skapa|lägg|schemalägg|sätt|markera|bekräfta|slutför|snooza|senarelägg|skjut|flytta|avbryt|radera|stoppa|uppdatera|byt|använd)\b/u
+  /^(?:(?:can|could|would|will) you(?: please)?|(?:kan|skulle) du(?: snälla)?)\s+(?!(?:explain|describe|clarify|tell|show|förklara|beskriv)\b)\S+/u
 
 function latestFragmentText(request: typeof AgentRunRequest.Type): string {
   return request.currentTurnMessages?.at(-1)?.text ?? request.userText
@@ -231,50 +187,42 @@ function latestFragmentBlocksMutation(request: typeof AgentRunRequest.Type): boo
   return mutationReviewQuestion.test(normalized) && !directMutationRequestQuestion.test(normalized)
 }
 
-const mutatingToolNames = ToolName.literals.filter((name) => !isReadOnlyToolName(name))
+function capabilityOwns(
+  catalogue: CapabilityCatalogue,
+  name: ToolName,
+  policy: "readOnly" | "externalOutcomeUnknown"
+): boolean {
+  return catalogue.modules.some((module) => module[policy].includes(name))
+}
 
-export function expiredToolCallOutcome(name: ToolName): ToolResult | undefined {
-  if (!hasUnknownExternalOutcome(name)) return undefined
+export function expiredToolCallOutcome(
+  name: ToolName,
+  catalogue: CapabilityCatalogue
+): ToolResult | undefined {
+  if (!capabilityOwns(catalogue, name, "externalOutcomeUnknown")) return undefined
   return {
     ok: false,
     code: "external_outcome_unknown",
-    message: "The external action result is unknown. Open Bob before trying again."
+    message: "The external action result is unknown. Open Bob before trying again.",
+    evidence: { actionOutcome: "unknown" }
   }
 }
 
 export function makeToolExecutor(
   database: CoreDatabase,
   protection: DataProtection,
-  services: ToolServices,
+  registry: ToolAdapterRegistry,
   options: {
-    readonly uiBaseUrl: string
     readonly now?: () => Date
     readonly randomUuid?: () => string
     readonly toolLeaseMs?: number
   }
-): ToolExecutorImplementation {
+): ToolExecutor {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const toolLeaseMs = options.toolLeaseMs ?? 60_000
-  const training = hasTrainingModule(services.training)
-    ? services.training
-    : makeTrainingModule(
-        services.training,
-        makeTrainingProposalStore(database, protection, services.training, {
-          now,
-          randomUuid
-        })
-      )
-
-  const adapters = {
-    reminders: makeReminderToolAdapter(services.reminders),
-    memory: makeMemoryToolAdapter(services.memory),
-    journal: makeJournalToolAdapter(services.journal, { uiBaseUrl: options.uiBaseUrl }),
-    training: makeTrainingToolAdapter(training),
-    settings: makeSettingsToolAdapter(services.settings, services.connections),
-    connections: makeConnectionsToolAdapter(services.connections, services.settings)
-  } satisfies Readonly<Record<string, ToolCommandAdapter>>
-
+  const isReadOnly = (name: ToolName) => capabilityOwns(registry.catalogue, name, "readOnly")
+  const mutatingToolNames = registry.catalogue.names.filter((name) => !isReadOnly(name))
   async function ownerKey(ownerId: string): Promise<CryptoKey> {
     const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
     if (
@@ -418,26 +366,27 @@ export function makeToolExecutor(
       messageId: context.messageId
     }
     const adapterContext: ToolCommandAdapterContext = { command, run }
-    switch (capabilityForToolName(command.name).id) {
-      case "reminders":
-        return adapters.reminders.execute(adapterContext)
-      case "memory":
-        return adapters.memory.execute(adapterContext)
-      case "journal":
-        return adapters.journal.execute(adapterContext)
-      case "training":
-        return adapters.training.execute(adapterContext)
-      case "settings":
-        return adapters.settings.execute(adapterContext)
-      case "connections":
-        return adapters.connections.execute(adapterContext)
+    const adapter = registry.adapterFor(command.name)
+    if (adapter === undefined) return denied()
+    const result = await adapter.execute(adapterContext)
+    if (result.evidence?.actionOutcome !== undefined) return result
+    const confirmedCodes = registry.catalogue.confirmedActionCodes(command.name)
+    if (result.ok && confirmedCodes.includes(result.code)) {
+      return {
+        ...result,
+        evidence: { ...result.evidence, actionOutcome: "confirmed" }
+      }
     }
+    if (result.code === "external_outcome_unknown") {
+      return {
+        ...result,
+        evidence: { ...result.evidence, actionOutcome: "unknown" }
+      }
+    }
+    return result
   }
 
-  const executor: ToolExecutorImplementation = {
-    listTrainingProposals: (ownerId) => training.listTrainingProposals(ownerId),
-    approveTrainingProposal: (ownerId, proposalId, proposalHash, approvalIdempotencyKey) =>
-      training.approveTrainingProposal(ownerId, proposalId, proposalHash, approvalIdempotencyKey),
+  const executor: ToolExecutor = {
     async mutationActivity(runId) {
       const [run] = await database
         .select({ conversationTurnId: agentRuns.conversationTurnId })
@@ -574,13 +523,13 @@ export function makeToolExecutor(
       const stableMutationTurnId =
         commandRun?.conversationTurnId !== null &&
         commandRun?.conversationTurnId !== undefined &&
-        !isReadOnlyToolName(command.name)
+        !isReadOnly(command.name)
           ? commandRun.conversationTurnId
           : undefined
+      const sourceMessageArgument = registry.catalogue.sourceMessageArgument(command.name)
       if (
-        stableMutationTurnId !== undefined &&
-        command.name === "reminder_create" &&
-        command.arguments.sourceMessageId !== commandRun?.targetMessageId
+        sourceMessageArgument !== undefined &&
+        command.arguments[sourceMessageArgument] !== commandRun?.targetMessageId
       ) {
         return denied()
       }
@@ -591,12 +540,13 @@ export function makeToolExecutor(
             ownerId: command.ownerId,
             conversationTurnId: stableMutationTurnId,
             toolName: command.name,
-            arguments: command.arguments
+            arguments: command.arguments,
+            excludedArgumentNames: registry.catalogue.mutationArgumentExclusions(command.name)
           }))
       ) {
         return denied()
       }
-      if (!isReadOnlyToolName(command.name)) {
+      if (!isReadOnly(command.name)) {
         const context = await runContext(command.runId)
         if (latestFragmentBlocksMutation(context.request)) return denied()
       }
@@ -712,7 +662,7 @@ export function makeToolExecutor(
       }
 
       const claimedAt = now()
-      const expiredOutcome = expiredToolCallOutcome(command.name)
+      const expiredOutcome = expiredToolCallOutcome(command.name, registry.catalogue)
       if (
         expiredOutcome !== undefined &&
         winner.status === "executing" &&

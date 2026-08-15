@@ -1,6 +1,6 @@
 import type { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/contracts/agent"
 
-import { capabilityCatalogueGeneration } from "@bob/contracts/tools"
+import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
 import { withBobSpan } from "@bob/observability/effect"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect, Layer, ManagedRuntime } from "effect"
@@ -23,6 +23,8 @@ const runRequest: AgentRunRequest = {
   userText: "Remind me at 15:00.",
   contextItems: [],
   allowedTools: ["reminder_create"],
+  deploymentProfileId: transitionalDeploymentProfile.profileId,
+  capabilityCatalogueGeneration: transitionalDeploymentProfile.generation,
   limits: { maxTurns: 2, maxToolCalls: 1, maxDurationMs: 30_000, maxResponseCharacters: 500 }
 }
 
@@ -76,6 +78,7 @@ function composition(
   return {
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     config: {} as never,
+    profile: transitionalDeploymentProfile,
     runtime,
     telemetry,
     services: {
@@ -133,7 +136,8 @@ describe("agent HTTP boundary", () => {
       checks: { credentials: "ready", core: "ready" },
       service: "agent",
       version: 1,
-      capabilityCatalogueGeneration
+      deploymentProfileId: transitionalDeploymentProfile.profileId,
+      capabilityCatalogueGeneration: transitionalDeploymentProfile.generation
     })
     expect(target.services.access.verify).toHaveBeenCalledWith(expect.any(Request), "admin")
     expect(target.services.coreTools.checkReadiness).toHaveBeenCalledOnce()
@@ -214,7 +218,7 @@ describe("agent HTTP boundary", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           ...runRequest,
-          capabilityCatalogueGeneration: "capability-v1:0000000000000000"
+          capabilityCatalogueGeneration: "capability-v2:0000000000000000"
         })
       }),
       target
@@ -223,6 +227,41 @@ describe("agent HTTP boundary", () => {
     expect(response.status).toBe(409)
     expect(await response.json()).toEqual({ code: "capability_catalogue_mismatch" })
     expect(target.services.agent.runTurnEffect).not.toHaveBeenCalled()
+  })
+
+  it("rejects a new run without a deployment profile identity", async () => {
+    const target = composition(true)
+    const {
+      deploymentProfileId: _profile,
+      capabilityCatalogueGeneration: _generation,
+      ...input
+    } = runRequest
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input)
+      }),
+      target
+    )
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ code: "deployment_profile_required" })
+  })
+
+  it("rejects a run from a different deployment profile", async () => {
+    const target = composition(true)
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...runRequest, deploymentProfileId: "core" })
+      }),
+      target
+    )
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ code: "deployment_profile_mismatch" })
   })
 
   it("passes request cancellation to the agent run", async () => {

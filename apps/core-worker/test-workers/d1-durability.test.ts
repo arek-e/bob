@@ -6,8 +6,7 @@ import {
   createExecutionContext,
   createMessageBatch,
   getQueueResult,
-  reset,
-  runInDurableObject
+  reset
 } from "cloudflare:test"
 import { env } from "cloudflare:workers"
 import { eq } from "drizzle-orm"
@@ -23,7 +22,6 @@ import { handleInboundQueue } from "../src/entrypoints/queue.ts"
 import { operationalAlerts } from "../src/modules/alerts/schema.ts"
 import { artifactRevisions, artifacts } from "../src/modules/artifacts/schema.ts"
 import { makeArtifactStore } from "../src/modules/artifacts/store.ts"
-import { makeContextStore } from "../src/modules/context/store.ts"
 import { makeAgentRunStore } from "../src/modules/conversations/run-store.ts"
 import {
   agentRuns,
@@ -37,7 +35,7 @@ import {
   users
 } from "../src/modules/conversations/schema.ts"
 import { makeConversationStore } from "../src/modules/conversations/store.ts"
-import { makeToolExecutor, toolCommandHash } from "../src/modules/conversations/tool-executor.ts"
+import { toolCommandHash } from "../src/modules/conversations/tool-executor.ts"
 import { deliveryAttempts, outboxMessages } from "../src/modules/delivery/schema.ts"
 import { makeDeliveryStore } from "../src/modules/delivery/store.ts"
 import { journalEntries, journalHandoffs } from "../src/modules/journal/schema.ts"
@@ -46,13 +44,13 @@ import {
   factEvidence,
   factRevisions,
   facts,
-  memoryCandidates,
-  searchDocuments
+  memoryCandidates
 } from "../src/modules/memory/schema.ts"
-import { makeMemoryStore } from "../src/modules/memory/store.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
+import { makeReminderDeliveryTarget } from "../src/modules/reminders/delivery-target.ts"
 import { reminderOccurrences, reminders } from "../src/modules/reminders/schema.ts"
 import { makeReminderStore } from "../src/modules/reminders/store.ts"
+import { searchDocuments } from "../src/modules/retrieval/schema.ts"
 import { makeOwnerSettingsStore } from "../src/modules/settings/store.ts"
 import {
   equipmentExercises,
@@ -66,7 +64,10 @@ import {
 } from "../src/modules/training/schema.ts"
 import { makeTrainingStore } from "../src/modules/training/store.ts"
 import { processInbound } from "../src/process-inbound.ts"
+import { makeTestContextStore } from "./context-store-fixture.ts"
+import { makeTestMemoryStore } from "./memory-store-fixture.ts"
 import { decodeTestMigrations } from "./migrations.ts"
+import { makeTestToolExecutor } from "./tool-executor-fixture.ts"
 
 declare global {
   namespace Cloudflare {
@@ -167,6 +168,8 @@ describe("D1 migrations and durability", () => {
     const names = new Set(rows.results.map((row) => row.name))
     expect(names.has("agent_runs")).toBe(true)
     expect(names.has("search_documents_fts")).toBe(true)
+    expect(names.has("retrieval_documents_fts")).toBe(true)
+    expect(names.has("retrieval_documents_fts_update")).toBe(true)
     expect(names.has("journal_entries_valid_handoff")).toBe(true)
     expect(names.has("external_connections")).toBe(true)
   })
@@ -430,7 +433,7 @@ describe("D1 migrations and durability", () => {
     const settings = makeOwnerSettingsStore(database, protection, {
       defaultTimeZone: "Europe/Stockholm"
     })
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -613,7 +616,7 @@ describe("D1 migrations and durability", () => {
 
   it("never sends stored raw messages in model context", async () => {
     const { database, protection } = await seedRunData()
-    const context = makeContextStore(database, protection, {})
+    const context = makeTestContextStore(database, protection)
     expect(await context.build(ownerId, channelId)).toEqual([])
   })
 
@@ -954,7 +957,7 @@ describe("D1 migrations and durability", () => {
       ].join("\n")
     })
     await expect(
-      makeContextStore(database, protection, {}).build({
+      makeTestContextStore(database, protection).build({
         ownerId,
         channelId,
         currentMessageId: messageId,
@@ -1327,7 +1330,13 @@ describe("D1 migrations and durability", () => {
     ])
     const delivery = makeDeliveryStore(database, protection, {
       now: () => new Date(at),
-      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`,
+      targetAdapters: [
+        makeReminderDeliveryTarget(
+          database,
+          () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+        )
+      ]
     })
     const outboxId = await delivery.createOutbox({
       ownerId,
@@ -1640,7 +1649,7 @@ describe("D1 migrations and durability", () => {
     expect(await delivery.claimOutbox(resumedId, 60_000)).toBeDefined()
   })
 
-  it("applies one scheduler command to the EU reminder clock alarm", async () => {
+  it("keeps unselected reminder rows without activating a clock", async () => {
     const { database, protection, ownerKey } = await seedRunData()
     const encrypted = await protection.encryptText(ownerKey, "Future reminder")
     const dueAt = "2099-08-12T10:00:00.000Z"
@@ -1685,22 +1694,10 @@ describe("D1 migrations and durability", () => {
         updatedAt: "2026-08-11T10:00:00.000Z"
       })
     ])
-    // workerd does not implement jurisdiction selection. Production lookup code selects "eu".
-    const namespace = env.REMINDER_CLOCK
-    const stub = namespace.get(namespace.idFromName(ownerId))
-    const response = await stub.fetch("https://clock.internal/command", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        id: "00000000-0000-4000-8000-000000000603",
-        reminderId: "00000000-0000-4000-8000-000000000601",
-        scheduleRevision: 1,
-        command: "upsert"
-      })
-    })
-    expect(response.status).toBe(200)
-    const alarm = await runInDurableObject(stub, (_instance, state) => state.storage.getAlarm())
-    expect(alarm).toBe(Date.parse(dueAt))
+    await expect(database.select().from(reminders)).resolves.toHaveLength(1)
+    await expect(database.select().from(reminderOccurrences)).resolves.toEqual([
+      expect.objectContaining({ state: "scheduled", intendedDueAt: dueAt })
+    ])
   })
 
   it("rolls back journal handoff consumption when entry creation fails", async () => {
@@ -1722,7 +1719,9 @@ describe("D1 migrations and durability", () => {
       userId: ownerId,
       sourceType: "journal_summary",
       sourceId: "00000000-0000-4000-8000-000000000703",
+      memoryClass: "owner_episode",
       text: "conflict",
+      searchText: "conflict",
       sourceLabel: "test",
       importance: 1,
       sensitivity: "private",
@@ -1822,7 +1821,9 @@ describe("D1 migrations and durability", () => {
         userId: ownerId,
         sourceType: "fact_revision",
         sourceId: revisionId,
+        memoryClass: "owner_fact",
         text: "Training day is Tuesday",
+        searchText: "Training day is Tuesday",
         sourceLabel: "journal",
         importance: 500,
         sensitivity: "normal",
@@ -1857,7 +1858,7 @@ describe("D1 migrations and durability", () => {
   it("keeps agent memory proposed and encrypts sensitive fact values", async () => {
     const { database, protection } = await seedRunData()
     let next = 900
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       now: () => new Date("2026-08-11T10:00:00.000Z"),
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
@@ -1940,10 +1941,10 @@ describe("D1 migrations and durability", () => {
     )
     expect(await runStore.claim(runId, 90_000)).toBeDefined()
     let next = 2_000
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -1997,7 +1998,7 @@ describe("D1 migrations and durability", () => {
 
   it("lists memory candidates by owner and validates confirmation evidence", async () => {
     const { database, protection } = await seedRunData()
-    const memory = makeMemoryStore(database, protection, {})
+    const memory = makeTestMemoryStore(database, protection, {})
     const valid = await memory.propose(
       {
         ownerId,
@@ -2033,56 +2034,57 @@ describe("D1 migrations and durability", () => {
         "memory:cross-owner"
       )
     ).rejects.toThrow("not found")
-
-    const unsupported = await memory.propose(
-      {
-        ownerId,
-        scope: "preferences",
-        key: "unsupported",
-        value: true,
-        canonicalText: "An unsupported assistant claim.",
-        assertionKind: "user_stated",
-        originClass: "owner_input",
-        sourceType: "assistant_claim",
-        sourceId: messageId,
-        extractionConfidence: 1,
-        importance: 0.2,
-        explicitRemember: false,
-        authority: "agent"
-      },
-      "memory:list:unsupported"
-    )
+    await database
+      .update(memoryCandidates)
+      .set({ sourceLabel: null, sourceOccurredAt: null, sourceContentHash: null })
+      .where(eq(memoryCandidates.id, valid.candidateId))
     await expect(
-      memory.confirm(ownerId, unsupported.candidateId, "owner_ui", "memory:unsupported-confirm")
+      memory.confirm(ownerId, valid.candidateId, "owner_ui", "memory:legacy-confirm")
+    ).resolves.toMatch(/^[0-9a-f-]{36}$/u)
+
+    await expect(
+      memory.propose(
+        {
+          ownerId,
+          scope: "preferences",
+          key: "unsupported",
+          value: true,
+          canonicalText: "An unsupported assistant claim.",
+          sourceType: "assistant_claim",
+          sourceId: messageId,
+          extractionConfidence: 1,
+          importance: 0.2,
+          explicitRemember: false,
+          authority: "agent"
+        },
+        "memory:list:unsupported"
+      )
     ).rejects.toThrow("source type")
 
-    const missing = await memory.propose(
-      {
-        ownerId,
-        scope: "preferences",
-        key: "missing",
-        value: true,
-        canonicalText: "A claim with missing evidence.",
-        assertionKind: "user_stated",
-        originClass: "owner_input",
-        sourceType: "message",
-        sourceId: "00000000-0000-4000-8000-999999999998",
-        extractionConfidence: 1,
-        importance: 0.2,
-        explicitRemember: false,
-        authority: "agent"
-      },
-      "memory:list:missing"
-    )
     await expect(
-      memory.confirm(ownerId, missing.candidateId, "owner_ui", "memory:missing-confirm")
+      memory.propose(
+        {
+          ownerId,
+          scope: "preferences",
+          key: "missing",
+          value: true,
+          canonicalText: "A claim with missing evidence.",
+          sourceType: "message",
+          sourceId: "00000000-0000-4000-8000-999999999998",
+          extractionConfidence: 1,
+          importance: 0.2,
+          explicitRemember: false,
+          authority: "agent"
+        },
+        "memory:list:missing"
+      )
     ).rejects.toThrow("evidence")
   })
 
   it("does not confirm a rejected memory candidate with a new action key", async () => {
     const { database, protection } = await seedRunData()
     let next = 2_100
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
     const proposal = await memory.propose(
@@ -2120,7 +2122,7 @@ describe("D1 migrations and durability", () => {
   it("does not revise a confirmed candidate through another review action", async () => {
     const { database, protection } = await seedRunData()
     let next = 2_200
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
     const proposal = await memory.propose(
@@ -2172,7 +2174,7 @@ describe("D1 migrations and durability", () => {
   it("does not review an original candidate again after a correction", async () => {
     const { database, protection } = await seedRunData()
     let next = 2_250
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
     const proposal = await memory.propose(
@@ -2227,7 +2229,7 @@ describe("D1 migrations and durability", () => {
   it("lets exactly one concurrent review action claim a memory candidate", async () => {
     const { database, protection } = await seedRunData()
     let next = 2_300
-    const memory = makeMemoryStore(database, protection, {
+    const memory = makeTestMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
     const proposal = await memory.propose(
@@ -2327,7 +2329,7 @@ describe("D1 migrations and durability", () => {
       createdAt: "2026-08-11T09:58:00.000Z"
     })
     let next = 1010
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -2383,7 +2385,7 @@ describe("D1 migrations and durability", () => {
       inboundId
     )
     expect(await runStore.claim(runId, 90_000)).toBeDefined()
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -2599,7 +2601,7 @@ describe("D1 migrations and durability", () => {
       "lookup:equipment:create"
     )
     await training.mapEquipment(ownerId, equipmentId, exerciseId, "lookup:equipment:map")
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -2698,7 +2700,7 @@ describe("D1 migrations and durability", () => {
     )
     expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const training = makeTrainingStore(database, {})
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -2854,7 +2856,7 @@ describe("D1 migrations and durability", () => {
     )
     expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const training = makeTrainingStore(database, {})
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {

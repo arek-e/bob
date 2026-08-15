@@ -1,7 +1,6 @@
-import { SettingsUpdateArguments } from "@bob/contracts/tools"
+import { settingsCapability, SettingsUpdateArguments } from "@bob/contracts/capabilities/settings"
 import { Schema } from "effect"
 
-import type { ConnectionStore } from "../connections/store.ts"
 import type {
   ToolCommandAdapter,
   ToolCommandAdapterContext
@@ -12,18 +11,11 @@ import { jsonObject } from "../../json.ts"
 import { isSettingsMutationRequest, settingsUpdateMatchesRequest } from "./rules.ts"
 
 export function makeSettingsToolAdapter(
-  settings: OwnerSettingsStore | undefined,
-  connections: ConnectionStore | undefined
+  settings: OwnerSettingsStore | undefined
 ): ToolCommandAdapter {
-  async function connectionStatus(ownerId: string) {
-    if (settings === undefined) throw new Error("Owner settings are unavailable")
-    return [
-      ...(await settings.connections(ownerId)),
-      ...(connections === undefined ? [] : await connections.list(ownerId))
-    ]
-  }
-
   return {
+    capabilityId: settingsCapability.id,
+    names: settingsCapability.names,
     async execute({ command, run }: ToolCommandAdapterContext) {
       switch (command.name) {
         case "settings_get": {
@@ -33,10 +25,7 @@ export function makeSettingsToolAdapter(
             ok: true,
             code: "owner_settings",
             message: "The owner settings were found.",
-            data: jsonObject({
-              settings: ownerSettings,
-              connections: await connectionStatus(command.ownerId)
-            })
+            data: jsonObject({ settings: ownerSettings })
           }
         }
         case "settings_update": {
@@ -63,7 +52,7 @@ export function makeSettingsToolAdapter(
             message:
               input.timeZone === undefined
                 ? "Locality settings saved."
-                : `Time zone saved as ${ownerSettings.timeZone}. Existing reminders keep their saved schedules.`,
+                : `Time zone saved as ${ownerSettings.timeZone}.`,
             data: jsonObject({ settings: ownerSettings })
           }
         }

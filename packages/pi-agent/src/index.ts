@@ -6,7 +6,7 @@ import type {
 } from "@bob/contracts/agent"
 
 import {
-  isReadOnlyToolName,
+  type CapabilityCatalogue,
   type ToolCommand,
   type ToolName,
   type ToolResult
@@ -42,10 +42,7 @@ import { classifyProviderError } from "./errors.ts"
 import { renderRepairPrompt, renderSystemPrompt } from "./prompt.ts"
 import {
   deterministicToolResultFallback,
-  emptyReminderListResponse,
-  emptyReminderListSource,
   noSupportedRecordFallback,
-  requiresPersonalGrounding,
   toolResultConfirmsAction,
   trustedToolSourcesFromResult,
   validateAssistantResponse,
@@ -70,6 +67,7 @@ function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
 }
 
 export interface BobPiAgentOptions {
+  readonly catalogue: CapabilityCatalogue
   readonly credentials: CredentialStore
   readonly provider: "openai-codex"
   readonly model: string
@@ -314,31 +312,27 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
       if (externalSignal?.aborted === true) abortFromCaller()
       else externalSignal?.addEventListener("abort", abortFromCaller, { once: true })
       const turnsLimit = Math.max(1, request.limits.maxTurns)
-      const feature = featureForTools(request.allowedTools)
+      const feature = featureForTools(options.catalogue, request.allowedTools)
       let turns = 0
       let toolCalls = 0
       let inputTokens = 0
       let outputTokens = 0
       let timedOut = false
-      let latestReminderListIsEmpty: boolean | undefined
       const toolResults: ToolResult[] = []
       const executedToolNames = new Set<string>()
       const confirmedActionToolNames = new Set<string>()
+      const proposedActionToolNames = new Set<string>()
       const unknownActionToolNames = new Set<ToolName>()
       for (const receipt of request.priorToolReceipts ?? []) {
-        if (receipt.result.code === "tool_recovery_failed") {
+        if (receipt.actionOutcome === "unknown") {
           unknownActionToolNames.add(receipt.toolName)
           continue
         }
-        if (
-          receipt.origin === "same_turn" &&
-          toolResultConfirmsAction(receipt.toolName, {
-            ok: receipt.result.ok,
-            code: receipt.result.code,
-            message: "Prior action record."
-          })
-        ) {
+        if (receipt.origin === "same_turn" && receipt.actionOutcome === "confirmed") {
           confirmedActionToolNames.add(receipt.toolName)
+        }
+        if (receipt.origin === "same_turn" && receipt.actionOutcome === "proposed") {
+          proposedActionToolNames.add(receipt.toolName)
         }
       }
       const approvedSourceIds = new Set(
@@ -353,9 +347,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
       const currentTurnMessages = request.currentTurnMessages ?? [
         { sourceMessageId: request.sourceMessageId, text: request.userText }
       ]
-      const needsPersonalGrounding = requiresPersonalGrounding(
-        currentTurnMessages.map((message) => message.text).join("\n")
-      )
+      const needsPersonalGrounding = request.grounding?.requiresSources === true
 
       const result = (
         status: AgentRunResult["status"],
@@ -379,12 +371,13 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
       }
 
       const tools = createTools({
+        catalogue: options.catalogue,
         request,
         execute: async (command) => {
           try {
             return await options.executeTool(
               command,
-              isReadOnlyToolName(command.name) ? runSignal : undefined
+              options.catalogue.isReadOnly(command.name) ? runSignal : undefined
             )
           } catch {
             return safeToolFailure()
@@ -553,7 +546,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         }
         toolCalls += 1
         executedToolNames.add(call.name)
-        const readOnly = isReadOnlyToolName(command.name)
+        const readOnly = options.catalogue.isReadOnly(command.name)
         const toolController = readOnly ? new AbortController() : undefined
         const toolSignal =
           toolController === undefined
@@ -574,25 +567,16 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
             : Effect.suspend(() => executeToolEffect(command, toolSignal))
         const completed = (toolResult: ToolResult) => {
           toolResults.push(toolResult)
-          if (
-            tool.label === "reminder_list" &&
-            toolResult.ok &&
-            toolResult.code === "reminder_list" &&
-            Array.isArray(toolResult.data?.reminders)
-          ) {
-            latestReminderListIsEmpty = toolResult.data.reminders.length === 0
-            if (!latestReminderListIsEmpty) {
-              trustedToolSources.delete(emptyReminderListSource.sourceId)
-              approvedSourceIds.delete(emptyReminderListSource.sourceId)
-            }
-          }
-          for (const source of trustedToolSourcesFromResult(toolResult, tool.label)) {
+          for (const source of trustedToolSourcesFromResult(toolResult)) {
             if (!trustedToolSources.has(source.sourceId) && trustedToolSources.size >= 24) continue
             trustedToolSources.set(source.sourceId, source)
             approvedSourceIds.add(source.sourceId)
           }
-          if (toolResultConfirmsAction(tool.label, toolResult)) {
+          if (toolResultConfirmsAction(toolResult)) {
             confirmedActionToolNames.add(call.name)
+          }
+          if (toolResult.evidence?.actionOutcome === "proposed") {
+            proposedActionToolNames.add(call.name)
           }
           return {
             type: "completed" as const,
@@ -611,7 +595,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
               name: "bob.tool.invoke",
               correlationId: request.correlationId,
               runId: request.runId,
-              feature: featureForToolName(call.name),
+              feature: featureForToolName(options.catalogue, call.name),
               toolName: call.name,
               toolCallIndex: toolCalls
             },
@@ -785,7 +769,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
                 return failedCompletion("aborted", "cancelled")
               }
               const command = yield* Effect.promise(() =>
-                toolCommandForCall(request, tool.label, call.id, parameters)
+                toolCommandForCall(options.catalogue, request, tool.label, call.id, parameters)
               )
               if (cancellationRequested()) {
                 return failedCompletion("aborted", "cancelled")
@@ -798,7 +782,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
               }
               if (!execution.result.ok) {
                 if (toolResultNeedsReflection(execution.result)) {
-                  if (execution.result.code === "external_outcome_unknown") {
+                  if (execution.result.evidence?.actionOutcome === "unknown") {
                     unknownActionToolNames.add(tool.label)
                   }
                   yield* recordDecision({
@@ -838,19 +822,15 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
           )
         )
 
-      const hasVerifiedEmptyReminderList = () =>
-        latestReminderListIsEmpty === true &&
-        executedToolNames.size === 1 &&
-        executedToolNames.has("reminder_list") &&
-        trustedToolSources.has(emptyReminderListSource.sourceId)
-
       const responsePolicy = {
         maxResponseCharacters: request.limits.maxResponseCharacters,
         approvedSourceIds,
         requiresSource: needsPersonalGrounding,
         conflictingSourceIds,
+        registeredToolNames: new Set(options.catalogue.names),
         executedToolNames,
         confirmedActionToolNames,
+        proposedActionToolNames,
         unknownActionToolNames
       }
 
@@ -896,6 +876,21 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         Effect.gen(function* () {
           const initial = yield* validateOutput(structuredOutputText(message))
           if (initial.ok) return completeResult(initial.value)
+          const evidenceFallback = deterministicToolResultFallback(
+            toolResults,
+            request.limits.maxResponseCharacters
+          )
+          const latestEvidence = toolResults.at(-1)?.evidence
+          if (evidenceFallback !== undefined && latestEvidence?.responseText !== undefined) {
+            const sources = latestEvidence.sources ?? []
+            const output: AgentRunResult = {
+              ...result("completed", evidenceFallback, undefined),
+              sourceIds: sources.map((source) => source.sourceId),
+              conflict: "none"
+            }
+            if (sources.length > 0) Object.assign(output, { trustedToolSources: sources })
+            return output
+          }
           if (turns >= turnsLimit || runSignal.aborted || activeRun.steerRequested) {
             yield* recordDecision({
               name: "bob.decision.output",
@@ -1081,24 +1076,6 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
             outcome: "allowed",
             selectedCount: approvedSourceIds.size
           })
-        }
-        if (hasVerifiedEmptyReminderList()) {
-          const emptyList = yield* validateOutput(
-            JSON.stringify({
-              protocolVersion: 1,
-              responseText: emptyReminderListResponse(request.locale),
-              sourceIds: [emptyReminderListSource.sourceId],
-              toolNames: ["reminder_list"],
-              conflict: "none"
-            })
-          )
-          if (emptyList.ok) return completeResult(emptyList.value)
-          yield* recordDecision({
-            name: "bob.decision.output",
-            code: "invalid_output",
-            outcome: "denied"
-          })
-          return result("failed", noSupportedRecordFallback(request.locale), "invalid_output")
         }
         return yield* validateAndRepair(loop.message)
       })

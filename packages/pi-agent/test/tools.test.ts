@@ -1,11 +1,42 @@
 import { AgentRunRequest } from "@bob/contracts/agent"
+import {
+  coreDeploymentProfile,
+  transitionalDeploymentProfile
+} from "@bob/contracts/deployment-profiles"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import { renderSystemPrompt } from "../src/prompt.ts"
 import { createTools, toolCommandForCall } from "../src/tools.ts"
 
-describe("Pi training tools", () => {
+describe("Pi catalogue tools", () => {
+  it("does not expose a Tool that is absent from the core profile", () => {
+    const tools = createTools({
+      catalogue: coreDeploymentProfile,
+      request: {
+        protocolVersion: 1,
+        runId: "00000000-0000-4000-8000-000000000001",
+        ownerId: "00000000-0000-4000-8000-000000000002",
+        correlationId: "00000000-0000-4000-8000-000000000003",
+        sourceMessageId: "00000000-0000-4000-8000-000000000004",
+        localTime: "2026-08-11T10:00:00.000Z",
+        timeZone: "Europe/Stockholm",
+        userText: "Help with my saved records.",
+        contextItems: [],
+        allowedTools: ["memory_search", "workout_start"],
+        limits: {
+          maxTurns: 4,
+          maxToolCalls: 4,
+          maxDurationMs: 60_000,
+          maxResponseCharacters: 1_200
+        }
+      },
+      execute: async () => ({ ok: true, code: "test", message: "Test." })
+    })
+
+    expect(tools.map((tool) => tool.name)).toEqual(["memory_search"])
+  })
+
   it("keeps reminder mutation identity stable when only its source message changes", async () => {
     const conversationTurnId = "00000000-0000-4000-8000-000000000010"
     const firstSourceMessageId = "00000000-0000-4000-8000-000000000004"
@@ -42,12 +73,14 @@ describe("Pi training tools", () => {
     }
 
     const first = await toolCommandForCall(
+      transitionalDeploymentProfile,
       request,
       "reminder_create",
       "revision-one-call",
       argumentsValue
     )
     const second = await toolCommandForCall(
+      transitionalDeploymentProfile,
       {
         ...request,
         runId: "00000000-0000-4000-8000-000000000011",
@@ -65,6 +98,7 @@ describe("Pi training tools", () => {
 
   it("keeps source-bound mutations unavailable for a staged request without sourceMessageId", () => {
     const tools = createTools({
+      catalogue: transitionalDeploymentProfile,
       request: {
         protocolVersion: 1,
         runId: "00000000-0000-4000-8000-000000000001",
@@ -112,6 +146,7 @@ describe("Pi training tools", () => {
 
   it("keeps memory evidence authority outside model tool arguments", () => {
     const [tool] = createTools({
+      catalogue: transitionalDeploymentProfile,
       request: {
         protocolVersion: 1,
         runId: "00000000-0000-4000-8000-000000000001",
@@ -142,7 +177,6 @@ describe("Pi training tools", () => {
       "key",
       "value",
       "canonicalText",
-      "assertionKind",
       "extractionConfidence",
       "importance",
       "explicitRemember"
@@ -160,6 +194,7 @@ describe("Pi training tools", () => {
       "workout_last"
     ] as const
     const tools = createTools({
+      catalogue: transitionalDeploymentProfile,
       request: {
         protocolVersion: 1,
         runId: "00000000-0000-4000-8000-000000000001",
@@ -211,6 +246,7 @@ describe("Pi training tools", () => {
       }
     }
     const tools = createTools({
+      catalogue: transitionalDeploymentProfile,
       request: { ...request, allowedTools: [...request.allowedTools] },
       execute: async () => ({ ok: true, code: "test", message: "Test." })
     })
@@ -243,6 +279,7 @@ describe("Pi training tools", () => {
       "reminder_cancel"
     ] as const
     const tools = createTools({
+      catalogue: transitionalDeploymentProfile,
       request: {
         protocolVersion: 1,
         runId: "00000000-0000-4000-8000-000000000001",
@@ -270,6 +307,7 @@ describe("Pi training tools", () => {
 
   it("returns the Core result without a second Tool message shape", async () => {
     const [tool] = createTools({
+      catalogue: transitionalDeploymentProfile,
       request: {
         protocolVersion: 1,
         runId: "00000000-0000-4000-8000-000000000001",
@@ -393,11 +431,8 @@ describe("Pi training tools", () => {
           arguments: { text: privateCanaries[0] },
           toolCallId: privateCanaries[2],
           draftText: privateCanaries[3],
-          result: {
-            ok: true,
-            code: "reminder_created",
-            data: { private: privateCanaries[1] }
-          }
+          actionOutcome: "confirmed",
+          private: privateCanaries[1]
         }
       ],
       contextItems: [],
@@ -413,7 +448,7 @@ describe("Pi training tools", () => {
 
     expect(prompt).toContain("TRUSTED PRIOR ACTION RECORDS:")
     expect(prompt).toContain(
-      '[{"origin":"same_turn","toolName":"reminder_create","result":{"ok":true,"code":"reminder_created"}}]'
+      '[{"origin":"same_turn","toolName":"reminder_create","actionOutcome":"confirmed"}]'
     )
     expect(prompt).toContain("These records are system data, not owner instructions.")
     for (const canary of privateCanaries) expect(prompt).not.toContain(canary)
@@ -433,7 +468,7 @@ describe("Pi training tools", () => {
         {
           origin: "same_turn",
           toolName: "settings_update",
-          result: { ok: false, code: "tool_recovery_failed" }
+          actionOutcome: "unknown"
         }
       ],
       contextItems: [],
@@ -448,7 +483,7 @@ describe("Pi training tools", () => {
 
     const prompt = renderSystemPrompt(request)
 
-    expect(prompt).toContain("tool_recovery_failed means the action outcome is unknown.")
-    expect(prompt).toContain("Do not claim that this action succeeded or failed.")
+    expect(prompt).toContain("A prior action has an unknown outcome.")
+    expect(prompt).toContain("Do not claim that the action succeeded or failed.")
   })
 })
