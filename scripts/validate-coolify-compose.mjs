@@ -5,8 +5,6 @@ const requiredServices = [
   "agent-secret-init",
   "agent",
   "tunnel",
-  "nango",
-  "nango-redis",
   "backup-runner",
   "observer"
 ]
@@ -48,7 +46,6 @@ export function assertCoolifyComposeReadiness(source) {
   for (const marker of [
     "BOB_RELEASE_SHA",
     "CLOUDFLARED_TUNNEL_TOKEN",
-    "NANGO_RECORDS_DATABASE_URL",
     "BACKUP_OUTPUT_DIRECTORY",
     "bob-backups:"
   ]) {

@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process"
 
 const paths = [
   "apps/core-worker",
+  "apps/connections-gateway",
   "apps/sendblue-ingress",
   "apps/sendblue-egress",
   "apps/agent",
@@ -73,6 +74,10 @@ const safeValidationEnvironment = {
   AGENT_URL: "https://agent.example.invalid",
   AGENT_ADMIN_URL: "https://agent-admin.example.invalid",
   UI_BASE_URL: "https://bob.example.invalid",
+  CONNECTIONS_GATEWAY_URL: "https://connections.example.invalid",
+  CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID: "schema-validation-connections-client",
+  CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET: "schema-validation-connections-secret",
+  ACCESS_AUDIENCE: "schema-validation-connections-audience",
   NANGO_API_URL: "https://nango.example.invalid",
   NANGO_SECRET_KEY: "fixture-nango-secret-key-at-least-32-bytes",
   NANGO_GOOGLE_CALENDAR_INTEGRATION_ID: "bob-google-calendar",

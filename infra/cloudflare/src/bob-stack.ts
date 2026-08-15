@@ -95,7 +95,6 @@ export function createBobStack(options: BobStackOptions) {
       const agentHost = `bob-agent.${domain}`
       const agentAdminHost = `bob-agent-admin.${domain}`
       const otlpHost = `bob-otel.${domain}`
-      const nangoHost = `nango.${domain}`
       const ingressHost = `bob-sendblue.${domain}`
       const egressHost = `bob-sendblue-egress.${domain}`
       const sendblueActive = ENV.SENDBLUE_ENABLED
@@ -115,20 +114,6 @@ export function createBobStack(options: BobStackOptions) {
 
       yield* Cloudflare.R2.Bucket("BackupArchives", {
         name: `bob-backup-${PRODUCTION_STAGE}`,
-        jurisdiction: "eu",
-        locationHint: "weur",
-        lifecycleRules: [
-          {
-            id: "expire-backups-after-180-days",
-            deleteObjectsTransition: {
-              condition: { type: "Age", maxAge: 15_552_000 }
-            }
-          }
-        ]
-      }).pipe(retain(true))
-
-      yield* Cloudflare.R2.Bucket("NangoBackups", {
-        name: `bob-nango-backup-${PRODUCTION_STAGE}`,
         jurisdiction: "eu",
         locationHint: "weur",
         lifecycleRules: [
@@ -306,10 +291,13 @@ export function createBobStack(options: BobStackOptions) {
             requiredGeneratedSecret(value, "CoreToAgentAdmin client secret")
           ),
           UI_BASE_URL: `https://${coreHost}`,
-          NANGO_API_URL: `https://${nangoHost}`,
-          NANGO_SECRET_KEY: Redacted.make(ENV.NANGO_SECRET_KEY),
-          NANGO_GOOGLE_CALENDAR_INTEGRATION_ID: "bob-google-calendar",
-          NANGO_MICROSOFT_CALENDAR_INTEGRATION_ID: "bob-microsoft-calendar",
+          CONNECTIONS_GATEWAY_URL: ENV.CONNECTIONS_GATEWAY_URL,
+          CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID: Redacted.make(
+            ENV.CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID
+          ),
+          CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET: Redacted.make(
+            ENV.CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET
+          ),
           BOB_MODEL: ENV.BOB_MODEL,
           BOB_PROVIDER: ENV.BOB_PROVIDER,
           BOB_RUN_TOKEN_BUDGET: ENV.BOB_RUN_TOKEN_BUDGET,

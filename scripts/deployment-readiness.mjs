@@ -61,8 +61,7 @@ export function assertDeploymentReadiness(input) {
     "target: openbao_approle_secret_id",
     "environment: BAO_APPROLE_SECRET_ID",
     "bob-backups:/backups",
-    "file_stats/bob_backup:",
-    "file_stats/nango_backup:"
+    "file_stats/bob_backup:"
   ]) {
     requireText(compose, marker, `The Coolify Compose contract is missing ${marker}`)
   }

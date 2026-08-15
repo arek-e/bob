@@ -68,28 +68,12 @@ x-observer-config: &observer-config |-
       targets:
         - endpoints:
             - http://agent:8787/health
-            - http://nango:3003/health
             - http://coolify:8080/api/health
-            - https://nango.tpops.dev/health
             - https://bob-agent.tpops.dev/health
             - https://bob-sendblue.tpops.dev/health
 
-    tcp_check:
-      collection_interval: 30s
-      targets:
-        - endpoint: "${NANGO_DB_HOST:?}:${NANGO_DB_PORT:-5432}"
-          dialer:
-            timeout: 5s
-        - endpoint: nango-redis:6379
-          dialer:
-            timeout: 5s
-
     file_stats/bob_backup:
       include: /backups
-      collection_interval: 1m
-
-    file_stats/nango_backup:
-      include: /nango-backups
       collection_interval: 1m
 
     prometheus/collector:
@@ -124,23 +108,12 @@ x-observer-config: &observer-config |-
         - action: upsert
           key: backup.type
           value: bob
-    resource/nango_backup:
-      attributes:
-        - action: upsert
-          key: backup.type
-          value: nango
     transform/bob_backup:
       error_mode: propagate
       metric_statements:
         - context: datapoint
           statements:
             - set(attributes["backup_type"], "bob")
-    transform/nango_backup:
-      error_mode: propagate
-      metric_statements:
-        - context: datapoint
-          statements:
-            - set(attributes["backup_type"], "nango")
     batch: {}
 
   exporters:
@@ -156,17 +129,12 @@ x-observer-config: &observer-config |-
           - host_metrics
           - docker_stats
           - http_check
-          - tcp_check
           - prometheus/collector
         processors: [memory_limiter, resource, batch]
         exporters: [otlp_http/platform]
       metrics/bob_backup:
         receivers: [file_stats/bob_backup]
         processors: [memory_limiter, resource, resource/bob_backup, transform/bob_backup, batch]
-        exporters: [otlp_http/platform]
-      metrics/nango_backup:
-        receivers: [file_stats/nango_backup]
-        processors: [memory_limiter, resource, resource/nango_backup, transform/nango_backup, batch]
         exporters: [otlp_http/platform]
     telemetry:
       logs:
@@ -265,14 +233,12 @@ services:
 
   tunnel:
     <<: *runtime-security
-    image: docker.io/cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
+    image: docker.io/cloudflare/cloudflared@${CLOUDFLARED_IMAGE_DIGEST:?}
     command: [tunnel, --no-autoupdate, --protocol, http2, run]
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARED_TUNNEL_TOKEN:?}
     depends_on:
       agent:
-        condition: service_healthy
-      nango:
         condition: service_healthy
     networks: [runtime]
     deploy:
@@ -280,86 +246,6 @@ services:
         limits:
           cpus: "0.5"
           memory: 256M
-
-  nango:
-    <<: *runtime-security
-    image: docker.io/nangohq/nango-server@sha256:a52964a41b5ff5d113e45d8ae76a6ffeb2b76ed6e147bc5078288d0f0c79f0c6
-    user: "1000:1000"
-    environment:
-      FLAG_AUTH_ENABLED: "false"
-      FLAG_SERVE_CONNECT_UI: "true"
-      LOG_LEVEL: info
-      NANGO_ADMIN_KEY: ${NANGO_ADMIN_KEY:?}
-      NANGO_CONNECT_UI_PORT: "3009"
-      NANGO_DASHBOARD_PASSWORD: ${NANGO_DASHBOARD_PASSWORD:?}
-      NANGO_DASHBOARD_USERNAME: ${NANGO_DASHBOARD_USERNAME:?}
-      NANGO_DB_HOST: ${NANGO_DB_HOST:?}
-      NANGO_DB_NAME: nango
-      NANGO_DB_PASSWORD: ${NANGO_DB_PASSWORD:?}
-      NANGO_DB_POOL_MAX: "10"
-      NANGO_DB_POOL_MIN: "0"
-      NANGO_DB_PORT: ${NANGO_DB_PORT:-5432}
-      NANGO_DB_SSL: "false"
-      NANGO_DB_USER: ${NANGO_DB_USER:-nango}
-      NANGO_ENCRYPTION_KEY: ${NANGO_ENCRYPTION_KEY:?}
-      NANGO_LOGS_ENABLED: "false"
-      NANGO_MIGRATE_AT_START: "true"
-      NANGO_PROXY_BASE_URL_OVERRIDE_ENABLED: "false"
-      NANGO_PUBLIC_CONNECT_URL: ${NANGO_PUBLIC_CONNECT_URL:?}
-      NANGO_PUBLIC_SERVER_URL: ${NANGO_PUBLIC_SERVER_URL:?}
-      NANGO_REDIS_URL: redis://nango-redis:6379
-      NANGO_SECRET_KEY_DEV: ${NANGO_SECRET_KEY_DEV:?}
-      NANGO_SERVER_URL: ${NANGO_SERVER_URL:?}
-      NANGO_TELEMETRY_SDK: "false"
-      RECORDS_DATABASE_URL: ${NANGO_RECORDS_DATABASE_URL:?}
-      SERVER_PORT: "3003"
-      TELEMETRY: "false"
-    expose: ["3003", "3009"]
-    healthcheck:
-      test:
-        - CMD
-        - node
-        - -e
-        - fetch('http://127.0.0.1:3003/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
-    depends_on:
-      nango-redis:
-        condition: service_healthy
-    networks: [runtime, coolify]
-    tmpfs:
-      - /tmp:mode=1777,uid=1000,gid=1000
-    deploy:
-      resources:
-        limits:
-          cpus: "2"
-          memory: 2G
-        reservations:
-          cpus: "0.25"
-          memory: 512M
-
-  nango-redis:
-    <<: *runtime-security
-    image: docker.io/library/redis@sha256:05a97a479bc73de66f087dc05b569010772880f778cc8671fa6b8aadee32e5c6
-    user: "999:999"
-    command: [redis-server, --save, "", --appendonly, "no"]
-    expose: ["6379"]
-    healthcheck:
-      test: [CMD, redis-cli, ping]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks: [runtime]
-    deploy:
-      resources:
-        limits:
-          cpus: "0.25"
-          memory: 256M
-        reservations:
-          cpus: "0.025"
-          memory: 64M
 
   backup-runner:
     <<: *runtime-security
@@ -412,12 +298,10 @@ services:
 
   observer:
     <<: *runtime-security
-    image: docker.io/otel/opentelemetry-collector-contrib@sha256:388054389612c69d0387ecac256338e4086f6cf072fc8feafb6ce7968dc6946c
+    image: docker.io/otel/opentelemetry-collector-contrib@${BOB_OBSERVER_IMAGE_DIGEST:?}
     user: "10001:10001"
     command: [--config=env:OTEL_CONFIG]
     environment:
-      NANGO_DB_HOST: ${NANGO_DB_HOST:?}
-      NANGO_DB_PORT: ${NANGO_DB_PORT:-5432}
       OTEL_CONFIG: *observer-config
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?}
     group_add: ["988"]
@@ -425,7 +309,6 @@ services:
     volumes:
       - /:/hostfs:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /data/coolify/backups/databases/root-team-0/bob-nango-postgres-g60dc8bcxunc34j7wg47fvov:/nango-backups:ro
       - bob-backups:/backups:ro
     deploy:
       resources:

@@ -58,10 +58,13 @@ gh workflow run release.yml -R arek-e/bob-control-plane --ref main \
   -f deploy=true
 ```
 
-The Control Plane selects `DEPLOYMENT_SHA`, verifies the immutable image
-digests, deploys through Coolify, and records the accepted release.
+The Control Plane selects `DEPLOYMENT_SHA` and verifies every immutable digest.
 
-Wait for the agent, Tunnel, Nango, backup runner, and observer to become healthy.
+The assigned Bob Runner applies the reviewed contract. Independent assurance records acceptance.
+
+Coolify can host the initial Compose target. It is not part of the orchestration Interface.
+
+Wait for the agent, Tunnel, backup runner, and observer to become healthy.
 
 ## Automatic releases
 
@@ -102,7 +105,7 @@ Run the Coolify backup task once.
 
 Require `independentCopy` to report `completed`.
 
-Confirm that the latest Bob and Nango backup age is below 18,000 seconds.
+Confirm that the latest Bob backup age is below 18,000 seconds.
 
 ## Keep Cloudflare ownership separate
 

@@ -35,7 +35,8 @@
     "infra:evals:load": "pnpm --filter @bob/cloudflare-infra evals:load",
     "infra:evals:plan": "pnpm --filter @bob/cloudflare-infra evals:plan",
     "infra:load": "pnpm --filter @bob/cloudflare-infra load:check",
-    "secrets:scan:staged": "varlock scan --staged --path apps/core-worker --path apps/sendblue-ingress --path apps/sendblue-egress --path apps/agent --path tools/sendblue-reconcile --path tools/pi-smoke --path tools/data-backup --path infra/cloudflare",
+    "coolify:check": "node scripts/validate-coolify-compose.mjs",
+    "secrets:scan:staged": "varlock scan --staged --path apps/core-worker --path apps/connections-gateway --path apps/sendblue-ingress --path apps/sendblue-egress --path apps/agent --path tools/sendblue-reconcile --path tools/pi-smoke --path tools/data-backup --path infra/cloudflare",
     "secrets:scan:trusted": "node scripts/scan-trusted-secrets.mjs",
     "ui:safety": "node scripts/verify-ui-safety.mjs"
   },

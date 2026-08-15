@@ -6,7 +6,7 @@ import type { CoreBindings } from "./bindings.ts"
 import { createCoreDatabase } from "./database.ts"
 import { AlertStore, makeAlertStore, alertStoreLayer } from "./modules/alerts/store.ts"
 import { ArtifactStore, artifactStoreLayer, makeArtifactStore } from "./modules/artifacts/store.ts"
-import { makeNangoClient } from "./modules/connections/nango.ts"
+import { makeConnectionsGatewayClient } from "./modules/connections/gateway.ts"
 import {
   ConnectionStore,
   connectionStoreLayer,
@@ -80,10 +80,9 @@ const Configuration = Schema.Struct({
   AGENT_ADMIN_ACCESS_CLIENT_ID: Schema.String,
   AGENT_ADMIN_ACCESS_CLIENT_SECRET: Schema.String,
   UI_BASE_URL: Schema.String,
-  NANGO_API_URL: Schema.String,
-  NANGO_SECRET_KEY: Schema.String.check(Schema.isMinLength(32)),
-  NANGO_GOOGLE_CALENDAR_INTEGRATION_ID: Schema.String.check(Schema.isMinLength(1)),
-  NANGO_MICROSOFT_CALENDAR_INTEGRATION_ID: Schema.String.check(Schema.isMinLength(1)),
+  CONNECTIONS_GATEWAY_URL: Schema.String,
+  CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID: Schema.String.check(Schema.isMinLength(1)),
+  CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET: Schema.String.check(Schema.isMinLength(1)),
   BOB_MODEL: Schema.String,
   BOB_PROVIDER: Schema.Literal("openai-codex"),
   BOB_RUN_TOKEN_BUDGET: Schema.Number.check(
@@ -118,13 +117,12 @@ export function composeCore(bindings: CoreBindings) {
   })
   const connections = makeConnectionStore(
     database,
-    makeNangoClient({ apiUrl: config.NANGO_API_URL, secretKey: config.NANGO_SECRET_KEY }),
-    {
-      integrations: {
-        google_calendar: config.NANGO_GOOGLE_CALENDAR_INTEGRATION_ID,
-        microsoft_calendar: config.NANGO_MICROSOFT_CALENDAR_INTEGRATION_ID
-      }
-    }
+    makeConnectionsGatewayClient({
+      url: config.CONNECTIONS_GATEWAY_URL,
+      accessClientId: config.CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID,
+      accessClientSecret: config.CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET
+    }),
+    {}
   )
   const conversations = makeConversationStore(database, protection, {
     ownerId: config.OWNER_ID,
