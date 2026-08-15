@@ -149,6 +149,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Unknown or unauthorized senders do not start provisioning.
 - A managed Warm Sandbox contains no Owner state, credentials, storage, messages, or Secret Projection.
 - Managed production Cloudflare changes belong to `teampitch-ops`.
+- Managed production release identities and GitHub environments belong to the private Control Plane.
 - Runtime Alchemy owns portable and self-hosted plans. It does not write managed production resources.
 - The Runtime deployment contract contains no hosting-provider identifier or secret value.
 - Bob Runner remains outside the Bob Instance application stack.

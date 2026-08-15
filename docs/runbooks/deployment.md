@@ -24,6 +24,10 @@ The image workflow publishes these immutable images:
 
 Read each manifest digest from the registry.
 
+```sh
+gh workflow run release-images.yml --ref main -f release_sha="$RELEASE_SHA"
+```
+
 ## Create the deployment commit
 
 Change only these values in `infra/coolify/release.json`:
@@ -38,18 +42,18 @@ Commit the manifest change on `main`.
 
 ```sh
 export DEPLOYMENT_SHA="$(git rev-parse HEAD)"
-gh workflow run release-gate.yml --ref main \
-  -f source_sha="$RELEASE_SHA" \
-  -f deployment_sha="$DEPLOYMENT_SHA"
+node scripts/verify-release-manifest-delta.mjs "$RELEASE_SHA" "$DEPLOYMENT_SHA"
 ```
 
-The gate permits only the three release values between both commits.
+The private Control Plane gate permits only the three release values between both commits.
 
-The gate also binds both registry digests to `RELEASE_SHA`.
+It also binds both registry digests to `RELEASE_SHA`.
 
 ## Apply the release
 
 Request the durable release through the Bob Control Plane workflow.
+
+Production validation and deployment run only in the private Control Plane.
 
 ```sh
 gh workflow run release.yml -R arek-e/bob-control-plane --ref main \
@@ -70,9 +74,20 @@ Wait for the agent, Tunnel, backup runner, and observer to become healthy.
 
 ## Automatic releases
 
-`.github/workflows/auto-release.yml` starts after successful `main` CI runs.
+`.github/workflows/auto-release.yml` prepares artifacts after successful `main` CI runs.
 
-Set the repository variable `BOB_RUNNER_RELEASE_ENABLED` to `true` only after these checks pass:
+Set the repository variable `BOB_RELEASE_PREPARATION_ENABLED` to `true` when each green `main` commit must prepare release artifacts.
+
+The public workflow performs these actions:
+
+1. Confirm that the successful commit is still the tip of `main`.
+2. Skip commits that change only `infra/coolify/release.json`.
+3. Build and attest both immutable runtime images.
+4. Commit only the three reviewed release values to `main`.
+
+It does not use a production environment, production identity, private network, or Control Plane endpoint.
+
+Dispatch the private Control Plane workflow when these checks pass:
 
 - The shared Connections Gateway is healthy.
 - Existing Nango connections use Instance-scoped owner references.
@@ -80,28 +95,13 @@ Set the repository variable `BOB_RUNNER_RELEASE_ENABLED` to `true` only after th
 - The Runner can report observations without changing Runtime state.
 - A canary release completed independent assurance.
 
-Leave the variable unset during the migration. A `main` merge will not deploy Runtime changes.
+Leave the variable unset to require manual image and manifest preparation.
 
-The trusted production infrastructure plan uses the same gate.
+Offline Runtime checks continue to run on every pull request and `main` push.
 
-Offline infrastructure checks continue to run on every pull request and `main` push.
+The private Control Plane verifies the release delta, image digests, provenance, Runtime checks, and production plan. It then requests and observes one durable release Operation.
 
-It performs these actions:
-
-1. Confirm that the successful commit is still the tip of `main`.
-2. Skip commits that change only `infra/coolify/release.json`.
-3. Build and attest both immutable runtime images.
-4. Commit only the three reviewed release values to `main`.
-5. Run and observe the production release gate.
-6. Request and observe one durable Control Plane release.
-
-The automatic workflow uses the `bob-auto-release-production` OpenBao JWT role.
-
-That role is bound to the exact repository, workflow, event, branch, environment, and owner claims.
-
-It can read only the existing Control Plane operator Access record.
-
-Do not give this workflow a Coolify administrator token.
+Do not give either repository a Coolify administrator token.
 
 ## Verify readiness
 

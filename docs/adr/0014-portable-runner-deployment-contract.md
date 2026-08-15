@@ -59,7 +59,11 @@ Coolify can host the Control Plane, Runner, or Runtime. It is not part of the de
 
 The Bob Runtime repository owns the deployment contract schema and Runtime application images.
 
+It can prepare reviewed images and release-manifest commits. It does not hold a managed production identity or GitHub environment.
+
 The Bob Control Plane repository owns the Runner protocol, managed Runner, assignments, Leases, and assurance policy.
+
+It owns all managed production validation, release identities, GitHub environments, and durable release requests.
 
 The repositories use digests and versioned Interfaces at their boundary.
 
