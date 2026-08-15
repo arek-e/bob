@@ -1,7 +1,7 @@
 import type { OutboundJob } from "@bob/contracts/jobs"
 
 import { AgentRunRequest } from "@bob/contracts/agent"
-import { modelToolNames } from "@bob/contracts/tools"
+import { capabilityCatalogueGeneration, modelToolNames } from "@bob/contracts/tools"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect, Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -608,7 +608,8 @@ describe("conversation turn processing", () => {
     expect(capturedRequest).toMatchObject({
       userText: "List",
       currentTurnMessages: [{ sourceMessageId: latestMessageId, text: "List" }],
-      allowedTools: modelToolNames
+      allowedTools: modelToolNames,
+      capabilityCatalogueGeneration
     })
   })
 

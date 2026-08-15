@@ -2,7 +2,7 @@ import { Schema } from "effect"
 
 import { HourCycle } from "./settings.ts"
 import { IsoDateTime, Locale, NonEmptyText, ShortText, TimeZone, Uuid } from "./shared.ts"
-import { ToolName } from "./tools.ts"
+import { CapabilityCatalogueGeneration, ToolName } from "./tools.ts"
 
 const ArtifactTitle = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120))
 const ArtifactHeading = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80))
@@ -136,6 +136,7 @@ export const PriorToolReceipt = Schema.Union([
 
 export const AgentRunRequest = Schema.Struct({
   protocolVersion: Schema.Literal(1),
+  capabilityCatalogueGeneration: Schema.optionalKey(CapabilityCatalogueGeneration),
   runId: Uuid,
   ownerId: Uuid,
   correlationId: Uuid,

@@ -2,7 +2,7 @@ import type { OutboundJob } from "@bob/contracts/jobs"
 import type { TelemetryFeature } from "@bob/observability/events"
 
 import { AgentRunResult, type AgentArtifact, type AgentRunRequest } from "@bob/contracts/agent"
-import { modelToolNames } from "@bob/contracts/tools"
+import { capabilityCatalogueGeneration, modelToolNames } from "@bob/contracts/tools"
 import { featureForTools } from "@bob/observability/attribution"
 import {
   recordDecision,
@@ -1031,6 +1031,7 @@ export async function processInbound(
         }
         const requestBase = {
           protocolVersion: 1 as const,
+          capabilityCatalogueGeneration,
           runId,
           ownerId: claimed.ownerId,
           correlationId: claimed.correlationId,
