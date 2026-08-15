@@ -4,6 +4,7 @@
 - Date: 2026-08-15
 - Scope: Runtime deployment boundary and managed orchestration
 - Related: Bob Control Plane ADR 0004, "Use a fenced Runner pull protocol"
+- Amended by: ADR 0015 for Runtime materialization and isolated lifecycle
 
 ## Context
 

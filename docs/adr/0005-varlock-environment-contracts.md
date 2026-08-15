@@ -3,6 +3,8 @@
 - Status: Accepted for the feasibility slice
 - Date: 2026-08-11
 - Scope: Environment schemas, OpenBao resolution, local commands, and deployment bootstrap
+- Runtime authority: Amended by ADR 0009 and ADR 0014
+- Managed materialization: Amended by ADR 0015
 
 ## Context
 
@@ -10,7 +12,7 @@ Bob has several deployables with different configuration and secret access.
 
 Plain `.env` files would duplicate configuration and expose secrets to tools.
 
-OpenBao already owns Bob's runtime and deployment secrets.
+OpenBao already owns Bob's Runtime and deployment secrets.
 
 Alchemy already owns Bob's Cloudflare resources.
 

@@ -105,6 +105,11 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Instance identity:** The verified workload identity that selects one Bob Instance at the Connections Gateway.
 - **Runtime deployment contract:** The versioned, provider-neutral manifest for one reviewed Runtime Release.
 - **Bob Runner:** The external compute-plane Module that applies desired state through a Runtime Driver.
+- **Managed Account:** One application-plane account that can own one Bob Instance.
+- **Provisioning subject:** One opaque Managed Account reference sent to the Control Plane.
+- **Managed Channel Router:** The application data-plane Module that maps an authorized sender to one Bob Instance.
+- **Staged channel event:** One durable authorized event that waits for its Bob Instance to become ready.
+- **Runtime materialization:** Verified contract acquisition and protected local Secret Projection by a Bob Runner.
 
 ## System invariants
 
@@ -129,6 +134,12 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Message wording does not grant Tool authority. Domain modules enforce each action invariant.
 - The agent never calls Sendblue directly.
 - A Bob Instance never receives a shared Nango environment secret.
+- One managed Owner runs in one Bob Instance.
+- The Managed Channel Router stores sender mappings and Staged channel events outside the Control Plane.
+- Unknown or unauthorized senders do not start provisioning.
+- A managed Warm Sandbox contains no Owner state, credentials, storage, messages, or Secret Projection.
+- Managed production Cloudflare changes belong to `teampitch-ops`.
+- Runtime Alchemy owns portable and self-hosted plans. It does not write managed production resources.
 - The Runtime deployment contract contains no hosting-provider identifier or secret value.
 - Bob Runner remains outside the Bob Instance application stack.
 - The Connections Gateway derives Instance scope from verified Instance identity.
@@ -187,3 +198,4 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - [ADR 0012: Model-directed capability selection](docs/adr/0012-model-directed-capability-selection.md)
 - [ADR 0013: Shared Connections Gateway](docs/adr/0013-shared-connections-gateway.md)
 - [ADR 0014: Portable Bob Runner deployment contract](docs/adr/0014-portable-runner-deployment-contract.md)
+- [ADR 0015: Managed Instance activation and channel routing](docs/adr/0015-managed-instance-activation.md)
