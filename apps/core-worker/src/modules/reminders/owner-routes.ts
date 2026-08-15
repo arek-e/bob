@@ -1,4 +1,4 @@
-import { ReminderSnoozeRequest } from "@bob/contracts/ui"
+import { ReminderSnoozeRequest } from "@bob/contracts/ui/reminders"
 import { Schema } from "effect"
 
 import type { OwnerRouteModule } from "../runtime/module.ts"

@@ -59,8 +59,7 @@ export interface GeneralCoreBindings {
 export interface TransitionalBindings
   extends GeneralCoreBindings, ReminderBindings, ConnectionsBindings {}
 
-/** Compatibility name for the currently deployed transitional Worker. */
-export interface CoreBindings extends TransitionalBindings {}
+export interface CoreBindings extends GeneralCoreBindings {}
 
 export interface IngressBindings {
   CORE: Fetcher

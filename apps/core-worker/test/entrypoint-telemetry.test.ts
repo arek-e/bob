@@ -5,12 +5,14 @@ import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect } from "effect"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { CoreBindings } from "../src/bindings.ts"
+import type { CoreBindings, TransitionalBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 import type { CoreDurableDependencies } from "../src/entrypoints/durable-objects.ts"
+import type { TransitionalComposition } from "../src/transitional-composition.ts"
 
 import { handleHttp as realHandleHttp } from "../src/entrypoints/http.ts"
-import { createCoreWorker, OwnerRunCoordinator, ReminderClock } from "../src/index.ts"
+import { createCoreWorker, OwnerRunCoordinator } from "../src/index.ts"
+import { ReminderClock } from "../src/modules/reminders/clock.ts"
 import {
   makeCoreTelemetryInvocation as makeActualTelemetryInvocation,
   type CoreTelemetryInvocation
@@ -83,7 +85,7 @@ beforeEach(() => {
 describe("Core telemetry composition", () => {
   it("keeps the fetch response when telemetry scheduling throws", async () => {
     // SAFETY: This focused test double implements every platform member exercised by this test.
-    const bindings = testFixture<CoreBindings>({})
+    const bindings = testFixture<TransitionalBindings>({})
     const expected = new Response(null, { status: 204 })
     harness.handleHttp.mockImplementation(
       (
@@ -296,7 +298,7 @@ describe("Core telemetry composition", () => {
     }
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     harness.composeCore.mockReturnValue(
-      testFixture<CoreComposition>({
+      testFixture<TransitionalComposition>({
         config: {
           AGENT_URL: "https://agent.example.invalid",
           AGENT_ACCESS_CLIENT_ID: "client",
@@ -444,7 +446,7 @@ describe("Core telemetry composition", () => {
     )
     const published: unknown[] = []
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-    const bindings = testFixture<CoreBindings>({
+    const bindings = testFixture<TransitionalBindings>({
       OUTBOUND_QUEUE: { send: async (job: OutboundJob) => published.push(job) }
     })
     const waits = makeWaitUntilHarness()
@@ -507,7 +509,7 @@ describe("Core telemetry composition", () => {
 
   it("keeps the owner run result when telemetry scheduling throws", async () => {
     // SAFETY: This focused test double implements every platform member exercised by this test.
-    const bindings = testFixture<CoreBindings>({})
+    const bindings = testFixture<TransitionalBindings>({})
     const turnId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db95"
     const turns = {
       offer: vi.fn(async (_eventId: string, _traceparent?: string) => ({
@@ -549,7 +551,7 @@ describe("Core telemetry composition", () => {
 
   it("keeps the reminder clock result when telemetry scheduling throws", async () => {
     // SAFETY: This focused test double implements every platform member exercised by this test.
-    const bindings = testFixture<CoreBindings>({})
+    const bindings = testFixture<TransitionalBindings>({})
     const deleteAlarm = vi.fn(async () => undefined)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const state = testFixture<DurableObjectState>({
@@ -560,7 +562,7 @@ describe("Core telemetry composition", () => {
     })
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     harness.composeCore.mockReturnValue(
-      testFixture<CoreComposition>({
+      testFixture<TransitionalComposition>({
         config: { OWNER_ID: correlationId },
         services: {
           reminders: {

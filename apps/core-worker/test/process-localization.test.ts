@@ -17,6 +17,7 @@ function localizedComposition(text: string) {
     async (): ReturnType<CoreComposition["services"]["artifacts"]["latest"]> => undefined
   )
   const command = text.toLowerCase() === "klart" ? "done" : "seen"
+  const stopActiveForSafety = vi.fn()
   // SAFETY: This controlled test fixture matches the asserted contract used by this test.
   const composition = testFixture<CoreComposition>({
     config: { UI_BASE_URL: "https://bob.example" },
@@ -43,7 +44,7 @@ function localizedComposition(text: string) {
         ]),
         completeInbound: vi.fn(async () => undefined)
       },
-      training: { stopActiveForSafety: vi.fn() },
+      training: { stopActiveForSafety },
       turns: { excludeMessageFromContext: vi.fn(async () => true) },
       journal: {
         createHandoff: vi.fn(async () => ({ id: "private-link" }))
@@ -55,12 +56,14 @@ function localizedComposition(text: string) {
       }
     }
   })
-  return { composition, createOutbox, latestArtifact }
+  return { composition, createOutbox, latestArtifact, stopActiveForSafety }
 }
 
 describe("deterministic Swedish replies", () => {
   it("returns the fixed Swedish response after a Swedish training safety stop", async () => {
-    const { composition, createOutbox } = localizedComposition("Mitt knä gör ont efter setet.")
+    const { composition, createOutbox, stopActiveForSafety } = localizedComposition(
+      "Mitt knä gör ont efter setet."
+    )
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const bindings = testFixture<CoreBindings>({
       OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) }
@@ -68,11 +71,7 @@ describe("deterministic Swedish replies", () => {
 
     await processInbound(eventId, bindings, composition)
 
-    expect(composition.services.training.stopActiveForSafety).toHaveBeenCalledWith(
-      ownerId,
-      "pain_or_injury",
-      expect.any(String)
-    )
+    expect(stopActiveForSafety).toHaveBeenCalledWith(ownerId, "pain_or_injury", expect.any(String))
     expect(createOutbox).toHaveBeenCalledWith(
       expect.objectContaining({
         text: "Avsluta övningen nu. Öka inte vikten. Be en kvalificerad tränare eller vårdpersonal om hjälp."

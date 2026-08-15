@@ -1,4 +1,4 @@
-import { JournalEntryCreate, JournalEntryUpdate } from "@bob/contracts/ui"
+import { JournalEntryCreate, JournalEntryUpdate } from "@bob/contracts/ui/journal"
 import { Schema } from "effect"
 
 import type { OwnerRouteModule } from "../runtime/module.ts"

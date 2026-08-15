@@ -1,4 +1,4 @@
-import { TrainingProposalApproval } from "@bob/contracts/ui"
+import { TrainingProposalApproval } from "@bob/contracts/ui/training"
 import { Schema } from "effect"
 
 import type { OwnerRouteModule } from "../runtime/module.ts"

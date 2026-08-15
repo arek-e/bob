@@ -5,12 +5,16 @@ import { makeReminderConversationWorkflow } from "../src/modules/reminders/conve
 import { makeRuntimeModules } from "../src/modules/runtime/module.ts"
 import { makeTrainingConversationWorkflow } from "../src/modules/training/conversation-workflow.ts"
 
+export type TestFixture<T> = {
+  readonly [Key in keyof T]?: T[Key] extends object ? TestFixture<T[Key]> : T[Key]
+}
+
 interface CompatibilityServices {
-  readonly training?: Parameters<typeof makeTrainingConversationWorkflow>[0]
-  readonly journal?: Parameters<typeof makeJournalConversationWorkflow>[0]
-  readonly turns?: Parameters<typeof makeJournalConversationWorkflow>[1]
-  readonly reminders?: Parameters<typeof makeReminderConversationWorkflow>[1]
-  readonly conversations?: Parameters<typeof makeReminderConversationWorkflow>[0]
+  readonly training?: TestFixture<Parameters<typeof makeTrainingConversationWorkflow>[0]>
+  readonly journal?: TestFixture<Parameters<typeof makeJournalConversationWorkflow>[0]>
+  readonly turns?: TestFixture<Parameters<typeof makeJournalConversationWorkflow>[1]>
+  readonly reminders?: TestFixture<Parameters<typeof makeReminderConversationWorkflow>[1]>
+  readonly conversations?: TestFixture<Parameters<typeof makeReminderConversationWorkflow>[0]>
 }
 
 interface CompatibilityComposition {
@@ -18,26 +22,30 @@ interface CompatibilityComposition {
   readonly config?: { readonly UI_BASE_URL?: string }
 }
 
-export type TestFixture<T> = {
-  readonly [Key in keyof T]?: T[Key] extends object ? TestFixture<T[Key]> : T[Key]
-}
-
-export function testFixture<T>(value: TestFixture<T>): T {
+export function testFixture<T>(value: TestFixture<T> & CompatibilityComposition): T {
   // SAFETY: The optional compatibility view reads only focused doubles declared by each test.
   const fixture = value as TestFixture<T> & CompatibilityComposition
   const services = fixture.services
   const config = fixture.config
   const conversations = []
   if (services?.training !== undefined) {
-    conversations.push(makeTrainingConversationWorkflow(services.training))
+    // SAFETY: The focused double implements the workflow methods exercised by its test.
+    const training = services.training as Parameters<typeof makeTrainingConversationWorkflow>[0]
+    conversations.push(makeTrainingConversationWorkflow(training))
   }
   if (services?.journal !== undefined && services.turns !== undefined) {
-    conversations.push(
-      makeJournalConversationWorkflow(services.journal, services.turns, config?.UI_BASE_URL ?? "")
-    )
+    // SAFETY: The focused doubles implement the workflow methods exercised by their test.
+    const journal = services.journal as Parameters<typeof makeJournalConversationWorkflow>[0]
+    // SAFETY: The focused doubles implement the workflow methods exercised by their test.
+    const turns = services.turns as Parameters<typeof makeJournalConversationWorkflow>[1]
+    conversations.push(makeJournalConversationWorkflow(journal, turns, config?.UI_BASE_URL ?? ""))
   }
   if (services?.reminders !== undefined && services.conversations !== undefined) {
-    conversations.push(makeReminderConversationWorkflow(services.conversations, services.reminders))
+    // SAFETY: The focused doubles implement the workflow methods exercised by their test.
+    const source = services.conversations as Parameters<typeof makeReminderConversationWorkflow>[0]
+    // SAFETY: The focused doubles implement the workflow methods exercised by their test.
+    const reminders = services.reminders as Parameters<typeof makeReminderConversationWorkflow>[1]
+    conversations.push(makeReminderConversationWorkflow(source, reminders))
   }
   // SAFETY: A focused test double implements every member exercised by its test.
   return (
@@ -45,8 +53,8 @@ export function testFixture<T>(value: TestFixture<T>): T {
       ? {
           profile: transitionalDeploymentProfile,
           runtime: makeRuntimeModules({ conversations }),
-          ...value
+          ...(value as object)
         }
-      : value
+      : (value as object)
   ) as T
 }

@@ -3,7 +3,7 @@ import { NormalizedInboundEvent, NormalizedStatusEvent } from "@bob/contracts/ch
 import { DeliveryReconciliationResponse, DeliveryResult } from "@bob/contracts/delivery"
 import { OwnerSettingsUpdate } from "@bob/contracts/settings"
 import { ToolCommand } from "@bob/contracts/tools"
-import { MemoryCandidateCorrection } from "@bob/contracts/ui"
+import { MemoryCandidateCorrection } from "@bob/contracts/ui/core"
 import { featureForToolName } from "@bob/observability/attribution"
 import { recordDecision, withBobSpan, type BobSpan } from "@bob/observability/effect"
 import { observeHealth } from "@bob/observability/events"

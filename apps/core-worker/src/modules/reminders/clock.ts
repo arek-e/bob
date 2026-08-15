@@ -6,18 +6,21 @@ import {
 import { eq } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 
-import type { CoreBindings } from "../../bindings.ts"
+import type { TransitionalBindings } from "../../bindings.ts"
 
-import { composeCore } from "../../composition.ts"
 import { makeCoreTelemetryInvocation, scheduleTelemetryWork } from "../../telemetry.ts"
+import { composeTransitional } from "../../transitional-composition.ts"
 import { outboxMessages } from "../delivery/schema.ts"
 
 export interface ReminderClockDependencies {
-  readonly composeCore: typeof composeCore
+  readonly composeCore: typeof composeTransitional
   readonly makeCoreTelemetryInvocation: typeof makeCoreTelemetryInvocation
 }
 
-const defaultDependencies: ReminderClockDependencies = { composeCore, makeCoreTelemetryInvocation }
+const defaultDependencies: ReminderClockDependencies = {
+  composeCore: composeTransitional,
+  makeCoreTelemetryInvocation
+}
 
 function promiseEffect<A>(operation: (signal: AbortSignal) => PromiseLike<A>) {
   return Effect.tryPromise({
@@ -49,7 +52,7 @@ function occurrenceId(
 export class ReminderClock implements DurableObject {
   constructor(
     private readonly state: DurableObjectState,
-    private readonly bindings: CoreBindings,
+    private readonly bindings: TransitionalBindings,
     private readonly dependencies: ReminderClockDependencies = defaultDependencies
   ) {}
 

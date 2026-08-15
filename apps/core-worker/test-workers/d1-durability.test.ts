@@ -6,8 +6,7 @@ import {
   createExecutionContext,
   createMessageBatch,
   getQueueResult,
-  reset,
-  runInDurableObject
+  reset
 } from "cloudflare:test"
 import { env } from "cloudflare:workers"
 import { eq } from "drizzle-orm"
@@ -1650,7 +1649,7 @@ describe("D1 migrations and durability", () => {
     expect(await delivery.claimOutbox(resumedId, 60_000)).toBeDefined()
   })
 
-  it("applies one scheduler command to the EU reminder clock alarm", async () => {
+  it("keeps unselected reminder rows without activating a clock", async () => {
     const { database, protection, ownerKey } = await seedRunData()
     const encrypted = await protection.encryptText(ownerKey, "Future reminder")
     const dueAt = "2099-08-12T10:00:00.000Z"
@@ -1695,22 +1694,10 @@ describe("D1 migrations and durability", () => {
         updatedAt: "2026-08-11T10:00:00.000Z"
       })
     ])
-    // workerd does not implement jurisdiction selection. Production lookup code selects "eu".
-    const namespace = env.REMINDER_CLOCK
-    const stub = namespace.get(namespace.idFromName(ownerId))
-    const response = await stub.fetch("https://clock.internal/command", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        id: "00000000-0000-4000-8000-000000000603",
-        reminderId: "00000000-0000-4000-8000-000000000601",
-        scheduleRevision: 1,
-        command: "upsert"
-      })
-    })
-    expect(response.status).toBe(200)
-    const alarm = await runInDurableObject(stub, (_instance, state) => state.storage.getAlarm())
-    expect(alarm).toBe(Date.parse(dueAt))
+    await expect(database.select().from(reminders)).resolves.toHaveLength(1)
+    await expect(database.select().from(reminderOccurrences)).resolves.toEqual([
+      expect.objectContaining({ state: "scheduled", intendedDueAt: dueAt })
+    ])
   })
 
   it("rolls back journal handoff consumption when entry creation fails", async () => {

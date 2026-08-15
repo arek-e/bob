@@ -5,8 +5,9 @@ import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect } from "effect"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { CoreBindings } from "../src/bindings.ts"
+import type { TransitionalBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
+import type { ReminderStore } from "../src/modules/reminders/store.ts"
 
 import { handleScheduled } from "../src/entrypoints/scheduled.ts"
 import { makeReminderScheduledWorkflow } from "../src/modules/reminders/scheduled-workflow.ts"
@@ -90,6 +91,10 @@ describe("Core scheduled telemetry", () => {
     }))
     const markEnqueued = vi.fn(async () => undefined)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const reminders = testFixture<ReminderStore>({
+      releaseExpiredClaims: vi.fn(async () => 0),
+      markExpiredResponseDeadlines: vi.fn(async () => 0)
+    })
     compositionHarness.current = testFixture<CoreComposition>({
       config: { OWNER_ID: scheduledCorrelationId },
       database: { select, update },
@@ -98,10 +103,7 @@ describe("Core scheduled telemetry", () => {
           reconcileExpiredClaims: vi.fn(async () => 0),
           markEnqueued
         },
-        reminders: {
-          releaseExpiredClaims: vi.fn(async () => 0),
-          markExpiredResponseDeadlines: vi.fn(async () => 0)
-        }
+        reminders
       }
     })
     const clockRequests: RequestInit[] = []
@@ -121,7 +123,7 @@ describe("Core scheduled telemetry", () => {
     )
     vi.stubGlobal("fetch", recoveryFetch)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-    const bindings = testFixture<CoreBindings>({
+    const bindings = testFixture<TransitionalBindings>({
       REMINDER_CLOCK: { jurisdiction: vi.fn(() => namespace) },
       OUTBOUND_QUEUE: { send: async (job: OutboundJob) => published.push(job) },
       SENDBLUE_EGRESS_URL: "https://egress.example.invalid",
@@ -134,7 +136,7 @@ describe("Core scheduled telemetry", () => {
           makeReminderScheduledWorkflow({
             bindings,
             database: compositionHarness.current.database,
-            reminders: compositionHarness.current.services.reminders,
+            reminders,
             ownerId: scheduledCorrelationId
           })
         ]
@@ -241,6 +243,10 @@ describe("Core scheduled telemetry", () => {
       })
     const markEnqueued = vi.fn(async () => undefined)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const reminders = testFixture<ReminderStore>({
+      releaseExpiredClaims: vi.fn(async () => 0),
+      markExpiredResponseDeadlines: vi.fn(async () => 0)
+    })
     compositionHarness.current = testFixture<CoreComposition>({
       config: { OWNER_ID: scheduledCorrelationId },
       database: {
@@ -249,10 +255,7 @@ describe("Core scheduled telemetry", () => {
       },
       services: {
         delivery: { reconcileExpiredClaims: vi.fn(async () => 0), markEnqueued },
-        reminders: {
-          releaseExpiredClaims: vi.fn(async () => 0),
-          markExpiredResponseDeadlines: vi.fn(async () => 0)
-        }
+        reminders
       }
     })
     let commandCount = 0
@@ -271,7 +274,7 @@ describe("Core scheduled telemetry", () => {
     }
     const send = vi.fn(async () => undefined)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-    const bindings = testFixture<CoreBindings>({
+    const bindings = testFixture<TransitionalBindings>({
       REMINDER_CLOCK: { jurisdiction: vi.fn(() => namespace) },
       OUTBOUND_QUEUE: { send }
     })
@@ -282,7 +285,7 @@ describe("Core scheduled telemetry", () => {
           makeReminderScheduledWorkflow({
             bindings,
             database: compositionHarness.current.database,
-            reminders: compositionHarness.current.services.reminders,
+            reminders,
             ownerId: scheduledCorrelationId
           })
         ]

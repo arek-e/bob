@@ -6,7 +6,7 @@ export const artifacts = sqliteTable(
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
     channelId: text("channel_id").notNull(),
-    kind: text("kind", { enum: ["plan", "training_plan"] }).notNull(),
+    kind: text("kind", { enum: ["plan"] }).notNull(),
     currentRevision: integer("current_revision").notNull(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull()

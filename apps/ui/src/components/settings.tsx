@@ -1,9 +1,4 @@
 import {
-  ConnectionList,
-  type ConnectionProvider,
-  type ConnectionStatus
-} from "@bob/contracts/capabilities/connections"
-import {
   OwnerSettingsUpdate,
   OwnerSettingsView,
   type HourCycle,
@@ -29,7 +24,7 @@ import { Button } from "~/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card"
 import { Input } from "~/components/ui/input"
 import { Select } from "~/components/ui/select"
-import { api, parseJson, schemas } from "~/lib/api"
+import { api, parseJson } from "~/lib/api"
 import { styles } from "~/lib/styles"
 import { cn, formatDate, supportedTimeZones } from "~/lib/utils"
 
@@ -37,7 +32,7 @@ type ClientProps = { enabled: Accessor<boolean> }
 
 const settingsSections = [
   { id: "locality", label: "General" },
-  { id: "connections", label: "Connections" },
+  { id: "accounts", label: "Accounts" },
   { id: "message-settings", label: "Messaging" },
   { id: "access-help", label: "Delivery" }
 ] as const
@@ -143,8 +138,8 @@ export function SettingsPage() {
           <div hidden={activeSection() !== "locality"}>
             <LocalitySection enabled={enabled} />
           </div>
-          <div hidden={activeSection() !== "connections"}>
-            <ConnectionsSection enabled={enabled} />
+          <div hidden={activeSection() !== "accounts"}>
+            <AccountsSection enabled={enabled} />
           </div>
           <div hidden={activeSection() !== "message-settings"}>
             <MessageSettingsSection />
@@ -381,16 +376,12 @@ function LocalitySection(props: ClientProps) {
   )
 }
 
-function ConnectionsSection(props: ClientProps) {
+function AccountsSection(props: ClientProps) {
   const status = useStatus()
   const owner = useOwnerSession()
   const [settingsView, { refetch: refetchSettings }] = createResource(
     () => (props.enabled() ? "ready" : undefined),
     async () => parseJson(OwnerSettingsView, await api("/api/settings"))
-  )
-  const [externalConnections, { refetch: refetchExternalConnections }] = createResource(
-    () => (props.enabled() ? "ready" : undefined),
-    async () => parseJson(ConnectionList, await api("/api/connections"))
   )
   const [authStatus, { refetch: refetchAuth }] = createResource(
     () => (props.enabled() ? "ready" : undefined),
@@ -399,27 +390,23 @@ function ConnectionsSection(props: ClientProps) {
   const [login, setLogin] = createSignal<DeviceLoginEventType>()
   const [startingLogin, setStartingLogin] = createSignal(false)
   const [refreshing, setRefreshing] = createSignal(false)
-  const [linking, setLinking] = createSignal<ConnectionProvider>()
 
   const deviceLogin = () => {
     const value = login()
     return value?.type === "device_code" ? value : undefined
   }
 
-  function connection(provider: "sendblue"): SettingsConnection["status"]
-  function connection(provider: ConnectionProvider): ConnectionStatus
-  function connection(
-    provider: "sendblue" | ConnectionProvider
-  ): ConnectionStatus | SettingsConnection["status"] {
-    const items =
-      provider === "sendblue" ? settingsView()?.connections : externalConnections()?.connections
-    return items?.find((item) => item.provider === provider)?.status ?? "not_connected"
+  function connection(): SettingsConnection["status"] {
+    return (
+      settingsView()?.connections.find((item) => item.provider === "sendblue")?.status ??
+      "not_connected"
+    )
   }
 
   async function refresh() {
     setRefreshing(true)
     try {
-      await Promise.all([refetchSettings(), refetchExternalConnections(), refetchAuth()])
+      await Promise.all([refetchSettings(), refetchAuth()])
     } catch {
       status.announce("Unable to refresh connections. Check the service and try again.", true)
     } finally {
@@ -448,32 +435,12 @@ function ConnectionsSection(props: ClientProps) {
     }
   }
 
-  async function linkCalendar(provider: ConnectionProvider, label: string) {
-    const popup = window.open("about:blank", "_blank")
-    if (popup !== null) popup.opener = null
-    setLinking(provider)
-    try {
-      const session = parseJson(
-        schemas.connectionSession,
-        await api(`/api/connections/${provider}/session`, { method: "POST", body: "{}" })
-      )
-      if (popup === null) window.location.assign(session.connectUrl)
-      else popup.location.replace(session.connectUrl)
-      status.announce(`Finish linking ${label} in the new window.`)
-    } catch {
-      popup?.close()
-      status.announce(`Unable to link ${label}. Try again.`, true)
-    } finally {
-      setLinking(undefined)
-    }
-  }
-
   return (
-    <section id="connections" class={styles.contentSection} aria-labelledby="connections-title">
+    <section id="accounts" class={styles.contentSection} aria-labelledby="accounts-title">
       <SectionHeader
-        title="Accounts and connections"
-        description="Link each service once. Bob will use the linked account when a task needs it."
-        id="connections-title"
+        title="Accounts"
+        description="Manage the owner account, messaging channel, and Agent sign-in."
+        id="accounts-title"
         action={
           <Button variant="secondary" disabled={refreshing()} onClick={() => void refresh()}>
             {refreshing() ? "Refreshing…" : "Refresh connections"}
@@ -494,12 +461,12 @@ function ConnectionsSection(props: ClientProps) {
         <ConnectionCard
           title="Sendblue"
           description="Use your verified phone number to talk with Bob."
-          status={connection("sendblue")}
+          status={connection()}
         >
           <p class={styles.hint}>
-            {connection("sendblue") === "connected"
+            {connection() === "connected"
               ? "Messages from the verified owner are linked to Bob."
-              : connection("sendblue") === "paused"
+              : connection() === "paused"
                 ? "Send START to the Bob number to resume messages."
                 : "To link this connection, send any message to Bob from your verified number."}
           </p>
@@ -549,20 +516,6 @@ function ConnectionsSection(props: ClientProps) {
             </p>
           </Show>
         </ConnectionCard>
-        <CalendarConnectionCard
-          provider="google_calendar"
-          label="Google Calendar"
-          status={connection("google_calendar")}
-          linking={linking()}
-          onLink={() => void linkCalendar("google_calendar", "Google Calendar")}
-        />
-        <CalendarConnectionCard
-          provider="microsoft_calendar"
-          label="Outlook Calendar"
-          status={connection("microsoft_calendar")}
-          linking={linking()}
-          onLink={() => void linkCalendar("microsoft_calendar", "Outlook Calendar")}
-        />
       </div>
     </section>
   )
@@ -571,7 +524,7 @@ function ConnectionsSection(props: ClientProps) {
 function ConnectionCard(props: {
   title: string
   description: string
-  status: ConnectionStatus | SettingsConnection["status"]
+  status: SettingsConnection["status"]
   children: JSX.Element
 }) {
   return (
@@ -587,41 +540,6 @@ function ConnectionCard(props: {
       </CardHeader>
       <CardContent class={styles.connectionCardContent}>{props.children}</CardContent>
     </Card>
-  )
-}
-
-function CalendarConnectionCard(props: {
-  provider: ConnectionProvider
-  label: string
-  status: ConnectionStatus
-  linking: ConnectionProvider | undefined
-  onLink: () => void
-}) {
-  return (
-    <ConnectionCard
-      title={props.label}
-      description="Read schedules and create calendar events."
-      status={props.status}
-    >
-      <p class={styles.hint}>
-        {props.status === "connected"
-          ? `${props.label} is linked to Bob.`
-          : props.status === "unavailable"
-            ? "Bob could not reach the connection service. Try again."
-            : `Link ${props.label} when you want Bob to use this calendar.`}
-      </p>
-      <Button
-        class="justify-self-start"
-        disabled={props.linking !== undefined}
-        onClick={props.onLink}
-      >
-        {props.linking === props.provider
-          ? "Creating private link…"
-          : props.status === "connected"
-            ? `Relink ${props.label}`
-            : `Link ${props.label}`}
-      </Button>
-    </ConnectionCard>
   )
 }
 

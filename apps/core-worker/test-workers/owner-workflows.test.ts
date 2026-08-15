@@ -136,8 +136,8 @@ afterEach(async () => {
   await reset()
 })
 
-describe("owner reminder controls", () => {
-  it("wires seen, done, snooze, and cancel to exact owner occurrences", async () => {
+describe("unselected reminder records", () => {
+  it("keeps stored records while the Core profile hides reminder routes", async () => {
     const { database, protection } = await seedOwner()
     const reminders = makeReminderStore(database, protection, {
       now: () => new Date("2026-08-11T10:05:00.000Z"),
@@ -176,65 +176,15 @@ describe("owner reminder controls", () => {
       .where(eq(reminderOccurrences.id, first.occurrenceId))
 
     const listed = await ownerApi("/api/reminders")
-    expect(listed.status).toBe(200)
-    await expect(listed.json()).resolves.toMatchObject({
-      reminders: [
-        {
-          id: first.reminderId,
-          actionTargets: [{ occurrenceId: first.occurrenceId, state: "awaiting_response" }]
-        }
-      ]
-    })
-
-    const seen = await ownerApi(`/api/reminder-occurrences/${first.occurrenceId}/seen`, {
-      method: "POST",
-      headers: { "idempotency-key": "reminder:first:seen" },
-      body: "{}"
-    })
-    expect(seen.status).toBe(200)
-    const snoozed = await ownerApi(`/api/reminder-occurrences/${first.occurrenceId}/snooze`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "idempotency-key": "reminder:first:snooze"
-      },
-      body: JSON.stringify({ dueAt: "2099-08-12T09:00:00.000Z" })
-    })
-    expect(snoozed.status).toBe(200)
-    const cancelled = await ownerApi(`/api/reminders/${first.reminderId}/cancel`, {
-      method: "POST",
-      headers: { "idempotency-key": "reminder:first:cancel" },
-      body: "{}"
-    })
-    expect(cancelled.status).toBe(200)
-
-    const second = await reminders.createOneShot(
-      ownerId,
-      channelId,
-      "Remind me about water.",
-      {
-        displayText: "Fill my water bottle",
-        smsSafeText: "Reminder: fill your water bottle.",
-        localDate: "2099-08-13",
-        localTime: "10:00",
-        timeZone: "Europe/Stockholm",
-        dueAt: "2099-08-13T08:00:00.000Z",
-        sourceMessageId: messageId,
-        requiresAcknowledgment: true
-      },
-      "reminder:create:second"
-    )
-    await database
-      .update(reminderOccurrences)
-      .set({ state: "awaiting_response" })
-      .where(eq(reminderOccurrences.id, second.occurrenceId))
-    const done = await ownerApi(`/api/reminder-occurrences/${second.occurrenceId}/done`, {
-      method: "POST",
-      headers: { "idempotency-key": "reminder:second:done" },
-      body: "{}"
-    })
-    expect(done.status).toBe(200)
-    await expect(reminders.list(ownerId)).resolves.toEqual([])
+    expect(listed.status).toBe(404)
+    await expect(reminders.list(ownerId)).resolves.toEqual([
+      expect.objectContaining({
+        id: first.reminderId,
+        actionTargets: [
+          expect.objectContaining({ occurrenceId: first.occurrenceId, state: "awaiting_response" })
+        ]
+      })
+    ])
   })
 })
 
@@ -666,11 +616,15 @@ describe("owner journal changes", () => {
         approvedSummary: "I trained today."
       })
     })
-    expect(updated.status).toBe(200)
+    expect(updated.status).toBe(404)
     await journal.updateEntry(
       ownerId,
       entryId,
-      { text: "A retry must not replace the saved text.", tags: [] },
+      {
+        text: "Corrected private text",
+        tags: ["day", "training"],
+        approvedSummary: "I trained today."
+      },
       "journal:update:one"
     )
 
@@ -814,8 +768,8 @@ describe("owner training overview", () => {
     ).resolves.toMatchObject({ gyms: [], exercises: [], routines: [], history: [] })
 
     const response = await ownerApi("/api/training/overview?q=press")
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toMatchObject({
+    expect(response.status).toBe(404)
+    await expect(training.overview(ownerId, "press")).resolves.toMatchObject({
       gyms: [{ id: gymId }],
       exercises: [{ id: exerciseId }],
       routines: [{ id: routineId }],

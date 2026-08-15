@@ -1,4 +1,4 @@
-import type { JournalEntry, JournalMetadata } from "@bob/contracts/ui"
+import type { JournalEntry, JournalMetadata } from "@bob/contracts/ui/journal"
 import type { BatchItem } from "drizzle-orm/batch"
 
 import { and, desc, eq, gt, inArray, isNull, like } from "drizzle-orm"

@@ -61,6 +61,17 @@ describe("Alchemy compatibility stack", () => {
     ]) {
       expect(result.stdout).toContain(resource)
     }
+    for (const verticalBinding of [
+      "[CoreWorker/REMINDER_CLOCK]",
+      "[CoreWorker/REMINDER_QUIET_HOURS_START]",
+      "[CoreWorker/REMINDER_QUIET_HOURS_END]",
+      "[CoreWorker/REMINDER_DAILY_LIMIT]",
+      "[CoreWorker/CONNECTIONS_GATEWAY_URL]",
+      "[CoreWorker/CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID]",
+      "[CoreWorker/CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET]"
+    ]) {
+      expect(result.stdout).not.toContain(verticalBinding)
+    }
   }, 30_000)
 
   it("keeps the Runtime backup bucket separate from the shared Connections service", async () => {

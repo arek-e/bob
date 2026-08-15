@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest"
 
-import type { GeneralCoreBindings } from "../src/bindings.ts"
+import type { GeneralCoreBindings, TransitionalBindings } from "../src/bindings.ts"
 
+import { composeCore, defaultRuntimeProfile } from "../src/composition.ts"
 import { composeGeneralCore } from "../src/core-composition.ts"
+import * as defaultEntrypoint from "../src/index.ts"
 import { makeDeliveryTargetRegistry } from "../src/modules/delivery/target-adapter.ts"
 import { makeRuntimeModules } from "../src/modules/runtime/module.ts"
 import { coreRuntimeProfile } from "../src/profiles/core.ts"
+import { composeTransitional } from "../src/transitional-composition.ts"
 import { testFixture } from "./test-fixture.ts"
 
 const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
@@ -33,6 +36,7 @@ function coreBindings(): GeneralCoreBindings {
     AGENT_ADMIN_URL: "https://agent-admin.example.com",
     AGENT_ADMIN_ACCESS_CLIENT_ID: "admin-client",
     AGENT_ADMIN_ACCESS_CLIENT_SECRET: "admin-secret",
+    UI_BASE_URL: "https://bob.example.invalid",
     BOB_MODEL: "gpt-5",
     BOB_PROVIDER: "openai-codex",
     BOB_RUN_TOKEN_BUDGET: 10_000,
@@ -49,6 +53,48 @@ describe("General Core profile", () => {
     expect(composition.runtime.ownerRoutes).toEqual([])
     expect(composition.runtime.scheduledTasks).toEqual([])
     expect(composition.extensions).toEqual({})
+  })
+
+  it("uses the Core profile in the default composition and Worker entrypoint", () => {
+    const composition = composeCore(coreBindings())
+
+    expect(defaultRuntimeProfile).toBe(coreRuntimeProfile)
+    expect(composition.profile.profileId).toBe("core")
+    expect(composition.profile.names).toEqual([
+      "memory_search",
+      "memory_propose",
+      "memory_confirm",
+      "memory_correct",
+      "settings_get",
+      "settings_update"
+    ])
+    expect(defaultEntrypoint).not.toHaveProperty("ReminderClock")
+  })
+
+  it("keeps the full optional profile available through explicit composition", () => {
+    const bindings = testFixture<TransitionalBindings>({
+      ...coreBindings(),
+      REMINDER_CLOCK: {},
+      REMINDER_QUIET_HOURS_START: "22:00",
+      REMINDER_QUIET_HOURS_END: "07:00",
+      REMINDER_DAILY_LIMIT: 4,
+      CONNECTIONS_GATEWAY_URL: "https://connections.example.invalid",
+      CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID: "client",
+      CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET: "secret"
+    })
+    const composition = composeTransitional(bindings)
+
+    expect(composition.profile.profileId).toBe("transitional")
+    expect(composition.profile.modules.map((module) => module.id)).toEqual([
+      "reminders",
+      "memory",
+      "journal",
+      "training",
+      "settings",
+      "connections"
+    ])
+    expect(composition.runtime.ownerRoutes).toHaveLength(4)
+    expect(composition.runtime.scheduledTasks).toHaveLength(1)
   })
 
   it("rejects duplicate runtime and delivery ownership", () => {

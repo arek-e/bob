@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/index.js",
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/index.js && node ../../scripts/verify-core-bundle.mjs",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "env:check": "varlock load --agent --path . --skip-cache",
     "test:workers": "vitest run --config vitest.workers.config.ts",
