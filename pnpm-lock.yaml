@@ -393,6 +393,8 @@ importers:
         specifier: 0.25.9
         version: 0.25.9
 
+  tools/oxlint: {}
+
   tools/pi-smoke:
     dependencies:
       '@bob/contracts':

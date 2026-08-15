@@ -36,7 +36,8 @@ Status: active
 - [ ] One synthetic inbound event is durable.
 - [ ] One agent run uses the reviewed model.
 - [ ] One outbound delivery reaches an accepted provider state.
-- [ ] One reminder fires and records its delivery result.
+- [ ] One core conversation completes and records its delivery result.
+- [ ] Each enabled Vertical Module passes its own acceptance check.
 - [ ] Telemetry contains no message text or credentials.
 
 ## Residual risk

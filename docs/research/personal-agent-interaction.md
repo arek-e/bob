@@ -19,13 +19,18 @@ Generality applies to understanding, planning, and approved day-to-day capabilit
 
 Generality does not grant arbitrary computer access or self-approved permissions.
 
-Bob can expand across calendars, tasks, email, travel, shopping, and other services.
+Bob can expand across calendars, tasks, email, travel, shopping, and other domains through optional
+Capability Modules.
 
-Each expansion must add reviewed domain tools, policy, tests, audit records, and recovery behavior.
+Each expansion must add reviewed Tools, an execution Adapter, policy, tests, audit records, and
+recovery behavior at the owning Module.
 
 The target is:
 
 > General in understanding and planning. Broad but explicit in capability. Bounded in authority.
+
+The domains used by the cited papers are evaluation environments. They do not define Bob's core
+product or its default deployment profile.
 
 ## Interaction model
 
@@ -103,7 +108,8 @@ memory baselines, and four evaluation phases.
 
 The four phases learn a preference, test it, change it, and test adaptation.
 
-Bob should adapt this protocol to reminders and connector actions.
+Bob should adapt this protocol to general preference tasks. A Vertical Module can add domain-specific
+preference cases.
 
 ### Human control and trust
 
@@ -140,6 +146,15 @@ Bob can use natural language in iMessage and precise controls in the private UI.
 This combination is useful for target selection, connector setup, approval, and recovery.
 
 ### Long-term memory
+
+Bob separates Owner memory from Agent experience.
+
+Owner memory contains confirmed facts, preferences, corrections, and personal episodes. Agent
+experience contains reviewed evidence about workflows, environment behavior, outcomes, and recurring
+failures. They can share retrieval infrastructure, but they do not share promotion or authority rules.
+
+The Retrieval pipeline keeps indexing, candidate retrieval, relevance checking, conflict handling,
+and bounded reading as distinct stages.
 
 [LongMemEval](https://arxiv.org/abs/2410.10813) evaluates five memory abilities:
 
@@ -237,17 +252,23 @@ Use PAHF's four phases for owner preferences:
 3. Receive an explicit preference change.
 4. Test adaptation without stale preference use.
 
-Use π-Bench-style episodes for reminders and connectors.
+Use π-Bench-style episodes for general multi-turn work. Vertical evaluation packs can add reminder
+and connection episodes.
 
 Each episode should include an underspecified request, a hidden requirement, and a final task result.
 
-### Scenario families
+### Core scenario families
+
+- Preference cold start, confirmation, change, conflict, relevance, and abstention
+- Retrieval across sessions, temporal updates, source grounding, and invalid premises
+- Useful proactive help, missed help, unnecessary interruption, and correct silence
+- Action evidence, unknown outcomes, duplicate prevention, correction, and cancellation
+
+### Vertical scenario families
 
 - Reminder ambiguity, daylight saving time, recurrence, correction, and acknowledgment
 - Calendar event selection, movement, deletion, stale sync, and revoked access
-- Preference cold start, confirmation, change, conflict, and abstention
-- Useful proactive help, missed help, unnecessary interruption, and correct silence
-- Undo, cancellation, duplicate prevention, and unknown external outcomes
+- Training safety and domain record transitions
 
 ### Metrics
 

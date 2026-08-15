@@ -1,6 +1,6 @@
 # ADR 0012: Model-directed capability selection
 
-- Status: Accepted
+- Status: Accepted; catalogue scope amended by ADR 0016
 - Date: 2026-08-14
 - Scope: Agent Tool availability, context retrieval, and plan artifacts
 
@@ -16,9 +16,9 @@ It also made short replies depend on capability hints from prior runs.
 
 ## Decision
 
-Give every agent run the same reviewed capability catalogue.
+Give every agent run in one deployment profile the same reviewed capability catalogue.
 
-Build the catalogue from one complete static set of Capability Modules.
+Build the catalogue from the complete static set of Capability Modules selected by that profile.
 
 Keep each domain's Tool definitions, feature attribution, and safety metadata in its Capability
 Module.
@@ -29,13 +29,13 @@ Conformance checks reject missing Tools, duplicate ownership, and unowned safety
 
 A Capability Module cannot grant authority beyond its owning domain Module.
 
-Derive one deterministic generation from the complete catalogue content.
+Derive one deterministic generation from the complete profile catalogue content.
 
 Store that generation in each new immutable agent run request.
 
 Reject a new run before model execution when its generation does not match the Agent catalogue.
 
-Accept stored requests without a generation during the legacy snapshot migration.
+Accept stored requests without a generation only through the explicit legacy snapshot replay path.
 
 The generation detects rollout skew. It does not grant Tool authority.
 
@@ -54,7 +54,8 @@ the context pack.
 Read domain records through reviewed Tools when the request needs them.
 
 Use one general `plan` artifact for reusable structured plans.
-Continue to read legacy `training_plan` artifacts.
+
+Keep legacy artifact readers behind the owning Vertical Module during migration.
 
 This decision supersedes the short follow-up Tool selection section in ADR 0010.
 
@@ -65,7 +66,7 @@ New wording and languages do not require Tool routing changes.
 New capabilities enter the agent through the reviewed Tool catalogue.
 Their domain Modules still require policy, tests, audit records, and recovery behavior.
 
-Agent telemetry uses the assistant feature when all domain capabilities are available.
+Agent telemetry uses the assistant feature for general runs.
 Individual Tool spans keep their domain feature.
 
 The context pack no longer copies active reminder or training records because of keyword matches.

@@ -4,11 +4,13 @@
 
 - Date: 2026-08-11
 
+Amended by ADR 0016 for profile-specific Context and Capability revisions.
+
 ## Decision
 
 Bob does not cache model responses.
 
-Personal facts, journal records, reminders, training state, and tool results can change between turns.
+Personal facts, episodes, optional Capability records, and Tool results can change between turns.
 
 A stale response can cause more harm than the saved latency can justify.
 
@@ -35,7 +37,8 @@ The cache key must include these values:
 - Model, prompt, tool-set, and response-schema versions.
 - Locale, time zone, and a bounded time bucket.
 - Confirmed fact revision IDs.
-- Selected reminder, routine, workout, and journal-summary revision IDs.
+- The deployment profile identity and Capability catalogue generation.
+- Selected optional Capability record revision IDs.
 - The normalized user request.
 
 Never share a cache entry between owners.

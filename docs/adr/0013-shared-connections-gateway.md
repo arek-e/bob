@@ -4,6 +4,7 @@
 - Date: 2026-08-15
 - Scope: External connection isolation and managed Nango deployment
 - Related: Bob Control Plane ADR 0005, "Keep connection authority outside the Control Plane"
+- Capability composition: Amended by ADR 0016
 
 ## Context
 
@@ -57,7 +58,8 @@ One Nango upgrade serves all managed Bob Instances in its environment or region.
 
 The Connections Gateway becomes required for new connection sessions and status refreshes.
 
-Existing reminders and normal Bob requests continue when the Connections Gateway is unavailable.
+The General Agent Core and enabled local capabilities continue when the Connections Gateway is
+unavailable.
 
 A managed deployment needs a durable Instance identity registry.
 
