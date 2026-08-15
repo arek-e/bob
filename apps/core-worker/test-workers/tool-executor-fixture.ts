@@ -15,6 +15,7 @@ import { makeToolExecutor, type ToolExecutor } from "../src/modules/conversation
 import { makeJournalToolAdapter } from "../src/modules/journal/tool-adapter.ts"
 import { makeMemoryToolAdapter } from "../src/modules/memory/tool-adapter.ts"
 import { makeReminderToolAdapter } from "../src/modules/reminders/tool-adapter.ts"
+import { makeRetrievalPipeline } from "../src/modules/retrieval/pipeline.ts"
 import { makeSettingsToolAdapter } from "../src/modules/settings/tool-adapter.ts"
 import { makeTrainingModule, type TrainingModule } from "../src/modules/training/module.ts"
 import { makeTrainingProposalStore } from "../src/modules/training/proposal-store.ts"
@@ -58,9 +59,10 @@ export function makeTestToolExecutor(
         modules.training,
         makeTrainingProposalStore(database, protection, modules.training, options)
       )
+  const retrieval = makeRetrievalPipeline(database)
   const registry = makeToolAdapterRegistry(transitionalDeploymentProfile, [
     makeReminderToolAdapter(modules.reminders),
-    makeMemoryToolAdapter(modules.memory),
+    makeMemoryToolAdapter(modules.memory, retrieval),
     makeJournalToolAdapter(
       modules.journal,
       { excludeFromContext: async () => true },

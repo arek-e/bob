@@ -10,9 +10,13 @@ import type {
   ToolCommandAdapter,
   ToolCommandAdapterContext
 } from "../conversations/tool-adapter.ts"
-import type { MemoryRecall, OwnerFactStore } from "./store.ts"
+import type { RetrievalPipeline } from "../retrieval/pipeline.ts"
+import type { OwnerFactStore } from "./store.ts"
 
-export function makeMemoryToolAdapter(memory: OwnerFactStore & MemoryRecall): ToolCommandAdapter {
+export function makeMemoryToolAdapter(
+  memory: OwnerFactStore,
+  retrieval: RetrievalPipeline
+): ToolCommandAdapter {
   return {
     capabilityId: memoryCapability.id,
     names: memoryCapability.names,
@@ -20,12 +24,30 @@ export function makeMemoryToolAdapter(memory: OwnerFactStore & MemoryRecall): To
       switch (command.name) {
         case "memory_search": {
           const args = Schema.decodeUnknownSync(MemorySearchArguments)(command.arguments)
-          const matches = await memory.search(command.ownerId, args.query, true)
+          const result = await retrieval.retrieve({
+            ownerId: command.ownerId,
+            query: args.query,
+            channel: true,
+            referenceTime: run.request.localTime,
+            timeZone: run.request.timeZone,
+            limit: 12,
+            totalCharacterBudget: 6_000,
+            itemCharacterBudget: 1_200
+          })
+          const matches = result.status === "supported" ? result.items : []
           return {
             ok: true,
             code: "memory_results",
-            message: `${matches.length} sources found.`,
-            data: JSON.parse(JSON.stringify({ matches })),
+            message:
+              result.status === "supported"
+                ? `${matches.length} sources found.`
+                : "No supported source found.",
+            data: JSON.parse(
+              JSON.stringify({
+                matches,
+                retrieval: { status: result.status }
+              })
+            ),
             evidence: {
               sources: matches.map(({ sourceId, sourceLabel, occurredAt }) => {
                 const source = { sourceId, sourceLabel }

@@ -17,6 +17,7 @@ import type {
 import type { JournalStore } from "../src/modules/journal/store.ts"
 import type { MemoryStore } from "../src/modules/memory/store.ts"
 import type { ReminderStore } from "../src/modules/reminders/store.ts"
+import type { RetrievalPipeline } from "../src/modules/retrieval/pipeline.ts"
 import type { OwnerSettingsStore } from "../src/modules/settings/store.ts"
 import type { TrainingModule } from "../src/modules/training/module.ts"
 
@@ -190,16 +191,24 @@ describe("domain-owned Tool command Adapters", () => {
   })
 
   it("keeps recall behavior in the Memory Adapter", async () => {
-    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-    const memory = testFixture<MemoryStore>({
-      search: vi.fn().mockResolvedValue([])
+    const memory = testFixture<MemoryStore>({})
+    const retrieve = vi.fn().mockResolvedValue({
+      status: "abstain",
+      reason: "no_candidates",
+      items: [],
+      candidateCount: 0,
+      relevantCount: 0,
+      temporal: { mode: "current", at: "2026-08-11T10:00:00.000Z" }
     })
-    const result = await makeMemoryToolAdapter(memory).execute(
+    const retrieval = testFixture<RetrievalPipeline>({ retrieve })
+    const result = await makeMemoryToolAdapter(memory, retrieval).execute(
       commandContext("memory_search", { query: "gym" })
     )
 
     expect(result).toMatchObject({ ok: true, code: "memory_results", data: { matches: [] } })
-    expect(memory.search).toHaveBeenCalledWith(ownerId, "gym", true)
+    expect(retrieve).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerId, query: "gym", channel: true })
+    )
   })
 
   it("keeps owner settings and connection commands in their Adapters", async () => {

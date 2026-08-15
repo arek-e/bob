@@ -54,6 +54,11 @@ import { makeReminderEvidenceSource } from "./modules/reminders/evidence-source.
 import { ReminderStore, makeReminderStore, reminderStoreLayer } from "./modules/reminders/store.ts"
 import { makeReminderToolAdapter } from "./modules/reminders/tool-adapter.ts"
 import {
+  RetrievalPipeline,
+  makeRetrievalPipeline,
+  retrievalPipelineLayer
+} from "./modules/retrieval/pipeline.ts"
+import {
   OwnerSettingsStore,
   makeOwnerSettingsStore,
   ownerSettingsStoreLayer
@@ -173,6 +178,7 @@ export function composeCore(bindings: CoreBindings) {
   const agentExperience = makeAgentExperienceRegistry(transitionalDeploymentProfile.profileId, [])
   const reviewedSkills = makeReviewedSkillRegistry(transitionalDeploymentProfile.profileId, [])
   const memory = makeMemoryStore(database, protection, evidenceSources, {})
+  const retrieval = makeRetrievalPipeline(database)
   const journal = makeJournalStore(database, protection, {})
   const trainingStore = makeTrainingStore(database, {})
   const training = makeTrainingModule(
@@ -181,12 +187,12 @@ export function composeCore(bindings: CoreBindings) {
   )
   const context = makeApplicationContextStore(database, protection, transitionalDeploymentProfile, {
     artifacts,
-    memory
+    retrieval
   })
   const runs = makeAgentRunStore(database, protection, {})
   const toolAdapters = makeToolAdapterRegistry(transitionalDeploymentProfile, [
     makeReminderToolAdapter(reminders),
-    makeMemoryToolAdapter(memory),
+    makeMemoryToolAdapter(memory, retrieval),
     makeJournalToolAdapter(journal, turns, { uiBaseUrl: config.UI_BASE_URL }),
     makeTrainingToolAdapter(training),
     makeSettingsToolAdapter(settings),
@@ -204,6 +210,7 @@ export function composeCore(bindings: CoreBindings) {
     deliveryStoreLayer(delivery),
     reminderStoreLayer(reminders),
     memoryStoreLayer(memory),
+    retrievalPipelineLayer(retrieval),
     journalStoreLayer(journal),
     trainingStoreLayer(trainingStore),
     trainingModuleLayer(training),
@@ -224,6 +231,7 @@ export function composeCore(bindings: CoreBindings) {
         delivery: yield* DeliveryStore,
         reminders: yield* ReminderStore,
         memory: yield* MemoryStore,
+        retrieval: yield* RetrievalPipeline,
         journal: yield* JournalStore,
         training: yield* TrainingModule,
         settings: yield* OwnerSettingsStore,

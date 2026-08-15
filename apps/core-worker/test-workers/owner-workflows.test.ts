@@ -14,12 +14,13 @@ import {
   factEvidence,
   factRevisions,
   facts,
-  memoryCandidates,
-  searchDocuments
+  memoryCandidates
 } from "../src/modules/memory/schema.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { reminderOccurrences } from "../src/modules/reminders/schema.ts"
 import { makeReminderStore } from "../src/modules/reminders/store.ts"
+import { makeRetrievalPipeline } from "../src/modules/retrieval/pipeline.ts"
+import { searchDocuments } from "../src/modules/retrieval/schema.ts"
 import { makeTrainingStore } from "../src/modules/training/store.ts"
 import { makeTestEvidenceSources, makeTestMemoryStore } from "./memory-store-fixture.ts"
 import { decodeTestMigrations } from "./migrations.ts"
@@ -244,6 +245,7 @@ describe("owner memory review", () => {
       now: () => new Date("2026-08-11T10:05:00.000Z"),
       randomUuid: uuidSequence(75)
     })
+    const retrieval = makeRetrievalPipeline(database)
     const proposal = await memory.propose(
       {
         ownerId,
@@ -264,8 +266,15 @@ describe("owner memory review", () => {
     )
 
     expect(proposal.status).toBe("proposed")
-    await expect(memory.search(ownerId, "morning", false)).resolves.toEqual([])
-    await expect(memory.search(ownerId, "morning", true)).resolves.toEqual([])
+    await expect(
+      retrieval.retrieve({
+        ownerId,
+        query: "morning",
+        channel: false,
+        referenceTime: "2026-08-11T10:05:00.000Z",
+        timeZone: "Europe/Stockholm"
+      })
+    ).resolves.toMatchObject({ status: "abstain", reason: "no_candidates" })
 
     const confirmed = await ownerApi(`/api/memory/candidates/${proposal.candidateId}/confirm`, {
       method: "POST",
@@ -302,20 +311,131 @@ describe("owner memory review", () => {
     expect(evidence[0]?.excerptHash).toBe(
       await protection.contentHash("Please remember my original note.")
     )
-    await expect(memory.search(ownerId, "morning", false)).resolves.toEqual([
-      expect.objectContaining({
-        sourceId: revisionId,
-        text: "I prefer to train in the morning.",
-        sourceLabel: "Owner message linked on 11 Aug 2026"
+    for (const channel of [false, true]) {
+      await expect(
+        retrieval.retrieve({
+          ownerId,
+          query: "morning",
+          channel,
+          referenceTime: "2099-08-11T10:05:00.000Z",
+          timeZone: "Europe/Stockholm"
+        })
+      ).resolves.toMatchObject({
+        status: "supported",
+        items: [
+          expect.objectContaining({
+            sourceId: revisionId,
+            text: "I prefer to train in the morning.",
+            sourceLabel: "Owner message linked on 11 Aug 2026"
+          })
+        ]
       })
-    ])
-    await expect(memory.search(ownerId, "morning", true)).resolves.toEqual([
-      expect.objectContaining({
-        sourceId: revisionId,
-        text: "I prefer to train in the morning.",
-        sourceLabel: "Owner message linked on 11 Aug 2026"
+    }
+  })
+
+  it("keeps superseded fact projections available only for historical retrieval", async () => {
+    const { database, protection, ownerKey } = await seedOwner()
+    let clock = new Date("2026-08-11T10:05:00.000Z")
+    const memory = makeTestMemoryStore(database, protection, {
+      now: () => clock,
+      randomUuid: uuidSequence(500)
+    })
+    const first = await memory.propose(
+      {
+        ownerId,
+        scope: "preferences",
+        key: "work_time",
+        value: "morning",
+        canonicalText: "I prefer focused work in the morning.",
+        sourceType: "message",
+        sourceId: messageId,
+        extractionConfidence: 1,
+        importance: 0.8,
+        explicitRemember: true,
+        authority: "agent"
+      },
+      "memory:history:first:propose"
+    )
+    const firstRevisionId = await memory.confirm(
+      ownerId,
+      first.candidateId,
+      "owner_ui",
+      "memory:history:first:confirm"
+    )
+
+    const secondMessageId = "00000000-0000-4000-8000-000000000590"
+    const secondText = await protection.encryptText(ownerKey, "I now prefer afternoon focus.")
+    await database.insert(messages).values({
+      id: secondMessageId,
+      userId: ownerId,
+      channelId,
+      direction: "inbound",
+      textCiphertext: secondText.ciphertext,
+      textIv: secondText.iv,
+      dataKeyVersion: 1,
+      occurredAt: "2026-08-13T10:00:00.000Z",
+      createdAt: "2026-08-13T10:00:00.000Z"
+    })
+    clock = new Date("2026-08-13T10:05:00.000Z")
+    const second = await memory.propose(
+      {
+        ownerId,
+        scope: "preferences",
+        key: "work_time",
+        value: "afternoon",
+        canonicalText: "I prefer focused work in the afternoon.",
+        sourceType: "message",
+        sourceId: secondMessageId,
+        extractionConfidence: 1,
+        importance: 0.8,
+        explicitRemember: true,
+        authority: "agent"
+      },
+      "memory:history:second:propose"
+    )
+    const secondRevisionId = await memory.confirm(
+      ownerId,
+      second.candidateId,
+      "owner_ui",
+      "memory:history:second:confirm"
+    )
+    const retrieval = makeRetrievalPipeline(database)
+
+    await expect(
+      retrieval.retrieve({
+        ownerId,
+        query: "focused work",
+        channel: true,
+        referenceTime: "2026-08-14T10:00:00.000Z",
+        timeZone: "Europe/Stockholm"
       })
-    ])
+    ).resolves.toMatchObject({
+      status: "supported",
+      items: [{ sourceId: secondRevisionId, text: expect.stringContaining("afternoon") }]
+    })
+    await expect(
+      retrieval.retrieve({
+        ownerId,
+        query: "focused work as of 2026-08-11",
+        channel: true,
+        referenceTime: "2026-08-14T10:00:00.000Z",
+        timeZone: "Europe/Stockholm"
+      })
+    ).resolves.toMatchObject({
+      status: "supported",
+      items: [{ sourceId: firstRevisionId, text: expect.stringContaining("morning") }]
+    })
+    const indexed = await database.select().from(searchDocuments)
+    expect(indexed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceId: firstRevisionId,
+          deletedAt: null,
+          validTo: clock.toISOString()
+        }),
+        expect.objectContaining({ sourceId: secondRevisionId, deletedAt: null, validTo: null })
+      ])
+    )
   })
 
   it("binds a correction to its owner source and rejects the old proposal", async () => {

@@ -147,6 +147,9 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Each new agent run records that generation. Core and Agent must agree before model execution.
 - Context source Modules form one complete, ordered, static registry for each deployment profile.
 - ContextStore owns source precedence, deduplication, budgets, and final Context pack assembly.
+- The Retrieval pipeline owns its index, relevance threshold, temporal validity, conflict grouping,
+  typed abstention, and whole-record reading budget.
+- Context assembly never slices a recalled claim or splits one unresolved conflict group.
 - Runtime discovery, package installation, or mutable hooks cannot add capability or authority.
 - Message wording does not grant Tool authority. Owning Capability Modules enforce each action invariant.
 - The agent never calls Sendblue directly.

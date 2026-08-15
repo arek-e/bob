@@ -45,12 +45,12 @@ import {
   factEvidence,
   factRevisions,
   facts,
-  memoryCandidates,
-  searchDocuments
+  memoryCandidates
 } from "../src/modules/memory/schema.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { reminderOccurrences, reminders } from "../src/modules/reminders/schema.ts"
 import { makeReminderStore } from "../src/modules/reminders/store.ts"
+import { searchDocuments } from "../src/modules/retrieval/schema.ts"
 import { makeOwnerSettingsStore } from "../src/modules/settings/store.ts"
 import {
   equipmentExercises,
@@ -168,6 +168,8 @@ describe("D1 migrations and durability", () => {
     const names = new Set(rows.results.map((row) => row.name))
     expect(names.has("agent_runs")).toBe(true)
     expect(names.has("search_documents_fts")).toBe(true)
+    expect(names.has("retrieval_documents_fts")).toBe(true)
+    expect(names.has("retrieval_documents_fts_update")).toBe(true)
     expect(names.has("journal_entries_valid_handoff")).toBe(true)
     expect(names.has("external_connections")).toBe(true)
   })
@@ -1725,6 +1727,7 @@ describe("D1 migrations and durability", () => {
       sourceId: "00000000-0000-4000-8000-000000000703",
       memoryClass: "owner_episode",
       text: "conflict",
+      searchText: "conflict",
       sourceLabel: "test",
       importance: 1,
       sensitivity: "private",
@@ -1826,6 +1829,7 @@ describe("D1 migrations and durability", () => {
         sourceId: revisionId,
         memoryClass: "owner_fact",
         text: "Training day is Tuesday",
+        searchText: "Training day is Tuesday",
         sourceLabel: "journal",
         importance: 500,
         sensitivity: "normal",

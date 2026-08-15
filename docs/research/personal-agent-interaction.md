@@ -329,6 +329,26 @@ Bob does not use a proactive model run yet.
 
 Proactive work must start with approved signals, quiet hours, and interruption limits.
 
+## Implemented retrieval pipeline
+
+Bob now uses one domain-neutral Retrieval Module.
+
+Source Modules publish policy-cleared, record-level projections. The index stores search text,
+source identity, memory class, content identity, occurrence time, validity, and conflict identity.
+
+The pipeline analyzes the query before it reads records. It resolves supported absolute and relative
+dates in the owner's time zone. It retrieves a bounded candidate set and applies a minimum relevance
+threshold before importance or recency can affect order.
+
+Normal fact correction closes the old validity interval. It does not delete the old projection.
+Current retrieval excludes the old value. A supported historical query can still retrieve it.
+
+Overlapping active values for one conflict identity form one conflict group. The reader includes the
+complete group or omits it. It never slices a recalled claim.
+
+The pipeline returns typed abstention for missing query signals, missing candidates, policy removal,
+low relevance, and exhausted reading budgets. Backend failure remains an error.
+
 ## Proactive harness roadmap
 
 Proactive work is an inter-turn agent path.

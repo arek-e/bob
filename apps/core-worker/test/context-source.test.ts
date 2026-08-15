@@ -4,6 +4,7 @@ import type { ContextSourceModule } from "../src/modules/context/source.ts"
 
 import { makeContextSourceRegistry } from "../src/modules/context/source.ts"
 import { makeContextStore } from "../src/modules/context/store.ts"
+import { makeRetrievalContextSource } from "../src/modules/retrieval/context-source.ts"
 
 const request = {
   ownerId: "owner",
@@ -74,8 +75,12 @@ describe("Context source Modules", () => {
     await expect(context.build(request)).rejects.toThrow("source failed")
   })
 
-  it("applies the common item and total budgets", async () => {
-    const registry = makeContextSourceRegistry("core", [source("123456"), source("abcdef")])
+  it("applies whole-item and total budgets without slicing source data", async () => {
+    const registry = makeContextSourceRegistry("core", [
+      source("oversized"),
+      source("1234"),
+      source("ab")
+    ])
     const context = makeContextStore(
       registry,
       { load: async () => [] },
@@ -91,5 +96,48 @@ describe("Context source Modules", () => {
     const registry = makeContextSourceRegistry("core", [source("facts"), source("records")])
     const context = makeContextStore(registry, { load: async () => [] })
     await expect(context.build(request)).resolves.toHaveLength(2)
+  })
+
+  it("keeps one unresolved retrieval conflict atomic in Context", async () => {
+    const retrieval = makeRetrievalContextSource({
+      retrieve: async () => ({
+        status: "supported",
+        candidateCount: 2,
+        relevantCount: 2,
+        temporal: { mode: "current", at: request.localTime },
+        items: [
+          {
+            id: "a",
+            sourceId: "source-a",
+            sourceType: "record",
+            memoryClass: "owner_fact",
+            text: "Desk is upstairs.",
+            sourceLabel: "Owner correction A",
+            conflictKey: "desk",
+            conflict: true
+          },
+          {
+            id: "b",
+            sourceId: "source-b",
+            sourceType: "record",
+            memoryClass: "owner_fact",
+            text: "Desk is downstairs.",
+            sourceLabel: "Owner correction B",
+            conflictKey: "desk",
+            conflict: true
+          }
+        ]
+      })
+    })
+
+    await expect(retrieval.load(request)).resolves.toMatchObject([
+      {
+        item: {
+          text: "Desk is upstairs.\nDesk is downstairs.",
+          conflict: true,
+          sources: [{ sourceId: "source-a" }, { sourceId: "source-b" }]
+        }
+      }
+    ])
   })
 })

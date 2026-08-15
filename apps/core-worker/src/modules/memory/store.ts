@@ -5,7 +5,7 @@ import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
-import type { EvidenceSourceRegistry, MemoryClass } from "./evidence.ts"
+import type { EvidenceSourceRegistry } from "./evidence.ts"
 
 import { users } from "../conversations/schema.ts"
 import {
@@ -14,7 +14,8 @@ import {
   completedEffectAfterConflict,
   type EffectIdentity
 } from "../policy/effect-outcome.ts"
-import { buildFtsQuery, rankRetrievalCandidates } from "./retrieval.ts"
+import { retrievalProjection } from "../retrieval/projection.ts"
+import { searchDocuments } from "../retrieval/schema.ts"
 import {
   canPromoteOrigin,
   decideCandidate,
@@ -22,14 +23,7 @@ import {
   deriveMemoryPolicy,
   type OriginClass
 } from "./rules.ts"
-import {
-  factEvidence,
-  factRelations,
-  factRevisions,
-  facts,
-  memoryCandidates,
-  searchDocuments
-} from "./schema.ts"
+import { factEvidence, factRelations, factRevisions, facts, memoryCandidates } from "./schema.ts"
 
 export interface MemoryProposal {
   readonly ownerId: string
@@ -43,15 +37,6 @@ export interface MemoryProposal {
   readonly importance: number
   readonly explicitRemember: boolean
   readonly authority: "agent" | "owner_deterministic" | "completed_system_command"
-}
-
-export interface MemorySearchResult {
-  readonly id: string
-  readonly sourceId: string
-  readonly text: string
-  readonly sourceLabel: string
-  readonly memoryClass: MemoryClass
-  readonly occurredAt?: string
 }
 
 export interface MemoryCandidateReview {
@@ -91,11 +76,7 @@ export interface OwnerFactStore {
   listCandidates(ownerId: string): Promise<readonly MemoryCandidateReview[]>
 }
 
-export interface MemoryRecall {
-  search(ownerId: string, query: string, channel: boolean): Promise<readonly MemorySearchResult[]>
-}
-
-export type MemoryStore = OwnerFactStore & MemoryRecall
+export type MemoryStore = OwnerFactStore
 
 export const MemoryStore = Context.Service<MemoryStore>("bob/MemoryStore")
 
@@ -124,7 +105,6 @@ const OriginClassValue = Schema.Literals([
 ])
 const MemorySensitivity = Schema.Literals(["normal", "private", "high"])
 const CandidateStatus = Schema.Literals(["proposed", "disputed"])
-const MemoryClassValue = Schema.Literals(["owner_fact", "owner_episode", "agent_experience"])
 
 function legacyCandidateSourceLabel(createdAt: string): string {
   const [year = "", month = "", day = ""] = createdAt.slice(0, 10).split("-")
@@ -437,6 +417,7 @@ export function makeMemoryStore(
       const revisionId = randomUuid()
       const createdAt = now().toISOString()
       const excerptHash = sourceEvidence.contentHash
+      const canonicalContentHash = await protection.contentHash(canonicalText)
       const sensitiveValue =
         candidate.proposedValueCiphertext === null || candidate.proposedValueIv === null
           ? undefined
@@ -463,6 +444,7 @@ export function makeMemoryStore(
             candidate.originClass === "system_record" ? "system_recorded" : "user_stated",
           originClass,
           observedAt: sourceEvidence.occurredAt ?? candidate.createdAt,
+          validFrom: createdAt,
           extractionConfidence: candidate.extractionConfidence,
           importance: 500,
           verificationStatus: "confirmed" as const,
@@ -487,22 +469,27 @@ export function makeMemoryStore(
       ]
       if (confirmedPolicy.modelEligible) {
         statements.push(
-          database.insert(searchDocuments).values({
-            id: randomUuid(),
-            userId: candidate.userId,
-            sourceType: "fact_revision",
-            sourceId: revisionId,
-            memoryClass: "owner_fact",
-            text: canonicalText,
-            sourceLabel: candidate.sourceLabel ?? sourceEvidence.sourceLabel,
-            occurredAt: sourceEvidence.occurredAt ?? candidate.createdAt,
-            importance: 500,
-            sensitivity: confirmedPolicy.sensitivity,
-            modelEligible: confirmedPolicy.modelEligible,
-            channelEligible: confirmedPolicy.channelEligible,
-            createdAt,
-            updatedAt: createdAt
-          })
+          database.insert(searchDocuments).values(
+            retrievalProjection({
+              id: randomUuid(),
+              ownerId: candidate.userId,
+              sourceType: "fact_revision",
+              sourceId: revisionId,
+              memoryClass: "owner_fact",
+              text: canonicalText,
+              searchText: `${candidate.scope} ${candidate.key} ${canonicalText}`,
+              contentHash: canonicalContentHash,
+              sourceLabel: candidate.sourceLabel ?? sourceEvidence.sourceLabel,
+              occurredAt: sourceEvidence.occurredAt ?? candidate.createdAt,
+              conflictKey: fact.id,
+              validFrom: createdAt,
+              importance: 500,
+              sensitivity: confirmedPolicy.sensitivity,
+              modelEligible: confirmedPolicy.modelEligible,
+              channelEligible: confirmedPolicy.channelEligible,
+              createdAt
+            })
+          )
         )
       }
       if (previousRevisionId !== null) {
@@ -513,7 +500,7 @@ export function makeMemoryStore(
             .where(eq(factRevisions.id, previousRevisionId)),
           database
             .update(searchDocuments)
-            .set({ deletedAt: createdAt, updatedAt: createdAt })
+            .set({ validTo: createdAt, updatedAt: createdAt })
             .where(
               and(
                 eq(searchDocuments.sourceType, "fact_revision"),
@@ -707,60 +694,6 @@ export function makeMemoryStore(
           return review
         })
       )
-    },
-
-    async search(ownerId, query, channel) {
-      const ftsQuery = buildFtsQuery(query)
-      if (ftsQuery === undefined) return []
-      const rows = await database.all<{
-        document_id: string
-        source_id: string
-        text: string
-        source_type: string
-        source_label: string
-        memory_class: string
-        occurred_at: string | null
-        importance: number
-      }>(sql`
-        SELECT
-          f.document_id,
-          d.source_id,
-          f.text,
-          d.source_type,
-          d.memory_class,
-          f.source_label,
-          d.occurred_at,
-          d.importance
-        FROM search_documents_fts AS f
-        JOIN search_documents AS d ON d.id = f.document_id
-        WHERE search_documents_fts MATCH ${ftsQuery}
-          AND f.user_id = ${ownerId}
-          AND d.deleted_at IS NULL
-          AND d.model_eligible = 1
-          AND (${channel ? 1 : 0} = 0 OR d.channel_eligible = 1)
-        ORDER BY bm25(search_documents_fts), d.importance DESC
-        LIMIT 36
-      `)
-      return rankRetrievalCandidates(
-        rows.map((row, lexicalPosition) => {
-          const candidate = {
-            id: row.document_id,
-            sourceId: row.source_id,
-            sourceType: row.source_type,
-            memoryClass: Schema.decodeUnknownSync(MemoryClassValue)(row.memory_class),
-            text: row.text,
-            sourceLabel: row.source_label,
-            importance: row.importance,
-            lexicalPosition
-          }
-          return row.occurred_at === null
-            ? candidate
-            : { ...candidate, occurredAt: row.occurred_at }
-        })
-      ).map(({ id, sourceId, text, sourceLabel, memoryClass, occurredAt }) => {
-        const result = { id, sourceId, text, sourceLabel, memoryClass }
-        return occurredAt === undefined ? result : { ...result, occurredAt }
-      })
     }
   }
 }

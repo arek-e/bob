@@ -105,29 +105,3 @@ export const factRelations = sqliteTable("fact_relations", {
   relation: text("relation", { enum: ["supports", "contradicts", "supersedes"] }).notNull(),
   createdAt: text("created_at").notNull()
 })
-
-export const searchDocuments = sqliteTable(
-  "search_documents",
-  {
-    id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
-    sourceType: text("source_type").notNull(),
-    sourceId: text("source_id").notNull(),
-    memoryClass: text("memory_class", {
-      enum: ["owner_fact", "owner_episode", "agent_experience"]
-    })
-      .notNull()
-      .default("owner_episode"),
-    text: text("text").notNull(),
-    sourceLabel: text("source_label").notNull(),
-    occurredAt: text("occurred_at"),
-    importance: integer("importance").notNull(),
-    sensitivity: text("sensitivity").notNull(),
-    modelEligible: integer("model_eligible", { mode: "boolean" }).notNull(),
-    channelEligible: integer("channel_eligible", { mode: "boolean" }).notNull(),
-    deletedAt: text("deleted_at"),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull()
-  },
-  (table) => [uniqueIndex("search_documents_source_uq").on(table.sourceType, table.sourceId)]
-)

@@ -63,10 +63,9 @@ export function boundContextItems(
   let remaining = totalCharacterBudget
   for (const item of items) {
     if (remaining <= 0) break
-    const text = item.text.slice(0, Math.min(itemCharacterBudget, remaining))
-    if (text.length === 0) continue
-    bounded.push({ ...item, text })
-    remaining -= text.length
+    if (item.text.length > itemCharacterBudget || item.text.length > remaining) continue
+    bounded.push(item)
+    remaining -= item.text.length
   }
   return Object.freeze(bounded)
 }

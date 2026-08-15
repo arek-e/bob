@@ -6,21 +6,18 @@ import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { RetrievalProjectionInput } from "../retrieval/projection.ts"
 
 import { users } from "../conversations/schema.ts"
-import {
-  factEvidence,
-  factRevisions,
-  facts,
-  memoryCandidates,
-  searchDocuments
-} from "../memory/schema.ts"
+import { factEvidence, factRevisions, facts, memoryCandidates } from "../memory/schema.ts"
 import {
   completeEffect,
   completedEffect,
   completedEffectAfterConflict,
   type EffectIdentity
 } from "../policy/effect-outcome.ts"
+import { retrievalProjection } from "../retrieval/projection.ts"
+import { searchDocuments } from "../retrieval/schema.ts"
 import { journalEntries, journalHandoffs } from "./schema.ts"
 
 export interface JournalStore {
@@ -154,6 +151,10 @@ export function makeJournalStore(
       const encrypted = await protection.encryptText(owner.key, input.text)
       const entryId = randomUuid()
       const contentHash = await protection.contentHash(input.text)
+      const summaryContentHash =
+        input.approvedSummary === undefined
+          ? undefined
+          : await protection.contentHash(input.approvedSummary)
       const statements = [
         database.insert(journalEntries).values({
           id: entryId,
@@ -180,25 +181,30 @@ export function makeJournalStore(
           )
         )
       if (input.approvedSummary !== undefined) {
+        const projectionInput: RetrievalProjectionInput = {
+          id: randomUuid(),
+          ownerId: input.ownerId,
+          sourceType: "journal_summary",
+          sourceId: entryId,
+          memoryClass: "owner_episode",
+          text: input.approvedSummary,
+          searchText: `${input.tags.join(" ")} ${input.approvedSummary}`,
+          sourceLabel: `journal ${at.slice(0, 10)}`,
+          occurredAt: at,
+          validFrom: at,
+          importance: 300,
+          sensitivity: "private",
+          modelEligible: false,
+          channelEligible: false,
+          createdAt: at
+        }
+        if (summaryContentHash !== undefined) {
+          Object.assign(projectionInput, { contentHash: summaryContentHash })
+        }
         try {
           await database.batch([
             ...statements,
-            database.insert(searchDocuments).values({
-              id: randomUuid(),
-              userId: input.ownerId,
-              sourceType: "journal_summary",
-              sourceId: entryId,
-              memoryClass: "owner_episode",
-              text: input.approvedSummary,
-              sourceLabel: `journal ${at.slice(0, 10)}`,
-              occurredAt: at,
-              importance: 300,
-              sensitivity: "private",
-              modelEligible: false,
-              channelEligible: false,
-              createdAt: at,
-              updatedAt: at
-            }),
+            database.insert(searchDocuments).values(retrievalProjection(projectionInput)),
             consumeHandoff,
             completeEffect(database, effect, entryId, randomUuid(), at)
           ])
@@ -309,9 +315,12 @@ export function makeJournalStore(
       }
       const at = now().toISOString()
       const owner = await ownerKey(ownerId)
-      const [encrypted, contentHash, existingProjection] = await Promise.all([
+      const [encrypted, contentHash, summaryContentHash, existingProjection] = await Promise.all([
         protection.encryptText(owner.key, text),
         protection.contentHash(text),
+        approvedSummary === undefined
+          ? Promise.resolve(undefined)
+          : protection.contentHash(approvedSummary),
         database
           .select({ id: searchDocuments.id })
           .from(searchDocuments)
@@ -395,7 +404,7 @@ export function makeJournalStore(
         statements.push(
           database
             .update(searchDocuments)
-            .set({ text: "", deletedAt: at, updatedAt: at })
+            .set({ text: "", searchText: "", contentHash: null, deletedAt: at, updatedAt: at })
             .where(
               and(
                 eq(searchDocuments.sourceType, "journal_summary"),
@@ -404,23 +413,28 @@ export function makeJournalStore(
             )
         )
       } else if (existingProjection[0] === undefined) {
+        const projectionInput: RetrievalProjectionInput = {
+          id: randomUuid(),
+          ownerId,
+          sourceType: "journal_summary",
+          sourceId: entryId,
+          memoryClass: "owner_episode",
+          text: approvedSummary,
+          searchText: `${tags.join(" ")} ${approvedSummary}`,
+          sourceLabel: `journal ${entry.createdAt.slice(0, 10)}`,
+          occurredAt: entry.createdAt,
+          validFrom: entry.createdAt,
+          importance: 300,
+          sensitivity: "private",
+          modelEligible: false,
+          channelEligible: false,
+          createdAt: at
+        }
+        if (summaryContentHash !== undefined) {
+          Object.assign(projectionInput, { contentHash: summaryContentHash })
+        }
         statements.push(
-          database.insert(searchDocuments).values({
-            id: randomUuid(),
-            userId: ownerId,
-            sourceType: "journal_summary",
-            sourceId: entryId,
-            memoryClass: "owner_episode",
-            text: approvedSummary,
-            sourceLabel: `journal ${entry.createdAt.slice(0, 10)}`,
-            occurredAt: entry.createdAt,
-            importance: 300,
-            sensitivity: "private",
-            modelEligible: false,
-            channelEligible: false,
-            createdAt: at,
-            updatedAt: at
-          })
+          database.insert(searchDocuments).values(retrievalProjection(projectionInput))
         )
       } else {
         statements.push(
@@ -428,6 +442,8 @@ export function makeJournalStore(
             .update(searchDocuments)
             .set({
               text: approvedSummary,
+              searchText: `${tags.join(" ")} ${approvedSummary}`,
+              contentHash: summaryContentHash,
               modelEligible: false,
               channelEligible: false,
               deletedAt: null,
@@ -450,6 +466,8 @@ export function makeJournalStore(
             .update(searchDocuments)
             .set({
               text: "",
+              searchText: "",
+              contentHash: null,
               modelEligible: false,
               channelEligible: false,
               deletedAt: at,
@@ -528,7 +546,7 @@ export function makeJournalStore(
           .where(and(eq(journalEntries.id, entryId), eq(journalEntries.userId, ownerId))),
         database
           .update(searchDocuments)
-          .set({ text: "", deletedAt: at, updatedAt: at })
+          .set({ text: "", searchText: "", contentHash: null, deletedAt: at, updatedAt: at })
           .where(
             and(
               eq(searchDocuments.sourceType, "journal_summary"),
@@ -567,6 +585,8 @@ export function makeJournalStore(
             .update(searchDocuments)
             .set({
               text: "",
+              searchText: "",
+              contentHash: null,
               modelEligible: false,
               channelEligible: false,
               deletedAt: at,
