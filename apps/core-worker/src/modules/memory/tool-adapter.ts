@@ -1,3 +1,4 @@
+import { memoryCapability } from "@bob/contracts/capabilities/memory"
 import {
   MemoryProposeArguments,
   MemorySearchArguments,
@@ -13,6 +14,8 @@ import type { MemoryStore } from "./store.ts"
 
 export function makeMemoryToolAdapter(memory: MemoryStore): ToolCommandAdapter {
   return {
+    capabilityId: memoryCapability.id,
+    names: memoryCapability.names,
     async execute({ command, run }: ToolCommandAdapterContext): Promise<ToolResult> {
       switch (command.name) {
         case "memory_search": {

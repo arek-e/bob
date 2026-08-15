@@ -1,3 +1,4 @@
+import { journalCapability } from "@bob/contracts/capabilities/journal"
 import { JournalSearchMetadataArguments } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
@@ -14,6 +15,8 @@ export function makeJournalToolAdapter(
   options: { readonly uiBaseUrl: string }
 ): ToolCommandAdapter {
   return {
+    capabilityId: journalCapability.id,
+    names: journalCapability.names,
     async execute({ command }: ToolCommandAdapterContext) {
       switch (command.name) {
         case "journal_link_create": {

@@ -16,9 +16,10 @@ import {
   toolCalls,
   users
 } from "../src/modules/conversations/schema.ts"
-import { makeToolExecutor, toolCommandHash } from "../src/modules/conversations/tool-executor.ts"
+import { toolCommandHash } from "../src/modules/conversations/tool-executor.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { decodeTestMigrations } from "./migrations.ts"
+import { makeTestToolExecutor } from "./tool-executor-fixture.ts"
 
 declare global {
   namespace Cloudflare {
@@ -232,7 +233,7 @@ function makeExecutor(
   protection: ReturnType<typeof createDataProtection>,
   list: () => Promise<readonly never[]>
 ) {
-  return makeToolExecutor(
+  return makeTestToolExecutor(
     database,
     protection,
     {
@@ -297,7 +298,7 @@ describe("conversation tool claim fence", () => {
         arguments: argumentsValue
       })
       let cancelCalls = 0
-      const executor = makeToolExecutor(
+      const executor = makeTestToolExecutor(
         seeded.database,
         seeded.protection,
         {
@@ -366,7 +367,7 @@ describe("conversation tool claim fence", () => {
       arguments: argumentsValue
     })
     let createCalls = 0
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       seeded.database,
       seeded.protection,
       {
@@ -422,7 +423,7 @@ describe("conversation tool claim fence", () => {
     )
     const argumentsValue = reminderArguments(messageId)
     let createCalls = 0
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       seeded.database,
       seeded.protection,
       {
@@ -490,7 +491,7 @@ describe("conversation tool claim fence", () => {
         arguments: argumentsValue
       })
       let createCalls = 0
-      const executor = makeToolExecutor(
+      const executor = makeTestToolExecutor(
         seeded.database,
         seeded.protection,
         {
@@ -549,7 +550,7 @@ describe("conversation tool claim fence", () => {
       arguments: firstArguments
     })
     let createCalls = 0
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       seeded.database,
       seeded.protection,
       {
@@ -634,7 +635,7 @@ describe("conversation tool claim fence", () => {
         arguments: argumentsValue
       })
       let createCalls = 0
-      const executor = makeToolExecutor(
+      const executor = makeTestToolExecutor(
         seeded.database,
         seeded.protection,
         {
@@ -684,7 +685,7 @@ describe("conversation tool claim fence", () => {
       arguments: argumentsValue
     })
     let updateCalls = 0
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -752,7 +753,7 @@ describe("conversation tool claim fence", () => {
     const userText = "Set my time zone to America/New_York, then set my time zone to Europe/London."
     const seeded = await seedActiveConversationRun(userText, ["settings_update"])
     let updateCalls = 0
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       seeded.database,
       seeded.protection,
       {
@@ -828,7 +829,7 @@ describe("conversation tool claim fence", () => {
       markFirstStarted = resolve
     })
     let updateCalls = 0
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       seeded.database,
       seeded.protection,
       {
@@ -900,7 +901,7 @@ describe("conversation tool claim fence", () => {
     const userText = "Set my time zone to America/New_York, then set my time zone to Europe/London."
     const seeded = await seedActiveConversationRun(userText, ["settings_update"])
     let updateCalls = 0
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       seeded.database,
       seeded.protection,
       {
@@ -970,7 +971,7 @@ describe("conversation tool claim fence", () => {
     const mutationStarted = new Promise<void>((resolve) => {
       markMutationStarted = resolve
     })
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       seeded.database,
       seeded.protection,
       {
@@ -1104,7 +1105,7 @@ describe("conversation tool claim fence", () => {
     const mayFinish = new Promise<void>((resolve) => {
       releaseMutation = resolve
     })
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       seeded.database,
       seeded.protection,
       {
@@ -1202,7 +1203,7 @@ describe("conversation tool claim fence", () => {
       await activateSecondConversationRun(seeded, userText, ["settings_update"])
 
       let updateCalls = 0
-      const executor = makeToolExecutor(
+      const executor = makeTestToolExecutor(
         seeded.database,
         seeded.protection,
         {
@@ -1268,7 +1269,7 @@ describe("conversation tool claim fence", () => {
       arguments: firstArguments
     })
     let createCalls = 0
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       seeded.database,
       seeded.protection,
       {

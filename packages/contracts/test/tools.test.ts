@@ -5,10 +5,14 @@ import {
   capabilityCatalogueGeneration,
   capabilityForToolName,
   capabilityModules,
+  coreCapabilityCatalogue,
   CapabilityCatalogueGeneration,
   hasUnknownExternalOutcome,
   isReadOnlyToolName,
   isSourceBoundToolName,
+  fullCapabilityCatalogue,
+  makeCapabilityCatalogue,
+  memoryCapability,
   modelToolNames,
   ToolName,
   toolDefinitionForName,
@@ -42,6 +46,22 @@ describe("Bob tool catalogue", () => {
       feature: "training",
       version: 1
     })
+  })
+
+  it("builds a core profile without optional vertical Modules", () => {
+    expect(coreCapabilityCatalogue.modules.map((module) => module.id)).toEqual([
+      "memory",
+      "settings"
+    ])
+    expect(coreCapabilityCatalogue.names).toContain("memory_search")
+    expect(coreCapabilityCatalogue.names).not.toContain("workout_start")
+    expect(coreCapabilityCatalogue.generation).not.toBe(fullCapabilityCatalogue.generation)
+  })
+
+  it("rejects duplicate Capability Modules in one profile", () => {
+    expect(() => makeCapabilityCatalogue("core", [memoryCapability, memoryCapability])).toThrow(
+      "Duplicate capability ID"
+    )
   })
 
   it("keeps Tool safety policy with its owning capability", () => {

@@ -12,11 +12,11 @@ import {
   messages,
   users
 } from "../src/modules/conversations/schema.ts"
-import { makeToolExecutor } from "../src/modules/conversations/tool-executor.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { reminderOccurrences, reminders, schedulerOutbox } from "../src/modules/reminders/schema.ts"
 import { makeReminderStore, type ReminderStore } from "../src/modules/reminders/store.ts"
 import { decodeTestMigrations } from "./migrations.ts"
+import { makeTestToolExecutor } from "./tool-executor-fixture.ts"
 
 declare global {
   namespace Cloudflare {
@@ -131,7 +131,7 @@ async function reminderToolFixture(userText = "Remind me at 13:00.") {
     inboundId
   )
   await runs.claim(runId, 90_000)
-  const executor = makeToolExecutor(
+  const executor = makeTestToolExecutor(
     database,
     protection,
     {

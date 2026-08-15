@@ -1,3 +1,4 @@
+import { connectionsCapability } from "@bob/contracts/capabilities/connections"
 import { ConnectionProviderArguments } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
@@ -5,24 +6,16 @@ import type {
   ToolCommandAdapter,
   ToolCommandAdapterContext
 } from "../conversations/tool-adapter.ts"
-import type { OwnerSettingsStore } from "../settings/store.ts"
 import type { ConnectionStore } from "./store.ts"
 
 import { jsonObject } from "../../json.ts"
 
 export function makeConnectionsToolAdapter(
-  connections: ConnectionStore | undefined,
-  settings: OwnerSettingsStore | undefined
+  connections: ConnectionStore | undefined
 ): ToolCommandAdapter {
-  async function connectionStatus(ownerId: string) {
-    if (connections === undefined) throw new Error("Account connections are unavailable")
-    return [
-      ...(settings === undefined ? [] : await settings.connections(ownerId)),
-      ...(await connections.list(ownerId))
-    ]
-  }
-
   return {
+    capabilityId: connectionsCapability.id,
+    names: connectionsCapability.names,
     async execute({ command }: ToolCommandAdapterContext) {
       switch (command.name) {
         case "connection_list":
@@ -31,7 +24,7 @@ export function makeConnectionsToolAdapter(
             ok: true,
             code: "connection_list",
             message: "The account connection status was found.",
-            data: jsonObject({ connections: await connectionStatus(command.ownerId) })
+            data: jsonObject({ connections: await connections.list(command.ownerId) })
           }
         case "connection_link_create": {
           if (connections === undefined) throw new Error("Account connections are unavailable")

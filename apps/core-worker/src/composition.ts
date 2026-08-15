@@ -1,3 +1,4 @@
+import { fullCapabilityCatalogue } from "@bob/contracts/tools"
 import { cloudflareEventSink } from "@bob/observability/cloudflare"
 import { Effect, Layer, Schema } from "effect"
 
@@ -12,6 +13,7 @@ import {
   connectionStoreLayer,
   makeConnectionStore
 } from "./modules/connections/store.ts"
+import { makeConnectionsToolAdapter } from "./modules/connections/tool-adapter.ts"
 import { ContextStore, makeContextStore, contextStoreLayer } from "./modules/context/store.ts"
 import {
   AgentRunStore,
@@ -24,6 +26,7 @@ import {
   conversationStoreLayer
 } from "./modules/conversations/store.ts"
 import { conversationTiming } from "./modules/conversations/timing.ts"
+import { makeToolAdapterRegistry } from "./modules/conversations/tool-adapter.ts"
 import {
   ToolExecutor,
   makeToolExecutor,
@@ -36,14 +39,18 @@ import {
 } from "./modules/conversations/turn-store.ts"
 import { DeliveryStore, makeDeliveryStore, deliveryStoreLayer } from "./modules/delivery/store.ts"
 import { JournalStore, makeJournalStore, journalStoreLayer } from "./modules/journal/store.ts"
+import { makeJournalToolAdapter } from "./modules/journal/tool-adapter.ts"
 import { MemoryStore, makeMemoryStore, memoryStoreLayer } from "./modules/memory/store.ts"
+import { makeMemoryToolAdapter } from "./modules/memory/tool-adapter.ts"
 import { createDataProtection } from "./modules/policy/data-protection.ts"
 import { ReminderStore, makeReminderStore, reminderStoreLayer } from "./modules/reminders/store.ts"
+import { makeReminderToolAdapter } from "./modules/reminders/tool-adapter.ts"
 import {
   OwnerSettingsStore,
   makeOwnerSettingsStore,
   ownerSettingsStoreLayer
 } from "./modules/settings/store.ts"
+import { makeSettingsToolAdapter } from "./modules/settings/tool-adapter.ts"
 import {
   TrainingModule,
   makeTrainingModule,
@@ -51,6 +58,7 @@ import {
 } from "./modules/training/module.ts"
 import { makeTrainingProposalStore } from "./modules/training/proposal-store.ts"
 import { makeTrainingStore, trainingStoreLayer } from "./modules/training/store.ts"
+import { makeTrainingToolAdapter } from "./modules/training/tool-adapter.ts"
 
 const Configuration = Schema.Struct({
   OWNER_ID: Schema.String.check(Schema.isUUID()),
@@ -150,15 +158,17 @@ export function composeCore(bindings: CoreBindings) {
   )
   const context = makeContextStore(database, protection, {})
   const runs = makeAgentRunStore(database, protection, {})
-  const tools = makeToolExecutor(
-    database,
-    protection,
-    { reminders, memory, journal, training, settings, connections },
-    {
-      uiBaseUrl: config.UI_BASE_URL,
-      toolLeaseMs: conversationTiming.mutationSettleLeaseMs
-    }
-  )
+  const toolAdapters = makeToolAdapterRegistry(fullCapabilityCatalogue, [
+    makeReminderToolAdapter(reminders),
+    makeMemoryToolAdapter(memory),
+    makeJournalToolAdapter(journal, { uiBaseUrl: config.UI_BASE_URL }),
+    makeTrainingToolAdapter(training),
+    makeSettingsToolAdapter(settings),
+    makeConnectionsToolAdapter(connections)
+  ])
+  const tools = makeToolExecutor(database, protection, toolAdapters, {
+    toolLeaseMs: conversationTiming.mutationSettleLeaseMs
+  })
 
   const layer = Layer.mergeAll(
     conversationStoreLayer(conversations),
@@ -201,6 +211,7 @@ export function composeCore(bindings: CoreBindings) {
 
   return {
     config,
+    profile: fullCapabilityCatalogue,
     database,
     layer,
     services

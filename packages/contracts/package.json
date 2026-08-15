@@ -5,6 +5,13 @@
   "type": "module",
   "exports": {
     "./agent": "./src/agent.ts",
+    "./capabilities/connections": "./src/capabilities/connections.ts",
+    "./capabilities/definitions": "./src/capabilities/definitions.ts",
+    "./capabilities/journal": "./src/capabilities/journal.ts",
+    "./capabilities/memory": "./src/capabilities/memory.ts",
+    "./capabilities/reminders": "./src/capabilities/reminders.ts",
+    "./capabilities/settings": "./src/capabilities/settings.ts",
+    "./capabilities/training": "./src/capabilities/training.ts",
     "./channel": "./src/channel.ts",
     "./delivery": "./src/delivery.ts",
     "./jobs": "./src/jobs.ts",

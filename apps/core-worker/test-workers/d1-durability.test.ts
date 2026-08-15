@@ -37,7 +37,7 @@ import {
   users
 } from "../src/modules/conversations/schema.ts"
 import { makeConversationStore } from "../src/modules/conversations/store.ts"
-import { makeToolExecutor, toolCommandHash } from "../src/modules/conversations/tool-executor.ts"
+import { toolCommandHash } from "../src/modules/conversations/tool-executor.ts"
 import { deliveryAttempts, outboxMessages } from "../src/modules/delivery/schema.ts"
 import { makeDeliveryStore } from "../src/modules/delivery/store.ts"
 import { journalEntries, journalHandoffs } from "../src/modules/journal/schema.ts"
@@ -67,6 +67,7 @@ import {
 import { makeTrainingStore } from "../src/modules/training/store.ts"
 import { processInbound } from "../src/process-inbound.ts"
 import { decodeTestMigrations } from "./migrations.ts"
+import { makeTestToolExecutor } from "./tool-executor-fixture.ts"
 
 declare global {
   namespace Cloudflare {
@@ -430,7 +431,7 @@ describe("D1 migrations and durability", () => {
     const settings = makeOwnerSettingsStore(database, protection, {
       defaultTimeZone: "Europe/Stockholm"
     })
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -1943,7 +1944,7 @@ describe("D1 migrations and durability", () => {
     const memory = makeMemoryStore(database, protection, {
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -2327,7 +2328,7 @@ describe("D1 migrations and durability", () => {
       createdAt: "2026-08-11T09:58:00.000Z"
     })
     let next = 1010
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -2383,7 +2384,7 @@ describe("D1 migrations and durability", () => {
       inboundId
     )
     expect(await runStore.claim(runId, 90_000)).toBeDefined()
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -2599,7 +2600,7 @@ describe("D1 migrations and durability", () => {
       "lookup:equipment:create"
     )
     await training.mapEquipment(ownerId, equipmentId, exerciseId, "lookup:equipment:map")
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -2698,7 +2699,7 @@ describe("D1 migrations and durability", () => {
     )
     expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const training = makeTrainingStore(database, {})
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {
@@ -2854,7 +2855,7 @@ describe("D1 migrations and durability", () => {
     )
     expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const training = makeTrainingStore(database, {})
-    const executor = makeToolExecutor(
+    const executor = makeTestToolExecutor(
       database,
       protection,
       {

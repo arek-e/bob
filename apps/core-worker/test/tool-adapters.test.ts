@@ -1,11 +1,13 @@
 import type { AgentRunRequest } from "@bob/contracts/agent"
-import type { ToolCommand, ToolName } from "@bob/contracts/tools"
+import type { CapabilityModule, ToolCommand, ToolName } from "@bob/contracts/tools"
 
+import { coreCapabilityCatalogue, fullCapabilityCatalogue } from "@bob/contracts/tools"
 import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import type { ConnectionStore } from "../src/modules/connections/store.ts"
 import type {
+  ToolCommandAdapter,
   ToolCommandAdapterContext,
   ToolRunContext
 } from "../src/modules/conversations/tool-adapter.ts"
@@ -16,6 +18,7 @@ import type { OwnerSettingsStore } from "../src/modules/settings/store.ts"
 import type { TrainingModule } from "../src/modules/training/module.ts"
 
 import { makeConnectionsToolAdapter } from "../src/modules/connections/tool-adapter.ts"
+import { makeToolAdapterRegistry } from "../src/modules/conversations/tool-adapter.ts"
 import { expiredToolCallOutcome } from "../src/modules/conversations/tool-executor.ts"
 import { makeJournalToolAdapter } from "../src/modules/journal/tool-adapter.ts"
 import { makeMemoryToolAdapter } from "../src/modules/memory/tool-adapter.ts"
@@ -73,6 +76,35 @@ function commandContext(
 }
 
 describe("domain-owned Tool command Adapters", () => {
+  function adapterFor(module: CapabilityModule): ToolCommandAdapter {
+    return {
+      capabilityId: module.id,
+      names: module.names,
+      execute: vi.fn().mockResolvedValue({ ok: true, code: "ok", message: "Done." })
+    }
+  }
+
+  it("composes a core registry without a Training Adapter", () => {
+    const registry = makeToolAdapterRegistry(
+      coreCapabilityCatalogue,
+      coreCapabilityCatalogue.modules.map(adapterFor)
+    )
+
+    expect(registry.adapterFor("memory_search")?.capabilityId).toBe("memory")
+    expect(registry.adapterFor("workout_start")).toBeUndefined()
+  })
+
+  it("rejects missing and unselected Adapters", () => {
+    expect(() => makeToolAdapterRegistry(coreCapabilityCatalogue, [])).toThrow(
+      "Missing Tool Adapter"
+    )
+    const training = fullCapabilityCatalogue.modules.find((module) => module.id === "training")
+    expect(training).toBeDefined()
+    expect(() => makeToolAdapterRegistry(coreCapabilityCatalogue, [adapterFor(training!)])).toThrow(
+      "is not in profile core"
+    )
+  })
+
   it("stops replay after an expired external mutation lease", () => {
     expect(expiredToolCallOutcome("connection_link_create")).toMatchObject({
       ok: false,
@@ -167,10 +199,10 @@ describe("domain-owned Tool command Adapters", () => {
       })
     })
 
-    const settingsResult = await makeSettingsToolAdapter(settings, connections).execute(
+    const settingsResult = await makeSettingsToolAdapter(settings).execute(
       commandContext("settings_get", {})
     )
-    const connectionResult = await makeConnectionsToolAdapter(connections, settings).execute(
+    const connectionResult = await makeConnectionsToolAdapter(connections).execute(
       commandContext("connection_list", {})
     )
 

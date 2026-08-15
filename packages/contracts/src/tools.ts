@@ -1,66 +1,19 @@
 import { Schema } from "effect"
 
+import { connectionsCapability, connectionToolDefinitions } from "./capabilities/connections.ts"
+import {
+  ToolName,
+  type CapabilityModule,
+  type ModelToolName,
+  type ToolDefinition,
+  type ToolDefinitionName
+} from "./capabilities/definitions.ts"
+import { journalCapability, journalToolDefinitions } from "./capabilities/journal.ts"
+import { memoryCapability, memoryToolDefinitions } from "./capabilities/memory.ts"
+import { reminderCapability, reminderToolDefinitions } from "./capabilities/reminders.ts"
+import { settingsCapability, settingsToolDefinitions } from "./capabilities/settings.ts"
+import { trainingCapability, trainingToolDefinitions } from "./capabilities/training.ts"
 import { IsoDateTime, JsonObject, NonEmptyText, ShortText, TimeZone, Uuid } from "./shared.ts"
-
-export const ToolName = Schema.Literals([
-  "reminder_create",
-  "reminder_list",
-  "reminder_acknowledge",
-  "reminder_complete",
-  "reminder_snooze",
-  "reminder_cancel",
-  "memory_search",
-  "memory_propose",
-  "memory_confirm",
-  "memory_correct",
-  "journal_link_create",
-  "journal_search_metadata",
-  "gym_list",
-  "gym_create",
-  "equipment_list",
-  "exercise_create",
-  "exercise_list",
-  "gym_add_equipment",
-  "equipment_map_exercise",
-  "routine_save",
-  "routine_get",
-  "workout_start",
-  "workout_log_set",
-  "workout_finish",
-  "workout_last",
-  "workout_history",
-  "settings_get",
-  "settings_update",
-  "connection_list",
-  "connection_link_create"
-])
-
-/**
- * A JSON Schema subset that describes one model input without naming a model
- * provider. Bob's Pi Module translates this shape into Pi's TypeBox value.
- */
-export interface ToolInputSchema {
-  readonly type: "object"
-  readonly properties: Readonly<Record<string, ToolInputPropertySchema>>
-  readonly required?: readonly string[]
-  readonly additionalProperties?: boolean
-}
-
-export interface ToolInputPropertySchema {
-  readonly type?: "object" | "array" | "string" | "number" | "integer" | "boolean" | "null"
-  readonly properties?: Readonly<Record<string, ToolInputPropertySchema>>
-  readonly required?: readonly string[]
-  readonly additionalProperties?: boolean
-  readonly items?: ToolInputPropertySchema
-  readonly enum?: readonly (string | number | boolean | null)[]
-  readonly anyOf?: readonly ToolInputPropertySchema[]
-  readonly minLength?: number
-  readonly maxLength?: number
-  readonly minimum?: number
-  readonly maximum?: number
-  readonly pattern?: string
-  readonly description?: string
-}
 
 export const ConnectionProviderArguments = Schema.Struct({
   provider: Schema.Literals(["google_calendar", "microsoft_calendar"])
@@ -186,520 +139,28 @@ export const SettingsUpdateArguments = Schema.Struct({
   hourCycle: Schema.optionalKey(Schema.Literals(["auto", "h12", "h23"]))
 })
 
-/**
- * Tool names that Pi may expose to the model. `memory_correct` is a
- * deterministic bound command and is intentionally not a model tool.
- */
-export type ToolDefinitionName = Exclude<ToolName, "memory_correct">
-export type ModelToolName = Exclude<ToolDefinitionName, "memory_confirm">
-
-export interface ToolDefinition<Name extends ToolDefinitionName = ToolDefinitionName> {
-  readonly name: Name
-  readonly description: string
-  readonly inputSchema: ToolInputSchema
-}
-
-export const CapabilityId = Schema.Literals([
-  "reminders",
-  "memory",
-  "journal",
-  "training",
-  "settings",
-  "connections"
-])
-
-export type CapabilityId = typeof CapabilityId.Type
-export type CapabilityFeature = "reminders" | "memory" | "journal" | "training" | "settings"
-
-export interface CapabilityModule {
-  readonly id: CapabilityId
-  readonly version: number
-  readonly feature: CapabilityFeature
-  readonly names: readonly ToolName[]
-  readonly definitions: Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
-  readonly readOnly: readonly ToolName[]
-  readonly sourceBound: readonly ToolName[]
-  readonly externalOutcomeUnknown: readonly ToolName[]
-}
-
-const emptyInputSchema = {
-  type: "object",
-  properties: {},
-  additionalProperties: false
-} as const satisfies ToolInputSchema
-
-const idInputSchema = {
-  type: "object",
-  properties: {
-    id: { type: "string" }
-  },
-  required: ["id"],
-  additionalProperties: false
-} as const satisfies ToolInputSchema
-
-const occurrenceInputSchema = {
-  type: "object",
-  properties: {
-    occurrenceId: { type: "string" }
-  },
-  required: ["occurrenceId"],
-  additionalProperties: false
-} as const satisfies ToolInputSchema
-
-const trainingLookupInputSchema = {
-  type: "object",
-  properties: {
-    query: { type: "string", maxLength: 100 }
-  },
-  additionalProperties: false
-} as const satisfies ToolInputSchema
-
-const optionalRoutineInputSchema = {
-  type: "object",
-  properties: {
-    id: { type: "string" }
-  },
-  additionalProperties: false
-} as const satisfies ToolInputSchema
-
-const workoutHistoryInputSchema = {
-  type: "object",
-  properties: {
-    routineId: { type: "string" }
-  },
-  additionalProperties: false
-} as const satisfies ToolInputSchema
-
-const reminderToolDefinitions = {
-  reminder_create: {
-    name: "reminder_create",
-    description: "Create one confirmed reminder with an absolute local date and time.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        displayText: { type: "string", minLength: 1, maxLength: 1_200 },
-        smsSafeText: { type: "string", minLength: 1, maxLength: 1_200 },
-        localDate: { type: "string" },
-        localTime: { type: "string" },
-        timeZone: { type: "string" },
-        dueAt: { type: "string" },
-        sourceMessageId: { type: "string" },
-        requiresAcknowledgment: { type: "boolean" }
-      },
-      required: [
-        "displayText",
-        "smsSafeText",
-        "localDate",
-        "localTime",
-        "timeZone",
-        "dueAt",
-        "sourceMessageId",
-        "requiresAcknowledgment"
-      ],
-      additionalProperties: false
-    } as const
-  },
-  reminder_list: {
-    name: "reminder_list",
-    description: "List active reminders and their exact action target IDs.",
-    inputSchema: emptyInputSchema
-  },
-  reminder_acknowledge: {
-    name: "reminder_acknowledge",
-    description: "Mark one listed reminder occurrence as seen.",
-    inputSchema: occurrenceInputSchema
-  },
-  reminder_complete: {
-    name: "reminder_complete",
-    description: "Mark one listed reminder occurrence as done.",
-    inputSchema: occurrenceInputSchema
-  },
-  reminder_snooze: {
-    name: "reminder_snooze",
-    description:
-      "Snooze one listed occurrence to an absolute local date and time in the owner's current time zone.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        occurrenceId: { type: "string" },
-        localDate: { type: "string" },
-        localTime: { type: "string" },
-        timeZone: { type: "string" },
-        dueAt: { type: "string" }
-      },
-      required: ["occurrenceId", "localDate", "localTime", "timeZone", "dueAt"],
-      additionalProperties: false
-    } as const
-  },
-  reminder_cancel: {
-    name: "reminder_cancel",
-    description:
-      "Cancel one listed occurrence when occurrenceId is present. Otherwise, cancel the complete reminder series.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        reminderId: { type: "string" },
-        occurrenceId: { type: "string" }
-      },
-      required: ["reminderId"],
-      additionalProperties: false
-    } as const
-  }
-} as const satisfies Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
-
-const memoryToolDefinitions = {
-  memory_search: {
-    name: "memory_search",
-    description: "Find policy-cleared personal records with source labels.",
-    inputSchema: {
-      type: "object",
-      properties: { query: { type: "string" } },
-      required: ["query"],
-      additionalProperties: false
-    } as const
-  },
-  memory_propose: {
-    name: "memory_propose",
-    description:
-      "Save a reviewable personal memory candidate from the owner's direct wording. This does not confirm it.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        scope: { type: "string" },
-        key: { type: "string" },
-        value: {},
-        canonicalText: { type: "string" },
-        assertionKind: {
-          type: "string",
-          enum: ["user_stated", "system_recorded", "inferred"]
-        },
-        extractionConfidence: { type: "number" },
-        importance: { type: "number" },
-        explicitRemember: { type: "boolean" }
-      },
-      required: [
-        "scope",
-        "key",
-        "value",
-        "canonicalText",
-        "assertionKind",
-        "extractionConfidence",
-        "importance",
-        "explicitRemember"
-      ],
-      additionalProperties: false
-    } as const
-  },
-  memory_confirm: {
-    name: "memory_confirm",
-    description: "Confirm one owner-approved memory candidate.",
-    inputSchema: idInputSchema
-  }
-} as const satisfies Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
-
-const journalToolDefinitions = {
-  journal_link_create: {
-    name: "journal_link_create",
-    description:
-      "Create a private short-lived journal link after the owner asks. Never accept journal text.",
-    inputSchema: emptyInputSchema
-  },
-  journal_search_metadata: {
-    name: "journal_search_metadata",
-    description: "Find journal dates and tags. Journal text and summaries stay private.",
-    inputSchema: {
-      type: "object",
-      properties: { tag: { type: "string" } },
-      additionalProperties: false
-    } as const
-  }
-} as const satisfies Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
-
-const trainingToolDefinitions = {
-  gym_list: {
-    name: "gym_list",
-    description:
-      "List the owner's gyms and stable IDs. Use this before another tool needs a gym ID.",
-    inputSchema: trainingLookupInputSchema
-  },
-  gym_create: {
-    name: "gym_create",
-    description: "Save one gym after owner instruction.",
-    inputSchema: {
-      type: "object",
-      properties: { name: { type: "string" } },
-      required: ["name"],
-      additionalProperties: false
-    } as const
-  },
-  equipment_list: {
-    name: "equipment_list",
-    description:
-      "List the owner's gym equipment and stable IDs. Use this before another tool needs an equipment ID.",
-    inputSchema: trainingLookupInputSchema
-  },
-  exercise_create: {
-    name: "exercise_create",
-    description: "Propose one exercise for owner review.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string" },
-        instructions: { type: "string" }
-      },
-      required: ["name"],
-      additionalProperties: false
-    } as const
-  },
-  exercise_list: {
-    name: "exercise_list",
-    description:
-      "List the owner's exercises and stable IDs. Use this before another tool needs an exercise ID.",
-    inputSchema: trainingLookupInputSchema
-  },
-  gym_add_equipment: {
-    name: "gym_add_equipment",
-    description: "Save equipment for a gym.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        gymId: { type: "string" },
-        name: { type: "string" },
-        identifier: { type: "string" }
-      },
-      required: ["gymId", "name"],
-      additionalProperties: false
-    } as const
-  },
-  equipment_map_exercise: {
-    name: "equipment_map_exercise",
-    description: "Propose one equipment-to-exercise mapping for owner review.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        equipmentId: { type: "string" },
-        exerciseId: { type: "string" }
-      },
-      required: ["equipmentId", "exerciseId"],
-      additionalProperties: false
-    } as const
-  },
-  routine_save: {
-    name: "routine_save",
-    description: "Save an owner-approved training routine.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string" },
-        steps: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              exerciseId: { type: "string" },
-              targetSets: { type: "integer" },
-              targetReps: { type: "integer" },
-              notes: { type: "string" }
-            },
-            required: ["exerciseId"],
-            additionalProperties: false
-          }
-        }
-      },
-      required: ["name", "steps"],
-      additionalProperties: false
-    } as const
-  },
-  routine_get: {
-    name: "routine_get",
-    description: "Get one owner routine and its ordered exercises.",
-    inputSchema: optionalRoutineInputSchema
-  },
-  workout_start: {
-    name: "workout_start",
-    description: "Start one workout session.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        routineId: { type: "string" },
-        gymId: { type: "string" }
-      },
-      required: ["routineId"],
-      additionalProperties: false
-    } as const
-  },
-  workout_log_set: {
-    name: "workout_log_set",
-    description: "Log one set. Safety reports are handled before model execution.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        sessionId: { type: "string" },
-        routineStepId: { type: "string" },
-        equipmentId: { type: "string" },
-        sequence: { type: "integer" },
-        repetitions: { type: "integer" },
-        weightGrams: { type: "integer" },
-        notes: { type: "string" }
-      },
-      required: ["sessionId", "routineStepId", "sequence", "repetitions"],
-      additionalProperties: false
-    } as const
-  },
-  workout_finish: {
-    name: "workout_finish",
-    description: "Finish one workout.",
-    inputSchema: idInputSchema
-  },
-  workout_last: {
-    name: "workout_last",
-    description: "Get the owner's latest workout and its logged sets.",
-    inputSchema: workoutHistoryInputSchema
-  },
-  workout_history: {
-    name: "workout_history",
-    description: "List prior workouts.",
-    inputSchema: workoutHistoryInputSchema
-  }
-} as const satisfies Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
-
-const settingsToolDefinitions = {
-  settings_get: {
-    name: "settings_get",
-    description: "Get the owner's locality and linked account status.",
-    inputSchema: emptyInputSchema
-  },
-  settings_update: {
-    name: "settings_update",
-    description:
-      "Update only the locality fields in the owner's direct instruction. Existing reminders keep their saved schedules.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        timeZone: { type: "string" },
-        locale: { type: "string" },
-        hourCycle: { type: "string", enum: ["auto", "h12", "h23"] }
-      },
-      additionalProperties: false
-    } as const
-  }
-} as const satisfies Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
-
-const connectionToolDefinitions = {
-  connection_list: {
-    name: "connection_list",
-    description: "List the owner's linked service status.",
-    inputSchema: emptyInputSchema
-  },
-  connection_link_create: {
-    name: "connection_link_create",
-    description:
-      "Create one short-lived account link after the owner asks for Google Calendar or Microsoft Calendar.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        provider: {
-          type: "string",
-          enum: ["google_calendar", "microsoft_calendar"]
-        }
-      },
-      required: ["provider"],
-      additionalProperties: false
-    } as const
-  }
-} as const satisfies Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
-
 export const capabilityModules = Object.freeze([
-  {
-    id: "reminders",
-    version: 1,
-    feature: "reminders",
-    names: [
-      "reminder_create",
-      "reminder_list",
-      "reminder_acknowledge",
-      "reminder_complete",
-      "reminder_snooze",
-      "reminder_cancel"
-    ],
-    definitions: reminderToolDefinitions,
-    readOnly: ["reminder_list"],
-    sourceBound: ["reminder_create"],
-    externalOutcomeUnknown: []
-  },
-  {
-    id: "memory",
-    version: 1,
-    feature: "memory",
-    names: ["memory_search", "memory_propose", "memory_confirm", "memory_correct"],
-    definitions: memoryToolDefinitions,
-    readOnly: ["memory_search"],
-    sourceBound: ["memory_propose"],
-    externalOutcomeUnknown: []
-  },
-  {
-    id: "journal",
-    version: 1,
-    feature: "journal",
-    names: ["journal_link_create", "journal_search_metadata"],
-    definitions: journalToolDefinitions,
-    readOnly: ["journal_search_metadata"],
-    sourceBound: [],
-    externalOutcomeUnknown: []
-  },
-  {
-    id: "training",
-    version: 1,
-    feature: "training",
-    names: [
-      "gym_list",
-      "gym_create",
-      "equipment_list",
-      "exercise_create",
-      "exercise_list",
-      "gym_add_equipment",
-      "equipment_map_exercise",
-      "routine_save",
-      "routine_get",
-      "workout_start",
-      "workout_log_set",
-      "workout_finish",
-      "workout_last",
-      "workout_history"
-    ],
-    definitions: trainingToolDefinitions,
-    readOnly: [
-      "gym_list",
-      "equipment_list",
-      "exercise_list",
-      "routine_get",
-      "workout_last",
-      "workout_history"
-    ],
-    sourceBound: [],
-    externalOutcomeUnknown: []
-  },
-  {
-    id: "settings",
-    version: 1,
-    feature: "settings",
-    names: ["settings_get", "settings_update"],
-    definitions: settingsToolDefinitions,
-    readOnly: ["settings_get"],
-    sourceBound: [],
-    externalOutcomeUnknown: []
-  },
-  {
-    id: "connections",
-    version: 1,
-    feature: "settings",
-    names: ["connection_list", "connection_link_create"],
-    definitions: connectionToolDefinitions,
-    readOnly: ["connection_list"],
-    sourceBound: [],
-    externalOutcomeUnknown: ["connection_link_create"]
-  }
+  reminderCapability,
+  memoryCapability,
+  journalCapability,
+  trainingCapability,
+  settingsCapability,
+  connectionsCapability
 ] as const satisfies readonly CapabilityModule[])
+
+export const coreCapabilityModules = Object.freeze([
+  memoryCapability,
+  settingsCapability
+] as const satisfies readonly CapabilityModule[])
+
+export type CapabilityProfile = "core" | "full"
+
+export interface CapabilityCatalogue {
+  readonly profile: CapabilityProfile
+  readonly modules: readonly CapabilityModule[]
+  readonly names: readonly ToolName[]
+  readonly generation: CapabilityCatalogueGeneration
+}
 
 const toolDefinitions = {
   ...reminderToolDefinitions,
@@ -718,18 +179,21 @@ const capabilityByToolName = new Map(
   )
 )
 
-export function validateCapabilityCatalogue(): void {
-  const ids = capabilityModules.map((capability) => capability.id)
+export function validateCapabilityModules(
+  modules: readonly CapabilityModule[],
+  options: { readonly requireAllTools?: boolean } = {}
+): void {
+  const ids = modules.map((capability) => capability.id)
   if (new Set(ids).size !== ids.length) throw new Error("Duplicate capability ID")
-  const names = capabilityModules.flatMap((capability) => capability.names)
+  const names = modules.flatMap((capability) => capability.names)
   if (new Set(names).size !== names.length) throw new Error("Duplicate capability Tool name")
   if (
-    names.length !== ToolName.literals.length ||
-    ToolName.literals.some((name) => !names.includes(name))
+    (options.requireAllTools === true && names.length !== ToolName.literals.length) ||
+    (options.requireAllTools === true && ToolName.literals.some((name) => !names.includes(name)))
   ) {
     throw new Error("Capability catalogue does not own every Tool name")
   }
-  for (const capability of capabilityModules) {
+  for (const capability of modules) {
     const owned = new Set<ToolName>(capability.names)
     const policies = [
       capability.readOnly,
@@ -749,6 +213,10 @@ export function validateCapabilityCatalogue(): void {
   }
 }
 
+export function validateCapabilityCatalogue(): void {
+  validateCapabilityModules(capabilityModules, { requireAllTools: true })
+}
+
 validateCapabilityCatalogue()
 
 function catalogueFingerprint(value: typeof Schema.Json.Type): string {
@@ -764,6 +232,25 @@ function catalogueFingerprint(value: typeof Schema.Json.Type): string {
 export const CapabilityCatalogueGeneration = Schema.String.check(
   Schema.isPattern(/^capability-v1:[0-9a-f]{16}$/)
 )
+
+export function makeCapabilityCatalogue(
+  profile: CapabilityProfile,
+  modules: readonly CapabilityModule[]
+): CapabilityCatalogue {
+  validateCapabilityModules(modules)
+  const generation = Schema.decodeUnknownSync(CapabilityCatalogueGeneration)(
+    `capability-v1:${catalogueFingerprint(Schema.decodeUnknownSync(Schema.Json)(modules))}`
+  )
+  return Object.freeze({
+    profile,
+    modules: Object.freeze([...modules]),
+    names: Object.freeze(modules.flatMap((capability) => capability.names)),
+    generation
+  })
+}
+
+export const coreCapabilityCatalogue = makeCapabilityCatalogue("core", coreCapabilityModules)
+export const fullCapabilityCatalogue = makeCapabilityCatalogue("full", capabilityModules)
 
 /** Content identity for the complete reviewed catalogue and its safety policy. */
 export const capabilityCatalogueGeneration = Schema.decodeUnknownSync(
@@ -870,7 +357,6 @@ export const ToolResult = Schema.Struct({
   data: Schema.optionalKey(JsonObject)
 })
 
-export type ToolName = typeof ToolName.Type
 export type CapabilityCatalogueGeneration = typeof CapabilityCatalogueGeneration.Type
 export type MemorySearchArguments = typeof MemorySearchArguments.Type
 export type MemoryProposeArguments = typeof MemoryProposeArguments.Type
@@ -895,3 +381,23 @@ export type ReminderCancelArguments = typeof ReminderCancelArguments.Type
 export type ToolCommand = typeof ToolCommand.Type
 export type ToolResult = typeof ToolResult.Type
 export type ConnectionProviderArguments = typeof ConnectionProviderArguments.Type
+
+export { ToolName }
+export {
+  connectionsCapability,
+  journalCapability,
+  memoryCapability,
+  reminderCapability,
+  settingsCapability,
+  trainingCapability
+}
+export type {
+  CapabilityFeature,
+  CapabilityId,
+  CapabilityModule,
+  ModelToolName,
+  ToolDefinition,
+  ToolDefinitionName,
+  ToolInputPropertySchema,
+  ToolInputSchema
+} from "./capabilities/definitions.ts"

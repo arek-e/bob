@@ -1,3 +1,4 @@
+import { reminderCapability } from "@bob/contracts/capabilities/reminders"
 import {
   ReminderCancelArguments,
   ReminderCreateArguments,
@@ -133,6 +134,8 @@ async function validateMutationTarget(
 
 export function makeReminderToolAdapter(reminders: ReminderStore): ToolCommandAdapter {
   return {
+    capabilityId: reminderCapability.id,
+    names: reminderCapability.names,
     async execute(context) {
       const { command, run } = context
       const intent = reminderIntentForTool(command.name)
