@@ -24,13 +24,23 @@ function deploymentManifest(source: string) {
 describe("Coolify release manifest delta", () => {
   it("accepts only two image digests and the exact source SHA", async () => {
     const source = await sourceManifest()
+    const current = JSON.parse(source) as {
+      cloudflaredDigest: string
+      observerDigest: string
+    }
     expect(
       assertReleaseManifestDelta({
         sourceManifest: source,
         deploymentManifest: deploymentManifest(source),
         sourceSha
       })
-    ).toEqual({ agentDigest, backupDigest, releaseSha: sourceSha })
+    ).toEqual({
+      agentDigest,
+      backupDigest,
+      cloudflaredDigest: current.cloudflaredDigest,
+      observerDigest: current.observerDigest,
+      releaseSha: sourceSha
+    })
   })
 
   it("rejects another runtime change", async () => {

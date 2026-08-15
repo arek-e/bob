@@ -58,6 +58,8 @@ gh workflow run release.yml -R arek-e/bob-control-plane --ref main \
   -f deploy=true
 ```
 
+The reviewed manifest supplies the agent, backup, Tunnel, and observer image digests.
+
 The Control Plane selects `DEPLOYMENT_SHA` and verifies every immutable digest.
 
 The assigned Bob Runner applies the reviewed contract. Independent assurance records acceptance.

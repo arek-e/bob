@@ -8,10 +8,12 @@ const RELEASE_PATH = "infra/coolify/release.json"
 function parseManifest(value) {
   const manifest = JSON.parse(value)
   if (
-    manifest.schemaVersion !== 1 ||
+    manifest.schemaVersion !== 2 ||
     !COMMIT_PATTERN.test(manifest.sourceSha) ||
     !DIGEST_PATTERN.test(manifest.agentDigest) ||
-    !DIGEST_PATTERN.test(manifest.backupDigest)
+    !DIGEST_PATTERN.test(manifest.backupDigest) ||
+    !DIGEST_PATTERN.test(manifest.cloudflaredDigest) ||
+    !DIGEST_PATTERN.test(manifest.observerDigest)
   ) {
     throw new Error("The Coolify release manifest is invalid")
   }
@@ -49,6 +51,8 @@ export function assertReleaseManifestDelta({ sourceManifest, deploymentManifest,
   return {
     agentDigest: deployment.agentDigest,
     backupDigest: deployment.backupDigest,
+    cloudflaredDigest: deployment.cloudflaredDigest,
+    observerDigest: deployment.observerDigest,
     releaseSha: deployment.sourceSha
   }
 }
