@@ -33,6 +33,7 @@ describe("trusted infrastructure plan", () => {
     expect(workflows[1]).toContain("TS_OAUTH_CLIENT_ID_READONLY")
     expect(workflows[1]).toContain("TS_AUDIENCE_READONLY")
     expect(workflows[1]).toContain("if: github.event_name == 'push'")
+    expect(workflows[1]).toContain("vars.BOB_RUNNER_RELEASE_ENABLED == 'true'")
     expect(workflows[1]).not.toContain("workflow_dispatch:")
     expect(workflows[1]).not.toContain("vars.BAO_JWT_ROLE != ''")
   })
