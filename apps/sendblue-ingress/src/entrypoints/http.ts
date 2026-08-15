@@ -1,6 +1,7 @@
 import { InboundAcceptance, type NormalizedInboundEvent } from "@bob/contracts/channel"
 import { flushCloudflareTelemetry } from "@bob/observability/cloudflare"
 import { recordDecision, withBobSpan } from "@bob/observability/effect"
+import { observeHealth } from "@bob/observability/events"
 import {
   externalParentFromTraceparent,
   injectCurrentTraceparent
@@ -217,22 +218,18 @@ export async function handleIngressHttp(
         resultBody.code === "enqueue_record_failed"
           ? resultBody.code
           : "unknown"
-      try {
-        await composition.events.emit({
-          type: "webhook",
-          correlationId: event.correlationId,
-          status:
-            resultBody.code === "accepted"
-              ? "accepted"
-              : resultBody.code === "duplicate"
-                ? "duplicate"
-                : "failed",
-          code: healthCode,
-          durationMs: Math.max(0, Date.now() - startedAt)
-        })
-      } catch {
-        // Telemetry must not change webhook acceptance.
-      }
+      await observeHealth(composition.events, {
+        type: "webhook",
+        correlationId: event.correlationId,
+        status:
+          resultBody.code === "accepted"
+            ? "accepted"
+            : resultBody.code === "duplicate"
+              ? "duplicate"
+              : "failed",
+        code: healthCode,
+        durationMs: Math.max(0, Date.now() - startedAt)
+      })
       return result
     }
     if (url.pathname === "/webhooks/outbound") {

@@ -1,5 +1,4 @@
 import type { OutboundJob } from "@bob/contracts/jobs"
-import type { TelemetryFeature } from "@bob/observability/events"
 
 import { AgentRunResult, type AgentArtifact, type AgentRunRequest } from "@bob/contracts/agent"
 import { capabilityCatalogueGeneration, modelToolNames } from "@bob/contracts/tools"
@@ -10,6 +9,7 @@ import {
   type BobDecisionCode,
   type BobSpan
 } from "@bob/observability/effect"
+import { observeHealth, type TelemetryFeature } from "@bob/observability/events"
 import {
   externalParentFromTraceparent,
   formatTraceparent,
@@ -69,17 +69,6 @@ function withTraceparentParent<A, E>(
 ): Effect.Effect<A, E> {
   const parent = externalParentFromTraceparent(traceparent)
   return parent === undefined ? effect : Effect.withParentSpan(effect, parent)
-}
-
-async function emitSafely(
-  composition: CoreComposition,
-  event: Parameters<CoreComposition["services"]["events"]["emit"]>[0]
-) {
-  try {
-    await composition.services.events.emit(event)
-  } catch {
-    // Telemetry must not change a durable workflow.
-  }
 }
 
 function featureForReason(reasonCode: string): TelemetryFeature {
@@ -976,7 +965,7 @@ export async function processInbound(
         ).pipe(
           Effect.tap((contextItems) =>
             Effect.promise(() =>
-              emitSafely(composition, {
+              observeHealth(composition.services.events, {
                 type: "retrieval",
                 correlationId: claimed.correlationId,
                 runId,
@@ -993,7 +982,7 @@ export async function processInbound(
           ),
           Effect.tapError(() =>
             Effect.promise(() =>
-              emitSafely(composition, {
+              observeHealth(composition.services.events, {
                 type: "retrieval",
                 correlationId: claimed.correlationId,
                 runId,

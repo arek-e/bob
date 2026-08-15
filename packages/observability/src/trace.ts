@@ -6,6 +6,8 @@ import type {
   WorkflowSpanName
 } from "./events.ts"
 
+import { observeHealth } from "./events.ts"
+
 export interface TraceContext {
   readonly traceId: string
   readonly spanId: string
@@ -103,14 +105,6 @@ export function traceHeaders(context: TraceContext): TraceHeaders {
   return { traceparent: formatTraceparent(context) }
 }
 
-async function emitSafely(sink: EventSink, event: Parameters<EventSink["emit"]>[0]) {
-  try {
-    await sink.emit(event)
-  } catch {
-    // Telemetry must not change the workflow result.
-  }
-}
-
 export async function observeSpan<A>(
   input: SpanInput,
   operation: (context: TraceContext) => Promise<A>,
@@ -122,7 +116,7 @@ export async function observeSpan<A>(
   try {
     const result = await operation(context)
     const code = resultCode?.(result)
-    await emitSafely(input.sink, {
+    await observeHealth(input.sink, {
       type: "workflow_span",
       correlationId: input.correlationId,
       traceId: context.traceId,
@@ -137,7 +131,7 @@ export async function observeSpan<A>(
     })
     return result
   } catch (error) {
-    await emitSafely(input.sink, {
+    await observeHealth(input.sink, {
       type: "workflow_span",
       correlationId: input.correlationId,
       traceId: context.traceId,
