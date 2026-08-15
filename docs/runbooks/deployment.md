@@ -1,11 +1,51 @@
 # Production deployment
 
 Status: active
-Runtime authority: Bob Control Plane
+Runtime authority: protected GitHub release workflow and Coolify
 
 Use this runbook for Bob production releases.
 
-## Prepare the source release
+## Release flow
+
+A successful `main` CI run starts the protected `Release Runtime` workflow.
+
+The workflow performs these actions:
+
+1. Confirm that the successful commit is still the tip of `main`.
+2. Build and attest the Agent and backup images.
+3. Create one canonical OCI release bundle.
+4. Verify the bundle and every image digest.
+5. Read a short-lived Coolify credential from OpenBao.
+6. Update the reviewed Runtime image pins.
+7. Deploy the exact source revision through Coolify.
+8. Check authenticated Agent readiness.
+
+The workflow does not make a source commit. Coolify stores deployment history. The OCI bundle
+stores immutable release identity.
+
+Set `BOB_AUTO_RELEASE_ENABLED` to `true` to release each green `main` commit. Leave it unset to stop
+automatic production releases.
+
+## Promotion boundary
+
+The workflow changes only these Coolify values:
+
+- the source revision;
+- the Agent image digest;
+- the backup image digest;
+- the Tunnel image digest;
+- the observer image digest.
+
+Coolify records the deployment. The workflow checks that Coolify used the exact source revision.
+
+If deployment fails, the workflow restores the prior image pins and starts a rollback deployment.
+
+The protected `production` environment controls access. OpenBao accepts only the reviewed GitHub
+OIDC subject. It grants read access to the Coolify token and Agent readiness identity.
+
+Do not store the Coolify token in GitHub.
+
+## Manual artifact build
 
 Start from a clean commit on `main`.
 
@@ -15,82 +55,16 @@ pnpm install --frozen-lockfile
 pnpm check
 pnpm secrets:scan:trusted
 node scripts/verify-deployment-readiness.mjs
+gh workflow run release-images.yml --ref main -f release_sha="$RELEASE_SHA"
 ```
 
-The image workflow publishes these immutable images:
+The image workflow publishes these immutable references:
 
 - `ghcr.io/arek-e/bob-agent:sha-$RELEASE_SHA`
 - `ghcr.io/arek-e/bob-data-backup:sha-$RELEASE_SHA`
 - `ghcr.io/arek-e/bob-release:sha-$RELEASE_SHA`
 
-The last image is an OCI release bundle. It binds the source, configuration, deployment contract, and all image digests.
-
-```sh
-gh workflow run release-images.yml --ref main -f release_sha="$RELEASE_SHA"
-```
-
-Read the immutable bundle reference from the completed workflow summary.
-
-```sh
-export BUNDLE_REFERENCE="ghcr.io/arek-e/bob-release@sha256:<digest>"
-```
-
 Do not commit generated release data to the Runtime source branch.
-
-## Apply the release
-
-Request the durable release through the Bob Control Plane workflow.
-
-Production validation and deployment run only in the private Control Plane.
-
-```sh
-gh workflow run release.yml -R arek-e/bob-control-plane --ref main \
-  -f bundle_reference="$BUNDLE_REFERENCE" \
-  -f deploy=true
-```
-
-The Control Plane pulls and validates the exact OCI bundle.
-
-It verifies the image digests and build provenance against the bundle source revision.
-
-The Control Plane promotes the exact bundle digest and records the durable Operation.
-
-The assigned Bob Runner applies the reviewed contract. Independent assurance records acceptance.
-
-Coolify can host the initial Compose target. It is not part of the orchestration Interface.
-
-Wait for the agent, Tunnel, backup runner, and observer to become healthy.
-
-## Automatic release preparation
-
-`.github/workflows/auto-release.yml` prepares artifacts after successful `main` CI runs.
-
-Set `BOB_RELEASE_PREPARATION_ENABLED` to `true` to prepare each green `main` commit.
-
-The public workflow performs these actions:
-
-1. Confirm that the successful commit is still the tip of `main`.
-2. Build and attest both Runtime images.
-3. Create one canonical release bundle.
-4. Publish the bundle to GHCR by immutable digest.
-
-The workflow does not write to `main`.
-
-It does not use a production environment, production identity, private network, or Control Plane endpoint.
-
-Dispatch the private Control Plane workflow when these checks pass:
-
-- The shared Connections Gateway is healthy.
-- Existing Nango connections use Instance-scoped owner references.
-- The target Bob Runner is enrolled and assigned.
-- The Runner can report observations without changing Runtime state.
-- A canary release completed independent assurance.
-
-Leave the variable unset to require manual artifact preparation.
-
-The private Control Plane verifies the bundle, image digests, provenance, Runtime checks, and production plan.
-
-Do not give either repository a Coolify administrator token.
 
 ## Verify readiness
 
@@ -98,15 +72,12 @@ Keep `/health` as the public liveness check.
 
 Call `/v1/admin/readiness` through the admin Cloudflare Access policy.
 
-Require HTTP 200 and both checks to report `ready`.
+Require HTTP 200. Require `credentials` and `core` to report `ready`.
 
-Run one synthetic inbound message through the canary number.
+Run one safe inbound message from the allowed number. Require one accepted outbound result and one
+terminal provider status.
 
-Require one accepted outbound result and one linked provider status.
-
-Run the Coolify backup task once.
-
-Require `independentCopy` to report `completed`.
+Run the Coolify backup task once. Require `independentCopy` to report `completed`.
 
 Confirm that the latest Bob backup age is below 18,000 seconds.
 
@@ -122,18 +93,16 @@ Observe delivery errors, queue depth, Agent failures, and enabled Vertical Modul
 
 Keep the release under observation for at least 30 minutes.
 
-Record the bundle digest, source revision, image digests, and backup result.
+Record the bundle digest, source revision, image digests, deployment ID, and backup result.
 
 ## Roll back
 
-Request rollback through the Bob Control Plane.
+The release script restores the prior image pins after a failed deployment.
 
-It selects the previous accepted Runtime release bundle and records the result.
+For a later rollback, select the prior immutable bundle and run the protected release workflow.
 
-Do not retry an uncertain delivery during rollback.
-
-Reconcile provider status first.
+Do not retry an uncertain delivery during rollback. Reconcile provider status first.
 
 Run `/v1/admin/readiness` and the backup freshness checks again.
 
-Use [Incident recovery](incident-recovery.md) if the runtime does not recover.
+Use [Incident recovery](incident-recovery.md) if the Runtime does not recover.

@@ -14,7 +14,7 @@ describe("production release cutover contract", () => {
     expect(workflow.match(/sbom: true/gu)).toHaveLength(2)
   })
 
-  it("uses an immutable release bundle as the private release seam", async () => {
+  it("uses an immutable release bundle as the protected release seam", async () => {
     const [workflow, runbook] = await Promise.all([
       repositoryFile(".github/workflows/auto-release.yml"),
       repositoryFile("docs/runbooks/deployment.md")
@@ -22,9 +22,10 @@ describe("production release cutover contract", () => {
     expect(workflow).toContain("BUNDLE_REFERENCE")
     expect(workflow).not.toContain("git push origin HEAD:main")
     expect(workflow).not.toContain("infra/kubernetes")
-    expect(workflow).not.toContain("environment: production")
+    expect(workflow).toContain("environment: production")
+    expect(workflow).toContain("scripts/coolify-release.mjs")
     expect(runbook).toContain("/v1/admin/readiness")
-    expect(runbook).toContain("The Control Plane promotes the exact bundle digest")
+    expect(runbook).toContain("Coolify records the deployment")
   })
 
   it("defines a Control Plane rollback without an automatic uncertain resend", async () => {

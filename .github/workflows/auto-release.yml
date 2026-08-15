@@ -1,4 +1,4 @@
-name: Prepare Runtime release
+name: Release Runtime
 
 on:
   workflow_run:
@@ -6,11 +6,13 @@ on:
     types: [completed]
 
 concurrency:
-  group: bob-runtime-release-preparation
+  group: bob-runtime-release
   cancel-in-progress: false
 
 permissions:
   contents: read
+  id-token: write
+  packages: read
 
 jobs:
   select-source:
@@ -18,7 +20,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
-      vars.BOB_RELEASE_PREPARATION_ENABLED == 'true'
+      vars.BOB_AUTO_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -72,10 +74,125 @@ jobs:
           [[ "$BUNDLE_REFERENCE" =~ ^ghcr.io/arek-e/bob-release@sha256:[0-9a-f]{64}$ ]]
 
           {
-            echo "Runtime release artifacts are ready for the private Control Plane."
+            echo "Runtime release artifacts are ready for Coolify."
             echo "Source SHA: $SOURCE_SHA"
             echo "Agent digest: $AGENT_DIGEST"
             echo "Backup digest: $BACKUP_DIGEST"
             echo "Release bundle: $BUNDLE_REFERENCE"
             echo "Bundle content digest: $BUNDLE_DIGEST"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-production:
+    needs: [select-source, build-images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: production
+    env:
+      BAO_ADDR: ${{ vars.BAO_ADDR }}
+      BAO_JWT_ROLE: ${{ vars.BAO_JWT_ROLE_AUTO_RELEASE }}
+      COOLIFY_BASE_URL: ${{ vars.COOLIFY_BASE_URL }}
+      COOLIFY_RUNTIME_APPLICATION_UUID: ${{ vars.COOLIFY_RUNTIME_APPLICATION_UUID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.select-source.outputs.source_sha }}
+          fetch-depth: 1
+
+      - uses: oras-project/setup-oras@v1
+        with:
+          version: 1.3.0
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pull the immutable release bundle
+        env:
+          BUNDLE_REFERENCE: ${{ needs.build-images.outputs.bundle_reference }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$BUNDLE_REFERENCE" =~ ^ghcr.io/arek-e/bob-release@sha256:[0-9a-f]{64}$ ]]
+          mkdir runtime-release
+          oras pull "$BUNDLE_REFERENCE" --output runtime-release
+          test -f runtime-release/release-bundle.json
+          test "$(find runtime-release -type f | wc -l | tr -d ' ')" = "1"
+          node scripts/release-bundle.mjs verify runtime-release/release-bundle.json >/dev/null
+
+      - name: Connect to the production Tailnet
+        uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888
+        with:
+          oauth-client-id: ${{ vars.TS_OAUTH_CLIENT_ID_AUTO_RELEASE }}
+          audience: ${{ vars.TS_AUDIENCE_AUTO_RELEASE }}
+          tags: tag:ci
+          ping: vault.lamb-bicolor.ts.net
+
+      - name: Deploy the reviewed bundle through Coolify
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.select-source.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in BAO_ADDR BAO_JWT_ROLE COOLIFY_BASE_URL COOLIFY_RUNTIME_APPLICATION_UUID; do
+            test -n "${!name}" || { echo "Missing production variable: ${name}" >&2; exit 1; }
+          done
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_SOURCE_SHA"
+
+          bao_token=""
+          cleanup() {
+            unset COOLIFY_API_TOKEN AGENT_ADMIN_ACCESS_CLIENT_ID AGENT_ADMIN_ACCESS_CLIENT_SECRET
+            if [[ -n "${bao_token:-}" ]]; then
+              curl --silent --show-error --connect-timeout 10 --max-time 10 --request POST \
+                --header "X-Vault-Token: ${bao_token}" \
+                "${BAO_ADDR%/}/v1/auth/token/revoke-self" >/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+
+          oidc_jwt="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+            --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=openbao" | jq -er '.value')"
+          login_response="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+            --request POST \
+            --header 'content-type: application/json' \
+            --data "$(jq -nc --arg role "$BAO_JWT_ROLE" --arg jwt "$oidc_jwt" '{role: $role, jwt: $jwt}')" \
+            "${BAO_ADDR%/}/v1/auth/jwt/login")"
+          bao_token="$(jq -er '.auth.client_token' <<<"$login_response")"
+
+          coolify_record="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+            --header "X-Vault-Token: ${bao_token}" \
+            "${BAO_ADDR%/}/v1/ops/data/apps/prod/bob/control-plane/coolify")"
+          admin_record="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+            --header "X-Vault-Token: ${bao_token}" \
+            "${BAO_ADDR%/}/v1/ops/data/apps/prod/bob/access/core-to-agent-admin")"
+          config_record="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+            --header "X-Vault-Token: ${bao_token}" \
+            "${BAO_ADDR%/}/v1/ops/data/apps/prod/bob/config")"
+
+          export COOLIFY_API_TOKEN="$(jq -er '.data.data.COOLIFY_API_TOKEN' <<<"$coolify_record")"
+          export AGENT_ADMIN_ACCESS_CLIENT_ID="$(jq -er '.data.data.AGENT_ADMIN_ACCESS_CLIENT_ID' <<<"$admin_record")"
+          export AGENT_ADMIN_ACCESS_CLIENT_SECRET="$(jq -er '.data.data.AGENT_ADMIN_ACCESS_CLIENT_SECRET' <<<"$admin_record")"
+          agent_origin_url="$(jq -er '.data.data.AGENT_ORIGIN_URL' <<<"$config_record")"
+          echo "::add-mask::${COOLIFY_API_TOKEN}"
+          echo "::add-mask::${AGENT_ADMIN_ACCESS_CLIENT_ID}"
+          echo "::add-mask::${AGENT_ADMIN_ACCESS_CLIENT_SECRET}"
+
+          result="$(node scripts/coolify-release.mjs runtime-release/release-bundle.json)"
+          deployment_id="$(jq -er '.deploymentId' <<<"$result")"
+          readiness="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+            --header "Authorization: Bearer ${AGENT_ADMIN_ACCESS_CLIENT_SECRET}" \
+            --header "CF-Access-Client-Id: ${AGENT_ADMIN_ACCESS_CLIENT_ID}" \
+            --header "CF-Access-Client-Secret: ${AGENT_ADMIN_ACCESS_CLIENT_SECRET}" \
+            "${agent_origin_url%/}/v1/admin/readiness")"
+          jq -e '
+            .ready == true and
+            .checks.credentials == "ready" and
+            .checks.core == "ready" and
+            .deploymentProfileId == "core"
+          ' <<<"$readiness" >/dev/null
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_SOURCE_SHA"
+          {
+            echo "Production deployment: ${deployment_id}"
+            echo "Source SHA: ${EXPECTED_SOURCE_SHA}"
+            echo "Readiness: passed"
           } >> "$GITHUB_STEP_SUMMARY"
