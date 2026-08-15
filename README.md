@@ -15,7 +15,7 @@ The private `/settings` page manages owner locality and connection status.
 
 The owner can also change locality through Bob's Sendblue conversation.
 
-See [CONTEXT.md](CONTEXT.md) for domain rules. See [PROJECT_PLAN.md](docs/PROJECT_PLAN.md) for the build plan.
+See [CONTEXT.md](CONTEXT.md) for domain rules and the [ADR index](docs/adr/README.md) for architecture decisions.
 
 ## Local checks
 

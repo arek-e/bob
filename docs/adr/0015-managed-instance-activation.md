@@ -172,13 +172,14 @@ Strong isolation and separate Instance storage increase managed infrastructure c
 
 The managed product needs `teampitch-ops` Adapters for resource creation and deletion.
 
-## Current delivery boundary
+## Unsupported operations
 
-The first managed platform phase supports authorized first-event activation and delivery after the
-Instance becomes ready.
+The managed platform supports authorized first-event activation and delivery after the Instance
+becomes ready.
 
 Active Instances stay hot. The Control Plane scales clean Warm Sandbox capacity without moving an
 active Owner.
 
-Suspension, deletion, and active reassignment stay closed in this phase. They require accepted
-backup retention, storage handoff, and ingress-drain evidence before an Interface can expose them.
+Do not expose suspension, deletion, or active reassignment.
+
+These operations require accepted backup retention, storage handoff, and ingress-drain evidence.

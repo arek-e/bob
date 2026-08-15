@@ -1,6 +1,6 @@
 # ADR 0004: Use Alchemy, Effect v4, and Drizzle v1 RC
 
-- Status: Accepted for the feasibility slice
+- Status: Accepted
 - Date: 2026-08-11
 - Scope: Cloudflare infrastructure, effectful TypeScript, and D1 access
 - Managed ownership: Amended by ADR 0015
@@ -88,11 +88,11 @@ Do not let Wrangler, OpenTofu, and Alchemy manage the same resource.
 
 Keep existing shared platform resources with their current owner.
 
-Keep Kubernetes and OpenBao infrastructure outside Alchemy for the first release.
+Keep hosting and OpenBao infrastructure outside Alchemy.
 
 Alchemy has no native OpenBao provider.
 
-Use the existing Kubernetes and OpenBao workflows for those resources.
+Use the hosting and OpenBao workflows that own those resources.
 
 Apply a retain policy to production D1, R2, and Queue resources.
 
@@ -196,7 +196,7 @@ loop.
 Effect wraps Bob's I/O Modules. It does not replace Bob's loop or Pi's provider
 support.
 
-Do not use `effect/unstable/*` in the first release.
+Do not use `effect/unstable/*`.
 
 Do not add generic repositories, generic clients, or a shared services package.
 
@@ -206,7 +206,7 @@ Use Drizzle as Bob's only relational schema and query mapper.
 
 Use the standard `drizzle-orm/d1` adapter behind a local Effect service.
 
-Do not use `drizzle-orm/effect-d1` in the first release.
+Do not use `drizzle-orm/effect-d1`.
 
 Its current D1 transaction implementation throws.
 

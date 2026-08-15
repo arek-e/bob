@@ -194,19 +194,5 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 
 ## Decision index
 
-- [Project plan](docs/PROJECT_PLAN.md)
+- [Architecture decision index](docs/adr/README.md)
 - [Personal agent interaction research](docs/research/personal-agent-interaction.md)
-- [ADR 0001: Pi OpenAI Codex authentication](docs/adr/0001-pi-openai-codex-auth.md)
-- [ADR 0002: Durable Sendblue channel](docs/adr/0002-sendblue-agent-channel.md)
-- [ADR 0003: Agent runtime and repository seams](docs/adr/0003-agent-runtime-and-repository-seams.md)
-- [ADR 0004: Alchemy, Effect v4, and Drizzle v1 RC](docs/adr/0004-alchemy-effect-drizzle.md)
-- [ADR 0005: Varlock environment contracts](docs/adr/0005-varlock-environment-contracts.md)
-- [ADR 0007: Bob-owned Pi AI loop](docs/adr/0007-bob-owned-pi-ai-loop.md)
-- [ADR 0008: Effect telemetry and trace contract](docs/adr/0008-effect-telemetry-and-trace-contract.md)
-- [ADR 0009: Coolify private runtime](docs/adr/0009-coolify-private-runtime.md)
-- [ADR 0010: Revisioned conversation turns](docs/adr/0010-revisioned-conversation-turns.md)
-- [ADR 0011: Evaluation records and artifacts](docs/adr/0011-evaluation-storage.md)
-- [ADR 0012: Model-directed capability selection](docs/adr/0012-model-directed-capability-selection.md)
-- [ADR 0013: Shared Connections Gateway](docs/adr/0013-shared-connections-gateway.md)
-- [ADR 0014: Portable Bob Runner deployment contract](docs/adr/0014-portable-runner-deployment-contract.md)
-- [ADR 0015: Managed Instance activation and channel routing](docs/adr/0015-managed-instance-activation.md)
