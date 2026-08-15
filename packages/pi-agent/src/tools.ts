@@ -3,6 +3,7 @@ import type { AgentRunRequest } from "@bob/contracts/agent"
 import {
   conversationMutationIdempotencyKey,
   isReadOnlyToolName,
+  isSourceBoundToolName,
   toolDefinitionForName,
   type ToolCommand,
   type ToolInputSchema,
@@ -23,8 +24,6 @@ export interface BobPiTool extends Tool {
   readonly executionMode: "sequential"
   execute<Input>(toolCallId: string, params: Input): Promise<ToolResult>
 }
-
-const sourceBoundMutationTools = new Set<ToolName>(["memory_propose", "reminder_create"])
 
 function toPiParameters(inputSchema: ToolInputSchema): TSchema {
   return Type.Unsafe(inputSchema)
@@ -58,7 +57,7 @@ export async function toolCommandForCall<Input>(
 
 export function createTools(options: ToolFactoryOptions): BobPiTool[] {
   return options.request.allowedTools.flatMap((name) => {
-    if (options.request.sourceMessageId === undefined && sourceBoundMutationTools.has(name)) {
+    if (options.request.sourceMessageId === undefined && isSourceBoundToolName(name)) {
       return []
     }
     const definition = toolDefinitionForName(name)

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  capabilityForToolName,
+  capabilityModules,
+  hasUnknownExternalOutcome,
+  isReadOnlyToolName,
+  isSourceBoundToolName,
   modelToolNames,
   ToolName,
   toolDefinitionForName,
@@ -9,6 +14,35 @@ import {
 } from "../src/tools.ts"
 
 describe("Bob tool catalogue", () => {
+  it("assigns every Tool to one reviewed capability Module", () => {
+    const names = capabilityModules.flatMap((capability) => capability.names)
+
+    expect(names.toSorted()).toEqual([...ToolName.literals].toSorted())
+    expect(new Set(names).size).toBe(names.length)
+    expect(capabilityModules.map((capability) => capability.id)).toEqual([
+      "reminders",
+      "memory",
+      "journal",
+      "training",
+      "settings",
+      "connections"
+    ])
+    expect(capabilityForToolName("workout_start")).toMatchObject({
+      id: "training",
+      feature: "training",
+      version: 1
+    })
+  })
+
+  it("keeps Tool safety policy with its owning capability", () => {
+    expect(isReadOnlyToolName("memory_search")).toBe(true)
+    expect(isReadOnlyToolName("memory_propose")).toBe(false)
+    expect(isSourceBoundToolName("memory_propose")).toBe(true)
+    expect(isSourceBoundToolName("reminder_create")).toBe(true)
+    expect(hasUnknownExternalOutcome("connection_link_create")).toBe(true)
+    expect(hasUnknownExternalOutcome("settings_update")).toBe(false)
+  })
+
   it("covers every registered Tool definition except deterministic commands", () => {
     const names = Object.keys(toolDefinitions).toSorted()
     const expected = ToolName.literals.filter((name) => name !== "memory_correct").toSorted()
