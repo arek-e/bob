@@ -1,4 +1,4 @@
-name: Automatic Coolify release
+name: Automatic Runner release
 
 on:
   workflow_run:
@@ -197,7 +197,7 @@ jobs:
           audience: ${{ vars.TS_AUDIENCE_AUTO_RELEASE }}
           tags: tag:ci
           ping: vault.lamb-bicolor.ts.net
-      - name: Request and observe the durable Coolify release
+      - name: Request and observe the durable Runner release
         env:
           SOURCE_SHA: ${{ needs.select-source.outputs.source_sha }}
           DEPLOYMENT_SHA: ${{ needs.pin-release.outputs.deployment_sha }}
@@ -242,6 +242,11 @@ jobs:
           bao_token=""
           trap - EXIT
 
+          release_identity="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
+            --header "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=bob-control-plane" | jq -er '.value')"
+          echo "::add-mask::${release_identity}"
+
           request_body="$(jq -nc \
             --arg sourceRevision "$SOURCE_SHA" \
             --arg reviewedGitRevision "$DEPLOYMENT_SHA" \
@@ -258,6 +263,7 @@ jobs:
             --header "Authorization: Bearer ${access_client_secret}" \
             --header "CF-Access-Client-Id: ${access_client_id}" \
             --header "CF-Access-Client-Secret: ${access_client_secret}" \
+            --header "X-Bob-Release-Identity: ${release_identity}" \
             --data "$request_body" \
             "${CONTROL_PLANE_URL%/}/v1/instances/${BOB_INSTANCE_ID}/releases")"
           operation_id="$(jq -er '.id' <<<"$operation")"
@@ -273,7 +279,7 @@ jobs:
             case "$state" in
               succeeded)
                 {
-                  echo "Automatic Coolify release succeeded."
+                  echo "Automatic Runner release succeeded."
                   echo "Source SHA: ${SOURCE_SHA}"
                   echo "Deployment SHA: ${DEPLOYMENT_SHA}"
                   echo "Agent digest: ${AGENT_DIGEST}"
