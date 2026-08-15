@@ -139,6 +139,7 @@ describe("trusted infrastructure plan", () => {
     expect(automaticRelease).toContain("github.event.workflow_run.conclusion == 'success'")
     expect(automaticRelease).toContain("github.event.workflow_run.event == 'push'")
     expect(automaticRelease).toContain("github.event.workflow_run.head_branch == 'main'")
+    expect(automaticRelease).toContain("vars.BOB_RUNNER_RELEASE_ENABLED == 'true'")
     expect(automaticRelease).toContain("git ls-remote origin refs/heads/main")
     expect(automaticRelease).toContain('changed_paths[0]}" == "infra/coolify/release.json"')
     expect(automaticRelease).toContain("uses: ./.github/workflows/release-images.yml")

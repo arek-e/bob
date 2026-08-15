@@ -72,6 +72,16 @@ Wait for the agent, Tunnel, backup runner, and observer to become healthy.
 
 `.github/workflows/auto-release.yml` starts after successful `main` CI runs.
 
+Set the repository variable `BOB_RUNNER_RELEASE_ENABLED` to `true` only after these checks pass:
+
+- The shared Connections Gateway is healthy.
+- Existing Nango connections use Instance-scoped owner references.
+- The target Bob Runner is enrolled and assigned.
+- The Runner can report observations without changing Runtime state.
+- A canary release completed independent assurance.
+
+Leave the variable unset during the migration. A `main` merge will not deploy Runtime changes.
+
 It performs these actions:
 
 1. Confirm that the successful commit is still the tip of `main`.
