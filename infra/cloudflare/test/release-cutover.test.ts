@@ -16,12 +16,13 @@ describe("production release cutover contract", () => {
 
   it("uses the Coolify release manifest as the only private release seam", async () => {
     const [workflow, runbook] = await Promise.all([
-      repositoryFile(".github/workflows/release-gate.yml"),
+      repositoryFile(".github/workflows/auto-release.yml"),
       repositoryFile("docs/runbooks/deployment.md")
     ])
     expect(workflow).toContain("infra/coolify/release.json")
     expect(workflow).toContain("verify-release-manifest-delta.mjs")
     expect(workflow).not.toContain("infra/kubernetes")
+    expect(workflow).not.toContain("environment: production")
     expect(runbook).toContain("/v1/admin/readiness")
     expect(runbook).toContain("The Control Plane selects `DEPLOYMENT_SHA`")
   })
