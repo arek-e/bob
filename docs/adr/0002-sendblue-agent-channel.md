@@ -4,6 +4,7 @@
 - Date: 2026-08-10
 - Scope: Bob's automatic iMessage channel
 - Repository topology: Amended by ADR 0003
+- Managed routing: Amended by ADR 0015
 
 ## Context
 
@@ -107,7 +108,9 @@ agent:main:sendblue:<account-id>:<line-id>:direct:<sender-e164>
 
 The session key supports ordering. It does not grant access.
 
-The phone allowlist grants channel access.
+The phone allowlist grants channel access for self-hosting and one fixed Owner.
+
+ADR 0015 defines managed sender authorization and routing.
 
 ### Inbound path
 

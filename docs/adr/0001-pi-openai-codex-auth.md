@@ -3,6 +3,7 @@
 - Status: Accepted for the feasibility spike
 - Date: 2026-08-10
 - Scope: Bob's private Pi runtime
+- Amended by: ADR 0009 for Runtime authentication and ADR 0015 for per-Instance credentials
 
 ## Context
 
@@ -66,13 +67,15 @@ The server bootstrap uses device login because it does not depend on localhost r
 
 ## Credential record
 
-Use one OpenBao KV v2 path for the production Pi provider.
+The first single-Owner deployment uses one OpenBao KV v2 path for the production Pi provider.
 
 Use this fixed path:
 
 ```text
 ops/apps/prod/bob/pi-auth/openai-codex
 ```
+
+ADR 0015 replaces this fixed path for managed Bob Instances.
 
 Store Pi's complete credential as one atomic record:
 

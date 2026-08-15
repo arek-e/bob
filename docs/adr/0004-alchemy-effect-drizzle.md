@@ -3,6 +3,7 @@
 - Status: Accepted for the feasibility slice
 - Date: 2026-08-11
 - Scope: Cloudflare infrastructure, effectful TypeScript, and D1 access
+- Managed ownership: Amended by ADR 0015
 
 ## Context
 
@@ -54,6 +55,12 @@ Do not use `next`, `beta`, `rc`, caret, or tilde ranges.
 ### Alchemy
 
 Use Alchemy for Bob-owned Cloudflare application infrastructure.
+
+Alchemy owns portable and self-hosted plans.
+
+`teampitch-ops` owns managed production Cloudflare changes.
+
+Managed deployment automation consumes the reviewed plan without giving the Runtime managed account credentials.
 
 Alchemy owns these resources when Bob creates them:
 

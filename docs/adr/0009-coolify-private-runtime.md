@@ -1,10 +1,12 @@
 # ADR 0009: Use Coolify for the private application runtime
 
-- Status: Accepted
+- Status: Superseded for managed orchestration by ADR 0014 and Control Plane ADR 0004
 - Date: 2026-08-12
 - Scope: Agent, Nango, backups, private ingress, and deployment control
 - Supersedes: Kubernetes runtime ownership in ADR 0005
 - Supersedes: Kubernetes OpenBao login in ADR 0001
+- Nango ownership superseded by: ADR 0013
+- Managed secret delivery amended by: ADR 0015
 
 Migration status: Complete. The Kubernetes Bob runtime and temporary canary resources are retired.
 
@@ -24,7 +26,11 @@ Coolify does not replace Cloudflare, OpenBao, or Bob's data authorities.
 
 ## Decision
 
-Use Coolify as the deployment authority for Bob's private application runtime.
+This decision records the completed single-Owner migration.
+
+Bob Runner is the managed deployment Interface.
+
+Coolify can remain one hosting Implementation. It is not the managed orchestration authority.
 
 Keep Cloudflare as the public edge and application data plane.
 
