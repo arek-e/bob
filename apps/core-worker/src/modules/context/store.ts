@@ -33,17 +33,13 @@ import {
 import { deliveryAttempts, outboxMessages } from "../delivery/schema.ts"
 import { buildFtsQuery } from "../memory/retrieval.ts"
 import { factEvidence, factRevisions, facts } from "../memory/schema.ts"
+import {
+  defineContextSourceModules,
+  type ContextBuildRequest,
+  type ContextSourceId
+} from "./source.ts"
 
-export interface ContextBuildRequest {
-  readonly ownerId: string
-  readonly channelId: string
-  readonly currentMessageId: string
-  readonly currentConversationTurnId?: string
-  readonly currentConversationTurnRevision?: number
-  readonly currentUserText: string
-  readonly localTime: string
-  readonly timeZone: string
-}
+export type { ContextBuildRequest } from "./source.ts"
 
 export interface ContextStore {
   /** String arguments remain valid for storage-safety tests and old snapshots. */
@@ -525,6 +521,15 @@ export function makeContextStore(
     ]
   }
 
+  const contextSources = defineContextSourceModules({
+    inline_reply: inlineReplyContext,
+    profile: (input, key) => profileContext(input.ownerId, key),
+    conversation: conversationContext,
+    artifact: (input, key) => artifactContext(input.ownerId, input.channelId, key),
+    lexical: (input) => lexicalContext(input.ownerId, input.currentUserText),
+    tool_receipts: toolReceiptContext
+  })
+
   return {
     async priorToolReceipts(input) {
       if (
@@ -650,17 +655,23 @@ export function makeContextStore(
           }
         : inputOrOwnerId
       const key = await ownerKey(input.ownerId)
-      const profile = await profileContext(input.ownerId, key)
-      const inlineReply = await inlineReplyContext(input, key)
+      const loadedSources = new Map<ContextSourceId, readonly ContextItem[]>()
+      for (const source of contextSources) {
+        loadedSources.set(source.id, await source.load(input, key))
+      }
+      const sourceItems = (id: ContextSourceId): readonly ContextItem[] =>
+        loadedSources.get(id) ?? []
+      const inlineReply = sourceItems("inline_reply")
+      const profile = sourceItems("profile")
       const repliedToSourceIds = new Set(
         inlineReply.flatMap((item) => item.sources.map((source) => source.sourceId))
       )
-      const conversation = (await conversationContext(input, key)).filter((item) =>
+      const conversation = sourceItems("conversation").filter((item) =>
         item.sources.every((source) => !repliedToSourceIds.has(source.sourceId))
       )
-      const toolReceipts = await toolReceiptContext(input, key)
-      const artifactItems = await artifactContext(input.ownerId, input.channelId, key)
-      const lexical = await lexicalContext(input.ownerId, input.currentUserText)
+      const artifactItems = sourceItems("artifact")
+      const lexical = sourceItems("lexical")
+      const toolReceipts = sourceItems("tool_receipts")
       const seenSources = new Set(
         [...inlineReply, ...profile, ...conversation, ...toolReceipts, ...artifactItems].flatMap(
           (item) => item.sources.map((source) => source.sourceId)
