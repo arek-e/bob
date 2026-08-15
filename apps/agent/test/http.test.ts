@@ -1,5 +1,6 @@
 import type { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/contracts/agent"
 
+import { capabilityCatalogueGeneration } from "@bob/contracts/tools"
 import { withBobSpan } from "@bob/observability/effect"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect, Layer, ManagedRuntime } from "effect"
@@ -131,7 +132,8 @@ describe("agent HTTP boundary", () => {
       ready: true,
       checks: { credentials: "ready", core: "ready" },
       service: "agent",
-      version: 1
+      version: 1,
+      capabilityCatalogueGeneration
     })
     expect(target.services.access.verify).toHaveBeenCalledWith(expect.any(Request), "admin")
     expect(target.services.coreTools.checkReadiness).toHaveBeenCalledOnce()
@@ -202,6 +204,25 @@ describe("agent HTTP boundary", () => {
         outputTokens: 9
       })
     )
+  })
+
+  it("rejects a run from a different capability catalogue", async () => {
+    const target = composition(true)
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...runRequest,
+          capabilityCatalogueGeneration: "capability-v1:0000000000000000"
+        })
+      }),
+      target
+    )
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ code: "capability_catalogue_mismatch" })
+    expect(target.services.agent.runTurnEffect).not.toHaveBeenCalled()
   })
 
   it("passes request cancellation to the agent run", async () => {

@@ -751,6 +751,25 @@ export function validateCapabilityCatalogue(): void {
 
 validateCapabilityCatalogue()
 
+function catalogueFingerprint(value: typeof Schema.Json.Type): string {
+  let hash = 14_695_981_039_346_656_037n
+  const canonicalValue = canonicalJson(value)
+  for (const byte of new TextEncoder().encode(canonicalValue)) {
+    hash ^= BigInt(byte)
+    hash = BigInt.asUintN(64, hash * 1_099_511_628_211n)
+  }
+  return hash.toString(16).padStart(16, "0")
+}
+
+export const CapabilityCatalogueGeneration = Schema.String.check(
+  Schema.isPattern(/^capability-v1:[0-9a-f]{16}$/)
+)
+
+/** Content identity for the complete reviewed catalogue and its safety policy. */
+export const capabilityCatalogueGeneration = Schema.decodeUnknownSync(
+  CapabilityCatalogueGeneration
+)(`capability-v1:${catalogueFingerprint(Schema.decodeUnknownSync(Schema.Json)(capabilityModules))}`)
+
 export { toolDefinitions }
 
 /** Every reviewed capability that the model can choose during a turn. */
@@ -852,6 +871,7 @@ export const ToolResult = Schema.Struct({
 })
 
 export type ToolName = typeof ToolName.Type
+export type CapabilityCatalogueGeneration = typeof CapabilityCatalogueGeneration.Type
 export type MemorySearchArguments = typeof MemorySearchArguments.Type
 export type MemoryProposeArguments = typeof MemoryProposeArguments.Type
 export type MemoryConfirmArguments = typeof MemoryConfirmArguments.Type

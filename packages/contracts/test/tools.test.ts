@@ -1,8 +1,11 @@
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 
 import {
+  capabilityCatalogueGeneration,
   capabilityForToolName,
   capabilityModules,
+  CapabilityCatalogueGeneration,
   hasUnknownExternalOutcome,
   isReadOnlyToolName,
   isSourceBoundToolName,
@@ -14,6 +17,13 @@ import {
 } from "../src/tools.ts"
 
 describe("Bob tool catalogue", () => {
+  it("publishes one valid generation for the reviewed catalogue", () => {
+    expect(capabilityCatalogueGeneration).toMatch(/^capability-v1:[0-9a-f]{16}$/u)
+    expect(
+      Schema.decodeUnknownSync(CapabilityCatalogueGeneration)(capabilityCatalogueGeneration)
+    ).toBe(capabilityCatalogueGeneration)
+  })
+
   it("assigns every Tool to one reviewed capability Module", () => {
     const names = capabilityModules.flatMap((capability) => capability.names)
 
