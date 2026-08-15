@@ -11,7 +11,12 @@ globalThis.fetch = async (input, init) => {
 
   if (url === "https://agent.example.test/v1/run") {
     const request = JSON.parse(String(init?.body))
-    const training = request.allowedTools.length > 0
+    if (
+      request.deploymentProfileId !== "core" ||
+      !String(request.capabilityCatalogueGeneration).startsWith("capability-v2:")
+    ) {
+      return Response.json({ code: "deployment_profile_required" }, { status: 409 })
+    }
     if (request.userText.includes("Reply only READY")) {
       return Response.json({
         protocolVersion: 1,
@@ -31,7 +36,7 @@ globalThis.fetch = async (input, init) => {
       runId: request.runId,
       correlationId: request.correlationId,
       status: "completed",
-      responseText: training ? "Stop and pause this synthetic set." : "READY",
+      responseText: "READY",
       sourceIds: [],
       conflict: "none",
       model: "gpt-5.6-luna",

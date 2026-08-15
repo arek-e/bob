@@ -63,10 +63,7 @@ describe("Pi smoke launcher", () => {
       expect(result.stderr).not.toContain("varlock ENV not initialized")
       expect(result.stdout).toContain('"predeploy":"completed"')
       expect(result.stdout).toContain('"structured-completion"')
-      expect(result.stdout).toContain('"training-safety"')
-      expect(result.stdout).toContain('"conflict-discipline"')
-      expect(result.stdout).not.toContain("synthetic set")
-      expect(result.stdout).not.toContain("Stop and pause")
+      expect(result.stdout).not.toContain("training")
     }
   )
 })
