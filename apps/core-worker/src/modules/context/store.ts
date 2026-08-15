@@ -53,6 +53,8 @@ export interface ContextStore {
 
 export const ContextStore = Context.Service<ContextStore>("bob/ContextStore")
 
+const PrivateEnvelope = Schema.Struct({ ciphertext: Schema.String, iv: Schema.String })
+
 export function boundContextItems(
   items: readonly ContextItem[],
   totalCharacterBudget: number,
@@ -400,9 +402,10 @@ export function makeContextStore(
     const receipts: ContextItem[] = []
     for (const row of rows.toReversed()) {
       try {
-        const envelope = JSON.parse(row.resultJson!) as { ciphertext: string; iv: string }
+        if (row.resultJson === null) continue
+        const envelope = Schema.decodeUnknownSync(PrivateEnvelope)(JSON.parse(row.resultJson))
         const result = Schema.decodeUnknownSync(ToolResult)(
-          JSON.parse(await protection.decryptText(key, envelope)) as unknown
+          JSON.parse(await protection.decryptText(key, envelope))
         )
         const toolName = Schema.decodeUnknownSync(ToolName)(row.toolName)
         const receipt = Schema.decodeUnknownSync(PriorToolReceipt)({
@@ -466,18 +469,16 @@ export function makeContextStore(
       if (usedCharacters + row.text.length > retrievalCharacterBudget) continue
       sourceCounts.set(row.source_type, count + 1)
       usedCharacters += row.text.length
+      const source =
+        row.occurred_at === null
+          ? { sourceId: row.source_id, sourceLabel: row.source_label }
+          : { sourceId: row.source_id, sourceLabel: row.source_label, occurredAt: row.occurred_at }
       selected.push({
         kind: contextKind(row.source_type),
         text: row.text,
         instruction: false,
         conflict: false,
-        sources: [
-          {
-            sourceId: row.source_id,
-            sourceLabel: row.source_label,
-            ...(row.occurred_at === null ? {} : { occurredAt: row.occurred_at })
-          }
-        ]
+        sources: [source]
       })
       if (selected.length >= retrievalLimit) break
     }
@@ -615,9 +616,10 @@ export function makeContextStore(
       const receipts: (typeof PriorToolReceipt.Type)[] = []
       for (const row of rows.toReversed()) {
         try {
-          const envelope = JSON.parse(row.resultJson!) as { ciphertext: string; iv: string }
+          if (row.resultJson === null) continue
+          const envelope = Schema.decodeUnknownSync(PrivateEnvelope)(JSON.parse(row.resultJson))
           const result = Schema.decodeUnknownSync(ToolResult)(
-            JSON.parse(await protection.decryptText(key, envelope)) as unknown
+            JSON.parse(await protection.decryptText(key, envelope))
           )
           receipts.push(
             Schema.decodeUnknownSync(PriorToolReceipt)({
@@ -637,17 +639,16 @@ export function makeContextStore(
     },
 
     async build(inputOrOwnerId, legacyChannelId) {
-      const input: ContextBuildRequest =
-        typeof inputOrOwnerId === "string"
-          ? {
-              ownerId: inputOrOwnerId,
-              channelId: legacyChannelId ?? "",
-              currentMessageId: "legacy-storage-test",
-              currentUserText: "",
-              localTime: new Date(0).toISOString(),
-              timeZone: "UTC"
-            }
-          : inputOrOwnerId
+      const input: ContextBuildRequest = Schema.is(Schema.String)(inputOrOwnerId)
+        ? {
+            ownerId: inputOrOwnerId,
+            channelId: legacyChannelId ?? "",
+            currentMessageId: "legacy-storage-test",
+            currentUserText: "",
+            localTime: new Date(0).toISOString(),
+            timeZone: "UTC"
+          }
+        : inputOrOwnerId
       const key = await ownerKey(input.ownerId)
       const profile = await profileContext(input.ownerId, key)
       const inlineReply = await inlineReplyContext(input, key)

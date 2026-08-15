@@ -39,6 +39,7 @@ describe("Sendblue history client", () => {
       apiKeyId: "key-id",
       apiSecretKey: "secret-key",
       baseUrl: "https://sendblue.example.test",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: request as typeof fetch
     })
 
@@ -75,6 +76,7 @@ describe("Sendblue history client", () => {
       apiKeyId: "key-id",
       apiSecretKey: "secret-key",
       baseUrl: "https://sendblue.example.test",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: request as typeof fetch
     })
 
@@ -91,6 +93,7 @@ describe("Sendblue history client", () => {
       apiKeyId: "key-id",
       apiSecretKey: "secret-key",
       baseUrl: "https://sendblue.example.test",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: request as typeof fetch
     })
 
@@ -119,6 +122,7 @@ describe("Sendblue history client", () => {
       apiKeyId: "key-id",
       apiSecretKey: "secret-key",
       timeoutMs: 1,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: request as typeof fetch
     })
 

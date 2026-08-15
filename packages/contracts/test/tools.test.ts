@@ -28,6 +28,7 @@ describe("Bob tool catalogue", () => {
   })
 
   it("keeps each definition provider-neutral and explicit", () => {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     for (const [name, definition] of Object.entries(toolDefinitions) as [
       ToolDefinitionName,
       (typeof toolDefinitions)[ToolDefinitionName]

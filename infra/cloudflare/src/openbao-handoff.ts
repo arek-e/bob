@@ -1,3 +1,5 @@
+import { Schema } from "effect"
+
 export interface RuntimeCredentials {
   readonly accessTeamDomain: string
   readonly coreUrl: string
@@ -33,10 +35,11 @@ export type HandoffIdentity =
       readonly deployToken: string
     }
 
-interface JsonResponse {
-  readonly value?: unknown
-  readonly auth?: { readonly client_token?: unknown }
-}
+const JsonResponse = Schema.Struct({
+  value: Schema.optionalKey(Schema.String),
+  auth: Schema.optionalKey(Schema.Struct({ client_token: Schema.optionalKey(Schema.String) }))
+})
+type JsonResponse = typeof JsonResponse.Type
 
 type HandoffOperation =
   | "GitHub workload identity request"
@@ -56,9 +59,9 @@ export class RuntimeCredentialHandoffError extends Error {
   }
 }
 
-export function safeHandoffFailure(error: unknown): Error {
-  return error instanceof RuntimeCredentialHandoffError
-    ? error
+export function safeHandoffFailure(cause: unknown): Error {
+  return cause instanceof RuntimeCredentialHandoffError
+    ? cause
     : new Error("OpenBao runtime credential handoff failed")
 }
 
@@ -102,7 +105,7 @@ async function responseJson(
   operation: HandoffOperation
 ): Promise<JsonResponse> {
   if (!response.ok) throw new RuntimeCredentialHandoffError(operation, response.status)
-  return (await response.json()) as JsonResponse
+  return Schema.decodeUnknownSync(JsonResponse)(await response.json())
 }
 
 async function githubIdentity(
@@ -117,7 +120,7 @@ async function githubIdentity(
     }),
     "GitHub workload identity request"
   )
-  if (typeof payload.value !== "string" || payload.value.length === 0) {
+  if (payload.value === undefined || payload.value.length === 0) {
     throw new Error("GitHub workload identity response is invalid")
   }
   return payload.value
@@ -137,7 +140,7 @@ async function openBaoToken(
     "workload login"
   )
   const token = payload.auth?.client_token
-  if (typeof token !== "string" || token.length === 0) {
+  if (token === undefined || token.length === 0) {
     throw new Error("OpenBao workload login response is invalid")
   }
   return token

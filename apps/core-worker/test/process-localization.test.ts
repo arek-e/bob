@@ -5,6 +5,7 @@ import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
 import { processInbound } from "../src/process-inbound.ts"
+import { testFixture } from "./test-fixture.ts"
 
 const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
 const channelId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db92"
@@ -12,9 +13,12 @@ const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
 
 function localizedComposition(text: string) {
   const createOutbox = vi.fn(async () => "018e6f65-4d55-7a1b-8df4-4ee15ea1db95")
-  const latestArtifact = vi.fn(async (): Promise<unknown> => undefined)
+  const latestArtifact = vi.fn(
+    async (): ReturnType<CoreComposition["services"]["artifacts"]["latest"]> => undefined
+  )
   const command = text.toLowerCase() === "klart" ? "done" : "seen"
-  const composition = {
+  // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+  const composition = testFixture<CoreComposition>({
     config: { UI_BASE_URL: "https://bob.example" },
     services: {
       events: captureEvents(),
@@ -49,16 +53,17 @@ function localizedComposition(text: string) {
         markEnqueued: vi.fn(async () => undefined)
       }
     }
-  } as unknown as CoreComposition
+  })
   return { composition, createOutbox, latestArtifact }
 }
 
 describe("deterministic Swedish replies", () => {
   it("returns the fixed Swedish response after a Swedish training safety stop", async () => {
     const { composition, createOutbox } = localizedComposition("Mitt knä gör ont efter setet.")
-    const bindings = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) }
-    } as unknown as CoreBindings
+    })
 
     await processInbound(eventId, bindings, composition)
 
@@ -85,9 +90,10 @@ describe("deterministic Swedish replies", () => {
     ["ÅNGRA", "Jag kan inte koppla ÅNGRA till en säker omvänd åtgärd."]
   ])("returns Swedish text for %s", async (text, expectedText) => {
     const { composition, createOutbox } = localizedComposition(text)
-    const bindings = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) }
-    } as unknown as CoreBindings
+    })
 
     await processInbound(eventId, bindings, composition)
 
@@ -111,9 +117,10 @@ describe("deterministic Swedish replies", () => {
       },
       renderedText
     })
-    const bindings = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) }
-    } as unknown as CoreBindings
+    })
 
     await processInbound(eventId, bindings, composition)
 

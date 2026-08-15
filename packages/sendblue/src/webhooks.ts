@@ -84,7 +84,7 @@ export async function timingSafeEqual(
   return difference === 0
 }
 
-export function decodeWebhookPayload(input: unknown): SendblueWebhookPayload {
+export function decodeWebhookPayload<Input>(input: Input): SendblueWebhookPayload {
   try {
     return Schema.decodeUnknownSync(SendblueWebhookPayload)(input)
   } catch {
@@ -126,14 +126,11 @@ export function normalizeInbound(
     throw new WebhookValidationError("Inbound content is empty")
   }
   const randomUuid = context.randomUuid ?? (() => crypto.randomUUID())
-  return {
+  const event: NormalizedInboundEvent = {
     id: randomUuid(),
     accountId: context.accountId,
     lineId: context.lineId,
     messageHandle: payload.message_handle,
-    ...(payload.reply_to === undefined || payload.reply_to === null
-      ? {}
-      : { replyToMessageHandle: payload.reply_to.message_handle }),
     senderE164: payload.from_number,
     destinationE164: payload.to_number,
     text: payload.content,
@@ -143,7 +140,11 @@ export function normalizeInbound(
     providerOptedOut: payload.opted_out,
     receivedAt: new Date(payload.date_sent).toISOString(),
     correlationId: context.correlationId ?? randomUuid()
-  } as NormalizedInboundEvent
+  }
+  if (payload.reply_to !== undefined && payload.reply_to !== null) {
+    Object.assign(event, { replyToMessageHandle: payload.reply_to.message_handle })
+  }
+  return event
 }
 
 const deliveryStatus = {
@@ -165,15 +166,16 @@ export function normalizeStatus(
   if (!payload.is_outbound) {
     throw new WebhookValidationError("Webhook is not an outbound status event")
   }
-  const status =
-    deliveryStatus[
-      payload.opted_out ? "OPTED_OUT" : (payload.status as keyof typeof deliveryStatus)
-    ]
+  const providerStatus = payload.opted_out ? "OPTED_OUT" : payload.status
+  if (providerStatus === "RECEIVED") {
+    throw new WebhookValidationError("Webhook has an unsupported outbound status")
+  }
+  const status = deliveryStatus[providerStatus]
   if (status === undefined) {
     throw new WebhookValidationError("Webhook has an unsupported outbound status")
   }
   const randomUuid = context.randomUuid ?? (() => crypto.randomUUID())
-  return {
+  const event: NormalizedStatusEvent = {
     id: randomUuid(),
     accountId: context.accountId,
     lineId: context.lineId,
@@ -181,9 +183,10 @@ export function normalizeStatus(
     destinationE164: payload.to_number,
     providerOptedOut: payload.opted_out,
     status,
-    ...(context.outboxId === undefined ? {} : { outboxId: context.outboxId }),
-    ...(context.attemptId === undefined ? {} : { attemptId: context.attemptId }),
     occurredAt: new Date(payload.date_updated).toISOString(),
     correlationId: context.correlationId ?? randomUuid()
-  } as NormalizedStatusEvent
+  }
+  if (context.outboxId !== undefined) Object.assign(event, { outboxId: context.outboxId })
+  if (context.attemptId !== undefined) Object.assign(event, { attemptId: context.attemptId })
+  return event
 }

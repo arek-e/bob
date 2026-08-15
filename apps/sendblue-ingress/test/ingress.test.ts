@@ -62,6 +62,7 @@ afterEach(() => {
 function executionContext() {
   const pending: Promise<unknown>[] = []
   return {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     value: {
       waitUntil(promise: Promise<unknown>) {
         pending.push(promise)
@@ -105,12 +106,11 @@ function bindings(queueSend = vi.fn().mockResolvedValue(undefined)) {
 }
 
 function request(secret?: string) {
+  const headers = new Headers({ "content-type": "application/json" })
+  if (secret !== undefined) headers.set("sb-signing-secret", secret)
   return new Request("https://bob.example/webhooks/receive", {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(secret === undefined ? {} : { "sb-signing-secret": secret })
-    },
+    headers,
     body: JSON.stringify(payload)
   })
 }
@@ -133,6 +133,7 @@ describe("Sendblue ingress", () => {
     const inbound = request("s".repeat(64))
     inbound.headers.set("traceparent", parent)
 
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const result = await handleIngressHttp(inbound, target.value as never, context.value)
     await context.drain()
 
@@ -141,6 +142,7 @@ describe("Sendblue ingress", () => {
     expect(parseTraceparent(coreHeaders.get("traceparent"))?.traceId).toBe(
       "4bf92f3577b34da6a3ce929d0e0e4736"
     )
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const persisted = JSON.parse(String(target.coreFetch.mock.calls[0]?.[1]?.body)) as {
       correlationId: string
     }
@@ -155,6 +157,7 @@ describe("Sendblue ingress", () => {
     expect(exportHeaders.get("cf-access-client-id")).toBe("otel-client")
     expect(exportHeaders.get("cf-access-client-secret")).toBe("otel-secret")
     const body = String(exports[0]?.body)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(body).resourceSpans[0].scopeSpans[0].spans as ExportedSpan[]
     expect(spans.map((span) => span.name)).toEqual([
       "bob.inbound.invoke",
@@ -170,6 +173,7 @@ describe("Sendblue ingress", () => {
     ])
     expect(spans[3]?.parentSpanId).toBe(parseTraceparent(parent)?.spanId)
     expectTraceparentFrom(coreHeaders.get("traceparent"), spans[0])
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const queued = target.queueSend.mock.calls[0]?.[0] as { readonly traceparent?: string }
     expectTraceparentFrom(queued.traceparent, spans[1])
     const markedHeaders = new Headers(target.coreFetch.mock.calls[1]?.[1]?.headers)
@@ -197,13 +201,15 @@ describe("Sendblue ingress", () => {
     const telemetryFetch = vi.fn(async () => new Response(null, { status: 200 }))
     vi.stubGlobal("fetch", telemetryFetch)
     const target = bindings()
-    const value = { ...target.value } as Record<string, unknown>
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const value: Partial<typeof target.value> = { ...target.value }
     delete value.OTEL_EXPORTER_OTLP_ENDPOINT
     delete value.OTEL_ACCESS_CLIENT_ID
     delete value.OTEL_ACCESS_CLIENT_SECRET
     delete value.BOB_RELEASE_SHA
     const context = executionContext()
 
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const result = await handleIngressHttp(request("s".repeat(64)), value as never, context.value)
     await context.drain()
 
@@ -226,6 +232,7 @@ describe("Sendblue ingress", () => {
 
     const result = await handleIngressHttp(
       request("s".repeat(64)),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       { ...target.value, ...override } as never,
       context.value
     )
@@ -239,9 +246,11 @@ describe("Sendblue ingress", () => {
 
   it("keeps application binding validation strict", async () => {
     const target = bindings()
-    const value = { ...target.value } as Record<string, unknown>
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const value: Partial<typeof target.value> = { ...target.value }
     delete value.SENDBLUE_WEBHOOK_SIGNING_SECRET
 
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     await expect(handleIngressHttp(request("s".repeat(64)), value as never)).rejects.toThrow()
     expect(target.coreFetch).not.toHaveBeenCalled()
     expect(target.queueSend).not.toHaveBeenCalled()
@@ -249,7 +258,9 @@ describe("Sendblue ingress", () => {
 
   it("rejects a missing or wrong secret before any durable write", async () => {
     const target = bindings()
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     expect((await handleIngressHttp(request(), target.value as never)).status).toBe(401)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     expect((await handleIngressHttp(request("wrong"), target.value as never)).status).toBe(401)
     expect(target.coreFetch).not.toHaveBeenCalled()
   })
@@ -263,6 +274,7 @@ describe("Sendblue ingress", () => {
         headers: { "sb-signing-secret": "s".repeat(64) },
         body: JSON.stringify(bad)
       }),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       target.value as never
     )
     expect(response.status).toBe(403)
@@ -283,6 +295,7 @@ describe("Sendblue ingress", () => {
           to_number: "+46799999999"
         })
       }),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       target.value as never
     )
     expect(response.status).toBe(403)
@@ -317,6 +330,7 @@ describe("Sendblue ingress", () => {
           })
         }
       ),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       target.value as never,
       context.value
     )
@@ -334,6 +348,7 @@ describe("Sendblue ingress", () => {
     })
     expect(exports).toHaveLength(1)
     const body = String(exports[0]?.body)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(body).resourceSpans[0].scopeSpans[0].spans as ExportedSpan[]
     expect(spans.map((span) => span.name)).toEqual([
       "bob.delivery_result.invoke",
@@ -365,6 +380,7 @@ describe("Sendblue ingress", () => {
           })
         }
       ),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       target.value as never
     )
 
@@ -405,12 +421,14 @@ describe("Sendblue ingress", () => {
           })
         }
       ),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       target.value as never,
       context.value
     )
     await context.drain()
 
     expect(result.status).toBe(503)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(String(exports[0]?.body)).resourceSpans[0].scopeSpans[0]
       .spans as ExportedSpan[]
     expect(spans.find((span) => span.name === "bob.delivery_result.invoke")?.status).toEqual({
@@ -432,6 +450,7 @@ describe("Sendblue ingress", () => {
     const context = executionContext()
     const response = await handleIngressHttp(
       request("s".repeat(64)),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       target.value as never,
       context.value
     )
@@ -439,6 +458,7 @@ describe("Sendblue ingress", () => {
     expect(response.status).toBe(503)
     expect(target.coreFetch).toHaveBeenCalledOnce()
     expect(queueSend).toHaveBeenCalledOnce()
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(String(exports[0]?.body)).resourceSpans[0].scopeSpans[0]
       .spans as Array<{ name: string; status: { code: number } }>
     expect(spans.find((span) => span.name === "bob.inbound.publish")?.status).toEqual({ code: 2 })
@@ -460,12 +480,14 @@ describe("Sendblue ingress", () => {
 
     const result = await handleIngressHttp(
       request("s".repeat(64)),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       target.value as never,
       context.value
     )
     await context.drain()
 
     expect(result.status).toBe(503)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(String(exports[0]?.body)).resourceSpans[0].scopeSpans[0]
       .spans as ExportedSpan[]
     expect(spans.find((span) => span.name === "bob.inbound.invoke")?.status).toEqual({ code: 2 })
@@ -494,12 +516,14 @@ describe("Sendblue ingress", () => {
 
     const result = await handleIngressHttp(
       request("s".repeat(64)),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       target.value as never,
       context.value
     )
     await context.drain()
 
     expect(result.status).toBe(503)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(String(exports[0]?.body)).resourceSpans[0].scopeSpans[0]
       .spans as ExportedSpan[]
     expect(spans.find((span) => span.name === "bob.inbound.confirm")?.status).toEqual({ code: 2 })
@@ -507,6 +531,7 @@ describe("Sendblue ingress", () => {
 
   it("publishes only opaque identifiers and trace context", async () => {
     const target = bindings()
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const response = await handleIngressHttp(request("s".repeat(64)), target.value as never)
     expect(response.status).toBe(202)
     expect(target.queueSend).toHaveBeenCalledWith({

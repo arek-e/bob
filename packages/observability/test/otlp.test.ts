@@ -33,6 +33,7 @@ describe("bounded OTLP span processing", () => {
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: vi.fn(async () => new Response(null, { status: 503 })) as typeof fetch,
       onDiagnostic: (diagnostic) => diagnostics.push(diagnostic)
     })
@@ -52,6 +53,7 @@ describe("bounded OTLP span processing", () => {
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: vi.fn(
         async () =>
           new Response(new ReadableStream({ cancel }), {
@@ -77,6 +79,7 @@ describe("bounded OTLP span processing", () => {
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test",
       maxQueueSize: 2,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: vi.fn(async () => new Response(null, { status: 200 })) as typeof fetch,
       onDiagnostic: (diagnostic) => diagnostics.push(diagnostic)
     })
@@ -171,6 +174,7 @@ describe("bounded OTLP span processing", () => {
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test",
       timeoutMs: 5,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: vi.fn(
         async (_input: RequestInfo | URL, init?: RequestInit) =>
           new Promise<Response>((_resolve, reject) => {
@@ -197,6 +201,7 @@ describe("bounded OTLP span processing", () => {
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: vi.fn(async () => {
         throw new Error(privateError)
       }) as typeof fetch,
@@ -219,6 +224,7 @@ describe("bounded OTLP span processing", () => {
         serviceName: "bob-core",
         serviceVersion: "0123456789abcdef0123456789abcdef01234567",
         deploymentEnvironment: "test",
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         fetch: vi.fn(async () => {
           throw new Error(privateError)
         }) as typeof fetch
@@ -253,6 +259,7 @@ describe("bounded OTLP span processing", () => {
   })
 
   it("stops without exporting when shutdown flush is disabled", async () => {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const request = vi.fn(async () => new Response(null, { status: 200 })) as typeof fetch
     const processor = makeOtlpHttpSpanProcessor({
       endpoint: "https://otel.example.test",
@@ -278,6 +285,7 @@ describe("bounded OTLP span processing", () => {
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: vi.fn(async () => {
         throw new Error("private-shutdown-response")
       }) as typeof fetch,
@@ -292,7 +300,9 @@ describe("bounded OTLP span processing", () => {
 
   it("drops overflow and unsampled spans, then flushes bounded batches", async () => {
     const batches: string[][] = []
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const request = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const body = JSON.parse(String(init?.body)) as {
         resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ spanId: string }> }> }>
       }

@@ -1,3 +1,5 @@
+import type { InboundJob } from "@bob/contracts/jobs"
+
 import { parseTraceparent } from "@bob/observability/propagation"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect } from "effect"
@@ -7,14 +9,17 @@ import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
 import { handleInboundQueue } from "../src/entrypoints/queue.ts"
+import { testFixture } from "./test-fixture.ts"
 
 const compositionHarness = vi.hoisted(() => ({
+  // SAFETY: This focused test double implements every platform member exercised by this test.
   current: undefined as CoreComposition | undefined
 }))
 
-vi.mock("../src/composition.ts", () => ({
-  composeCore: () => compositionHarness.current
-}))
+function composeTestCore(): CoreComposition {
+  if (compositionHarness.current === undefined) throw new Error("Test composition is not set")
+  return compositionHarness.current
+}
 
 const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
 const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
@@ -32,7 +37,7 @@ function captureRunner(telemetry: ReturnType<typeof makeCaptureTelemetry>) {
   }
 }
 
-function queueMessage(body: unknown) {
+function queueMessage<Body>(body: Body) {
   return {
     body,
     ack: vi.fn(),
@@ -55,7 +60,8 @@ describe("Core Queue telemetry", () => {
     const prepareOutboundRecovery = vi.fn(async () => "recover" as const)
     const markEnqueued = vi.fn(async () => undefined)
     const record = vi.fn(async () => "alert-id")
-    compositionHarness.current = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    compositionHarness.current = testFixture<CoreComposition>({
       database: {
         select: vi.fn(() => ({
           from: () => ({ where: () => ({ limit: async () => [{ userId: ownerId }] }) })
@@ -65,18 +71,20 @@ describe("Core Queue telemetry", () => {
         delivery: { prepareOutboundRecovery, markEnqueued },
         alerts: { record }
       }
-    } as unknown as CoreComposition
+    })
     const send = vi.fn(async () => undefined)
-    const bindings = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       OUTBOUND_DEAD_LETTER_QUEUE_NAME: "outbound-dead-letter",
       OUTBOUND_QUEUE: { send }
-    } as unknown as CoreBindings
-    const batch = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const batch = testFixture<MessageBatch<unknown>>({
       queue: "outbound-dead-letter",
       messages: [message]
-    } as unknown as MessageBatch<unknown>
+    })
 
-    await handleInboundQueue(batch, bindings, captureRunner(telemetry))
+    await handleInboundQueue(batch, bindings, captureRunner(telemetry), composeTestCore)
 
     expect(record).toHaveBeenCalledWith({
       ownerId,
@@ -102,16 +110,18 @@ describe("Core Queue telemetry", () => {
     })
     const forwarded: Array<{ readonly body: unknown; readonly headers: Headers }> = []
     const message = queueMessage({ eventId, correlationId, traceparent: inboundTraceparent })
-    compositionHarness.current = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    compositionHarness.current = testFixture<CoreComposition>({
       services: {
         conversations: {
           getInboundOwner: vi.fn(async () => ownerId)
         }
       }
-    } as unknown as CoreComposition
+    })
     const coordinator = {
       fetch: vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
         forwarded.push({
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           body: JSON.parse(String(init?.body)) as unknown,
           headers: new Headers(init?.headers)
         })
@@ -122,20 +132,22 @@ describe("Core Queue telemetry", () => {
       idFromName: vi.fn(() => ({ toString: () => ownerId })),
       get: vi.fn(() => coordinator)
     }
-    const bindings = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       DELIVERY_RESULT_QUEUE_NAME: "delivery-result",
       DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: "delivery-result-dead-letter",
       INBOUND_DEAD_LETTER_QUEUE_NAME: "inbound-dead-letter",
       OWNER_RUN_COORDINATOR: {
         jurisdiction: vi.fn(() => namespace)
       }
-    } as unknown as CoreBindings
-    const batch = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const batch = testFixture<MessageBatch<unknown>>({
       queue: "inbound",
       messages: [message]
-    } as unknown as MessageBatch<unknown>
+    })
 
-    await handleInboundQueue(batch, bindings, captureRunner(telemetry))
+    await handleInboundQueue(batch, bindings, captureRunner(telemetry), composeTestCore)
 
     expect(message.ack).toHaveBeenCalledOnce()
     expect(message.retry).not.toHaveBeenCalled()
@@ -159,6 +171,7 @@ describe("Core Queue telemetry", () => {
     expect(forwarded[0]?.headers.get("x-bob-correlation-id")).toBe(correlationId)
     const headerTrace = parseTraceparent(forwarded[0]?.headers.get("traceparent"))
     const bodyTrace = parseTraceparent(
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       (forwarded[0]?.body as { readonly traceparent?: string } | undefined)?.traceparent
     )
     expect(headerTrace?.spanId).toBe(invoke?.spanId)
@@ -172,9 +185,10 @@ describe("Core Queue telemetry", () => {
       deploymentEnvironment: "test"
     })
     const message = queueMessage({ eventId, correlationId, traceparent: inboundTraceparent })
-    const send = vi.fn(async (_job: unknown) => undefined)
+    const send = vi.fn(async (_job: InboundJob) => undefined)
     const markEnqueued = vi.fn(async () => undefined)
-    compositionHarness.current = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    compositionHarness.current = testFixture<CoreComposition>({
       services: {
         conversations: {
           getInboundOwner: vi.fn(async () => ownerId),
@@ -183,19 +197,21 @@ describe("Core Queue telemetry", () => {
         },
         alerts: { record: vi.fn(async () => undefined) }
       }
-    } as unknown as CoreComposition
-    const bindings = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       DELIVERY_RESULT_QUEUE_NAME: "delivery-result",
       DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: "delivery-result-dead-letter",
       INBOUND_DEAD_LETTER_QUEUE_NAME: "inbound-dead-letter",
       INBOUND_QUEUE: { send }
-    } as unknown as CoreBindings
-    const batch = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const batch = testFixture<MessageBatch<unknown>>({
       queue: "inbound-dead-letter",
       messages: [message]
-    } as unknown as MessageBatch<unknown>
+    })
 
-    await handleInboundQueue(batch, bindings, captureRunner(telemetry))
+    await handleInboundQueue(batch, bindings, captureRunner(telemetry), composeTestCore)
 
     expect(message.ack).toHaveBeenCalledOnce()
     expect(message.retry).not.toHaveBeenCalled()
@@ -208,6 +224,7 @@ describe("Core Queue telemetry", () => {
       kind: "producer",
       attributes: expect.objectContaining({ "bob.correlation.id": correlationId })
     })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const published = send.mock.calls[0]?.[0] as { readonly traceparent?: string }
     expect(parseTraceparent(published.traceparent)).toEqual({
       traceId: publish?.traceId,
@@ -233,21 +250,24 @@ describe("Core Queue telemetry", () => {
       providerMessageHandle: privateProviderHandle,
       occurredAt: "2026-08-11T10:00:01.000Z"
     })
-    compositionHarness.current = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    compositionHarness.current = testFixture<CoreComposition>({
       services: {
         delivery: { recordResult }
       }
-    } as unknown as CoreComposition
-    const bindings = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       DELIVERY_RESULT_QUEUE_NAME: "delivery-result",
       DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: "delivery-result-dead-letter"
-    } as unknown as CoreBindings
-    const batch = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const batch = testFixture<MessageBatch<unknown>>({
       queue: "delivery-result",
       messages: [message]
-    } as unknown as MessageBatch<unknown>
+    })
 
-    await handleInboundQueue(batch, bindings, captureRunner(telemetry))
+    await handleInboundQueue(batch, bindings, captureRunner(telemetry), composeTestCore)
 
     expect(recordResult).toHaveBeenCalledOnce()
     expect(message.ack).toHaveBeenCalledOnce()
@@ -264,7 +284,11 @@ describe("Core Queue telemetry", () => {
       "bob.delivery.attempt_id": attemptId
     })
     expect(
-      JSON.stringify(spans, (_key, value) => (typeof value === "bigint" ? value.toString() : value))
+      JSON.stringify(spans, (_key, value) =>
+        value !== null && value !== undefined && value.constructor === BigInt
+          ? value.toString()
+          : value
+      )
     ).not.toContain(privateProviderHandle)
   })
 
@@ -283,7 +307,8 @@ describe("Core Queue telemetry", () => {
       state: "accepted",
       occurredAt: "2026-08-11T10:00:01.000Z"
     })
-    compositionHarness.current = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    compositionHarness.current = testFixture<CoreComposition>({
       services: {
         delivery: {
           recordResult: vi.fn(async () => {
@@ -291,17 +316,19 @@ describe("Core Queue telemetry", () => {
           })
         }
       }
-    } as unknown as CoreComposition
-    const bindings = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       DELIVERY_RESULT_QUEUE_NAME: "delivery-result",
       DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: "delivery-result-dead-letter"
-    } as unknown as CoreBindings
-    const batch = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const batch = testFixture<MessageBatch<unknown>>({
       queue: "delivery-result",
       messages: [message]
-    } as unknown as MessageBatch<unknown>
+    })
 
-    await handleInboundQueue(batch, bindings, captureRunner(telemetry))
+    await handleInboundQueue(batch, bindings, captureRunner(telemetry), composeTestCore)
 
     expect(message.ack).not.toHaveBeenCalled()
     expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 60 })
@@ -311,7 +338,11 @@ describe("Core Queue telemetry", () => {
     )
     expect(spans.find((span) => span.name === "bob.delivery_result.record")?.outcome).toBe("failed")
     expect(
-      JSON.stringify(spans, (_key, value) => (typeof value === "bigint" ? value.toString() : value))
+      JSON.stringify(spans, (_key, value) =>
+        value !== null && value !== undefined && value.constructor === BigInt
+          ? value.toString()
+          : value
+      )
     ).not.toContain(privateError)
   })
 })

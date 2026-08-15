@@ -1,7 +1,9 @@
 import { AwsClient } from "aws4fetch"
+import { Schema } from "effect"
 
 import {
   createArchive,
+  BackupRowValue,
   sha256,
   tableHash,
   type BackupArchive,
@@ -11,16 +13,14 @@ import {
 } from "./archive.ts"
 import { DEFAULT_REQUEST_TIMEOUT_MS, requestTimeoutSignal } from "./request.ts"
 
-interface CloudflareEnvelope<T> {
-  readonly success?: boolean
-  readonly result?: T
-  readonly errors?: readonly { readonly code?: number; readonly message?: string }[]
-}
-
-interface QueryResult {
-  readonly success?: boolean
-  readonly results?: readonly Record<string, unknown>[]
-}
+const QueryResult = Schema.Struct({
+  success: Schema.optionalKey(Schema.Boolean),
+  results: Schema.optionalKey(Schema.Array(BackupRowValue))
+})
+const QueryEnvelope = Schema.Struct({
+  success: Schema.optionalKey(Schema.Boolean),
+  result: Schema.optionalKey(Schema.Array(QueryResult))
+})
 
 export interface BackupSourceOptions {
   readonly accountId: string
@@ -52,28 +52,6 @@ function safeIdentifier(name: string): string {
     throw new Error("D1 returned an unsafe table name")
   }
   return `"${name}"`
-}
-
-function rowValue(value: unknown): string | number | boolean | null | readonly number[] {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return value
-  }
-  if (
-    Array.isArray(value) &&
-    value.every((item) => Number.isInteger(item) && item >= 0 && item < 256)
-  ) {
-    return value as number[]
-  }
-  throw new Error("D1 returned an unsupported value")
-}
-
-function normalizeRow(row: Record<string, unknown>): BackupRow {
-  return Object.fromEntries(Object.entries(row).map(([key, value]) => [key, rowValue(value)]))
 }
 
 function decodeXml(value: string): string {
@@ -133,12 +111,12 @@ export function makeCloudflareBackupSource(options: BackupSourceOptions) {
       body: JSON.stringify({ sql, params })
     })
     if (!response.ok) throw new Error(`D1 backup query failed with status ${response.status}`)
-    const envelope = (await response.json()) as CloudflareEnvelope<readonly QueryResult[]>
+    const envelope = Schema.decodeUnknownSync(QueryEnvelope)(await response.json())
     const result = envelope.result?.[0]
     if (envelope.success !== true || result?.success !== true || !Array.isArray(result.results)) {
       throw new Error("D1 backup query returned an invalid result")
     }
-    return result.results.map(normalizeRow)
+    return result.results
   }
 
   async function batchQuery(
@@ -154,7 +132,7 @@ export function makeCloudflareBackupSource(options: BackupSourceOptions) {
       body: JSON.stringify({ batch: statements })
     })
     if (!response.ok) throw new Error(`D1 backup batch failed with status ${response.status}`)
-    const envelope = (await response.json()) as CloudflareEnvelope<readonly QueryResult[]>
+    const envelope = Schema.decodeUnknownSync(QueryEnvelope)(await response.json())
     if (
       envelope.success !== true ||
       !Array.isArray(envelope.result) ||
@@ -163,7 +141,10 @@ export function makeCloudflareBackupSource(options: BackupSourceOptions) {
     ) {
       throw new Error("D1 backup batch returned an invalid result")
     }
-    return envelope.result.map((result) => result.results!.map(normalizeRow))
+    return envelope.result.map((result) => {
+      if (result.results === undefined) throw new Error("D1 backup batch result is missing rows")
+      return result.results
+    })
   }
 
   async function tableNames(): Promise<readonly string[]> {
@@ -172,7 +153,7 @@ export function makeCloudflareBackupSource(options: BackupSourceOptions) {
     )
     return rows
       .map((row) => row.name)
-      .filter((name): name is string => typeof name === "string" && !DERIVED_TABLES.has(name))
+      .filter((name): name is string => Schema.is(Schema.String)(name) && !DERIVED_TABLES.has(name))
   }
 
   async function exportTables(names: readonly string[]): Promise<readonly BackupTable[]> {
@@ -204,7 +185,8 @@ export function makeCloudflareBackupSource(options: BackupSourceOptions) {
       const keys = xmlValues(xml, "Key").map((key) => decodeURIComponent(key))
       const etags = xmlValues(xml, "ETag").map((etag) => etag.replace(/^"|"$/gu, ""))
       keys.forEach((key, index) => {
-        objects.push({ key, ...(etags[index] === undefined ? {} : { etag: etags[index] }) })
+        const etag = etags[index]
+        objects.push(etag === undefined ? { key } : { key, etag })
       })
       const truncated = xmlValues(xml, "IsTruncated")[0] === "true"
       const next = xmlValues(xml, "NextContinuationToken")[0]
@@ -220,15 +202,18 @@ export function makeCloudflareBackupSource(options: BackupSourceOptions) {
     )
     if (!response.ok) throw new Error(`R2 object read failed with status ${response.status}`)
     const bytes = new Uint8Array(await response.arrayBuffer())
-    return {
+    const contentType = response.headers.get("content-type") ?? undefined
+    const object = {
       key: input.key,
-      ...(input.etag === undefined ? {} : { etag: input.etag }),
-      ...(response.headers.get("content-type") === null
-        ? {}
-        : { contentType: response.headers.get("content-type")! }),
       bytesBase64: Buffer.from(bytes).toString("base64"),
       sha256: sha256(bytes)
     }
+    if (input.etag === undefined && contentType === undefined) return object
+    if (input.etag === undefined && contentType !== undefined) return { ...object, contentType }
+    if (input.etag !== undefined && contentType === undefined)
+      return { ...object, etag: input.etag }
+    if (input.etag === undefined || contentType === undefined) return object
+    return { ...object, etag: input.etag, contentType }
   }
 
   return {

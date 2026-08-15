@@ -11,7 +11,7 @@ export type DeterministicCommand =
   | "start"
   | "cancel"
 
-const deterministicCommands = new Set<DeterministicCommand>([
+const deterministicCommands = [
   "repeat",
   "why",
   "help",
@@ -23,7 +23,7 @@ const deterministicCommands = new Set<DeterministicCommand>([
   "stop",
   "start",
   "cancel"
-])
+] as const
 
 const deterministicCommandAliases = new Map<string, DeterministicCommand>([
   ["hjälp", "help"],
@@ -48,9 +48,8 @@ const deterministicCommandAliases = new Map<string, DeterministicCommand>([
 
 export function classifyDeterministicCommand(text: string): DeterministicCommand | undefined {
   const normalized = text.trim().toLowerCase()
-  if (deterministicCommands.has(normalized as DeterministicCommand)) {
-    return normalized as DeterministicCommand
-  }
+  const command = deterministicCommands.find((candidate) => candidate === normalized)
+  if (command !== undefined) return command
   return deterministicCommandAliases.get(normalized)
 }
 

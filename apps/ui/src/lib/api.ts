@@ -8,9 +8,16 @@ export interface OwnerSession {
   }
 }
 
+const OwnerSessionSchema = Schema.Struct({
+  user: Schema.Struct({
+    email: Schema.String,
+    name: Schema.String
+  })
+})
+
 export const apiBase = __BOB_API_BASE_URL__
 
-export async function api(path: string, init?: RequestInit): Promise<unknown> {
+export async function api(path: string, init?: RequestInit): Promise<typeof Schema.Json.Type> {
   const method = init?.method?.toUpperCase() ?? "GET"
   const headers = new Headers(init?.headers)
   headers.set("content-type", "application/json")
@@ -21,13 +28,11 @@ export async function api(path: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(`${apiBase}${path}`, { ...init, headers })
   const contentType = response.headers.get("content-type") ?? ""
   const value = contentType.includes("application/json")
-    ? ((await response.json()) as unknown)
+    ? Schema.decodeUnknownSync(Schema.Json)(await response.json())
     : null
   if (response.status === 401) {
-    if (typeof window !== "undefined") {
-      const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
-      window.location.assign(`/sign-in?returnTo=${encodeURIComponent(returnTo)}`)
-    }
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    window.location.assign(`/sign-in?returnTo=${encodeURIComponent(returnTo)}`)
     throw new Error("unauthorized")
   }
   if (!response.ok) throw new Error(`Request failed with status ${response.status}`)
@@ -35,19 +40,8 @@ export async function api(path: string, init?: RequestInit): Promise<unknown> {
 }
 
 export function safeReturnPath(): string {
-  if (typeof window === "undefined") return "/settings"
   const value = new URLSearchParams(window.location.search).get("returnTo")
   return value !== null && value.startsWith("/") && !value.startsWith("//") ? value : "/settings"
-}
-
-function decodeOwnerSession(value: unknown): OwnerSession | null {
-  if (typeof value !== "object" || value === null || !("user" in value)) return null
-  const user = (value as { user?: unknown }).user
-  if (typeof user !== "object" || user === null) return null
-  const email = "email" in user ? (user as { email?: unknown }).email : undefined
-  const name = "name" in user ? (user as { name?: unknown }).name : undefined
-  if (typeof email !== "string" || typeof name !== "string") return null
-  return { user: { email, name } }
 }
 
 export async function loadOwnerSession(): Promise<OwnerSession | null> {
@@ -55,12 +49,13 @@ export async function loadOwnerSession(): Promise<OwnerSession | null> {
     headers: { accept: "application/json" }
   })
   if (!response.ok) return null
-  return decodeOwnerSession((await response.json()) as unknown)
+  const result = Schema.decodeUnknownExit(OwnerSessionSchema)(await response.json())
+  return result._tag === "Success" ? result.value : null
 }
 
-export function parseJson<S extends Schema.ConstraintDecoder<unknown>>(
+export function parseJson<S extends Schema.ConstraintDecoder<unknown>, Input>(
   schema: S,
-  value: unknown
+  value: Input
 ): S["Type"] {
   return Schema.decodeUnknownSync(schema)(value)
 }

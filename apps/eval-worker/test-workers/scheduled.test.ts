@@ -23,6 +23,7 @@ interface TestMigration {
 const scheduledTime = Date.parse("2026-08-12T22:45:00.000Z")
 
 beforeEach(async () => {
+  // SAFETY: This controlled test fixture matches the asserted contract used by this test.
   await applyD1Migrations(env.EVAL_DB, JSON.parse(env.TEST_MIGRATIONS) as TestMigration[])
 })
 
@@ -36,6 +37,7 @@ async function runScheduled(): Promise<void> {
   await handler(
     createScheduledController({ cron: "45 22 * * *", scheduledTime }),
     env,
+    // SAFETY: This focused test double implements every platform member exercised by this test.
     {} as ExecutionContext
   )
 }
@@ -93,7 +95,12 @@ describe("scheduled evaluation runner", () => {
     expect(bytes.byteLength).toBe(artifact.byte_size)
 
     const body = new TextDecoder().decode(bytes)
-    const manifest = JSON.parse(body) as Record<string, unknown>
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const manifest = JSON.parse(body) as {
+      readonly schemaVersion: number
+      readonly dataClass: string
+      readonly report: { readonly passed: boolean; readonly suiteId: string }
+    }
     expect(manifest).toMatchObject({
       schemaVersion: 1,
       dataClass: "synthetic_evaluation_result",

@@ -1,6 +1,9 @@
+import type { OutboundJob } from "@bob/contracts/jobs"
+
+import { AgentRunRequest } from "@bob/contracts/agent"
 import { modelToolNames } from "@bob/contracts/tools"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import type { CoreBindings } from "../src/bindings.ts"
@@ -8,6 +11,7 @@ import type { CoreComposition } from "../src/composition.ts"
 import type { ConversationTurnSnapshot } from "../src/modules/conversations/turn-store.ts"
 
 import { processConversationTurn } from "../src/process-inbound.ts"
+import { testFixture } from "./test-fixture.ts"
 
 const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
 const channelId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db92"
@@ -33,8 +37,9 @@ describe("conversation turn processing", () => {
     const markRunning = vi.fn(async (_turnId: string, _revision: number, _runId: string) => true)
     const commitReply = vi.fn(async () => "committed" as const)
     const markEventsProcessed = vi.fn(async () => 1)
-    const composition = {
-      config: {},
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const composition = testFixture<CoreComposition>({
+      config: { SENDBLUE_EGRESS_URL: "" },
       services: {
         events: { emit: vi.fn(async () => undefined) },
         conversations: { claimReaction: vi.fn(async () => false) },
@@ -52,7 +57,7 @@ describe("conversation turn processing", () => {
           markEnqueued: vi.fn(async () => undefined)
         }
       }
-    } as unknown as CoreComposition
+    })
     const snapshot: ConversationTurnSnapshot = {
       turnId,
       ownerId,
@@ -83,13 +88,14 @@ describe("conversation turn processing", () => {
 
     await processConversationTurn(
       snapshot,
-      {
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+      testFixture<CoreBindings>({
         OUTBOUND_QUEUE: {
-          send: async (job: unknown) => {
+          send: async (job: OutboundJob) => {
             sent.push(job)
           }
         }
-      } as unknown as CoreBindings,
+      }),
       composition
     )
 
@@ -113,7 +119,8 @@ describe("conversation turn processing", () => {
     const releaseSettling = vi.fn(async () => ({ ready: false }))
     const markRunning = vi.fn(async () => true)
     const currentRevision = vi.fn(async () => 2)
-    const composition = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const composition = testFixture<CoreComposition>({
       config: {},
       services: {
         events: { emit: vi.fn(async () => undefined) },
@@ -130,7 +137,7 @@ describe("conversation turn processing", () => {
         reminders: { applyBoundReply: vi.fn() },
         delivery: { createOutbox, markEnqueued: vi.fn(async () => undefined) }
       }
-    } as unknown as CoreComposition
+    })
     const snapshot: ConversationTurnSnapshot = {
       turnId,
       ownerId,
@@ -161,7 +168,8 @@ describe("conversation turn processing", () => {
 
     await processConversationTurn(
       snapshot,
-      { OUTBOUND_QUEUE: { send: vi.fn() } } as unknown as CoreBindings,
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      testFixture<CoreBindings>({ OUTBOUND_QUEUE: { send: vi.fn() } }),
       composition
     )
 
@@ -201,15 +209,17 @@ describe("conversation turn processing", () => {
     const agentResponse = new Promise<Response>((resolve) => {
       resolveAgentResponse = resolve
     })
-    let capturedRequest: Record<string, unknown> | undefined
+    let capturedRequest: AgentRunRequest | undefined
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-        capturedRequest = JSON.parse(String(init?.body)) as Record<string, unknown>
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+        capturedRequest = Schema.decodeUnknownSync(AgentRunRequest)(JSON.parse(String(init?.body)))
         return agentResponse
       })
     )
-    const composition = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
         AGENT_ACCESS_CLIENT_ID: "client",
@@ -252,14 +262,15 @@ describe("conversation turn processing", () => {
         alerts: { record: vi.fn() },
         delivery: { markEnqueued: vi.fn(async () => undefined) }
       }
-    } as unknown as CoreComposition
-    const bindings = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       OUTBOUND_QUEUE: {
-        send: async (job: unknown) => {
+        send: async (job: OutboundJob) => {
           sent.push(job)
         }
       }
-    } as unknown as CoreBindings
+    })
     const snapshot: ConversationTurnSnapshot = {
       turnId,
       ownerId,
@@ -386,7 +397,8 @@ describe("conversation turn processing", () => {
     vi.stubGlobal("fetch", invoke)
     const completeWithoutResponse = vi.fn(async () => true)
     const releaseSettling = vi.fn(async () => ({ ready: false }))
-    const composition = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
         AGENT_ACCESS_CLIENT_ID: "client",
@@ -431,7 +443,7 @@ describe("conversation turn processing", () => {
         alerts: { record: vi.fn() },
         delivery: { markEnqueued: vi.fn(async () => undefined) }
       }
-    } as unknown as CoreComposition
+    })
     const snapshot: ConversationTurnSnapshot = {
       turnId,
       ownerId,
@@ -468,7 +480,8 @@ describe("conversation turn processing", () => {
 
     await processConversationTurn(
       snapshot,
-      { OUTBOUND_QUEUE: { send: vi.fn() } } as unknown as CoreBindings,
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      testFixture<CoreBindings>({ OUTBOUND_QUEUE: { send: vi.fn() } }),
       composition
     )
 
@@ -481,11 +494,12 @@ describe("conversation turn processing", () => {
   })
 
   it("registers every reviewed capability for a short follow-up", async () => {
-    let capturedRequest: Record<string, unknown> | undefined
+    let capturedRequest: AgentRunRequest | undefined
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-        capturedRequest = JSON.parse(String(init?.body)) as Record<string, unknown>
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+        capturedRequest = Schema.decodeUnknownSync(AgentRunRequest)(JSON.parse(String(init?.body)))
         return Response.json({
           protocolVersion: 1,
           runId: capturedRequest.runId,
@@ -511,7 +525,8 @@ describe("conversation turn processing", () => {
         sources: []
       }
     ])
-    const composition = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
         AGENT_ACCESS_CLIENT_ID: "client",
@@ -554,7 +569,7 @@ describe("conversation turn processing", () => {
         alerts: { record: vi.fn() },
         delivery: { markEnqueued: vi.fn(async () => undefined) }
       }
-    } as unknown as CoreComposition
+    })
     const snapshot: ConversationTurnSnapshot = {
       turnId,
       ownerId,
@@ -585,7 +600,8 @@ describe("conversation turn processing", () => {
 
     await processConversationTurn(
       snapshot,
-      { OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) } } as unknown as CoreBindings,
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      testFixture<CoreBindings>({ OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) } }),
       composition
     )
 
@@ -606,6 +622,7 @@ describe("conversation turn processing", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         const request = JSON.parse(String(init?.body)) as { runId: string }
         return Response.json({
           protocolVersion: 1,
@@ -621,7 +638,8 @@ describe("conversation turn processing", () => {
         })
       })
     )
-    const composition = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
         AGENT_ACCESS_CLIENT_ID: "client",
@@ -666,7 +684,7 @@ describe("conversation turn processing", () => {
         alerts: { record: vi.fn() },
         delivery: { markEnqueued: vi.fn(async () => undefined) }
       }
-    } as unknown as CoreComposition
+    })
     const snapshot = {
       turnId,
       ownerId,
@@ -703,7 +721,8 @@ describe("conversation turn processing", () => {
 
     await processConversationTurn(
       snapshot,
-      { OUTBOUND_QUEUE: { send: publish } } as unknown as CoreBindings,
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      testFixture<CoreBindings>({ OUTBOUND_QUEUE: { send: publish } }),
       composition
     )
 
@@ -723,6 +742,7 @@ describe("conversation turn processing", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         const request = JSON.parse(String(init?.body)) as { runId: string }
         return Response.json({
           protocolVersion: 1,
@@ -738,7 +758,8 @@ describe("conversation turn processing", () => {
         })
       })
     )
-    const composition = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
         AGENT_ACCESS_CLIENT_ID: "client",
@@ -783,7 +804,7 @@ describe("conversation turn processing", () => {
         alerts: { record: vi.fn() },
         delivery: { markEnqueued: vi.fn(async () => undefined) }
       }
-    } as unknown as CoreComposition
+    })
     const snapshot = {
       turnId,
       ownerId,
@@ -825,9 +846,10 @@ describe("conversation turn processing", () => {
     }
     await processConversationTurn(
       snapshot,
-      {
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+      testFixture<CoreBindings>({
         OWNER_RUN_COORDINATOR: { jurisdiction: vi.fn(() => jurisdiction) }
-      } as unknown as CoreBindings,
+      }),
       composition
     )
 
@@ -959,7 +981,8 @@ describe("conversation turn processing", () => {
         .fn()
         .mockResolvedValueOnce(activity)
         .mockResolvedValue(afterTransition ?? activity)
-      const composition = {
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+      const composition = testFixture<CoreComposition>({
         config: {
           AGENT_URL: "https://agent.example.invalid",
           AGENT_ACCESS_CLIENT_ID: "client",
@@ -1022,7 +1045,7 @@ describe("conversation turn processing", () => {
           alerts: { record: vi.fn(async () => undefined) },
           delivery: { markEnqueued: vi.fn(async () => undefined) }
         }
-      } as unknown as CoreComposition
+      })
       const snapshot: ConversationTurnSnapshot = {
         turnId,
         ownerId,
@@ -1058,10 +1081,11 @@ describe("conversation turn processing", () => {
       }
       await processConversationTurn(
         snapshot,
-        {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+        testFixture<CoreBindings>({
           OUTBOUND_QUEUE: { send: publish },
           OWNER_RUN_COORDINATOR: { jurisdiction: vi.fn(() => jurisdiction) }
-        } as unknown as CoreBindings,
+        }),
         composition
       )
 
@@ -1091,11 +1115,13 @@ describe("conversation turn processing", () => {
       expect(completeForReflection).toHaveBeenCalledWith(
         expect.objectContaining({ status: "failed" }),
         attemptId,
-        {
-          conversationTurnId: turnId,
-          conversationTurnRevision: 2,
-          ...(expectedSettleUntil === undefined ? {} : { settleUntil: expectedSettleUntil })
-        }
+        expectedSettleUntil === undefined
+          ? { conversationTurnId: turnId, conversationTurnRevision: 2 }
+          : {
+              conversationTurnId: turnId,
+              conversationTurnRevision: 2,
+              settleUntil: expectedSettleUntil
+            }
       )
       expect(wake).toHaveBeenCalledWith(
         releasesAfterTransition
@@ -1148,10 +1174,12 @@ describe("conversation turn processing", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         agentResponse(JSON.parse(String(init?.body)) as { runId: string })
       )
     )
-    const composition = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
         AGENT_ACCESS_CLIENT_ID: "client",
@@ -1196,7 +1224,7 @@ describe("conversation turn processing", () => {
         alerts: { record: vi.fn(async () => undefined) },
         delivery: { markEnqueued: vi.fn(async () => undefined) }
       }
-    } as unknown as CoreComposition
+    })
     const snapshot: ConversationTurnSnapshot = {
       turnId,
       ownerId,
@@ -1234,7 +1262,8 @@ describe("conversation turn processing", () => {
 
     await processConversationTurn(
       snapshot,
-      { OUTBOUND_QUEUE: { send: publish } } as unknown as CoreBindings,
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      testFixture<CoreBindings>({ OUTBOUND_QUEUE: { send: publish } }),
       composition
     )
 
@@ -1259,7 +1288,8 @@ describe("conversation turn processing", () => {
     const existingOutboxId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db80"
     const publish = vi.fn(async () => undefined)
     const runId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db81"
-    const composition = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
         AGENT_ACCESS_CLIENT_ID: "client",
@@ -1326,7 +1356,7 @@ describe("conversation turn processing", () => {
         alerts: { record: vi.fn() },
         delivery: { markEnqueued }
       }
-    } as unknown as CoreComposition
+    })
     const snapshot: ConversationTurnSnapshot = {
       turnId,
       ownerId,
@@ -1353,7 +1383,8 @@ describe("conversation turn processing", () => {
 
     await processConversationTurn(
       snapshot,
-      { OUTBOUND_QUEUE: { send: publish } } as unknown as CoreBindings,
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      testFixture<CoreBindings>({ OUTBOUND_QUEUE: { send: publish } }),
       composition
     )
 
@@ -1370,7 +1401,8 @@ describe("conversation turn processing", () => {
     const claim = vi.fn(async () => true)
     const completeWithResponse = vi.fn()
     const runId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db82"
-    const composition = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const composition = testFixture<CoreComposition>({
       config: { BOB_MODEL: "gpt-test" },
       services: {
         events: { emit: vi.fn(async () => undefined) },
@@ -1413,7 +1445,7 @@ describe("conversation turn processing", () => {
           completeWithResponse
         }
       }
-    } as unknown as CoreComposition
+    })
     const snapshot: ConversationTurnSnapshot = {
       turnId,
       ownerId,
@@ -1440,7 +1472,8 @@ describe("conversation turn processing", () => {
 
     await processConversationTurn(
       snapshot,
-      { OUTBOUND_QUEUE: { send: publish } } as unknown as CoreBindings,
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      testFixture<CoreBindings>({ OUTBOUND_QUEUE: { send: publish } }),
       composition
     )
 

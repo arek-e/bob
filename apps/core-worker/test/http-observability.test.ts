@@ -6,14 +6,17 @@ import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
 import { handleHttp } from "../src/entrypoints/http.ts"
+import { testFixture } from "./test-fixture.ts"
 
 const compositionHarness = vi.hoisted(() => ({
+  // SAFETY: This focused test double implements every platform member exercised by this test.
   current: undefined as CoreComposition | undefined
 }))
 
-vi.mock("../src/composition.ts", () => ({
-  composeCore: () => compositionHarness.current
-}))
+function composeTestCore(): CoreComposition {
+  if (compositionHarness.current === undefined) throw new Error("Test composition is not set")
+  return compositionHarness.current
+}
 
 const inboundId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
 const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
@@ -27,17 +30,19 @@ beforeEach(() => {
 describe("Core HTTP telemetry", () => {
   it("continues inbound confirmation through one server span", async () => {
     const markEnqueued = vi.fn(async () => undefined)
-    compositionHarness.current = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    compositionHarness.current = testFixture<CoreComposition>({
       services: { conversations: { markEnqueued } }
-    } as unknown as CoreComposition
+    })
     const ingressSecret = "i".repeat(64)
-    const bindings = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       INGRESS_CALLER_SECRET: ingressSecret,
       EGRESS_CALLER_SECRET: "e".repeat(64),
       AGENT_CALLER_SUBJECT: "agent",
       ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
       CORE_ACCESS_AUDIENCE: "core"
-    } as CoreBindings
+    })
     const telemetry = makeCaptureTelemetry({
       serviceName: "bob-core-worker",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -57,7 +62,8 @@ describe("Core HTTP telemetry", () => {
       undefined,
       {
         runPromise: (effect) => Effect.runPromise(effect.pipe(Effect.provide(telemetry.layer)))
-      }
+      },
+      composeTestCore
     )
 
     expect(response.status).toBe(200)
@@ -94,7 +100,8 @@ describe("Core HTTP telemetry", () => {
       testCase.releases ? { ownerId, quietUntil: "2026-08-12T10:00:00.000Z" } : undefined
     )
     const wake = vi.fn(async () => new Response(null, { status: 200 }))
-    compositionHarness.current = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    compositionHarness.current = testFixture<CoreComposition>({
       services: {
         tools: {
           execute: vi.fn(async () => ({ ok: true, code: "reminder_seen", message: "Seen." })),
@@ -103,8 +110,9 @@ describe("Core HTTP telemetry", () => {
         turns: { releaseSettlingForRun },
         events: { emit: vi.fn(async () => undefined) }
       }
-    } as unknown as CoreComposition
-    const bindings = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const bindings = testFixture<CoreBindings>({
       INGRESS_CALLER_SECRET: "i".repeat(64),
       EGRESS_CALLER_SECRET: "e".repeat(64),
       AGENT_CALLER_SUBJECT: "agent",
@@ -116,7 +124,7 @@ describe("Core HTTP telemetry", () => {
           get: vi.fn(() => ({ fetch: wake }))
         }))
       }
-    } as unknown as CoreBindings
+    })
     const response = await handleHttp(
       new Request("https://core.test/internal/tools", {
         method: "POST",
@@ -131,7 +139,9 @@ describe("Core HTTP telemetry", () => {
         })
       }),
       bindings,
-      async () => ({ subject: "", commonName: "agent", audience: ["core"] })
+      async () => ({ subject: "", commonName: "agent", audience: ["core"] }),
+      undefined,
+      composeTestCore
     )
 
     expect(response.status).toBe(200)

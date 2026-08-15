@@ -556,7 +556,7 @@ describe("durable conversation turns", () => {
     at = new Date("2026-08-12T08:00:01.000Z")
     let batchCount = 0
     const racedBinding = new Proxy(env.DB, {
-      get(target, property, receiver) {
+      get(target, property) {
         if (property === "batch") {
           return async (statements: D1PreparedStatement[]) => {
             batchCount += 1
@@ -569,8 +569,9 @@ describe("durable conversation turns", () => {
             return target.batch(statements)
           }
         }
-        const value = Reflect.get(target, property, receiver) as unknown
-        return typeof value === "function" ? value.bind(target) : value
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+        const value = target[property as keyof D1Database]
+        return value instanceof Function ? value.bind(target) : value
       }
     })
     const racedTurns = makeConversationTurnStore(createCoreDatabase(racedBinding), protection, {

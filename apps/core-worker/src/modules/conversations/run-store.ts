@@ -80,6 +80,12 @@ export interface AgentRunStore {
 
 export const AgentRunStore = Context.Service<AgentRunStore>("bob/AgentRunStore")
 
+const StoredRunEnvelope = Schema.Struct({
+  ciphertext: Schema.String,
+  iv: Schema.String,
+  keyVersion: Schema.Number
+})
+
 export function makeAgentRunStore(
   database: CoreDatabase,
   protection: DataProtection,
@@ -111,11 +117,7 @@ export function makeAgentRunStore(
   }
 
   async function loadStoredRun(row: typeof agentRuns.$inferSelect): Promise<StoredAgentRun> {
-    const envelope = JSON.parse(row.inputSnapshotJson) as {
-      ciphertext: string
-      iv: string
-      keyVersion: number
-    }
+    const envelope = Schema.decodeUnknownSync(StoredRunEnvelope)(JSON.parse(row.inputSnapshotJson))
     const owner = await ownerKey(row.userId)
     const request = Schema.decodeUnknownSync(AgentRunRequest)(
       JSON.parse(
@@ -123,18 +125,15 @@ export function makeAgentRunStore(
           ciphertext: envelope.ciphertext,
           iv: envelope.iv
         })
-      ) as unknown
+      )
     )
     const [outbox] = await database
       .select({ id: outboxMessages.id })
       .from(outboxMessages)
       .where(eq(outboxMessages.idempotencyKey, `run:${row.id}:reply`))
       .limit(1)
-    return {
-      request,
-      status: row.status,
-      ...(outbox === undefined ? {} : { outboxId: outbox.id })
-    }
+    if (outbox === undefined) return { request, status: row.status }
+    return { request, status: row.status, outboxId: outbox.id }
   }
 
   return {

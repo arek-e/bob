@@ -17,7 +17,9 @@ async function toRequest(input: IncomingMessage, signal: AbortSignal): Promise<R
   let size = 0
   for await (const value of input) {
     const chunk =
-      typeof value === "string" ? new TextEncoder().encode(value) : new Uint8Array(value)
+      Object.prototype.toString.call(value) === "[object String]"
+        ? new TextEncoder().encode(String(value))
+        : new Uint8Array(value)
     size += chunk.byteLength
     if (size > MAX_BODY_BYTES) throw new Error("body_too_large")
     chunks.push(chunk)

@@ -1,3 +1,4 @@
+import { Schema } from "effect"
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey, type KeyInput } from "jose"
 
 export interface AccessClaims {
@@ -47,6 +48,13 @@ async function secretMatches(supplied: string | null, expected: string): Promise
 
 const keySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>()
 
+const AccessPayload = Schema.Struct({
+  sub: Schema.optionalKey(Schema.String),
+  common_name: Schema.optionalKey(Schema.String),
+  email: Schema.optionalKey(Schema.String),
+  aud: Schema.optionalKey(Schema.Union([Schema.String, Schema.Array(Schema.String)]))
+})
+
 export async function verifyCloudflareAccessAssertion(
   assertion: string,
   configuration: AccessVerificationConfiguration,
@@ -57,19 +65,26 @@ export async function verifyCloudflareAccessAssertion(
     issuer: configuration.accessIssuer,
     clockTolerance: 5
   })
-  const audience = Array.isArray(verified.payload.aud)
-    ? verified.payload.aud
-    : verified.payload.aud === undefined
+  const payload = Schema.decodeUnknownSync(AccessPayload)(verified.payload)
+  const audience = Array.isArray(payload.aud)
+    ? payload.aud
+    : payload.aud === undefined
       ? []
-      : [verified.payload.aud]
-  return {
-    subject: typeof verified.payload.sub === "string" ? verified.payload.sub : "",
-    ...(typeof verified.payload.common_name === "string"
-      ? { commonName: verified.payload.common_name }
-      : {}),
-    ...(typeof verified.payload.email === "string" ? { email: verified.payload.email } : {}),
-    audience
+      : [payload.aud]
+  if (payload.common_name !== undefined && payload.email !== undefined) {
+    return {
+      subject: payload.sub ?? "",
+      commonName: payload.common_name,
+      email: payload.email,
+      audience
+    }
   }
+  if (payload.common_name !== undefined) {
+    return { subject: payload.sub ?? "", commonName: payload.common_name, audience }
+  }
+  if (payload.email !== undefined)
+    return { subject: payload.sub ?? "", email: payload.email, audience }
+  return { subject: payload.sub ?? "", audience }
 }
 
 export const verifyCloudflareAccess: AccessTokenVerifier = async (request, configuration) => {

@@ -45,10 +45,10 @@ export function readSendblueStatusCallback(url: URL): ReadSendblueStatusCallback
   const attemptId = callbackParameter(url.searchParams, "a", "attempt_id")
   const correlationId = callbackParameter(url.searchParams, "c", "correlation_id")
   const traceparent = callbackParameter(url.searchParams, "t", "traceparent")
-  return {
-    ...(outboxId === null ? {} : { outboxId }),
-    ...(attemptId === null ? {} : { attemptId }),
-    ...(correlationId === null ? {} : { correlationId }),
-    ...(traceparent === null ? {} : { traceparent })
-  }
+  const context: ReadSendblueStatusCallbackContext = {}
+  if (outboxId !== null) Object.assign(context, { outboxId })
+  if (attemptId !== null) Object.assign(context, { attemptId })
+  if (correlationId !== null) Object.assign(context, { correlationId })
+  if (traceparent !== null) Object.assign(context, { traceparent })
+  return context
 }

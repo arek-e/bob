@@ -14,6 +14,7 @@ import type {
 } from "../conversations/tool-adapter.ts"
 import type { ReminderStore } from "./store.ts"
 
+import { jsonObject } from "../../json.ts"
 import {
   reminderCreateTimeMatchesRequest,
   reminderMutationMatchesRequest,
@@ -22,10 +23,15 @@ import {
   type ReminderMutationIntent
 } from "./rules.ts"
 
-type JsonValue = typeof Schema.Json.Type
+interface ReminderCandidate {
+  reminderId: string
+  displayText: string
+  localDisplayTime?: string
+}
 
-function jsonObject(value: unknown): { readonly [key: string]: JsonValue } {
-  return JSON.parse(JSON.stringify(value)) as { readonly [key: string]: JsonValue }
+interface ReminderRequestedTarget {
+  reminderId: string
+  occurrenceId?: string
 }
 
 function reminderIntentForTool(name: ToolName): ReminderMutationIntent | undefined {
@@ -77,13 +83,16 @@ async function validateMutationTarget(
   }
   const candidates =
     command.name === "reminder_cancel" && requestedOccurrenceId === undefined
-      ? summaries.map((summary) => ({
-          reminderId: summary.id,
-          displayText: summary.displayText,
-          ...(summary.localDisplayTime === undefined
-            ? {}
-            : { localDisplayTime: summary.localDisplayTime })
-        }))
+      ? summaries.map((summary) => {
+          const candidate: ReminderCandidate = {
+            reminderId: summary.id,
+            displayText: summary.displayText
+          }
+          if (summary.localDisplayTime !== undefined) {
+            candidate.localDisplayTime = summary.localDisplayTime
+          }
+          return candidate
+        })
       : summaries.flatMap((summary) =>
           summary.actionTargets
             .filter((target) => {
@@ -101,16 +110,17 @@ async function validateMutationTarget(
             }))
         )
 
+  if (requestedReminderId === undefined) {
+    return {
+      ok: false,
+      code: "choice_required",
+      message: "More than one reminder can match. Open Bob and choose the exact reminder."
+    }
+  }
+  const requestedTarget: ReminderRequestedTarget = { reminderId: requestedReminderId }
+  if (requestedOccurrenceId !== undefined) requestedTarget.occurrenceId = requestedOccurrenceId
   if (
-    requestedReminderId === undefined ||
-    resolveReminderMutationTarget(
-      run.request.userText,
-      {
-        reminderId: requestedReminderId,
-        ...(requestedOccurrenceId === undefined ? {} : { occurrenceId: requestedOccurrenceId })
-      },
-      candidates
-    ) !== "matched"
+    resolveReminderMutationTarget(run.request.userText, requestedTarget, candidates) !== "matched"
   ) {
     return {
       ok: false,
@@ -276,10 +286,7 @@ export function makeReminderToolAdapter(reminders: ReminderStore): ToolCommandAd
               args.occurrenceId === undefined
                 ? "The reminder was cancelled."
                 : "The reminder occurrence was cancelled.",
-            data: {
-              reminderId: args.reminderId,
-              ...(args.occurrenceId === undefined ? {} : { occurrenceId: args.occurrenceId })
-            }
+            data: jsonObject({ reminderId: args.reminderId, occurrenceId: args.occurrenceId })
           }
         }
         default:

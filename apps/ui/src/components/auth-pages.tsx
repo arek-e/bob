@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/solid-router"
+import { Schema } from "effect"
 import { createSignal, onMount, Show, type JSX } from "solid-js"
 
 import { Button } from "~/components/ui/button"
@@ -7,6 +8,8 @@ import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 import { apiBase, loadOwnerSession, safeReturnPath } from "~/lib/api"
 import { styles } from "~/lib/styles"
+
+const SetupState = Schema.Struct({ setupRequired: Schema.Boolean })
 
 export function SignInPage() {
   const [email, setEmail] = createSignal("")
@@ -137,7 +140,7 @@ export function SetupPage() {
         headers: { accept: "application/json" }
       })
       if (!response.ok) throw new Error("setup_unavailable")
-      const value = (await response.json()) as { setupRequired?: unknown }
+      const value = Schema.decodeUnknownSync(SetupState)(await response.json())
       setSetupState(value.setupRequired === false ? "complete" : "required")
       if (value.setupRequired === false) setStatus("The owner login already exists.")
     } catch {

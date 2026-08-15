@@ -21,9 +21,9 @@ export type Uuid = typeof Uuid.Type
 export type IsoDateTime = typeof IsoDateTime.Type
 export type E164 = typeof E164.Type
 
-export function decodeUnknown<S extends Schema.ConstraintDecoder<unknown>>(
+export function decodeUnknown<S extends Schema.ConstraintDecoder<unknown>, Input>(
   schema: S,
-  input: unknown
+  input: Input
 ): S["Type"] {
-  return Schema.decodeUnknownSync(schema)(input) as S["Type"]
+  return Schema.decodeUnknownSync(schema)(input)
 }

@@ -26,7 +26,7 @@ describe("Connections Gateway client", () => {
 
     const [url, init] = request.mock.calls[0] ?? []
     expect(String(url)).toBe("https://connections.example/v1/connect-sessions")
-    expect(init?.headers).toMatchObject({
+    expect(Object.fromEntries(new Headers(init?.headers))).toMatchObject({
       "cf-access-client-id": "instance-client",
       "cf-access-client-secret": "instance-secret"
     })

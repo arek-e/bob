@@ -144,14 +144,14 @@ export function makeConversationTurnStore(
             .where(eq(conversationTurns.id, existingMembership.turnId))
             .limit(1)
           if (turn === undefined) throw new Error("Conversation turn membership is orphaned")
-          return {
+          const offered = {
             turnId: turn.id,
             revision: turn.revision,
             status: turn.status,
             quietUntil: turn.quietUntil,
-            appended: false,
-            ...(turn.activeRunId === null ? {} : { activeRunId: turn.activeRunId })
+            appended: false
           }
+          return turn.activeRunId === null ? offered : { ...offered, activeRunId: turn.activeRunId }
         }
 
         const [event] = await database
@@ -261,14 +261,16 @@ export function makeConversationTurnStore(
             .where(eq(conversationTurnMessages.inboundEventId, inboundEventId))
             .limit(1)
           if (appendedMembership === undefined) continue
-          return {
+          const offered = {
             turnId: winner.id,
             revision,
             status: appendedStatus,
             quietUntil: winnerQuietUntil,
-            appended: true,
-            ...(winner.activeRunId === null ? {} : { activeRunId: winner.activeRunId })
+            appended: true
           }
+          return winner.activeRunId === null
+            ? offered
+            : { ...offered, activeRunId: winner.activeRunId }
         }
         return { turnId, revision: 1, status: "collecting", quietUntil, appended: true }
       }
@@ -400,25 +402,29 @@ export function makeConversationTurnStore(
       const ordered = decrypted.map((row, index) => ({ ...row, ordinal: index + 1 }))
       const latest = ordered.at(-1)
       if (latest === undefined) throw new Error("Conversation turn target is missing")
+      const latestMessage = {
+        eventId: latest.eventId,
+        messageId: latest.messageId,
+        text: latest.text,
+        ordinal: latest.ordinal,
+        providerMessageHandle: latest.providerMessageHandle,
+        service: latest.service,
+        isGroup: latest.isGroup,
+        correlationId: latest.correlationId,
+        number,
+        fromNumber
+      }
+      const latestWithTrace =
+        latest.traceparent === null
+          ? latestMessage
+          : { ...latestMessage, traceparent: latest.traceparent }
       return {
         turnId: claimed.id,
         ownerId: claimed.userId,
         channelId: claimed.channelId,
         revision: claimed.revision,
         claimExpiresAt: expiresAt,
-        latest: {
-          eventId: latest.eventId,
-          messageId: latest.messageId,
-          text: latest.text,
-          ordinal: latest.ordinal,
-          providerMessageHandle: latest.providerMessageHandle,
-          service: latest.service,
-          isGroup: latest.isGroup,
-          correlationId: latest.correlationId,
-          number,
-          fromNumber,
-          ...(latest.traceparent === null ? {} : { traceparent: latest.traceparent })
-        },
+        latest: latestWithTrace,
         messages: ordered.map((row) => ({
           eventId: row.eventId,
           messageId: row.messageId,

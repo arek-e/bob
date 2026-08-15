@@ -27,7 +27,7 @@ describe("agent Node HTTP bridge", () => {
     server.listen(0, "127.0.0.1")
     await once(server, "listening")
     const address = server.address()
-    if (address === null || typeof address === "string") throw new Error("Server has no port")
+    if (address === null || !(address instanceof Object)) throw new Error("Server has no port")
     const client = httpRequest({
       host: "127.0.0.1",
       port: address.port,

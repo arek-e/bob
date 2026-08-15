@@ -85,11 +85,8 @@ export function selectAgentResponse(
     const grounded = groundedBoundaryText(result, request)
     if (grounded !== undefined) {
       const artifact = safeArtifact(result)
-      return {
-        text: grounded,
-        reasonCode: "agent_reply",
-        ...(artifact === undefined ? {} : { artifact })
-      }
+      if (artifact === undefined) return { text: grounded, reasonCode: "agent_reply" }
+      return { text: grounded, reasonCode: "agent_reply", artifact }
     }
     const usesLegacyResultContract = result.sourceIds === undefined && result.conflict === undefined
     if (

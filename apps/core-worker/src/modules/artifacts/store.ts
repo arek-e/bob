@@ -74,7 +74,7 @@ export function makeArtifactStore(
       return {
         id: row.artifact.id,
         revision: row.revision.revision,
-        artifact: Schema.decodeUnknownSync(AgentArtifact)(JSON.parse(content) as unknown),
+        artifact: Schema.decodeUnknownSync(AgentArtifact)(JSON.parse(content)),
         renderedText
       }
     }

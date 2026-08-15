@@ -17,6 +17,7 @@ describe("agent evaluation command", () => {
         ["--silent", "--filter", "@bob/agent-evals", "eval:benchmarks", "--", "--json"],
         { cwd: repositoryRoot, timeout: 30_000 }
       )
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const report = JSON.parse(result.stdout) as {
         readonly officialScores: { readonly recorded: number; readonly total: number }
         readonly benchmarks: readonly unknown[]
@@ -36,6 +37,7 @@ describe("agent evaluation command", () => {
       ["--silent", "--filter", "@bob/agent-evals", "eval:offline", "--", "--json"],
       { cwd: repositoryRoot, timeout: 30_000 }
     )
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const report = JSON.parse(result.stdout) as {
       readonly passed: boolean
       readonly cases: { readonly passed: number; readonly total: number }
@@ -54,6 +56,7 @@ describe("agent evaluation command", () => {
       ["--silent", "--filter", "@bob/agent-evals", "eval:interaction", "--", "--json"],
       { cwd: repositoryRoot, timeout: 30_000 }
     )
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const report = JSON.parse(result.stdout) as {
       readonly passed: boolean
       readonly schemaVersion: number
@@ -89,6 +92,7 @@ describe("agent evaluation command", () => {
       ],
       { cwd: repositoryRoot, timeout: 30_000 }
     )
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const comparison = JSON.parse(result.stdout) as {
       readonly passed: boolean
       readonly regressedCases: readonly string[]
@@ -150,6 +154,7 @@ describe("agent evaluation command", () => {
         ],
         { cwd: repositoryRoot, timeout: 30_000 }
       )
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const report = JSON.parse(result.stdout) as {
         readonly passed: boolean
         readonly cases: { readonly passed: number; readonly total: number }

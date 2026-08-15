@@ -42,11 +42,11 @@ export interface ReconcilePlan {
 }
 
 function urlOf(value: typeof WebhookValue.Type): string {
-  return typeof value === "string" ? value : value.url
+  return Schema.is(Schema.String)(value) ? value : value.url
 }
 
-export async function planWebhookReconciliation(
-  currentInput: unknown,
+export async function planWebhookReconciliation<Input>(
+  currentInput: Input,
   required: RequiredWebhooks
 ): Promise<ReconcilePlan> {
   const current = Schema.decodeUnknownSync(WebhookList)(currentInput)
@@ -82,10 +82,10 @@ export function createAccountClient(options: AccountClientOptions) {
     "sb-api-secret-key": options.apiSecretKey
   }
 
-  async function list(): Promise<unknown> {
+  async function list(): Promise<typeof WebhookList.Type> {
     const response = await request(url, { headers })
     if (!response.ok) throw new Error(`Sendblue webhook list failed: ${response.status}`)
-    return response.json()
+    return Schema.decodeUnknownSync(WebhookList)(await response.json())
   }
 
   return {

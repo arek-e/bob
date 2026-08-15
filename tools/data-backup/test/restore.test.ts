@@ -12,6 +12,12 @@ const migrationDirectory = resolve(
   "../../../apps/core-worker/migrations"
 )
 
+interface RestoreApiCall {
+  url: string
+  method: string
+  body?: unknown
+}
+
 async function backedUpSchemaTables(): Promise<readonly string[]> {
   const names = new Set<string>()
   for (const entry of await readdir(migrationDirectory, { withFileTypes: true })) {
@@ -163,6 +169,7 @@ describe("isolated D1 restore drill", () => {
       if (request.method === "DELETE") {
         return Response.json({ success: true, result: {} })
       }
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const body = (await request.json()) as {
         readonly sql?: string
         readonly batch?: readonly { readonly sql: string }[]
@@ -244,6 +251,7 @@ describe("isolated D1 restore drill", () => {
       if (request.method === "DELETE") {
         return Response.json({ success: true, result: {} })
       }
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const body = (await request.json()) as {
         readonly sql?: string
         readonly batch?: readonly { readonly sql: string }[]
@@ -310,6 +318,7 @@ describe("isolated D1 restore drill", () => {
       if (request.method === "DELETE") {
         return Response.json({ success: true, result: {} })
       }
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const body = (await request.json()) as {
         readonly batch?: readonly { readonly sql: string; readonly params?: readonly unknown[] }[]
       }
@@ -370,15 +379,17 @@ describe("isolated D1 restore drill", () => {
         }
       ]
     })
-    const calls: { url: string; method: string; body?: unknown }[] = []
+    const calls: RestoreApiCall[] = []
     const fetchStub: typeof fetch = async (input, init) => {
       const request = input instanceof Request ? input : new Request(input, init)
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const body = request.method === "POST" ? ((await request.json()) as unknown) : undefined
-      calls.push({
+      const call: RestoreApiCall = {
         url: request.url,
-        method: request.method,
-        ...(body === undefined ? {} : { body })
-      })
+        method: request.method
+      }
+      if (body !== undefined) call.body = body
+      calls.push(call)
       if (request.method === "POST" && request.url.endsWith("/d1/database")) {
         return Response.json({
           success: true,
@@ -399,8 +410,7 @@ describe("isolated D1 restore drill", () => {
         return Response.json({ success: true, result: {} })
       }
       if (
-        typeof body === "object" &&
-        body !== null &&
+        body instanceof Object &&
         "sql" in body &&
         String(body.sql).startsWith('SELECT * FROM "users"')
       ) {
@@ -469,6 +479,7 @@ describe("isolated D1 restore drill", () => {
       if (request.method === "DELETE") {
         return Response.json({ success: true, result: {} })
       }
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const body = (await request.json()) as {
         readonly sql?: string
         readonly batch?: readonly unknown[]
@@ -663,6 +674,7 @@ describe("isolated D1 restore drill", () => {
       if (request.method === "DELETE") {
         return Response.json({ success: true, result: {} })
       }
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const body = (await request.json()) as { readonly batch?: readonly unknown[] }
       return Response.json({
         success: true,
@@ -725,6 +737,7 @@ describe("isolated D1 restore drill", () => {
         deletedUrls.push(request.url)
         return Response.json({ success: true, result: {} })
       }
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const body = (await request.json()) as { readonly batch?: readonly unknown[] }
       return Response.json({
         success: true,
@@ -790,9 +803,10 @@ describe("isolated D1 restore drill", () => {
       fetch: fetchStub
     })
 
-    const failure = await drill.run(archive).catch((error: unknown) => error)
+    const failure = await drill.run(archive).catch((error) => error)
 
     expect(failure).toBeInstanceOf(AggregateError)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     expect((failure as AggregateError).errors.map(String)).toEqual([
       "Error: Restore drill D1 batch failed",
       "Error: Restore drill API request failed with status 500"

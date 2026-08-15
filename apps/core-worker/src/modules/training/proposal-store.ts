@@ -9,7 +9,7 @@ import {
   WorkoutStartArguments,
   type ToolCommand,
   type ToolName,
-  type ToolResult
+  ToolResult
 } from "@bob/contracts/tools"
 import { and, desc, eq } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
@@ -18,6 +18,7 @@ import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
 import type { TrainingStore } from "./store.ts"
 
+import { JsonObject as JsonObjectSchema } from "../../json.ts"
 import { messages, users } from "../conversations/schema.ts"
 import { trainingProposals } from "./schema.ts"
 
@@ -33,6 +34,8 @@ export const trainingMutationToolNames = [
 ] as const satisfies readonly ToolName[]
 
 export type TrainingMutationToolName = (typeof trainingMutationToolNames)[number]
+
+const TrainingMutationTool = Schema.Literals(trainingMutationToolNames)
 
 const trainingMutationToolSet = new Set<ToolName>(trainingMutationToolNames)
 
@@ -76,20 +79,20 @@ export const TrainingProposalStore = Context.Service<TrainingProposalStore>(
   "bob/TrainingProposalStore"
 )
 
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value === "boolean" || typeof value === "number") {
-    return JSON.stringify(value)
-  }
-  if (typeof value === "string") return JSON.stringify(value)
+function isJsonObject(value: typeof Schema.Json.Type): value is typeof JsonObjectSchema.Type {
+  return value !== null && !Array.isArray(value) && Object(value) === value
+}
+
+function canonicalJson(value: typeof Schema.Json.Type): string {
+  if (value === null) return JSON.stringify(value)
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`
-  if (typeof value === "object") {
-    const record = value as Record<string, unknown>
-    return `{${Object.keys(record)
+  if (isJsonObject(value)) {
+    return `{${Object.keys(value)
       .toSorted()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key] ?? null)}`)
       .join(",")}}`
   }
-  throw new Error("Training proposal contains an unsupported value")
+  return JSON.stringify(value)
 }
 
 async function commandHash(input: {
@@ -139,42 +142,55 @@ export function makeTrainingProposalStore(
     })
   }
 
-  async function encodePrivate(ownerId: string, value: unknown): Promise<string> {
+  async function encodePrivate<Input>(ownerId: string, value: Input): Promise<string> {
     const encrypted = await protection.encryptText(await ownerKey(ownerId), JSON.stringify(value))
     return JSON.stringify(encrypted)
   }
 
-  async function decodePrivate<T>(ownerId: string, value: string): Promise<T> {
-    const encrypted = JSON.parse(value) as { ciphertext: string; iv: string }
-    return JSON.parse(await protection.decryptText(await ownerKey(ownerId), encrypted)) as T
+  async function decodePrivate<S extends Schema.ConstraintDecoder<unknown>>(
+    ownerId: string,
+    value: string,
+    schema: S
+  ): Promise<S["Type"]> {
+    const encrypted = Schema.decodeUnknownSync(
+      Schema.Struct({ ciphertext: Schema.String, iv: Schema.String })
+    )(JSON.parse(value))
+    const plaintext = await protection.decryptText(await ownerKey(ownerId), encrypted)
+    return Schema.decodeUnknownSync(schema)(JSON.parse(plaintext))
   }
 
   async function summary(
     ownerId: string,
     row: typeof trainingProposals.$inferSelect
   ): Promise<TrainingProposalSummary> {
-    if (row.userId !== ownerId || !isTrainingMutationTool(row.toolName as ToolName)) {
+    if (row.userId !== ownerId) {
       throw new Error("Training proposal does not belong to the owner")
     }
-    return {
+    const toolName = Schema.decodeUnknownSync(TrainingMutationTool)(row.toolName)
+    const proposal = {
       id: row.id,
       proposalHash: row.proposalHash,
-      toolName: row.toolName as TrainingMutationToolName,
-      arguments: await decodePrivate<JsonObject>(ownerId, row.argumentsJson),
+      toolName,
+      arguments: await decodePrivate(ownerId, row.argumentsJson, JsonObjectSchema),
       status: row.status,
-      createdAt: row.createdAt,
-      ...(row.approvedAt === null ? {} : { approvedAt: row.approvedAt }),
-      ...(row.appliedAt === null ? {} : { appliedAt: row.appliedAt })
+      createdAt: row.createdAt
     }
+    if (row.approvedAt === null && row.appliedAt === null) return proposal
+    if (row.approvedAt === null) {
+      if (row.appliedAt === null) return proposal
+      return { ...proposal, appliedAt: row.appliedAt }
+    }
+    if (row.appliedAt === null) return { ...proposal, approvedAt: row.approvedAt }
+    return { ...proposal, approvedAt: row.approvedAt, appliedAt: row.appliedAt }
   }
 
   async function applyProposal(
     ownerId: string,
     row: typeof trainingProposals.$inferSelect
   ): Promise<ToolResult> {
-    const argumentsValue = await decodePrivate<JsonObject>(ownerId, row.argumentsJson)
+    const argumentsValue = await decodePrivate(ownerId, row.argumentsJson, JsonObjectSchema)
     const idempotencyKey = row.commandIdempotencyKey
-    switch (row.toolName as TrainingMutationToolName) {
+    switch (Schema.decodeUnknownSync(TrainingMutationTool)(row.toolName)) {
       case "gym_create": {
         const args = Schema.decodeUnknownSync(GymCreateArguments)(argumentsValue)
         const gymId = await training.createGym(ownerId, args.name, idempotencyKey)
@@ -357,7 +373,7 @@ export function makeTrainingProposalStore(
       if (proposal.status === "rejected") throw new Error("Training proposal was rejected")
       if (proposal.status === "applied") {
         if (proposal.resultJson === null) throw new Error("Training proposal result is unavailable")
-        return decodePrivate<ToolResult>(ownerId, proposal.resultJson)
+        return decodePrivate(ownerId, proposal.resultJson, ToolResult)
       }
 
       if (proposal.status === "proposed") {

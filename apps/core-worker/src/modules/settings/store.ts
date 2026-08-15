@@ -39,6 +39,13 @@ export interface OwnerSettingsStoreOptions {
   readonly randomUuid?: () => string
 }
 
+interface OwnerSettingsValues {
+  updatedAt: string
+  timeZone?: string
+  locale?: string
+  hourCycle?: HourCycle
+}
+
 function canonicalTimeZone(value: string): string {
   try {
     return new Intl.DateTimeFormat("en", { timeZone: value }).resolvedOptions().timeZone
@@ -150,12 +157,10 @@ export function makeOwnerSettingsStore(
       if ((await completedEffect(database, effect)) !== undefined) return get(ownerId)
 
       const at = now().toISOString()
-      const values = {
-        ...(input.timeZone === undefined ? {} : { timeZone: canonicalTimeZone(input.timeZone) }),
-        ...(input.locale === undefined ? {} : { locale: canonicalLocale(input.locale) }),
-        ...(input.hourCycle === undefined ? {} : { hourCycle: input.hourCycle }),
-        updatedAt: at
-      }
+      const values: OwnerSettingsValues = { updatedAt: at }
+      if (input.timeZone !== undefined) values.timeZone = canonicalTimeZone(input.timeZone)
+      if (input.locale !== undefined) values.locale = canonicalLocale(input.locale)
+      if (input.hourCycle !== undefined) values.hourCycle = input.hourCycle
       try {
         await database.batch([
           database.update(users).set(values).where(eq(users.id, ownerId)),

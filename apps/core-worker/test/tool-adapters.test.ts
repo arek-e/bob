@@ -1,6 +1,7 @@
 import type { AgentRunRequest } from "@bob/contracts/agent"
 import type { ToolCommand, ToolName } from "@bob/contracts/tools"
 
+import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import type { ConnectionStore } from "../src/modules/connections/store.ts"
@@ -21,12 +22,14 @@ import { makeMemoryToolAdapter } from "../src/modules/memory/tool-adapter.ts"
 import { makeReminderToolAdapter } from "../src/modules/reminders/tool-adapter.ts"
 import { makeSettingsToolAdapter } from "../src/modules/settings/tool-adapter.ts"
 import { makeTrainingToolAdapter } from "../src/modules/training/tool-adapter.ts"
+import { testFixture } from "./test-fixture.ts"
 
 const ownerId = "00000000-0000-4000-8000-000000000001"
 const runId = "00000000-0000-4000-8000-000000000002"
 
 function run(userText: string): ToolRunContext {
   return {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     request: {
       runId,
       ownerId,
@@ -52,10 +55,11 @@ function run(userText: string): ToolRunContext {
 
 function commandContext(
   name: ToolName,
-  argumentsValue: Record<string, unknown>,
+  argumentsValue: typeof Schema.Json.Type,
   userText = "Show my saved records."
 ): ToolCommandAdapterContext {
   return {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     command: {
       runId,
       toolCallId: "tool-call",
@@ -78,7 +82,8 @@ describe("domain-owned Tool command Adapters", () => {
   })
 
   it("keeps reminder list behavior in the Reminder Adapter", async () => {
-    const reminders = { list: vi.fn().mockResolvedValue([]) } as unknown as ReminderStore
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const reminders = testFixture<ReminderStore>({ list: vi.fn().mockResolvedValue([]) })
     const result = await makeReminderToolAdapter(reminders).execute(
       commandContext("reminder_list", {})
     )
@@ -93,7 +98,8 @@ describe("domain-owned Tool command Adapters", () => {
       proposalHash: "sha256:proposal",
       status: "proposed"
     })
-    const training = { proposeTraining } as unknown as TrainingModule
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const training = testFixture<TrainingModule>({ proposeTraining })
     const result = await makeTrainingToolAdapter(training).execute(
       commandContext("gym_create", { name: "Home gym" }, "Please create a gym called Home gym.")
     )
@@ -109,12 +115,13 @@ describe("domain-owned Tool command Adapters", () => {
   })
 
   it("keeps journal link composition in the Journal Adapter", async () => {
-    const journal = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const journal = testFixture<JournalStore>({
       createHandoff: vi.fn().mockResolvedValue({
         id: "handoff",
         expiresAt: "2026-08-11T10:10:00.000Z"
       })
-    } as unknown as JournalStore
+    })
     const result = await makeJournalToolAdapter(journal, {
       uiBaseUrl: "https://bob.example.invalid"
     }).execute(commandContext("journal_link_create", {}))
@@ -127,9 +134,10 @@ describe("domain-owned Tool command Adapters", () => {
   })
 
   it("keeps recall behavior in the Memory Adapter", async () => {
-    const memory = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const memory = testFixture<MemoryStore>({
       search: vi.fn().mockResolvedValue([])
-    } as unknown as MemoryStore
+    })
     const result = await makeMemoryToolAdapter(memory).execute(
       commandContext("memory_search", { query: "gym" })
     )
@@ -139,7 +147,8 @@ describe("domain-owned Tool command Adapters", () => {
   })
 
   it("keeps owner settings and connection commands in their Adapters", async () => {
-    const settings = {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const settings = testFixture<OwnerSettingsStore>({
       get: vi.fn().mockResolvedValue({
         timeZone: "Europe/Stockholm",
         locale: "en",
@@ -147,15 +156,16 @@ describe("domain-owned Tool command Adapters", () => {
         updatedAt: "2026-08-11T10:00:00.000Z"
       }),
       connections: vi.fn().mockResolvedValue([])
-    } as unknown as OwnerSettingsStore
-    const connections = {
+    })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const connections = testFixture<ConnectionStore>({
       list: vi.fn().mockResolvedValue([]),
       createSession: vi.fn().mockResolvedValue({
         provider: "google_calendar",
         connectUrl: "https://connect.example.invalid",
         expiresAt: "2026-08-11T10:30:00.000Z"
       })
-    } as unknown as ConnectionStore
+    })
 
     const settingsResult = await makeSettingsToolAdapter(settings, connections).execute(
       commandContext("settings_get", {})

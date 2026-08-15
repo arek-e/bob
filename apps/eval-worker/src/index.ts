@@ -13,8 +13,8 @@ const safeFailureCodes = new Set([
   "invalid_evaluation_suite"
 ])
 
-function safeFailureCode(error: unknown): string {
-  if (error instanceof Error && safeFailureCodes.has(error.message)) return error.message
+function safeFailureCode(cause: unknown): string {
+  if (cause instanceof Error && safeFailureCodes.has(cause.message)) return cause.message
   return "evaluation_runtime_failed"
 }
 

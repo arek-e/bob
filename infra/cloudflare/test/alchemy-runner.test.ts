@@ -15,6 +15,7 @@ describe("Alchemy stage runner", () => {
       "--stage",
       "prod"
     ])
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const packageJson = JSON.parse(
       await readFile(new URL("../package.json", import.meta.url), "utf8")
     ) as { scripts: Record<string, string> }

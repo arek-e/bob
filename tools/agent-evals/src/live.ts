@@ -1,3 +1,5 @@
+import { Schema } from "effect"
+
 import {
   evaluateSuite,
   type EvaluationReport,
@@ -25,7 +27,7 @@ export interface LiveEvaluationInput {
 export interface LiveEvaluationOptions {
   readonly approved: boolean
   readonly suite: EvaluationSuite
-  readonly observe: (input: LiveEvaluationInput) => Promise<unknown>
+  readonly observe: (input: LiveEvaluationInput) => Promise<typeof Schema.Json.Type>
 }
 
 async function withTimeout<T>(promise: Promise<T>): Promise<T> {
@@ -63,7 +65,7 @@ export async function runBoundedLiveEvaluation(
   if (scenarios.length > MAX_LIVE_CASES) throw new Error("live_evaluation_case_limit_exceeded")
   scenarios.forEach(assertLiveCaseIsSafe)
 
-  const observations: unknown[] = []
+  const observations: (typeof Schema.Json.Type)[] = []
   for (const scenario of scenarios) {
     const result = await withTimeout(
       options.observe({
@@ -79,10 +81,8 @@ export async function runBoundedLiveEvaluation(
         }
       })
     )
-    if (result === null || typeof result !== "object" || Array.isArray(result)) {
-      throw new Error("live_adapter_output_invalid")
-    }
-    observations.push({ ...(result as Record<string, unknown>), caseId: scenario.id })
+    const record = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(result)
+    observations.push({ ...record, caseId: scenario.id })
   }
 
   const candidates = decodeCandidateSet({

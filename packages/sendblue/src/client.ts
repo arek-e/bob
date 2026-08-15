@@ -57,7 +57,7 @@ export function createSendblueClient(options: SendblueClientOptions) {
     "sb-api-secret-key": options.apiSecretKey
   }
 
-  async function sendInteraction(path: string, body: unknown): Promise<InteractionOutcome> {
+  async function sendInteraction<Body>(path: string, body: Body): Promise<InteractionOutcome> {
     const controller = new AbortController()
     const timeout = setTimeout(
       () => controller.abort("sendblue_interaction_timeout"),
@@ -93,13 +93,13 @@ export function createSendblueClient(options: SendblueClientOptions) {
         const messageBody = {
           number: claim.number,
           from_number: claim.fromNumber,
-          content: claim.smsSafeText,
-          ...(claim.replyToMessageHandle === undefined
-            ? {}
-            : { reply_to: { message_handle: claim.replyToMessageHandle } }),
-          ...(statusCallback === undefined ? {} : { status_callback: statusCallback })
+          content: claim.smsSafeText
         }
-        const send = (body: unknown) =>
+        if (claim.replyToMessageHandle !== undefined)
+          Object.assign(messageBody, { reply_to: { message_handle: claim.replyToMessageHandle } })
+        if (statusCallback !== undefined)
+          Object.assign(messageBody, { status_callback: statusCallback })
+        const send = <Body>(body: Body) =>
           request(`${baseUrl}/api/send-message`, {
             method: "POST",
             headers,
@@ -114,12 +114,14 @@ export function createSendblueClient(options: SendblueClientOptions) {
           response.status !== 408 &&
           response.status !== 429
         if (canSafelyFallback) {
-          response = await send({
+          const fallbackBody = {
             number: claim.number,
             from_number: claim.fromNumber,
-            content: claim.smsSafeText,
-            ...(statusCallback === undefined ? {} : { status_callback: statusCallback })
-          })
+            content: claim.smsSafeText
+          }
+          if (statusCallback !== undefined)
+            Object.assign(fallbackBody, { status_callback: statusCallback })
+          response = await send(fallbackBody)
         }
 
         if (!response.ok) {
@@ -160,12 +162,14 @@ export function createSendblueClient(options: SendblueClientOptions) {
       readonly state: "start" | "stop"
       readonly maxDurationMs?: number
     }): Promise<InteractionOutcome> {
-      return sendInteraction("/api/send-typing-indicator", {
+      const body = {
         number: input.number,
         from_number: input.fromNumber,
-        state: input.state,
-        ...(input.maxDurationMs === undefined ? {} : { max_duration_ms: input.maxDurationMs })
-      })
+        state: input.state
+      }
+      if (input.maxDurationMs !== undefined)
+        Object.assign(body, { max_duration_ms: input.maxDurationMs })
+      return sendInteraction("/api/send-typing-indicator", body)
     },
 
     async getStatus(handle: string): Promise<SendblueStatus> {

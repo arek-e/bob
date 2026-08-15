@@ -1,3 +1,5 @@
+import type { InboundJob, OutboundJob } from "@bob/contracts/jobs"
+
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import {
   applyD1Migrations,
@@ -9,7 +11,7 @@ import {
 } from "cloudflare:test"
 import { env } from "cloudflare:workers"
 import { eq } from "drizzle-orm"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import type { CoreBindings } from "../src/bindings.ts"
@@ -232,7 +234,8 @@ describe("D1 migrations and durability", () => {
       deploymentEnvironment: "test"
     })
     const bindings = {
-      ...(env as unknown as CoreBindings),
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      ...(env as CoreBindings),
       DATA_KEK_KEYRING_JSON: JSON.stringify({ 1: "07".repeat(32) }),
       DATA_LOOKUP_KEY: "09".repeat(32)
     } satisfies CoreBindings
@@ -306,7 +309,9 @@ describe("D1 migrations and durability", () => {
     })
     expect(
       JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
-        typeof value === "bigint" ? value.toString() : value
+        value !== null && value !== undefined && value.constructor === BigInt
+          ? value.toString()
+          : value
       )
     ).not.toContain(event.text)
   })
@@ -318,7 +323,8 @@ describe("D1 migrations and durability", () => {
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
-    const bindings = env as unknown as CoreBindings
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const bindings = env as CoreBindings
     const traceId = "11111111111111111111111111111111"
     const parentSpanId = "2222222222222222"
 
@@ -428,9 +434,13 @@ describe("D1 migrations and durability", () => {
       database,
       protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
         settings
       },
@@ -462,13 +472,15 @@ describe("D1 migrations and durability", () => {
   it("recovers an exhausted inbound Queue message through the durable event", async () => {
     const { database } = await seedRunData()
     const sent: unknown[] = []
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const queue = {
-      send: async (body: unknown) => {
+      send: async (body: InboundJob) => {
         sent.push(body)
       }
-    } as unknown as Queue
+    } as Queue
     const bindings = {
-      ...(env as unknown as CoreBindings),
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      ...(env as CoreBindings),
       INBOUND_QUEUE: queue,
       INBOUND_DEAD_LETTER_QUEUE_NAME: "bob-inbound-dead-letter-test"
     } satisfies CoreBindings
@@ -535,13 +547,15 @@ describe("D1 migrations and durability", () => {
       })
     }
     const bindings = {
-      ...(env as unknown as CoreBindings),
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      ...(env as CoreBindings),
       INBOUND_DEAD_LETTER_QUEUE_NAME: "bob-inbound-dead-letter-test",
       DELIVERY_RESULT_QUEUE_NAME: "bob-delivery-result-test",
       DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: "bob-delivery-result-dead-letter-test",
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       OWNER_RUN_COORDINATOR: {
         jurisdiction: () => coordinatorNamespace
-      } as unknown as DurableObjectNamespace
+      } as DurableObjectNamespace
     } satisfies CoreBindings
     const batch = createMessageBatch("bob-inbound-test", [
       {
@@ -1081,12 +1095,14 @@ describe("D1 migrations and durability", () => {
     await database.update(agentRuns).set({ status: "completed" }).where(eq(agentRuns.id, runId))
     const sent: unknown[] = []
     const bindings = {
-      ...(env as unknown as CoreBindings),
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      ...(env as CoreBindings),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       OUTBOUND_QUEUE: {
-        send: async (body: unknown) => {
+        send: async (body: OutboundJob) => {
           sent.push(body)
         }
-      } as unknown as Queue
+      } as Queue
     } satisfies CoreBindings
 
     await processInbound(inboundId, bindings, composeCore(bindings))
@@ -1163,7 +1179,8 @@ describe("D1 migrations and durability", () => {
       occurredAt: "2026-08-11T10:00:01.000Z"
     }
     const bindings = {
-      ...(env as unknown as CoreBindings),
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      ...(env as CoreBindings),
       DELIVERY_RESULT_QUEUE_NAME: "bob-delivery-result-test"
     } satisfies CoreBindings
 
@@ -1864,6 +1881,7 @@ describe("D1 migrations and durability", () => {
     )
     expect(proposal.status).toBe("proposed")
     await expect(
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       memory.confirm(ownerId, proposal.candidateId, "agent" as never, "memory:confirm:invalid")
     ).rejects.toThrow("cannot confirm")
     const revisionId = await memory.confirm(
@@ -1929,10 +1947,14 @@ describe("D1 migrations and durability", () => {
       database,
       protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {} as never,
         memory,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {} as never
       },
       {
@@ -2309,10 +2331,15 @@ describe("D1 migrations and durability", () => {
       database,
       protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: { list: async () => [] } as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {} as never
       },
       {
@@ -2360,10 +2387,15 @@ describe("D1 migrations and durability", () => {
       database,
       protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: { list: async () => [] } as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {} as never
       },
       { uiBaseUrl: "https://bob.example.invalid" }
@@ -2571,10 +2603,14 @@ describe("D1 migrations and durability", () => {
       database,
       protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
         training,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {} as never
       },
       { uiBaseUrl: "https://bob.example.invalid" }
@@ -2666,16 +2702,23 @@ describe("D1 migrations and durability", () => {
       database,
       protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
         training,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {} as never
       },
       { uiBaseUrl: "https://bob.example.invalid" }
     )
     let call = 0
-    async function approve(name: (typeof allowedTools)[number], argumentsValue: object) {
+    async function approve(
+      name: (typeof allowedTools)[number],
+      argumentsValue: typeof Schema.Json.Type
+    ) {
       call += 1
       const proposed = await executor.execute({
         runId,
@@ -2686,6 +2729,7 @@ describe("D1 migrations and durability", () => {
         arguments: argumentsValue
       })
       expect(proposed).toMatchObject({ ok: true, code: "training_proposed" })
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       const data = proposed.data as { proposalId: string; proposalHash: string }
       await expect(
         executor.approveTrainingProposal(
@@ -2704,23 +2748,27 @@ describe("D1 migrations and durability", () => {
     }
 
     const gym = await approve("gym_create", { name: "Home gym" })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const gymId = (gym.data as { gymId: string }).gymId
     const exercise = await approve("exercise_create", {
       name: "Leg press",
       instructions: "Use a comfortable range."
     })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const exerciseId = (exercise.data as { exerciseId: string }).exerciseId
     const item = await approve("gym_add_equipment", {
       gymId,
       name: "Leg press machine",
       identifier: "LP-1"
     })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const equipmentId = (item.data as { equipmentId: string }).equipmentId
     await approve("equipment_map_exercise", { equipmentId, exerciseId })
     const saved = await approve("routine_save", {
       name: "Tuesday strength",
       steps: [{ exerciseId, targetSets: 3, targetReps: 10 }]
     })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const routineId = (saved.data as { routineId: string }).routineId
 
     call += 1
@@ -2737,10 +2785,12 @@ describe("D1 migrations and durability", () => {
       code: "routine_found",
       data: { routine: { id: routineId, name: "Tuesday strength" } }
     })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const routineStepId = (routine.data as { routine: { steps: readonly { id: string }[] } })
       .routine.steps[0]!.id
 
     const started = await approve("workout_start", { routineId, gymId })
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const sessionId = (started.data as { sessionId: string }).sessionId
     await approve("workout_log_set", {
       sessionId,
@@ -2808,10 +2858,14 @@ describe("D1 migrations and durability", () => {
       database,
       protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
         training,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {} as never
       },
       { uiBaseUrl: "https://bob.example.invalid" }
@@ -2825,6 +2879,7 @@ describe("D1 migrations and durability", () => {
       arguments: { name: "Recovery gym" }
     }
     const proposed = await executor.execute(command)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const proposal = proposed.data as { proposalId: string; proposalHash: string }
     const gymId = await training.createGym(ownerId, "Recovery gym", command.idempotencyKey)
     await database

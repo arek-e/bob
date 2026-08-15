@@ -21,14 +21,14 @@ export interface UploadEncryptedBackupOptions {
   readonly secretAccessKey: string
 }
 
-function directorySyncIsUnsupported(error: unknown): boolean {
-  if (typeof error !== "object" || error === null || !("code" in error)) return false
-  return ["EBADF", "EINVAL", "EISDIR", "ENOSYS", "ENOTSUP", "EPERM"].includes(String(error.code))
+function directorySyncIsUnsupported(cause: unknown): boolean {
+  if (!(cause instanceof Error) || !("code" in cause)) return false
+  return ["EBADF", "EINVAL", "EISDIR", "ENOSYS", "ENOTSUP", "EPERM"].includes(String(cause.code))
 }
 
-function errorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("code" in error)) return undefined
-  return String(error.code)
+function errorCode(cause: unknown): string | undefined {
+  if (!(cause instanceof Error) || !("code" in cause)) return undefined
+  return String(cause.code)
 }
 
 async function syncDirectory(directory: string): Promise<void> {

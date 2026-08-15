@@ -40,11 +40,13 @@ export interface UsageBudgetResult {
   }
 }
 
-export function utcDayWindow(occurredAt: string): {
+export interface UtcDayWindow {
   readonly key: string
   readonly start: string
   readonly end: string
-} {
+}
+
+export function utcDayWindow(occurredAt: string): UtcDayWindow {
   const instant = new Date(occurredAt)
   if (Number.isNaN(instant.getTime())) throw new TypeError("Usage time is invalid")
   const key = instant.toISOString().slice(0, 10)

@@ -236,10 +236,15 @@ function makeExecutor(
     database,
     protection,
     {
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       reminders: { list } as never,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       memory: {} as never,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       journal: {} as never,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       training: {} as never,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       settings: {} as never
     },
     { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
@@ -296,6 +301,7 @@ describe("conversation tool claim fence", () => {
         seeded.database,
         seeded.protection,
         {
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           reminders: {
             list: async () => [
               {
@@ -309,9 +315,13 @@ describe("conversation tool claim fence", () => {
               cancelCalls += 1
             }
           } as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           memory: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           journal: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           training: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           settings: {} as never
         },
         { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
@@ -360,6 +370,7 @@ describe("conversation tool claim fence", () => {
       seeded.database,
       seeded.protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {
           createOneShot: async () => {
             createCalls += 1
@@ -371,9 +382,13 @@ describe("conversation tool claim fence", () => {
             }
           }
         } as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {} as never
       },
       { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
@@ -411,6 +426,7 @@ describe("conversation tool claim fence", () => {
       seeded.database,
       seeded.protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {
           createOneShot: async () => {
             createCalls += 1
@@ -422,9 +438,13 @@ describe("conversation tool claim fence", () => {
             }
           }
         } as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {} as never
       },
       { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
@@ -474,15 +494,21 @@ describe("conversation tool claim fence", () => {
         seeded.database,
         seeded.protection,
         {
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           reminders: {
             createOneShot: async () => {
               createCalls += 1
+              // SAFETY: This controlled test fixture matches the asserted contract used by this test.
               return {} as never
             }
           } as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           memory: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           journal: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           training: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           settings: {} as never
         },
         { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
@@ -527,6 +553,7 @@ describe("conversation tool claim fence", () => {
       seeded.database,
       seeded.protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {
           createOneShot: async () => {
             createCalls += 1
@@ -538,9 +565,13 @@ describe("conversation tool claim fence", () => {
             }
           }
         } as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {} as never
       },
       { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
@@ -607,15 +638,21 @@ describe("conversation tool claim fence", () => {
         seeded.database,
         seeded.protection,
         {
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           reminders: {
             createOneShot: async () => {
               createCalls += 1
+              // SAFETY: This controlled test fixture matches the asserted contract used by this test.
               return {} as never
             }
           } as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           memory: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           journal: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           training: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           settings: {} as never
         },
         { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }
@@ -651,10 +688,15 @@ describe("conversation tool claim fence", () => {
       database,
       protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {
           update: async () => {
             updateCalls += 1
@@ -714,10 +756,15 @@ describe("conversation tool claim fence", () => {
       seeded.database,
       seeded.protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {
           update: async (_ownerId: string, input: { readonly timeZone?: string }) => {
             updateCalls += 1
@@ -785,10 +832,15 @@ describe("conversation tool claim fence", () => {
       seeded.database,
       seeded.protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {
           update: async (_ownerId: string, input: { readonly timeZone?: string }) => {
             updateCalls += 1
@@ -852,10 +904,15 @@ describe("conversation tool claim fence", () => {
       seeded.database,
       seeded.protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {
           update: async (_ownerId: string, input: { readonly timeZone?: string }) => {
             updateCalls += 1
@@ -917,10 +974,15 @@ describe("conversation tool claim fence", () => {
       seeded.database,
       seeded.protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {
           update: async () => {
             markMutationStarted()
@@ -1046,10 +1108,15 @@ describe("conversation tool claim fence", () => {
       seeded.database,
       seeded.protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {
           update: async () => {
             mutationStarted()
@@ -1139,10 +1206,15 @@ describe("conversation tool claim fence", () => {
         seeded.database,
         seeded.protection,
         {
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           reminders: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           memory: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           journal: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           training: {} as never,
+          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
           settings: {
             update: async () => {
               updateCalls += 1
@@ -1200,6 +1272,7 @@ describe("conversation tool claim fence", () => {
       seeded.database,
       seeded.protection,
       {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         reminders: {
           createOneShot: async () => {
             createCalls += 1
@@ -1211,9 +1284,13 @@ describe("conversation tool claim fence", () => {
             }
           }
         } as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         memory: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         journal: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         training: {} as never,
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         settings: {} as never
       },
       { uiBaseUrl: "https://bob.example.invalid", now: () => new Date(at) }

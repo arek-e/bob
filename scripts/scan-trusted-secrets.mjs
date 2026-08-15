@@ -35,9 +35,9 @@ async function filesIn(directory) {
   let entries
   try {
     entries = await readdir(directory, { withFileTypes: true })
-  } catch (error) {
-    if (error !== null && typeof error === "object" && error.code === "ENOENT") return []
-    throw error
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") return []
+    throw cause
   }
 
   const files = []

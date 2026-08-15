@@ -68,6 +68,7 @@ describe("OpenBao Pi credential store", () => {
         return Response.json({ auth: { client_token: "vault-token", lease_duration: 300 } })
       }
       if (init?.method === "POST") {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         bodies.push(JSON.parse(String(init.body)) as unknown)
         return Response.json({ data: {} })
       }

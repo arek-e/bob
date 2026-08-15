@@ -1,3 +1,5 @@
+import { isJsonObject, type JsonObject, type JsonValue } from "./json.ts"
+
 export type ConnectionProvider = "google_calendar" | "microsoft_calendar"
 
 export interface GatewayConnection {
@@ -24,29 +26,18 @@ export interface ConnectionsProvider {
   }): Promise<ReadonlyArray<GatewayConnection>>
 }
 
-interface NangoConnection {
-  readonly connection_id?: unknown
-  readonly provider_config_key?: unknown
-  readonly created_at?: unknown
-  readonly created?: unknown
-  readonly tags?: unknown
-  readonly errors?: unknown
+function record(value: JsonValue | undefined): JsonObject | undefined {
+  return isJsonObject(value) ? value : undefined
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined
-}
-
-function requiredString(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0) {
+function requiredString(value: JsonValue | undefined): string {
+  if (Object.prototype.toString.call(value) !== "[object String]" || String(value).length === 0) {
     throw new Error("connections_provider_invalid_response")
   }
-  return value
+  return String(value)
 }
 
-function requiredHttpsUrl(value: unknown): URL {
+function requiredHttpsUrl(value: JsonValue | undefined): URL {
   try {
     const url = new URL(requiredString(value))
     if (url.protocol !== "https:") throw new Error("invalid_protocol")
@@ -80,16 +71,16 @@ export function createNangoProvider(options: {
     Object.entries(options.integrations).map(([provider, integration]) => [integration, provider])
   )
 
-  async function call(path: string, init?: RequestInit): Promise<unknown> {
+  async function call(path: string, init?: RequestInit): Promise<JsonValue | undefined> {
     let response: Response
     try {
+      const headers = new Headers(init?.headers)
+      headers.set("accept", "application/json")
+      headers.set("authorization", `Bearer ${options.secretKey}`)
+      if (init?.body !== undefined) headers.set("content-type", "application/json")
       response = await request(new URL(path, baseUrl), {
         ...init,
-        headers: {
-          accept: "application/json",
-          authorization: `Bearer ${options.secretKey}`,
-          ...(init?.body === undefined ? {} : { "content-type": "application/json" })
-        },
+        headers,
         signal: AbortSignal.timeout(timeoutMs)
       })
     } catch {
@@ -134,7 +125,8 @@ export function createNangoProvider(options: {
       const connections = response?.connections
       if (!Array.isArray(connections)) throw new Error("connections_provider_invalid_response")
       return connections.flatMap((value): ReadonlyArray<GatewayConnection> => {
-        const connection = value as NangoConnection
+        const connection = record(value)
+        if (connection === undefined) return []
         const tags = record(connection.tags)
         if (tags?.end_user_id !== ownerReference) return []
         const integration = requiredString(connection.provider_config_key)

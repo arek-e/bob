@@ -20,7 +20,7 @@ export interface SpanInput {
   readonly feature: TelemetryFeature
   readonly workflow: TelemetryWorkflow
   readonly failureCode?: TelemetrySpanCode
-  readonly errorCode?: (error: unknown) => TelemetrySpanCode
+  readonly errorCode?: (cause: unknown) => TelemetrySpanCode
   readonly now?: () => number
   readonly randomBytes?: (length: number) => Uint8Array
 }
@@ -48,8 +48,20 @@ function randomNonZeroHex(length: number, randomBytes: (length: number) => Uint8
 export function parseTraceparent(value: string | null | undefined): TraceContext | undefined {
   if (value === null || value === undefined) return undefined
   const match = traceparentPattern.exec(value.trim().toLowerCase())
-  if (match === null || /^0+$/u.test(match[1]!) || /^0+$/u.test(match[2]!)) return undefined
-  return { traceId: match[1]!, spanId: match[2]!, traceFlags: match[3]! as "00" | "01" }
+  if (match === null) return undefined
+  const traceId = match[1]
+  const spanId = match[2]
+  const traceFlags = match[3]
+  if (
+    traceId === undefined ||
+    spanId === undefined ||
+    (traceFlags !== "00" && traceFlags !== "01") ||
+    /^0+$/u.test(traceId) ||
+    /^0+$/u.test(spanId)
+  ) {
+    return undefined
+  }
+  return { traceId, spanId, traceFlags }
 }
 
 export function formatTraceparent(context: TraceContext): string {
@@ -83,7 +95,11 @@ export function childTraceContext(
   }
 }
 
-export function traceHeaders(context: TraceContext): Readonly<Record<string, string>> {
+export interface TraceHeaders {
+  readonly traceparent: string
+}
+
+export function traceHeaders(context: TraceContext): TraceHeaders {
   return { traceparent: formatTraceparent(context) }
 }
 

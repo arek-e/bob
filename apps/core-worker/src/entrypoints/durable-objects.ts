@@ -20,6 +20,18 @@ import { outboxMessages } from "../modules/delivery/schema.ts"
 import { processConversationTurn } from "../process-inbound.ts"
 import { makeCoreTelemetryInvocation, scheduleTelemetryWork } from "../telemetry.ts"
 
+export interface CoreDurableDependencies {
+  readonly composeCore: typeof composeCore
+  readonly processConversationTurn: typeof processConversationTurn
+  readonly makeCoreTelemetryInvocation: typeof makeCoreTelemetryInvocation
+}
+
+const coreDurableDependencies: CoreDurableDependencies = {
+  composeCore,
+  processConversationTurn,
+  makeCoreTelemetryInvocation
+}
+
 interface DispatchOutbox {
   readonly correlationId: string
   readonly actionTargetType: string | null
@@ -94,7 +106,8 @@ async function requestAgentSteer(
 export class OwnerRunCoordinator implements DurableObject {
   constructor(
     private readonly state: DurableObjectState,
-    private readonly bindings: CoreBindings
+    private readonly bindings: CoreBindings,
+    private readonly dependencies: CoreDurableDependencies = coreDurableDependencies
   ) {}
 
   async fetch(request: Request): Promise<Response> {
@@ -114,7 +127,7 @@ export class OwnerRunCoordinator implements DurableObject {
     }
     try {
       const job = Schema.decodeUnknownSync(InboundJob)(await request.json())
-      const telemetry = makeCoreTelemetryInvocation(this.bindings)
+      const telemetry = this.dependencies.makeCoreTelemetryInvocation(this.bindings)
       const suppliedCorrelationId = request.headers.get("x-bob-correlation-id")
       const correlationId =
         suppliedCorrelationId === null
@@ -123,7 +136,7 @@ export class OwnerRunCoordinator implements DurableObject {
       const incomingTraceparent = request.headers.get("traceparent") ?? job.traceparent
       const state = this.state
       const bindings = this.bindings
-      const composition = composeCore(bindings)
+      const composition = this.dependencies.composeCore(bindings)
       const accepted = telemetry.runPromise(
         withTraceparentParent(
           incomingTraceparent,
@@ -236,15 +249,20 @@ export class OwnerRunCoordinator implements DurableObject {
   }
 
   private async runReadyTurn(): Promise<void> {
-    const telemetry = makeCoreTelemetryInvocation(this.bindings)
-    const composition = composeCore(this.bindings)
+    const telemetry = this.dependencies.makeCoreTelemetryInvocation(this.bindings)
+    const composition = this.dependencies.composeCore(this.bindings)
     while (true) {
       const ready = await this.state.blockConcurrencyWhile(() =>
         composition.services.turns.claimReady()
       )
       if (ready === undefined) break
       await scheduleEarliestAlarm(this.state.storage, new Date(ready.claimExpiresAt))
-      const processed = processConversationTurn(ready, this.bindings, composition, telemetry)
+      const processed = this.dependencies.processConversationTurn(
+        ready,
+        this.bindings,
+        composition,
+        telemetry
+      )
       scheduleTelemetryWork(this.state, processed.then(telemetry.flush, telemetry.flush))
       await processed
     }
@@ -258,7 +276,8 @@ export class OwnerRunCoordinator implements DurableObject {
 export class ReminderClock implements DurableObject {
   constructor(
     private readonly state: DurableObjectState,
-    private readonly bindings: CoreBindings
+    private readonly bindings: CoreBindings,
+    private readonly dependencies: CoreDurableDependencies = coreDurableDependencies
   ) {}
 
   async fetch(request: Request): Promise<Response> {
@@ -318,7 +337,7 @@ export class ReminderClock implements DurableObject {
     incomingTraceparent: string | undefined,
     operation: (telemetry: ReturnType<typeof makeCoreTelemetryInvocation>) => Promise<A>
   ): Promise<A> {
-    const telemetry = makeCoreTelemetryInvocation(this.bindings)
+    const telemetry = this.dependencies.makeCoreTelemetryInvocation(this.bindings)
     const program = withTraceparentParent(
       incomingTraceparent,
       withBobSpan(
@@ -339,7 +358,7 @@ export class ReminderClock implements DurableObject {
     fallbackCorrelationId: string,
     telemetry: ReturnType<typeof makeCoreTelemetryInvocation>
   ): Promise<number> {
-    const composition = composeCore(this.bindings)
+    const composition = this.dependencies.composeCore(this.bindings)
     const outboxIds = await composition.services.reminders.claimDueAndCreateOutbox(
       composition.config.OWNER_ID,
       60_000
@@ -356,13 +375,21 @@ export class ReminderClock implements DurableObject {
         .limit(1)
       const correlationId = outbox?.correlationId ?? fallbackCorrelationId
       const occurrenceId = reminderOccurrence(outbox)
-      const span: BobSpan = {
-        name: "bob.reminder.dispatch",
-        correlationId,
-        feature: "reminders",
-        outboxId,
-        ...(occurrenceId === undefined ? {} : { reminderOccurrenceId: occurrenceId })
-      }
+      const span: BobSpan =
+        occurrenceId === undefined
+          ? {
+              name: "bob.reminder.dispatch",
+              correlationId,
+              feature: "reminders",
+              outboxId
+            }
+          : {
+              name: "bob.reminder.dispatch",
+              correlationId,
+              feature: "reminders",
+              outboxId,
+              reminderOccurrenceId: occurrenceId
+            }
       const outboundQueue = this.bindings.OUTBOUND_QUEUE
       await telemetry.runPromise(
         withBobRootSpan(
@@ -370,13 +397,11 @@ export class ReminderClock implements DurableObject {
           Effect.gen(function* () {
             const headers = yield* injectCurrentTraceparent()
             const traceparent = headers.get("traceparent")
-            yield* promiseEffect(() =>
-              outboundQueue.send({
-                outboxId,
-                correlationId,
-                ...(traceparent === null ? {} : { traceparent })
-              })
-            )
+            const message =
+              traceparent === null
+                ? { outboxId, correlationId }
+                : { outboxId, correlationId, traceparent }
+            yield* promiseEffect(() => outboundQueue.send(message))
             yield* promiseEffect(() =>
               composition.services.delivery.markEnqueued(outboxId, new Date().toISOString())
             )

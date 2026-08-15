@@ -11,7 +11,7 @@ import {
   TrainingProposalApproval
 } from "@bob/contracts/ui"
 import { featureForToolName } from "@bob/observability/attribution"
-import { recordDecision, withBobSpan } from "@bob/observability/effect"
+import { recordDecision, withBobSpan, type BobSpan } from "@bob/observability/effect"
 import { externalParentFromTraceparent } from "@bob/observability/propagation"
 import { Effect, Schema } from "effect"
 
@@ -69,7 +69,23 @@ function withRequestParent<A, E>(
   return parent === undefined ? effect : Effect.withParentSpan(effect, parent)
 }
 
-function json(value: unknown, status = 200): Response {
+function deliveryResultSpan(
+  name: "bob.delivery_result.accept" | "bob.delivery_result.record",
+  event: typeof NormalizedStatusEvent.Type
+): BobSpan {
+  const common = { name, correlationId: event.correlationId, feature: "delivery" as const }
+  const outboxId = event.outboxId
+  const deliveryAttemptId = event.attemptId
+  if (outboxId === undefined && deliveryAttemptId === undefined) return common
+  if (outboxId === undefined && deliveryAttemptId !== undefined) {
+    return { ...common, deliveryAttemptId }
+  }
+  if (outboxId !== undefined && deliveryAttemptId === undefined) return { ...common, outboxId }
+  if (outboxId === undefined || deliveryAttemptId === undefined) return common
+  return { ...common, outboxId, deliveryAttemptId }
+}
+
+function json<Value>(value: Value, status = 200): Response {
   return Response.json(value, { status, headers: securityHeaders })
 }
 
@@ -83,12 +99,12 @@ function secure(response: Response): Response {
   })
 }
 
-async function readJson(request: Request): Promise<unknown> {
+async function readJson(request: Request): Promise<typeof Schema.Json.Type> {
   const declaredLength = Number(request.headers.get("content-length") ?? "0")
   if (declaredLength > MAX_BODY_BYTES) throw new Error("body_too_large")
   const bytes = new Uint8Array(await request.arrayBuffer())
   if (bytes.byteLength > MAX_BODY_BYTES) throw new Error("body_too_large")
-  return JSON.parse(new TextDecoder().decode(bytes)) as unknown
+  return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(new TextDecoder().decode(bytes)))
 }
 
 function idempotencyKey(request: Request): string {
@@ -129,19 +145,21 @@ async function handleSetup(
   if (request.method !== "POST") return json({ code: "method_not_allowed" }, 405)
   if (await authUserExists(bindings)) return json({ code: "setup_complete" }, 409)
 
-  let value: unknown
+  let value: typeof Schema.Json.Type
   try {
     value = await readJson(request)
   } catch {
     return json({ code: "invalid_request" }, 400)
   }
-  const password =
-    typeof value === "object" && value !== null && "password" in value
-      ? (value as { password?: unknown }).password
-      : undefined
-  if (typeof password !== "string" || password.length < 12 || password.length > 128) {
+  const passwordResult = Schema.decodeUnknownExit(
+    Schema.Struct({
+      password: Schema.String.check(Schema.isMinLength(12), Schema.isMaxLength(128))
+    })
+  )(value)
+  if (passwordResult._tag === "Failure") {
     return json({ code: "invalid_password" }, 400)
   }
+  const password = passwordResult.value.password
 
   const headers = new Headers(request.headers)
   headers.delete("content-length")
@@ -162,7 +180,8 @@ export async function handleHttp(
   request: Request,
   bindings: CoreBindings,
   verifyAccess?: AccessTokenVerifier,
-  telemetry?: CoreTelemetryRunner
+  telemetry?: CoreTelemetryRunner,
+  compose: typeof composeCore = composeCore
 ): Promise<Response> {
   const runTelemetry = telemetry?.runPromise ?? Effect.runPromise
   const url = new URL(request.url)
@@ -207,7 +226,7 @@ export async function handleHttp(
   }
 
   try {
-    const composition = composeCore(bindings)
+    const composition = compose(bindings)
 
     if (request.method === "GET" && url.pathname === "/internal/readiness") {
       const result = await bindings.DB.prepare("SELECT 1 AS ready").first<{ ready: number }>()
@@ -268,21 +287,9 @@ export async function handleHttp(
         withRequestParent(
           request,
           withBobSpan(
-            {
-              name: "bob.delivery_result.accept",
-              correlationId: event.correlationId,
-              feature: "delivery",
-              ...(event.outboxId === undefined ? {} : { outboxId: event.outboxId }),
-              ...(event.attemptId === undefined ? {} : { deliveryAttemptId: event.attemptId })
-            },
+            deliveryResultSpan("bob.delivery_result.accept", event),
             withBobSpan(
-              {
-                name: "bob.delivery_result.record",
-                correlationId: event.correlationId,
-                feature: "delivery",
-                ...(event.outboxId === undefined ? {} : { outboxId: event.outboxId }),
-                ...(event.attemptId === undefined ? {} : { deliveryAttemptId: event.attemptId })
-              },
+              deliveryResultSpan("bob.delivery_result.record", event),
               promiseEffect(() => composition.services.delivery.recordProviderEvent(event))
             )
           )
@@ -625,7 +632,9 @@ export async function handleHttp(
             "CF-Access-Client-Secret": composition.config.AGENT_ADMIN_ACCESS_CLIENT_SECRET
           }
         })
-        const status = (await response.json()) as { configured?: boolean }
+        const status = Schema.decodeUnknownSync(
+          Schema.Struct({ configured: Schema.optionalKey(Schema.Boolean) })
+        )(await response.json())
         if (response.ok && status.configured === true) {
           await composition.services.alerts.setState(
             composition.config.OWNER_ID,
@@ -655,16 +664,22 @@ export async function handleHttp(
 
     if (request.method === "POST" && url.pathname === "/api/journal") {
       const input = Schema.decodeUnknownSync(JournalEntryCreate)(await readJson(request))
-      const id = await composition.services.journal.createEntry(
-        {
-          ownerId: composition.config.OWNER_ID,
-          handoffId: input.handoffId,
-          text: input.text,
-          tags: input.tags,
-          ...(input.approvedSummary === undefined ? {} : { approvedSummary: input.approvedSummary })
-        },
-        idempotencyKey(request)
-      )
+      const entry =
+        input.approvedSummary === undefined
+          ? {
+              ownerId: composition.config.OWNER_ID,
+              handoffId: input.handoffId,
+              text: input.text,
+              tags: input.tags
+            }
+          : {
+              ownerId: composition.config.OWNER_ID,
+              handoffId: input.handoffId,
+              text: input.text,
+              tags: input.tags,
+              approvedSummary: input.approvedSummary
+            }
+      const id = await composition.services.journal.createEntry(entry, idempotencyKey(request))
       return json({ id }, 201)
     }
 

@@ -8,11 +8,7 @@ import type {
 import type { OwnerSettingsStore } from "../settings/store.ts"
 import type { ConnectionStore } from "./store.ts"
 
-type JsonValue = typeof Schema.Json.Type
-
-function jsonObject(value: unknown): { readonly [key: string]: JsonValue } {
-  return JSON.parse(JSON.stringify(value)) as { readonly [key: string]: JsonValue }
-}
+import { jsonObject } from "../../json.ts"
 
 export function makeConnectionsToolAdapter(
   connections: ConnectionStore | undefined,

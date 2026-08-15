@@ -213,7 +213,11 @@ describe("Effect telemetry", () => {
       })
     )
     expect(
-      JSON.stringify(spans, (_key, value) => (typeof value === "bigint" ? value.toString() : value))
+      JSON.stringify(spans, (_key, value) =>
+        value !== null && value !== undefined && value.constructor === BigInt
+          ? value.toString()
+          : value
+      )
     ).not.toMatch(/prompt|arguments|result|reasoning|secret|phone/iu)
 
     await telemetry.shutdown()
@@ -248,7 +252,11 @@ describe("Effect telemetry", () => {
     expect(spans).toHaveLength(1)
     expect(spans[0]).toMatchObject({ name: "bob.model.complete", outcome: "failed" })
     expect(
-      JSON.stringify(spans, (_key, value) => (typeof value === "bigint" ? value.toString() : value))
+      JSON.stringify(spans, (_key, value) =>
+        value !== null && value !== undefined && value.constructor === BigInt
+          ? value.toString()
+          : value
+      )
     ).not.toContain(privateCanary)
   })
 
@@ -291,7 +299,9 @@ describe("Effect telemetry", () => {
     )
     expect(
       JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
-        typeof value === "bigint" ? value.toString() : value
+        value !== null && value !== undefined && value.constructor === BigInt
+          ? value.toString()
+          : value
       )
     ).not.toContain(privateCanary)
   })
@@ -409,7 +419,9 @@ describe("Effect telemetry", () => {
     ])
     expect(
       JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
-        typeof value === "bigint" ? value.toString() : value
+        value !== null && value !== undefined && value.constructor === BigInt
+          ? value.toString()
+          : value
       )
     ).not.toContain(privateCanary)
   })
@@ -533,7 +545,9 @@ describe("Effect telemetry", () => {
     ])
     expect(
       JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
-        typeof value === "bigint" ? value.toString() : value
+        value !== null && value !== undefined && value.constructor === BigInt
+          ? value.toString()
+          : value
       )
     ).not.toContain(privateCanary)
   })

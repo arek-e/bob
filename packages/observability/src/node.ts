@@ -11,8 +11,8 @@ import {
   TelemetryWorkflow,
   WorkflowSpanName
 } from "./events.ts"
-import { makeOtlpHttpSpanProcessor } from "./otlp.ts"
-import { observeSpan, type TraceContext } from "./trace.ts"
+import { makeOtlpHttpSpanProcessor, type OtlpHttpSpanProcessorOptions } from "./otlp.ts"
+import { observeSpan, type SpanInput, type TraceContext } from "./trace.ts"
 
 export interface NodeTelemetryContext {
   readonly correlationId: string
@@ -141,6 +141,27 @@ function otlpTracePayload(
   const durationUnixNano = BigInt(event.durationMs) * 1_000_000n
   const startTimeUnixNano =
     endTimeUnixNano >= durationUnixNano ? endTimeUnixNano - durationUnixNano : 0n
+  const baseSpan = {
+    traceId: event.traceId,
+    spanId: event.spanId,
+    name: event.name,
+    kind: 1,
+    startTimeUnixNano: startTimeUnixNano.toString(),
+    endTimeUnixNano: endTimeUnixNano.toString(),
+    attributes: [
+      stringAttribute("bob.correlation_id", event.correlationId),
+      stringAttribute("bob.trace_id", event.traceId),
+      stringAttribute("bob.status", event.status),
+      stringAttribute("bob.code", event.code),
+      intAttribute("bob.duration_ms", event.durationMs),
+      stringAttribute("bob.feature", event.feature),
+      stringAttribute("bob.workflow", event.workflow)
+    ],
+    status: { code: event.status === "completed" ? 1 : 2 },
+    flags: 1
+  }
+  const span =
+    event.parentSpanId === undefined ? baseSpan : { ...baseSpan, parentSpanId: event.parentSpanId }
   return {
     resourceSpans: [
       {
@@ -156,28 +177,7 @@ function otlpTracePayload(
         scopeSpans: [
           {
             scope: { name: "@bob/observability" },
-            spans: [
-              {
-                traceId: event.traceId,
-                spanId: event.spanId,
-                ...(event.parentSpanId === undefined ? {} : { parentSpanId: event.parentSpanId }),
-                name: event.name,
-                kind: 1,
-                startTimeUnixNano: startTimeUnixNano.toString(),
-                endTimeUnixNano: endTimeUnixNano.toString(),
-                attributes: [
-                  stringAttribute("bob.correlation_id", event.correlationId),
-                  stringAttribute("bob.trace_id", event.traceId),
-                  stringAttribute("bob.status", event.status),
-                  stringAttribute("bob.code", event.code),
-                  intAttribute("bob.duration_ms", event.durationMs),
-                  stringAttribute("bob.feature", event.feature),
-                  stringAttribute("bob.workflow", event.workflow)
-                ],
-                status: { code: event.status === "completed" ? 1 : 2 },
-                flags: 1
-              }
-            ]
+            spans: [span]
           }
         ]
       }
@@ -200,24 +200,28 @@ export interface NodeTelemetryLayerOptions {
 }
 
 export function nodeTelemetryLayer(options: NodeTelemetryLayerOptions): Layer.Layer<Telemetry> {
-  return Layer.suspend(() =>
-    telemetryLayer({
-      processor: makeOtlpHttpSpanProcessor({
-        endpoint: options.endpoint,
-        serviceName: options.serviceName,
-        serviceVersion: options.serviceVersion,
-        deploymentEnvironment: options.deploymentEnvironment,
-        scheduledDelayMs: options.exportIntervalMs ?? 5_000,
-        flushOnShutdown: true,
-        ...(options.headers === undefined ? {} : { headers: options.headers }),
-        ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-        ...(options.exportTimeoutMs === undefined ? {} : { timeoutMs: options.exportTimeoutMs }),
-        ...(options.maxQueueSize === undefined ? {} : { maxQueueSize: options.maxQueueSize }),
-        ...(options.maxBatchSize === undefined ? {} : { maxBatchSize: options.maxBatchSize })
-      }),
+  return Layer.suspend(() => {
+    const processorOptions: OtlpHttpSpanProcessorOptions = {
+      endpoint: options.endpoint,
+      serviceName: options.serviceName,
+      serviceVersion: options.serviceVersion,
+      deploymentEnvironment: options.deploymentEnvironment,
+      scheduledDelayMs: options.exportIntervalMs ?? 5_000,
+      flushOnShutdown: true
+    }
+    if (options.headers !== undefined) Object.assign(processorOptions, { headers: options.headers })
+    if (options.fetch !== undefined) Object.assign(processorOptions, { fetch: options.fetch })
+    if (options.exportTimeoutMs !== undefined)
+      Object.assign(processorOptions, { timeoutMs: options.exportTimeoutMs })
+    if (options.maxQueueSize !== undefined)
+      Object.assign(processorOptions, { maxQueueSize: options.maxQueueSize })
+    if (options.maxBatchSize !== undefined)
+      Object.assign(processorOptions, { maxBatchSize: options.maxBatchSize })
+    return telemetryLayer({
+      processor: makeOtlpHttpSpanProcessor(processorOptions),
       writeHealth: nodeHealthLogWriter(options)
     })
-  )
+  })
 }
 
 export function nodeEventSink(write: (line: string) => void = console.log): EventSink {
@@ -271,7 +275,7 @@ export async function observeNodeSpan<A>(
     readonly feature?: TelemetryFeature
     readonly workflow?: TelemetryWorkflow
     readonly failureCode?: TelemetrySpanCode
-    readonly errorCode?: (error: unknown) => TelemetrySpanCode
+    readonly errorCode?: (cause: unknown) => TelemetrySpanCode
     readonly resultCode?: (result: A) => TelemetrySpanCode | undefined
     readonly now?: () => number
   },
@@ -279,18 +283,19 @@ export async function observeNodeSpan<A>(
 ): Promise<A> {
   const active = currentNodeTelemetryContext()
   if (active === undefined) return operation(undefined)
+  const spanInput: SpanInput = {
+    sink: input.sink,
+    correlationId: active.correlationId,
+    parent: active.trace,
+    name: input.name,
+    feature: input.feature ?? active.feature,
+    workflow: input.workflow ?? active.workflow
+  }
+  if (input.failureCode !== undefined) Object.assign(spanInput, { failureCode: input.failureCode })
+  if (input.errorCode !== undefined) Object.assign(spanInput, { errorCode: input.errorCode })
+  if (input.now !== undefined) Object.assign(spanInput, { now: input.now })
   return observeSpan(
-    {
-      sink: input.sink,
-      correlationId: active.correlationId,
-      parent: active.trace,
-      name: input.name,
-      feature: input.feature ?? active.feature,
-      workflow: input.workflow ?? active.workflow,
-      ...(input.failureCode === undefined ? {} : { failureCode: input.failureCode }),
-      ...(input.errorCode === undefined ? {} : { errorCode: input.errorCode }),
-      ...(input.now === undefined ? {} : { now: input.now })
-    },
+    spanInput,
     (trace) =>
       runWithNodeTelemetryContext(
         {

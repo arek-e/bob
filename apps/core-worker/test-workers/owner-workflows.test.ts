@@ -97,7 +97,8 @@ async function seedOwner() {
 }
 
 async function ownerApi(path: string, init?: RequestInit): Promise<Response> {
-  const bindings = env as unknown as CoreBindings
+  // SAFETY: This focused test double implements every platform member exercised by this test.
+  const bindings = env as CoreBindings
   if (ownerCookie === undefined) {
     const setup = await handleHttp(
       new Request("https://core.example.invalid/setup/api", {
@@ -261,6 +262,7 @@ describe("owner memory review", () => {
       body: "{}"
     })
     expect(confirmed.status).toBe(200)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const { revisionId } = (await confirmed.json()) as { revisionId: string }
 
     const [revision] = await database
@@ -340,6 +342,7 @@ describe("owner memory review", () => {
       body: JSON.stringify({ canonicalText: "My training day is Tuesday." })
     })
     expect(correction.status).toBe(200)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const { candidateId: replacementId } = (await correction.json()) as { candidateId: string }
     await expect(
       memory.correct(

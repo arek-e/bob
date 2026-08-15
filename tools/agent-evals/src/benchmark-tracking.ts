@@ -167,7 +167,7 @@ function assertLedgerInvariants(catalog: BenchmarkCatalog, ledger: BenchmarkRunL
   }
 }
 
-export function decodeBenchmarkCatalog(input: unknown): BenchmarkCatalog {
+export function decodeBenchmarkCatalog<Input>(input: Input): BenchmarkCatalog {
   try {
     const catalog = Schema.decodeUnknownSync(BenchmarkCatalogSchema)(input)
     assertCatalogInvariants(catalog)
@@ -177,7 +177,7 @@ export function decodeBenchmarkCatalog(input: unknown): BenchmarkCatalog {
   }
 }
 
-export function decodeBenchmarkRunLedger(input: unknown): BenchmarkRunLedger {
+export function decodeBenchmarkRunLedger<Input>(input: Input): BenchmarkRunLedger {
   try {
     const ledger = Schema.decodeUnknownSync(BenchmarkRunLedgerSchema)(input)
     if (hasDuplicates(ledger.runs.map((run) => run.runId))) {
@@ -201,7 +201,7 @@ export function summarizeBenchmarkTracking(
       .toSorted((left, right) => right.completedAt.localeCompare(left.completedAt))
     const officialRun = runs.find((run) => run.protocol === "official")
     const latestRun = officialRun ?? runs[0]
-    const status =
+    const status: BenchmarkTrackingItem["status"] =
       benchmark.trackingMode === "reference_only"
         ? "reference_only"
         : officialRun !== undefined
@@ -209,14 +209,14 @@ export function summarizeBenchmarkTracking(
           : latestRun !== undefined
             ? "adapted_score"
             : "not_run"
-    return {
+    const item = {
       benchmarkId: benchmark.id,
       name: benchmark.name,
       trackingMode: benchmark.trackingMode,
       adapterStatus: benchmark.adapterStatus,
-      status,
-      ...(latestRun === undefined ? {} : { latestRun })
+      status
     }
+    return latestRun === undefined ? item : { ...item, latestRun }
   })
   const scoreable = benchmarks.filter((benchmark) => benchmark.trackingMode === "official_score")
   return {

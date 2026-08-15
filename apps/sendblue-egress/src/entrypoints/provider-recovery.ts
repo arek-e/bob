@@ -13,14 +13,14 @@ const RecoveryConfiguration = Schema.Struct({
   SENDBLUE_ALLOWED_USER_NUMBER: Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/))
 })
 
-function recoveryErrorCode(error: unknown): string {
+function recoveryErrorCode(cause: unknown): string {
   if (
-    error instanceof Error &&
+    cause instanceof Error &&
     /^sendblue_(?:history_http_[1-5]\d{2}|history_replay_http_[1-5]\d{2}|lines_http_[1-5]\d{2}|line_unavailable)$/u.test(
-      error.message
+      cause.message
     )
   ) {
-    return error.message
+    return cause.message
   }
   return "unknown"
 }

@@ -118,8 +118,20 @@ export const BobDecisionCode = Schema.Literals([
 ])
 
 export type BobDecisionCode = typeof BobDecisionCode.Type
-export type BobDecisionOutcome = "allowed" | "denied" | "selected" | "applied" | "skipped"
-export type BobTurnPhase = "primary" | "repair"
+export const BobDecisionOutcome = Schema.Literals([
+  "allowed",
+  "denied",
+  "selected",
+  "applied",
+  "skipped"
+])
+export type BobDecisionOutcome = typeof BobDecisionOutcome.Type
+export const BobTurnPhase = Schema.Literals(["primary", "repair"])
+export type BobTurnPhase = typeof BobTurnPhase.Type
+
+export interface SafeAttributes {
+  [key: string]: string | number | boolean
+}
 
 export interface BobDecision {
   readonly name: BobDecisionName
@@ -158,7 +170,7 @@ export interface BobModelUsage {
 export interface SafeSpanEvent {
   readonly name: BobDecisionName
   readonly timeUnixNano: bigint
-  readonly attributes: Readonly<Record<string, string | number | boolean>>
+  readonly attributes: Readonly<SafeAttributes>
 }
 
 export interface SafeSpanRecord {
@@ -171,7 +183,7 @@ export interface SafeSpanRecord {
   readonly startTimeUnixNano: bigint
   readonly endTimeUnixNano: bigint
   readonly outcome: "completed" | "failed"
-  readonly attributes: Readonly<Record<string, string | number | boolean>>
+  readonly attributes: Readonly<SafeAttributes>
   readonly events: ReadonlyArray<SafeSpanEvent>
 }
 
@@ -197,9 +209,7 @@ export const noopSpanProcessor: SafeSpanProcessor = {
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const safeModelPattern = /^gpt-[a-z0-9][a-z0-9.-]{0,90}$/
 
-const spanSemantics: Readonly<
-  Record<BobSpanName, { readonly kind: Tracer.SpanKind; readonly workflow: TelemetryWorkflow }>
-> = {
+const spanSemantics = {
   "bob.webhook.receive": { kind: "server", workflow: "inbound_message" },
   "bob.inbound.invoke": { kind: "client", workflow: "inbound_message" },
   "bob.inbound.accept": { kind: "server", workflow: "inbound_message" },
@@ -250,7 +260,9 @@ const spanSemantics: Readonly<
   "bob.reminder.invoke": { kind: "client", workflow: "reminder_delivery" },
   "bob.reminder.accept": { kind: "server", workflow: "reminder_delivery" },
   "bob.reminder.dispatch": { kind: "producer", workflow: "reminder_delivery" }
-}
+} satisfies Readonly<
+  Record<BobSpanName, { readonly kind: Tracer.SpanKind; readonly workflow: TelemetryWorkflow }>
+>
 
 function assertNatural(value: number | undefined, label: string): void {
   if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
@@ -287,7 +299,7 @@ function validateSpan(input: BobSpan): void {
 function validateDecision(input: BobDecision): void {
   Schema.decodeUnknownSync(BobDecisionName)(input.name)
   Schema.decodeUnknownSync(BobDecisionCode)(input.code)
-  if (!decisionOutcomes.has(input.outcome)) throw new TypeError("Decision outcome is invalid")
+  Schema.decodeUnknownSync(BobDecisionOutcome)(input.outcome)
   assertNatural(input.selectedCount, "Selected count")
   assertNatural(input.conversationRevision, "Conversation revision")
   if (input.toolName !== undefined) Schema.decodeUnknownSync(ToolName)(input.toolName)
@@ -299,53 +311,45 @@ function validateDecision(input: BobDecision): void {
   }
 }
 
-function spanAttributes(input: BobSpan): Record<string, string | number> {
+function spanAttributes(input: BobSpan): SafeAttributes {
   const semantics = spanSemantics[input.name]
-  return {
+  const attributes: SafeAttributes = {
     "bob.correlation.id": input.correlationId,
     "bob.feature": input.feature,
-    "bob.workflow": semantics.workflow,
-    ...(input.runId === undefined ? {} : { "bob.run.id": input.runId }),
-    ...(input.outboxId === undefined ? {} : { "bob.outbox.id": input.outboxId }),
-    ...(input.deliveryAttemptId === undefined
-      ? {}
-      : { "bob.delivery.attempt_id": input.deliveryAttemptId }),
-    ...(input.reminderOccurrenceId === undefined
-      ? {}
-      : { "bob.reminder.occurrence_id": input.reminderOccurrenceId }),
-    ...(input.conversationTurnId === undefined
-      ? {}
-      : { "bob.conversation.turn_id": input.conversationTurnId }),
-    ...(input.conversationRevision === undefined
-      ? {}
-      : { "bob.conversation.revision": input.conversationRevision }),
-    ...(input.turnIndex === undefined ? {} : { "bob.turn.index": input.turnIndex }),
-    ...(input.turnPhase === undefined ? {} : { "bob.turn.phase": input.turnPhase }),
-    ...(input.toolName === undefined ? {} : { "bob.tool.name": input.toolName }),
-    ...(input.toolCallIndex === undefined ? {} : { "bob.tool.call_index": input.toolCallIndex })
+    "bob.workflow": semantics.workflow
   }
+  if (input.runId !== undefined) attributes["bob.run.id"] = input.runId
+  if (input.outboxId !== undefined) attributes["bob.outbox.id"] = input.outboxId
+  if (input.deliveryAttemptId !== undefined)
+    attributes["bob.delivery.attempt_id"] = input.deliveryAttemptId
+  if (input.reminderOccurrenceId !== undefined)
+    attributes["bob.reminder.occurrence_id"] = input.reminderOccurrenceId
+  if (input.conversationTurnId !== undefined)
+    attributes["bob.conversation.turn_id"] = input.conversationTurnId
+  if (input.conversationRevision !== undefined)
+    attributes["bob.conversation.revision"] = input.conversationRevision
+  if (input.turnIndex !== undefined) attributes["bob.turn.index"] = input.turnIndex
+  if (input.turnPhase !== undefined) attributes["bob.turn.phase"] = input.turnPhase
+  if (input.toolName !== undefined) attributes["bob.tool.name"] = input.toolName
+  if (input.toolCallIndex !== undefined) attributes["bob.tool.call_index"] = input.toolCallIndex
+  return attributes
 }
 
-const decisionOutcomes = new Set<BobDecisionOutcome>([
-  "allowed",
-  "denied",
-  "selected",
-  "applied",
-  "skipped"
-])
-const turnPhases = new Set<BobTurnPhase>(["primary", "repair"])
-
-function safeNatural(value: unknown, maximum: number): value is number {
+function safeNatural<Value>(value: Value, maximum: number): value is Value & number {
   return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= maximum
+}
+
+function safeString<Value>(value: Value, pattern: RegExp): value is Value & string {
+  return Object.prototype.toString.call(value) === "[object String]" && pattern.test(String(value))
 }
 
 function safeSpanAttributes(
   name: BobSpanName,
   attributes: ReadonlyMap<string, unknown>
-): Readonly<Record<string, string | number | boolean>> | undefined {
+): Readonly<SafeAttributes> | undefined {
   const correlationId = attributes.get("bob.correlation.id")
-  if (typeof correlationId !== "string" || !uuidPattern.test(correlationId)) return undefined
-  const output: Record<string, string | number | boolean> = {
+  if (!safeString(correlationId, uuidPattern)) return undefined
+  const output: SafeAttributes = {
     "bob.correlation.id": correlationId
   }
   const feature = attributes.get("bob.feature")
@@ -359,21 +363,21 @@ function safeSpanAttributes(
     return undefined
   }
   const runId = attributes.get("bob.run.id")
-  if (typeof runId === "string" && uuidPattern.test(runId)) output["bob.run.id"] = runId
+  if (safeString(runId, uuidPattern)) output["bob.run.id"] = runId
   const outboxId = attributes.get("bob.outbox.id")
-  if (typeof outboxId === "string" && uuidPattern.test(outboxId)) {
+  if (safeString(outboxId, uuidPattern)) {
     output["bob.outbox.id"] = outboxId
   }
   const deliveryAttemptId = attributes.get("bob.delivery.attempt_id")
-  if (typeof deliveryAttemptId === "string" && uuidPattern.test(deliveryAttemptId)) {
+  if (safeString(deliveryAttemptId, uuidPattern)) {
     output["bob.delivery.attempt_id"] = deliveryAttemptId
   }
   const reminderOccurrenceId = attributes.get("bob.reminder.occurrence_id")
-  if (typeof reminderOccurrenceId === "string" && uuidPattern.test(reminderOccurrenceId)) {
+  if (safeString(reminderOccurrenceId, uuidPattern)) {
     output["bob.reminder.occurrence_id"] = reminderOccurrenceId
   }
   const conversationTurnId = attributes.get("bob.conversation.turn_id")
-  if (typeof conversationTurnId === "string" && uuidPattern.test(conversationTurnId)) {
+  if (safeString(conversationTurnId, uuidPattern)) {
     output["bob.conversation.turn_id"] = conversationTurnId
   }
   const conversationRevision = attributes.get("bob.conversation.revision")
@@ -383,11 +387,13 @@ function safeSpanAttributes(
   const turnIndex = attributes.get("bob.turn.index")
   if (safeNatural(turnIndex, 64)) output["bob.turn.index"] = turnIndex
   const turnPhase = attributes.get("bob.turn.phase")
-  if (turnPhases.has(turnPhase as BobTurnPhase)) {
-    output["bob.turn.phase"] = turnPhase as BobTurnPhase
+  try {
+    output["bob.turn.phase"] = Schema.decodeUnknownSync(BobTurnPhase)(turnPhase)
+  } catch {
+    // Unknown turn phases can contain user content. Drop the field.
   }
   const toolName = attributes.get("bob.tool.name")
-  if (typeof toolName === "string") {
+  if (Object.prototype.toString.call(toolName) === "[object String]") {
     try {
       output["bob.tool.name"] = Schema.decodeUnknownSync(ToolName)(toolName)
     } catch {
@@ -399,7 +405,7 @@ function safeSpanAttributes(
   const provider = attributes.get("gen_ai.provider.name")
   if (provider === "openai-codex") output["gen_ai.provider.name"] = provider
   const model = attributes.get("gen_ai.request.model")
-  if (typeof model === "string" && safeModelPattern.test(model)) {
+  if (safeString(model, safeModelPattern)) {
     output["gen_ai.request.model"] = model
   }
   const inputTokens = attributes.get("gen_ai.usage.input_tokens")
@@ -415,9 +421,7 @@ function safeSpanAttributes(
   return output
 }
 
-function safeDecisionEvent(
-  event: readonly [name: string, timeUnixNano: bigint, attributes: Record<string, unknown>]
-): SafeSpanEvent | undefined {
+function safeDecisionEvent(event: Tracer.NativeSpan["events"][number]): SafeSpanEvent | undefined {
   let name: BobDecisionName
   let code: BobDecisionCode
   try {
@@ -426,14 +430,18 @@ function safeDecisionEvent(
   } catch {
     return undefined
   }
-  const outcome = event[2]["bob.decision.outcome"]
-  if (!decisionOutcomes.has(outcome as BobDecisionOutcome)) return undefined
+  let outcome: BobDecisionOutcome
+  try {
+    outcome = Schema.decodeUnknownSync(BobDecisionOutcome)(event[2]["bob.decision.outcome"])
+  } catch {
+    return undefined
+  }
   const selectedCount = event[2]["bob.selected.count"]
   const toolName = event[2]["bob.tool.name"]
   const validationCode = event[2]["bob.output.validation_code"]
   const conversationRevision = event[2]["bob.conversation.revision"]
   let safeToolName: string | undefined
-  if (typeof toolName === "string") {
+  if (Object.prototype.toString.call(toolName) === "[object String]") {
     try {
       safeToolName = Schema.decodeUnknownSync(ToolName)(toolName)
     } catch {
@@ -444,7 +452,7 @@ function safeDecisionEvent(
   if (
     name === "bob.decision.output" &&
     code === "repair_required" &&
-    typeof validationCode === "string"
+    Object.prototype.toString.call(validationCode) === "[object String]"
   ) {
     try {
       safeValidationCode = Schema.decodeUnknownSync(OutputValidationCode)(validationCode)
@@ -452,21 +460,20 @@ function safeDecisionEvent(
       // Unknown values can contain user content. Drop the field.
     }
   }
+  const attributes: SafeAttributes = {
+    "bob.decision.code": code,
+    "bob.decision.outcome": outcome
+  }
+  if (safeNatural(selectedCount, 100)) attributes["bob.selected.count"] = selectedCount
+  if (safeToolName !== undefined) attributes["bob.tool.name"] = safeToolName
+  if (safeValidationCode !== undefined)
+    attributes["bob.output.validation_code"] = safeValidationCode
+  if (safeNatural(conversationRevision, 10_000))
+    attributes["bob.conversation.revision"] = conversationRevision
   return {
     name,
     timeUnixNano: event[1],
-    attributes: {
-      "bob.decision.code": code,
-      "bob.decision.outcome": outcome as BobDecisionOutcome,
-      ...(safeNatural(selectedCount, 100) ? { "bob.selected.count": selectedCount } : {}),
-      ...(safeToolName === undefined ? {} : { "bob.tool.name": safeToolName }),
-      ...(safeValidationCode === undefined
-        ? {}
-        : { "bob.output.validation_code": safeValidationCode }),
-      ...(safeNatural(conversationRevision, 10_000)
-        ? { "bob.conversation.revision": conversationRevision }
-        : {})
-    }
+    attributes
   }
 }
 
@@ -484,11 +491,10 @@ function toSafeSpanRecord(
   const attributes = safeSpanAttributes(name, span.attributes)
   if (attributes === undefined) return undefined
   const parent = Option.getOrUndefined(span.parent)
-  return {
+  const output = {
     name,
     traceId: span.traceId,
     spanId: span.spanId,
-    ...(parent === undefined ? {} : { parentSpanId: parent.spanId }),
     kind: spanSemantics[name].kind,
     sampled: span.sampled,
     startTimeUnixNano: span.startTime,
@@ -500,6 +506,7 @@ function toSafeSpanRecord(
       return safe === undefined ? [] : [safe]
     })
   }
+  return parent === undefined ? output : { ...output, parentSpanId: parent.spanId }
 }
 
 export function makeSafeTracer(processor: SafeSpanProcessor): Tracer.Tracer {
@@ -554,20 +561,24 @@ function withBobSpanOptions<A, E, R>(
   try {
     validateSpan(input)
   } catch {
-    return Effect.withSpan(effect, "bob.telemetry.invalid", {
+    const invalidOptions = {
       kind: "internal",
       sampled: false,
-      captureStackTrace: false,
-      ...(root ? { root: true } : {})
-    })
+      captureStackTrace: false
+    } satisfies Tracer.SpanOptions
+    return Effect.withSpan(
+      effect,
+      "bob.telemetry.invalid",
+      root ? { ...invalidOptions, root: true } : invalidOptions
+    )
   }
   const semantics = spanSemantics[input.name]
-  return Effect.withSpan(effect, input.name, {
+  const options = {
     kind: semantics.kind,
     attributes: spanAttributes(input),
-    captureStackTrace: false,
-    ...(root ? { root: true } : {})
-  })
+    captureStackTrace: false
+  }
+  return Effect.withSpan(effect, input.name, root ? { ...options, root: true } : options)
 }
 
 export function withBobSpan<A, E, R>(
@@ -593,18 +604,17 @@ export function recordDecision(input: BobDecision): Effect.Effect<void> {
   return Effect.gen(function* () {
     const span = yield* Effect.currentSpan
     const now = yield* Effect.clockWith((clock) => clock.currentTimeNanos)
-    span.event(input.name, now, {
+    const attributes: SafeAttributes = {
       "bob.decision.code": input.code,
-      "bob.decision.outcome": input.outcome,
-      ...(input.selectedCount === undefined ? {} : { "bob.selected.count": input.selectedCount }),
-      ...(input.toolName === undefined ? {} : { "bob.tool.name": input.toolName }),
-      ...(input.validationCode === undefined
-        ? {}
-        : { "bob.output.validation_code": input.validationCode }),
-      ...(input.conversationRevision === undefined
-        ? {}
-        : { "bob.conversation.revision": input.conversationRevision })
-    })
+      "bob.decision.outcome": input.outcome
+    }
+    if (input.selectedCount !== undefined) attributes["bob.selected.count"] = input.selectedCount
+    if (input.toolName !== undefined) attributes["bob.tool.name"] = input.toolName
+    if (input.validationCode !== undefined)
+      attributes["bob.output.validation_code"] = input.validationCode
+    if (input.conversationRevision !== undefined)
+      attributes["bob.conversation.revision"] = input.conversationRevision
+    span.event(input.name, now, attributes)
   }).pipe(Effect.catchTag("NoSuchElementError", () => Effect.void))
 }
 
@@ -640,7 +650,7 @@ export function emitHealth(event: HealthEvent): Effect.Effect<void, never, Telem
 export const currentBobCorrelationId: Effect.Effect<string | undefined> = Effect.currentSpan.pipe(
   Effect.map((span) => {
     const value = span.attributes.get("bob.correlation.id")
-    return typeof value === "string" && uuidPattern.test(value) ? value : undefined
+    return safeString(value, uuidPattern) ? value : undefined
   }),
   Effect.catchTag("NoSuchElementError", () => Effect.succeed(undefined))
 )

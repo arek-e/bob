@@ -17,7 +17,8 @@ declare global {
   }
 }
 
-const bindings = env as unknown as CoreBindings
+// SAFETY: This focused test double implements every platform member exercised by this test.
+const bindings = env as CoreBindings
 const ownerAccess: AccessTokenVerifier = async (_request, configuration) => ({
   subject: "owner-subject",
   email: bindings.OWNER_ACCESS_EMAIL,

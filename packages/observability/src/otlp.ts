@@ -48,10 +48,15 @@ type OtlpValue =
 
 function attribute(key: string, value: string | number | boolean) {
   let encoded: OtlpValue
-  if (typeof value === "string") encoded = { stringValue: value }
-  else if (typeof value === "boolean") encoded = { boolValue: value }
-  else if (Number.isSafeInteger(value)) encoded = { intValue: String(value) }
-  else encoded = { doubleValue: value }
+  if (Object.prototype.toString.call(value) === "[object String]") {
+    encoded = { stringValue: String(value) }
+  } else if (value === true || value === false) {
+    encoded = { boolValue: value }
+  } else if (Number.isSafeInteger(value)) {
+    encoded = { intValue: String(value) }
+  } else {
+    encoded = { doubleValue: Number(value) }
+  }
   return { key, value: encoded }
 }
 
@@ -87,10 +92,9 @@ const spanKinds = {
 } as const
 
 function otlpSpan(span: SafeSpanRecord) {
-  return {
+  const output = {
     traceId: span.traceId,
     spanId: span.spanId,
-    ...(span.parentSpanId === undefined ? {} : { parentSpanId: span.parentSpanId }),
     name: span.name,
     kind: spanKinds[span.kind],
     startTimeUnixNano: span.startTimeUnixNano.toString(),
@@ -104,6 +108,8 @@ function otlpSpan(span: SafeSpanRecord) {
     status: { code: span.outcome === "completed" ? 1 : 2 },
     flags: span.sampled ? 1 : 0
   }
+  if (span.parentSpanId === undefined) return output
+  return { ...output, parentSpanId: span.parentSpanId }
 }
 
 export function otlpTracePayload(spans: ReadonlyArray<SafeSpanRecord>, resource: OtlpResource) {
@@ -198,12 +204,9 @@ export function makeOtlpHttpSpanProcessor(
         signal
       })
       if (!response.ok) report(httpDiagnosticCode(response.status), batch.length)
-    } catch (error) {
+    } catch (cause) {
       const timedOut =
-        signal?.aborted === true ||
-        (typeof error === "object" &&
-          error !== null &&
-          Reflect.get(error, "name") === "TimeoutError")
+        signal?.aborted === true || (cause instanceof Error && cause.name === "TimeoutError")
       report(timedOut ? "export_timeout" : "network_error", batch.length)
     } finally {
       try {

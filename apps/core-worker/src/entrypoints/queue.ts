@@ -33,9 +33,10 @@ function withTraceparentParent<A, E>(
 export async function handleInboundQueue(
   batch: MessageBatch<unknown>,
   bindings: CoreBindings,
-  telemetry?: CoreWorkflowTelemetryRunner
+  telemetry?: CoreWorkflowTelemetryRunner,
+  compose: typeof composeCore = composeCore
 ): Promise<void> {
-  const composition = composeCore(bindings)
+  const composition = compose(bindings)
   const runTelemetry = telemetry?.runPromise ?? Effect.runPromise
   if (batch.queue === bindings.OUTBOUND_DEAD_LETTER_QUEUE_NAME) {
     for (const message of batch.messages) {
@@ -87,15 +88,12 @@ export async function handleInboundQueue(
               if (decision !== "recover") return
               const headers = yield* injectCurrentTraceparent()
               const traceparent = headers.get("traceparent")
+              const retryJob =
+                traceparent === null
+                  ? { ...job, correlationId }
+                  : { ...job, correlationId, traceparent }
               yield* promiseEffect(() =>
-                bindings.OUTBOUND_QUEUE.send(
-                  {
-                    ...job,
-                    correlationId,
-                    ...(traceparent === null ? {} : { traceparent })
-                  },
-                  { delaySeconds: 300 }
-                )
+                bindings.OUTBOUND_QUEUE.send(retryJob, { delaySeconds: 300 })
               )
               yield* promiseEffect(() =>
                 composition.services.delivery.markEnqueued(job.outboxId, new Date().toISOString())
@@ -236,15 +234,12 @@ export async function handleInboundQueue(
                   Effect.gen(function* () {
                     const headers = yield* injectCurrentTraceparent()
                     const traceparent = headers.get("traceparent")
+                    const retryJob =
+                      traceparent === null
+                        ? { ...job, correlationId }
+                        : { ...job, correlationId, traceparent }
                     yield* promiseEffect(() =>
-                      bindings.INBOUND_QUEUE.send(
-                        {
-                          ...job,
-                          correlationId,
-                          ...(traceparent === null ? {} : { traceparent })
-                        },
-                        { delaySeconds: 300 }
-                      )
+                      bindings.INBOUND_QUEUE.send(retryJob, { delaySeconds: 300 })
                     )
                   })
                 )
@@ -312,11 +307,11 @@ export async function handleInboundQueue(
                   coordinator.fetch("https://coordinator.internal/run", {
                     method: "POST",
                     headers,
-                    body: JSON.stringify({
-                      ...job,
-                      correlationId,
-                      ...(traceparent === null ? {} : { traceparent })
-                    })
+                    body: JSON.stringify(
+                      traceparent === null
+                        ? { ...job, correlationId }
+                        : { ...job, correlationId, traceparent }
+                    )
                   })
                 )
               })

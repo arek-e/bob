@@ -875,13 +875,13 @@ export function makeTrainingStore(
           sets
         }
       }
-      return {
+      const overview = {
         gyms: gymViews,
         exercises: exerciseViews,
         routines: routineViews,
-        ...(activeWorkout === undefined ? {} : { activeWorkout }),
         history
       }
+      return activeWorkout === undefined ? overview : { ...overview, activeWorkout }
     }
   }
 }

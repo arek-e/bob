@@ -28,7 +28,7 @@ export interface DeterministicEvaluation {
   readonly failures: readonly string[]
 }
 
-export function evaluateResult(input: unknown): DeterministicEvaluation {
+export function evaluateResult<Input>(input: Input): DeterministicEvaluation {
   const result = Schema.decodeUnknownSync(AgentRunResult)(input)
   const failures: string[] = []
   if (result.status !== "completed") failures.push("agent_run_not_completed")
@@ -145,7 +145,7 @@ async function runBenchmarkTracking(args: readonly string[]): Promise<void> {
 }
 
 async function runLegacyResult(path: string): Promise<void> {
-  const evaluation = evaluateResult(JSON.parse(await readFile(path, "utf8")) as unknown)
+  const evaluation = evaluateResult(JSON.parse(await readFile(path, "utf8")))
   console.log(JSON.stringify(evaluation))
   if (!evaluation.passed) process.exitCode = 1
 }
@@ -181,8 +181,8 @@ async function main(args: readonly string[]): Promise<void> {
 
 const entry = process.argv[1]
 if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
-  main(process.argv.slice(2)).catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : ""
+  main(process.argv.slice(2)).catch((cause: unknown) => {
+    const message = cause instanceof Error ? cause.message : ""
     const code = /^[a-z0-9_]+$/.test(message) ? message : "evaluation_failed"
     console.error(`agent_eval_error:${code}`)
     process.exitCode = 1

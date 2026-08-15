@@ -35,7 +35,15 @@ const negatedMutation =
 const unsafeMutationQualifier =
   /\b(?:no|not|never|don't|dont|maybe|perhaps|possibly|nej|inte|aldrig|ej|ingen|inget|inga|kanske|möjligen|eventuellt)\b/u
 
-const intentPatterns: Readonly<Record<ReminderMutationIntent, RegExp>> = {
+interface ReminderIntentPatterns {
+  readonly create: RegExp
+  readonly acknowledge: RegExp
+  readonly complete: RegExp
+  readonly snooze: RegExp
+  readonly cancel: RegExp
+}
+
+const intentPatterns: ReminderIntentPatterns = {
   create:
     /^(?:remind\s+me\b|(?:create|set|add|schedule)\b.{0,32}\breminder\b|påminn(?:a)?\s+mig\b|(?:skapa|schemalägg|sätt)\b.{0,32}\bpåminnelse\b|lägg\s+(?:till|in)\b.{0,32}\bpåminnelse\b)/u,
   acknowledge:
@@ -182,7 +190,19 @@ export function reminderCreateTimeMatchesRequest(
   return Temporal.PlainDate.compare(requestedDate, currentDate) === 0
 }
 
-const occurrenceTransitions: Readonly<Record<OccurrenceState, readonly OccurrenceState[]>> = {
+interface OccurrenceTransitions {
+  readonly scheduled: readonly OccurrenceState[]
+  readonly claimed: readonly OccurrenceState[]
+  readonly awaiting_delivery: readonly OccurrenceState[]
+  readonly awaiting_response: readonly OccurrenceState[]
+  readonly acknowledged: readonly OccurrenceState[]
+  readonly completed: readonly OccurrenceState[]
+  readonly snoozed: readonly OccurrenceState[]
+  readonly missed: readonly OccurrenceState[]
+  readonly cancelled: readonly OccurrenceState[]
+}
+
+const occurrenceTransitions: OccurrenceTransitions = {
   scheduled: ["claimed", "cancelled"],
   claimed: ["scheduled", "awaiting_delivery", "cancelled"],
   awaiting_delivery: ["awaiting_response", "missed", "cancelled"],
@@ -270,13 +290,12 @@ export function deferForQuietHours(dueAt: string, quiet: QuietHours): string {
     .toString()
 }
 
-export function localDayBounds(
-  at: string,
-  timeZone: string
-): {
+export interface LocalDayBounds {
   readonly start: string
   readonly end: string
-} {
+}
+
+export function localDayBounds(at: string, timeZone: string): LocalDayBounds {
   const local = Temporal.Instant.from(at).toZonedDateTimeISO(timeZone)
   const date = local.toPlainDate()
   const start = Temporal.ZonedDateTime.from({
@@ -286,6 +305,12 @@ export function localDayBounds(
     day: date.day
   })
   return { start: start.toInstant().toString(), end: start.add({ days: 1 }).toInstant().toString() }
+}
+
+function recurrenceField(part: string): [string, string] {
+  const [key, value] = part.split("=", 2)
+  if (key === undefined || value === undefined) throw new Error("Invalid recurrence field")
+  return [key, value]
 }
 
 export function nextDailyWindow(at: string, quiet: QuietHours): string {
@@ -312,7 +337,7 @@ export function nextRecurringDueAt(currentDueAt: string, rule: string, timeZone:
     rule
       .replace(/^RRULE:/, "")
       .split(";")
-      .map((part) => part.split("=", 2) as [string, string])
+      .map(recurrenceField)
   )
   const interval = Number(fields.get("INTERVAL") ?? "1")
   if (!Number.isInteger(interval) || interval < 1) throw new Error("Invalid recurrence interval")

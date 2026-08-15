@@ -11,6 +11,7 @@ describe("Node Effect telemetry", () => {
   it("exports validated health events as OTLP logs", async () => {
     const requests: Array<{ readonly url: string; readonly body: string }> = []
     const lines: string[] = []
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({ url: String(input), body: String(init?.body) })
       return new Response(null, { status: 200 })
@@ -75,6 +76,7 @@ describe("Node Effect telemetry", () => {
       readonly body: string
       readonly headers: Headers
     }> = []
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const request = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push({
         url: String(input),
@@ -155,6 +157,7 @@ describe("Node Effect telemetry", () => {
       maxQueueSize: 2,
       maxBatchSize: 2,
       exportIntervalMs: 60_000,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
         bodies.push(String(init?.body))
         return new Response(null, { status: 200 })
@@ -170,6 +173,7 @@ describe("Node Effect telemetry", () => {
       }).pipe(Effect.provide(layer))
     )
 
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const payload = JSON.parse(bodies[0]!) as {
       resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
     }
@@ -190,7 +194,9 @@ describe("Node Effect telemetry", () => {
       maxQueueSize: 3,
       maxBatchSize: 1,
       exportIntervalMs: 60_000,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         const payload = JSON.parse(String(init?.body)) as {
           resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
         }
@@ -212,6 +218,7 @@ describe("Node Effect telemetry", () => {
   })
 
   it("exports ended spans while the scoped Layer remains active", async () => {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const request = vi.fn(async () => new Response(null, { status: 200 })) as typeof fetch
     const layer = nodeTelemetryLayer({
       endpoint: "http://collector.example.invalid:4318",
@@ -235,6 +242,7 @@ describe("Node Effect telemetry", () => {
   })
 
   it("flushes queued spans when the scoped Layer closes", async () => {
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const request = vi.fn(async () => new Response(null, { status: 200 })) as typeof fetch
     const layer = nodeTelemetryLayer({
       endpoint: "http://collector.example.invalid:4318",
@@ -266,6 +274,7 @@ describe("Node Effect telemetry", () => {
       deploymentEnvironment: "prod",
       exportIntervalMs: 60_000,
       exportTimeoutMs: 5,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
         body = String(init?.body)
         await new Promise<void>((_resolve, reject) => {

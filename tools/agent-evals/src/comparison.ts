@@ -47,6 +47,7 @@ export function compareEvaluationReports(
   const improvedCases = [...baselineCases].flatMap(([caseId, result]) =>
     !result.passed && candidateCases.get(caseId)?.passed === true ? [caseId] : []
   )
+  // SAFETY: metricNames supplies every MetricName exactly once.
   const metrics = Object.fromEntries(
     metricNames.map((name) => {
       const baselineMetric = baseline.metrics[name]
@@ -65,7 +66,7 @@ export function compareEvaluationReports(
         } satisfies MetricComparison
       ]
     })
-  ) as unknown as Record<MetricName, MetricComparison>
+  ) as Record<MetricName, MetricComparison>
   const failures = [
     ...regressedCases.map((caseId) => `case_regressed:${caseId}`),
     ...metricNames

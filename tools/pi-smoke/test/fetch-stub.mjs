@@ -1,5 +1,5 @@
 globalThis.fetch = async (input, init) => {
-  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+  const url = input instanceof URL ? input.href : input instanceof Request ? input.url : input
 
   if (url === "https://agent-admin.example.test/v1/admin/auth/status") {
     if ((init?.method ?? "GET") !== "GET") {

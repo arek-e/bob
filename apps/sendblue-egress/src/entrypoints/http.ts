@@ -83,7 +83,7 @@ export async function handleDeliveryReconciliationRequest(
   }
   try {
     const composition = composeEgress(bindings)
-    let provider: { readonly messageHandle: string; readonly status: string; readonly at: string }
+    let provider: ProviderDeliveryStatus
     if ("providerMessageHandle" in target) {
       const status = await composition.ports.sendblue.getStatus(target.providerMessageHandle)
       if (status.message_handle !== target.providerMessageHandle) {
@@ -124,17 +124,18 @@ export async function handleDeliveryReconciliationRequest(
       }
     }
     const state = deliveryState(provider.status)
+    const result = {
+      outboxId: target.outboxId,
+      attemptId: target.attemptId,
+      correlationId: target.correlationId,
+      state,
+      providerMessageHandle: provider.messageHandle,
+      occurredAt: provider.at
+    }
+    if (state === "failed") Object.assign(result, { errorCode: provider.status.toLowerCase() })
     return Response.json({
       status: "resolved",
-      result: {
-        outboxId: target.outboxId,
-        attemptId: target.attemptId,
-        correlationId: target.correlationId,
-        state,
-        providerMessageHandle: provider.messageHandle,
-        ...(state === "failed" ? { errorCode: provider.status.toLowerCase() } : {}),
-        occurredAt: provider.at
-      }
+      result
     })
   } catch {
     return Response.json({ status: "pending" }, { status: 502 })
@@ -151,4 +152,9 @@ export async function handleReconcileRequest(
 
   const result = await handleScheduledReconcile(new Date(), bindings)
   return Response.json(result)
+}
+interface ProviderDeliveryStatus {
+  readonly messageHandle: string
+  readonly status: string
+  readonly at: string
 }

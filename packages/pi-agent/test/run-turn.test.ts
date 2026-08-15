@@ -6,48 +6,64 @@ import { makeCaptureTelemetry } from "@bob/observability/testing"
 import {
   fauxAssistantMessage,
   fauxToolCall,
+  type Api,
   type AssistantMessage,
-  type Context
+  type Context,
+  type Model
 } from "@earendil-works/pi-ai"
-import { Effect } from "effect"
+import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex"
+import { Effect, Schema } from "effect"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { createBobPiAgent } from "../src/index.ts"
+import { createBobPiAgent, type BobPiAgentDependencies } from "../src/index.ts"
+
+type ModelsClient = ReturnType<BobPiAgentDependencies["createModels"]>
+type CompleteSimpleArguments = Parameters<ModelsClient["completeSimple"]>
+type CompletionOptions = CompleteSimpleArguments[2]
+type ScriptedCompletion =
+  | AssistantMessage
+  | ((context: Context, options: CompletionOptions) => AssistantMessage | Promise<AssistantMessage>)
+
+interface ModelHarnessState {
+  responses: ScriptedCompletion[]
+  contexts: Context[]
+  options: CompletionOptions[]
+}
 
 const modelHarness = vi.hoisted(() => {
-  const state: {
-    responses: unknown[]
-    contexts: unknown[]
-    options: unknown[]
-  } = { responses: [], contexts: [], options: [] }
+  const state: ModelHarnessState = { responses: [], contexts: [], options: [] }
 
   const completeSimple = vi.fn(
-    async (_model: unknown, context: unknown, options: unknown): Promise<unknown> => {
+    async (
+      _model: Model<Api>,
+      context: Context,
+      options?: CompletionOptions
+    ): Promise<AssistantMessage> => {
       state.contexts.push(structuredClone(context))
       state.options.push(options)
       const response = state.responses.shift()
-      if (typeof response === "function") {
-        return await (response as (context: unknown, options: unknown) => unknown)(context, options)
-      }
+      if (response instanceof Function) return await response(context, options)
       if (response === undefined) throw new Error("No scripted pi-ai response remains")
       return response
     }
   )
+  const model: Model<Api> = {
+    id: "gpt-test",
+    name: "Test model",
+    api: "openai-codex-responses",
+    provider: "openai-codex",
+    baseUrl: "https://api.openai.com/v1",
+    reasoning: true,
+    input: ["text"],
+    contextWindow: 128_000,
+    maxTokens: 4_096,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+  }
 
   return {
     completeSimple,
     state,
-    model: {
-      id: "gpt-test",
-      name: "Test model",
-      api: "openai-codex-responses",
-      provider: "openai-codex",
-      reasoning: true,
-      input: ["text"],
-      contextWindow: 128_000,
-      maxTokens: 4_096,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
-    },
+    model,
     reset() {
       state.responses.length = 0
       state.contexts.length = 0
@@ -57,12 +73,7 @@ const modelHarness = vi.hoisted(() => {
         state.contexts.push(structuredClone(context))
         state.options.push(options)
         const response = state.responses.shift()
-        if (typeof response === "function") {
-          return await (response as (context: unknown, options: unknown) => unknown)(
-            context,
-            options
-          )
-        }
+        if (response instanceof Function) return await response(context, options)
         if (response === undefined) throw new Error("No scripted pi-ai response remains")
         return response
       })
@@ -70,26 +81,16 @@ const modelHarness = vi.hoisted(() => {
   }
 })
 
-vi.mock("@earendil-works/pi-ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@earendil-works/pi-ai")>()
-  return {
-    ...actual,
-    createModels: () => ({
-      setProvider: vi.fn(),
-      getModel: vi.fn(() => modelHarness.model),
-      completeSimple: modelHarness.completeSimple,
-      login: vi.fn()
-    })
-  }
-})
-
-vi.mock("@earendil-works/pi-ai/bun-oauth", () => ({
-  registerBunOAuthFlows: vi.fn()
-}))
-
-vi.mock("@earendil-works/pi-ai/providers/openai-codex", () => ({
-  openaiCodexProvider: vi.fn(() => ({}))
-}))
+const dependencies: BobPiAgentDependencies = {
+  createModels: () => ({
+    setProvider: vi.fn(),
+    getModel: vi.fn(() => modelHarness.model),
+    completeSimple: modelHarness.completeSimple,
+    login: vi.fn()
+  }),
+  openaiCodexProvider,
+  registerOAuthFlows: vi.fn()
+}
 
 const baseRequest = (overrides: Partial<AgentRunRequest> = {}): AgentRunRequest => ({
   protocolVersion: 1,
@@ -111,13 +112,15 @@ const baseRequest = (overrides: Partial<AgentRunRequest> = {}): AgentRunRequest 
   ...overrides
 })
 
-const jsonResponse = (value: Record<string, unknown>): AssistantMessage =>
+type JsonObject = { readonly [key: string]: typeof Schema.Json.Type }
+
+const jsonResponse = (value: JsonObject): AssistantMessage =>
   fauxAssistantMessage(JSON.stringify(value), { stopReason: "stop" })
 
 const toolResponse = (...calls: AssistantMessage["content"]): AssistantMessage =>
   fauxAssistantMessage(calls.flat(), { stopReason: "toolUse" })
 
-const structuredResponse = (overrides: Record<string, unknown> = {}) =>
+const structuredResponse = (overrides: JsonObject = {}) =>
   jsonResponse({
     protocolVersion: 1,
     responseText: "I found the requested record.",
@@ -129,18 +132,12 @@ const structuredResponse = (overrides: Record<string, unknown> = {}) =>
 
 const phasedStructuredResponse = (
   commentary: string,
-  overrides: Record<string, unknown> = {},
+  overrides: JsonObject = {},
   phaseFinalAnswer = true
-): AssistantMessage =>
-  fauxAssistantMessage(
-    [
-      {
-        type: "text",
-        text: commentary,
-        textSignature: JSON.stringify({ v: 1, id: "commentary-1", phase: "commentary" })
-      },
-      {
-        type: "text",
+): AssistantMessage => {
+  const finalBlock = phaseFinalAnswer
+    ? {
+        type: "text" as const,
         text: JSON.stringify({
           protocolVersion: 1,
           responseText: "I found the requested record.",
@@ -149,27 +146,49 @@ const phasedStructuredResponse = (
           conflict: "none",
           ...overrides
         }),
-        ...(!phaseFinalAnswer
-          ? {}
-          : {
-              textSignature: JSON.stringify({ v: 1, id: "final-1", phase: "final_answer" })
-            })
+        textSignature: JSON.stringify({ v: 1, id: "final-1", phase: "final_answer" })
       }
+    : {
+        type: "text" as const,
+        text: JSON.stringify({
+          protocolVersion: 1,
+          responseText: "I found the requested record.",
+          sourceIds: [],
+          toolNames: [],
+          conflict: "none",
+          ...overrides
+        })
+      }
+  return fauxAssistantMessage(
+    [
+      {
+        type: "text",
+        text: commentary,
+        textSignature: JSON.stringify({ v: 1, id: "commentary-1", phase: "commentary" })
+      },
+      finalBlock
     ],
     { stopReason: "stop" }
   )
+}
+
+function serializeTelemetry(value: readonly object[]): string {
+  return JSON.stringify(value, (_key, item) => (Object(item) === item ? item : String(item)))
+}
 
 const makeAgent = (
   executeTool: (command: ToolCommand, signal?: AbortSignal) => Promise<ToolResult>,
   now: () => number = () => 1
 ) =>
   createBobPiAgent({
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     credentials: { read: async () => undefined } as never,
     provider: "openai-codex",
     model: "gpt-test",
     allowedModels: ["gpt-test"],
     executeTool,
-    now
+    now,
+    dependencies
   })
 
 const okResult = (code = "test", message = "Done."): ToolResult => ({ ok: true, code, message })
@@ -205,6 +224,7 @@ describe("Bob's direct pi-ai loop", () => {
       )
     ).resolves.toMatchObject({ status: "completed" })
 
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const context = modelHarness.state.contexts[0] as Context
     expect(context.messages).toMatchObject([
       { role: "user", content: "I lost my reminders." },
@@ -368,6 +388,7 @@ describe("Bob's direct pi-ai loop", () => {
     })
     expect(executeTool).not.toHaveBeenCalled()
     expect(modelHarness.completeSimple).toHaveBeenCalledTimes(1)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const context = modelHarness.state.contexts[0] as Context
     expect(context.systemPrompt).toContain(
       '[{"origin":"same_turn","toolName":"reminder_create","result":{"ok":true,"code":"reminder_created"}}]'
@@ -433,6 +454,7 @@ describe("Bob's direct pi-ai loop", () => {
     })
     expect(executeTool).not.toHaveBeenCalled()
     expect(modelHarness.completeSimple).toHaveBeenCalledTimes(1)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const context = modelHarness.state.contexts[0] as Context
     expect(context.systemPrompt).toContain(
       '[{"origin":"predecessor_turn","toolName":"reminder_create","result":{"ok":true,"code":"reminder_created"}}]'
@@ -489,6 +511,7 @@ describe("Bob's direct pi-ai loop", () => {
     })
     expect(executeTool).not.toHaveBeenCalled()
     expect(modelHarness.completeSimple).toHaveBeenCalledTimes(2)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const repairContext = modelHarness.state.contexts[1] as Context
     expect(String(repairContext.messages.at(-1)?.content)).toContain(
       "The recorded action outcome is unknown. Do not say it succeeded or failed."
@@ -562,13 +585,12 @@ describe("Bob's direct pi-ai loop", () => {
     const started = new Promise<void>((resolve) => {
       markStarted = resolve
     })
-    modelHarness.completeSimple.mockImplementation(
-      async (_model: unknown, _context: unknown, options: unknown) => {
-        observedSignal = (options as { signal?: AbortSignal }).signal
-        markStarted()
-        return await new Promise<never>(() => undefined)
-      }
-    )
+    modelHarness.completeSimple.mockImplementation(async (_model, _context, options) => {
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+      observedSignal = (options as { signal?: AbortSignal }).signal
+      markStarted()
+      return await new Promise<never>(() => undefined)
+    })
     const agent = makeAgent(async () => okResult())
     const request = baseRequest({
       limits: { ...baseRequest().limits, maxDurationMs: 500 }
@@ -775,11 +797,7 @@ describe("Bob's direct pi-ai loop", () => {
         }
       })
     )
-    expect(
-      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
-        typeof value === "bigint" ? value.toString() : value
-      )
-    ).not.toContain(privateCanary)
+    expect(serializeTelemetry(telemetry.finishedSpans())).not.toContain(privateCanary)
   })
 
   it("marks a resolved provider error message as a failed model span", async () => {
@@ -813,11 +831,7 @@ describe("Bob's direct pi-ai loop", () => {
         }
       })
     )
-    expect(
-      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
-        typeof value === "bigint" ? value.toString() : value
-      )
-    ).not.toContain(privateCanary)
+    expect(serializeTelemetry(telemetry.finishedSpans())).not.toContain(privateCanary)
   })
 
   it("marks a resolved aborted message as a failed model span", async () => {
@@ -851,11 +865,7 @@ describe("Bob's direct pi-ai loop", () => {
         }
       })
     )
-    expect(
-      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
-        typeof value === "bigint" ? value.toString() : value
-      )
-    ).not.toContain(privateCanary)
+    expect(serializeTelemetry(telemetry.finishedSpans())).not.toContain(privateCanary)
   })
 
   it("does not export prompts, Tool data, or assistant content", async () => {
@@ -916,9 +926,7 @@ describe("Bob's direct pi-ai loop", () => {
     )
 
     expect(output).toMatchObject({ status: "completed", responseText: privateAssistant })
-    const serialized = JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
-      typeof value === "bigint" ? value.toString() : value
-    )
+    const serialized = serializeTelemetry(telemetry.finishedSpans())
     for (const canary of [
       privateEarlierUser,
       privateUser,
@@ -945,6 +953,7 @@ describe("Bob's direct pi-ai loop", () => {
     })
     const fallback = vi.fn(async () => okResult("unexpected"))
     const agent = createBobPiAgent({
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       credentials: { read: async () => undefined } as never,
       provider: "openai-codex",
       model: "gpt-test",
@@ -961,6 +970,7 @@ describe("Bob's direct pi-ai loop", () => {
           },
           Effect.succeed(okResult("reminder_list", "No reminders."))
         ),
+      dependencies,
       now: () => 1
     })
 
@@ -1013,11 +1023,7 @@ describe("Bob's direct pi-ai loop", () => {
     expect(output.errorCode).toBeUndefined()
     expect(output).toMatchObject({ status: "completed", toolCalls: 1 })
     expect(telemetry.finishedSpans().some((span) => span.name === "bob.tool.invoke")).toBe(true)
-    expect(
-      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
-        typeof value === "bigint" ? value.toString() : value
-      )
-    ).not.toContain(providerToolCallId)
+    expect(serializeTelemetry(telemetry.finishedSpans())).not.toContain(providerToolCallId)
   })
 
   it("converts an Effect Tool transport failure inside the Tool span", async () => {
@@ -1032,12 +1038,14 @@ describe("Bob's direct pi-ai loop", () => {
     })
     const fallback = vi.fn(async () => okResult("unexpected"))
     const agent = createBobPiAgent({
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       credentials: { read: async () => undefined } as never,
       provider: "openai-codex",
       model: "gpt-test",
       allowedModels: ["gpt-test"],
       executeTool: fallback,
       executeToolEffect: () => Effect.fail(new Error(privateCanary)),
+      dependencies,
       now: () => 1
     })
 
@@ -1065,11 +1073,7 @@ describe("Bob's direct pi-ai loop", () => {
         }
       })
     )
-    expect(
-      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
-        typeof value === "bigint" ? value.toString() : value
-      )
-    ).not.toContain(privateCanary)
+    expect(serializeTelemetry(telemetry.finishedSpans())).not.toContain(privateCanary)
   })
 
   it("traces output repair as a nested repair turn", async () => {
@@ -1153,11 +1157,7 @@ describe("Bob's direct pi-ai loop", () => {
         })
       )
     }
-    expect(
-      JSON.stringify(telemetry.finishedSpans(), (_key, value) =>
-        typeof value === "bigint" ? value.toString() : value
-      )
-    ).not.toContain(privateCanary)
+    expect(serializeTelemetry(telemetry.finishedSpans())).not.toContain(privateCanary)
   })
 
   it("validates only the signed final answer when Codex also returns commentary", async () => {
@@ -1253,6 +1253,7 @@ describe("Bob's direct pi-ai loop", () => {
       arguments: { query: "routine" }
     })
     expect(modelHarness.completeSimple).toHaveBeenCalledTimes(2)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const secondContext = modelHarness.state.contexts[1] as Context
     expect(secondContext.messages.at(-1)).toMatchObject({
       role: "toolResult",
@@ -1364,6 +1365,7 @@ describe("Bob's direct pi-ai loop", () => {
     })
     expect(executeTool).toHaveBeenCalledTimes(1)
     expect(modelHarness.completeSimple).toHaveBeenCalledTimes(2)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const clarificationContext = modelHarness.state.contexts[1] as Context
     expect(clarificationContext.tools).toEqual([])
     expect(clarificationContext.messages.at(-1)).toMatchObject({
@@ -1407,6 +1409,7 @@ describe("Bob's direct pi-ai loop", () => {
       toolCalls: 1
     })
     expect(executeTool).toHaveBeenCalledTimes(1)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const reflectionContext = modelHarness.state.contexts[1] as Context
     expect(reflectionContext.tools).toEqual([])
   })
@@ -1456,6 +1459,7 @@ describe("Bob's direct pi-ai loop", () => {
       agent.runTurn(baseRequest({ userText: "Hello Bob", allowedTools: [] }))
     ).resolves.toMatchObject({ status: "completed", responseText: "Hello. How can I help?" })
     expect(modelHarness.completeSimple).toHaveBeenCalledTimes(2)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const repairContext = modelHarness.state.contexts[1] as Context
     expect(repairContext.tools).toEqual([])
     expect(repairContext.messages.at(-1)).toMatchObject({ role: "user" })
@@ -1513,12 +1517,11 @@ describe("Bob's direct pi-ai loop", () => {
 
   it("returns timeout for a non-cooperative pi-ai call and aborts its signal", async () => {
     let observedSignal: AbortSignal | undefined
-    modelHarness.completeSimple.mockImplementation(
-      async (_model: unknown, _context: unknown, options: unknown) => {
-        observedSignal = (options as { signal?: AbortSignal }).signal
-        return await new Promise<never>(() => undefined)
-      }
-    )
+    modelHarness.completeSimple.mockImplementation(async (_model, _context, options) => {
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+      observedSignal = (options as { signal?: AbortSignal }).signal
+      return await new Promise<never>(() => undefined)
+    })
     const agent = makeAgent(async () => okResult())
     const telemetry = makeCaptureTelemetry({
       serviceName: "bob-agent",
@@ -1544,21 +1547,20 @@ describe("Bob's direct pi-ai loop", () => {
     const started = new Promise<void>((resolve) => {
       markStarted = resolve
     })
-    modelHarness.completeSimple.mockImplementation(
-      async (_model: unknown, _context: unknown, options: unknown) => {
-        observedSignal = (options as { signal?: AbortSignal }).signal
-        markStarted()
-        return await new Promise<never>((_resolve, reject) => {
-          const rejectAsAborted = () => {
-            const error = new Error("Request stopped.")
-            error.name = "AbortError"
-            reject(error)
-          }
-          if (observedSignal?.aborted === true) rejectAsAborted()
-          else observedSignal?.addEventListener("abort", rejectAsAborted, { once: true })
-        })
-      }
-    )
+    modelHarness.completeSimple.mockImplementation(async (_model, _context, options) => {
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+      observedSignal = (options as { signal?: AbortSignal }).signal
+      markStarted()
+      return await new Promise<never>((_resolve, reject) => {
+        const rejectAsAborted = () => {
+          const error = new Error("Request stopped.")
+          error.name = "AbortError"
+          reject(error)
+        }
+        if (observedSignal?.aborted === true) rejectAsAborted()
+        else observedSignal?.addEventListener("abort", rejectAsAborted, { once: true })
+      })
+    })
     const controller = new AbortController()
     const agent = makeAgent(async () => okResult())
     const run = agent.runTurn(

@@ -5,6 +5,7 @@ import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
 import { processInbound } from "../src/process-inbound.ts"
+import { testFixture } from "./test-fixture.ts"
 
 const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
 const messageHandle = "inbound-provider-handle"
@@ -14,13 +15,14 @@ afterEach(() => {
 })
 
 function interactionComposition(
-  createOutbox: (input: unknown) => Promise<string>,
+  createOutbox: CoreComposition["services"]["delivery"]["createOutbox"],
   message: { readonly service: "imessage" | "sms" | "rcs"; readonly isGroup: boolean } = {
     service: "imessage",
     isGroup: false
   }
 ) {
-  return {
+  // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+  return testFixture<CoreComposition>({
     config: {
       UI_BASE_URL: "https://bob.example.invalid",
       SENDBLUE_EGRESS_URL: "https://egress.example.invalid",
@@ -53,12 +55,13 @@ function interactionComposition(
         markEnqueued: vi.fn(async () => undefined)
       }
     }
-  } as unknown as CoreComposition
+  })
 }
 
-const bindings = {
+// SAFETY: This controlled test fixture matches the asserted contract used by this test.
+const bindings = testFixture<CoreBindings>({
   OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) }
-} as unknown as CoreBindings
+})
 
 describe("inbound native message interactions", () => {
   it("confirms before the action and stops typing after the response is ready", async () => {
@@ -67,6 +70,7 @@ describe("inbound native message interactions", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         const body = JSON.parse(String(init?.body)) as { action: string }
         interactionBodies.push(body)
         order.push(body.action)
@@ -107,6 +111,7 @@ describe("inbound native message interactions", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         actions.push((JSON.parse(String(init?.body)) as { action: string }).action)
         return Response.json({ accepted: true })
       })

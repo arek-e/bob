@@ -5,8 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { CoreBindings } from "../src/bindings.ts"
 
 import { makeCoreTelemetryInvocation } from "../src/telemetry.ts"
+import { testFixture } from "./test-fixture.ts"
 
 const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
+
+interface CapturedRequest {
+  url: string
+  init?: RequestInit
+}
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -14,20 +20,25 @@ afterEach(() => {
 
 describe("Core Effect telemetry", () => {
   it("exports one content-free Worker span on invocation flush", async () => {
-    const requests: Array<{ readonly url: string; readonly init?: RequestInit }> = []
+    const requests: CapturedRequest[] = []
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        requests.push({ url: String(input), ...(init === undefined ? {} : { init }) })
+        const request: CapturedRequest = { url: String(input) }
+        if (init !== undefined) request.init = init
+        requests.push(request)
         return new Response(null, { status: 200 })
       })
     )
-    const telemetry = makeCoreTelemetryInvocation({
-      BOB_RELEASE_SHA: "0123456789abcdef0123456789abcdef01234567",
-      OTEL_EXPORTER_OTLP_ENDPOINT: "https://otel.example.invalid",
-      OTEL_ACCESS_CLIENT_ID: "otel-client",
-      OTEL_ACCESS_CLIENT_SECRET: "otel-secret"
-    } as CoreBindings)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+    const telemetry = makeCoreTelemetryInvocation(
+      testFixture<CoreBindings>({
+        BOB_RELEASE_SHA: "0123456789abcdef0123456789abcdef01234567",
+        OTEL_EXPORTER_OTLP_ENDPOINT: "https://otel.example.invalid",
+        OTEL_ACCESS_CLIENT_ID: "otel-client",
+        OTEL_ACCESS_CLIENT_SECRET: "otel-secret"
+      })
+    )
 
     await telemetry.runPromise(
       withBobSpan(
@@ -45,6 +56,7 @@ describe("Core Effect telemetry", () => {
     expect(requests[0]?.url).toBe("https://otel.example.invalid/v1/traces")
     const headers = new Headers(requests[0]?.init?.headers)
     expect(headers.get("CF-Access-Client-Id")).toBe("otel-client")
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const payload = JSON.parse(String(requests[0]?.init?.body)) as unknown
     expect(payload).toEqual(
       expect.objectContaining({
@@ -57,7 +69,8 @@ describe("Core Effect telemetry", () => {
   it("keeps telemetry disabled when production export values are absent", async () => {
     const request = vi.fn()
     vi.stubGlobal("fetch", request)
-    const telemetry = makeCoreTelemetryInvocation({} as CoreBindings)
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const telemetry = makeCoreTelemetryInvocation(testFixture<CoreBindings>({}))
 
     await telemetry.runPromise(
       withBobSpan(

@@ -61,10 +61,13 @@ describe("encrypted backup file persistence", () => {
 
     const signed = request.mock.calls[0]?.[0]
     expect(signed).toBeInstanceOf(Request)
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     expect((signed as Request).url).toBe(
       "https://s3.example.invalid/bob-independent/production/bob/bob-2026-08-11T12-00-00.000Z.json.gz.age"
     )
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     expect((signed as Request).headers.get("authorization")).toContain("AWS4-HMAC-SHA256")
+    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     expect((signed as Request).headers.get("x-amz-content-sha256")).toBe("UNSIGNED-PAYLOAD")
   })
 })

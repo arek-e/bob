@@ -8,13 +8,8 @@ import type {
 } from "../conversations/tool-adapter.ts"
 import type { OwnerSettingsStore } from "./store.ts"
 
+import { jsonObject } from "../../json.ts"
 import { isSettingsMutationRequest, settingsUpdateMatchesRequest } from "./rules.ts"
-
-type JsonValue = typeof Schema.Json.Type
-
-function jsonObject(value: unknown): { readonly [key: string]: JsonValue } {
-  return JSON.parse(JSON.stringify(value)) as { readonly [key: string]: JsonValue }
-}
 
 export function makeSettingsToolAdapter(
   settings: OwnerSettingsStore | undefined,

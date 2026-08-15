@@ -14,7 +14,12 @@ function serviceSection(source, service) {
 }
 
 export function assertCoolifyComposeReadiness(source) {
-  if (typeof source !== "string" || source.trim().length === 0) {
+  if (
+    source === null ||
+    source === undefined ||
+    source.constructor !== String ||
+    source.trim().length === 0
+  ) {
     throw new Error("Coolify Compose contract is empty")
   }
   if (!/^services:\n/mu.test(source)) {

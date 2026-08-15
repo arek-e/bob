@@ -55,7 +55,7 @@ async function sha256(
   return { bytes: digest, hex: bytesToHex(new Uint8Array(digest)) }
 }
 
-function manifest(input: EvaluationRunInput, id: string, occurredAt: string): object {
+function manifest(input: EvaluationRunInput, id: string, occurredAt: string) {
   return {
     schemaVersion: 1,
     dataClass: "synthetic_evaluation_result",
