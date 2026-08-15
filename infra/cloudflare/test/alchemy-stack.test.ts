@@ -39,10 +39,9 @@ describe("Alchemy compatibility stack", () => {
     })
 
     expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout).toContain("Plan: 35 to create")
+    expect(result.stdout).toContain("Plan: 34 to create")
     for (const resource of [
       "[BackupArchives] create",
-      "[NangoBackups] create",
       "[OutboundDeadLetterConsumer] create",
       "[WorkerToOtlp] create",
       "[WorkerOtlpServicePolicy] create",
@@ -64,15 +63,15 @@ describe("Alchemy compatibility stack", () => {
     }
   }, 30_000)
 
-  it("declares separate R2 buckets for Bob and Nango backups", async () => {
+  it("keeps the Runtime backup bucket separate from the shared Connections service", async () => {
     const stack = await readFile(new URL("../src/bob-stack.ts", import.meta.url), "utf8")
 
     expect(stack).toContain('Cloudflare.R2.Bucket("BackupArchives"')
     expect(stack).toContain("name: `bob-backup-${PRODUCTION_STAGE}`")
-    expect(stack).toContain('Cloudflare.R2.Bucket("NangoBackups"')
-    expect(stack).toContain("name: `bob-nango-backup-${PRODUCTION_STAGE}`")
-    expect(stack.match(/expire-backups-after-180-days/gu)).toHaveLength(2)
-    expect(stack.match(/maxAge: 15_552_000/gu)).toHaveLength(2)
+    expect(stack).not.toContain('Cloudflare.R2.Bucket("NangoBackups"')
+    expect(stack).not.toContain("name: `bob-nango-backup-${PRODUCTION_STAGE}`")
+    expect(stack.match(/expire-backups-after-180-days/gu)).toHaveLength(1)
+    expect(stack.match(/maxAge: 15_552_000/gu)).toHaveLength(1)
   })
 
   it("plans evaluation storage as an isolated stack", () => {

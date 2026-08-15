@@ -18,7 +18,7 @@ describe("Coolify production stack", () => {
 
   it("pins every image and publishes no host ports", () => {
     const images = [...compose.matchAll(/^\s+image:\s+(.+)$/gm)].map((match) => match[1])
-    expect(images).toHaveLength(7)
+    expect(images).toHaveLength(5)
     expect(images.every((image) => image?.includes("@sha256:") || image?.includes("@${"))).toBe(
       true
     )
@@ -48,7 +48,7 @@ describe("Coolify production stack", () => {
     expect(compose).toContain("BAO_APPROLE_SECRET_ID_PATH: /run/secrets/openbao_approle_secret_id")
     expect(compose).toContain("target: openbao_approle_secret_id")
     expect(compose).toContain("environment: BAO_APPROLE_SECRET_ID")
-    expect(compose).toContain("NANGO_RECORDS_DATABASE_URL")
+    expect(compose).not.toContain("NANGO_RECORDS_DATABASE_URL")
     expect(compose).toContain("external: true")
     expect(compose).toContain("bob-backups:/backups")
     expect(compose).toContain("Date.now()-newest>18000000")
@@ -79,7 +79,7 @@ describe("Coolify production stack", () => {
     ) as { services: { observer: { environment: { OTEL_CONFIG: string } } } }
     const collector = model.services.observer.environment.OTEL_CONFIG
 
-    expect(compose).toContain("otel/opentelemetry-collector-contrib@sha256:")
+    expect(compose).toContain("otel/opentelemetry-collector-contrib@${BOB_OBSERVER_IMAGE_DIGEST:?}")
     expect(compose).toContain("command: [--config=env:OTEL_CONFIG]")
     expect(compose).toContain("OTEL_CONFIG: *observer-config")
     expect(compose).not.toContain("otel-collector.yaml:/etc/otelcol-contrib/config.yaml")
@@ -91,13 +91,9 @@ describe("Coolify production stack", () => {
     expect(collector).toContain("http_check:")
     expect(collector).toContain("http://coolify:8080/api/health")
     expect(collector).toContain("https://bob-sendblue.tpops.dev/health")
-    expect(collector).toContain("tcp_check:")
     expect(collector).toContain("file_stats/bob_backup:")
-    expect(collector).toContain("file_stats/nango_backup:")
     expect(collector).toContain('set(attributes["backup_type"], "bob")')
-    expect(collector).toContain('set(attributes["backup_type"], "nango")')
-    expect(collector).toContain('endpoint: "fixture:5432"')
-    expect(collector).toContain("endpoint: fixture")
+    expect(collector).not.toContain("nango")
     expect(collector).not.toContain("${env:")
     expect(collector).not.toContain("pipelines:\n    logs:")
   })
@@ -126,17 +122,6 @@ function fixtureEnvironment(): NodeJS.ProcessEnv {
     "CORE_ACCESS_CLIENT_ID",
     "CORE_ACCESS_CLIENT_SECRET",
     "CORE_URL",
-    "NANGO_ADMIN_KEY",
-    "NANGO_DASHBOARD_PASSWORD",
-    "NANGO_DASHBOARD_USERNAME",
-    "NANGO_DB_PASSWORD",
-    "NANGO_DB_HOST",
-    "NANGO_ENCRYPTION_KEY",
-    "NANGO_PUBLIC_CONNECT_URL",
-    "NANGO_PUBLIC_SERVER_URL",
-    "NANGO_RECORDS_DATABASE_URL",
-    "NANGO_SECRET_KEY_DEV",
-    "NANGO_SERVER_URL",
     "OTEL_EXPORTER_OTLP_ENDPOINT",
     "R2_BACKUP_ACCESS_KEY_ID",
     "R2_BACKUP_SECRET_ACCESS_KEY",
@@ -150,6 +135,8 @@ function fixtureEnvironment(): NodeJS.ProcessEnv {
     ...Object.fromEntries(required.map((key) => [key, "fixture"])),
     BOB_AGENT_IMAGE_DIGEST: `sha256:${"a".repeat(64)}`,
     BOB_BACKUP_IMAGE_DIGEST: `sha256:${"b".repeat(64)}`,
+    BOB_OBSERVER_IMAGE_DIGEST: `sha256:${"d".repeat(64)}`,
+    CLOUDFLARED_IMAGE_DIGEST: `sha256:${"e".repeat(64)}`,
     BOB_RELEASE_SHA: "c".repeat(40)
   }
 }
