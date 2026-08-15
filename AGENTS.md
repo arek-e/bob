@@ -33,3 +33,16 @@ Keep generated files, secrets, build output, and local runtime state out of comm
 Preserve unrelated worktree changes. Keep changes inside the requested package or domain.
 
 Update the relevant tests when behavior changes. Report failed checks and their cause.
+
+## Architecture guardrails
+
+- Treat `CONTEXT.md` and accepted ADRs as authoritative.
+- Register Capability Modules and Context source Modules in static, reviewed source lists.
+- Keep every Tool in exactly one Capability Module.
+- Update Tool definitions, safety metadata, and conformance tests together.
+- Keep domain Modules authoritative for policy and mutation rules.
+- Keep ContextStore authoritative for privacy, budgets, deduplication, and assembly.
+- Keep telemetry read-only and fail-open.
+- Do not add runtime discovery, package-installed Modules, self-registration, or hot reload.
+- Do not add mutable lifecycle hooks without an accepted ADR.
+- Update `CONTEXT.md` and the relevant ADR when architecture changes.

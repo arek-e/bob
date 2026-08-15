@@ -75,7 +75,7 @@ Use this sequence:
 2. Resolve deterministic channel commands before Pi.
 3. Resolve urgent-safety responses before Pi.
 4. Build one policy-cleared context pack.
-5. Select the smallest reviewed tool set for the run.
+5. Load the reviewed capability catalogue for the run.
 6. Create one ephemeral Bob Pi loop with a direct `pi-ai` model context.
 7. Run the loop with explicit turn, tool, time, and output limits.
 8. Execute each tool through a typed core interface.
@@ -98,13 +98,23 @@ The core Worker builds the context pack.
 
 The Bob Pi loop renders that pack into a `pi-ai` model context.
 
+Load candidate items through one complete and ordered static registry of Context source Modules.
+
+Each source returns candidate Context items only.
+
+Keep source precedence, privacy, budgets, deduplication, and final assembly in ContextStore.
+
+Adding a Context source Module requires compile-time registration and conformance tests.
+
+Do not discover, install, self-register, or hot-reload Context source Modules.
+
 The pack contains:
 
 - Current local time and time zone
 - One pending short-reply binding
 - A small confirmed profile pack
 - Relevant confirmed facts with source labels
-- Relevant reminder or training state
+- The current plan artifact and relevant lexical recall
 - Reviewed skill instructions
 - Explicit uncertainty and conflict markers
 
@@ -140,9 +150,12 @@ It must never bypass access or sensitivity policy.
 
 ### Tools
 
-Register tools per run. Do not register every tool globally.
+Register the reviewed capability catalogue for each model-directed run.
 
-Omit mutating tools from proposal-only and answer-only runs.
+Do not use prompt wording or run type to add or remove Tools.
+
+[ADR 0012](0012-model-directed-capability-selection.md) defines Capability Modules and catalogue
+identity.
 
 Pi tool handlers call narrow core Worker routes.
 

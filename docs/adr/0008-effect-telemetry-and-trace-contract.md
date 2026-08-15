@@ -26,6 +26,7 @@ Keep Node and Cloudflare exporters behind explicit package exports.
 
 Use these exports:
 
+- `@bob/observability/events` for closed health schemas and fail-open health observation.
 - `@bob/observability/effect` for span names, safe attributes, events, and the `Telemetry` service.
 - `@bob/observability/propagation` for W3C `traceparent` parsing and injection.
 - `@bob/observability/otlp` for bounded OTLP serialization and HTTP batching.
@@ -34,6 +35,20 @@ Use these exports:
 - `@bob/observability/testing` for deterministic capture Layers.
 
 Do not add another application telemetry package.
+
+Route application health events through the shared health observer.
+
+The observer validates each event before it calls the configured sink.
+
+Validation and sink failures must not change application control flow.
+
+Application callers must not call an EventSink adapter directly.
+
+Health observation reports workflow results only.
+
+Do not let observation callbacks mutate workflow state or select workflow behavior.
+
+Do not add mutable lifecycle hooks through telemetry.
 
 ### Layer lifetime
 

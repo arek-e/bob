@@ -78,7 +78,11 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **External action attempt:** One durable attempt to change state or call an external system.
 - **Context pack:** Confirmed and policy-cleared data supplied to one agent run.
 - **Tool command:** One typed request from Bob's Pi loop to a Bob domain module.
+- **Capability Module:** One statically registered domain group of Tool definitions and safety metadata.
 - **Capability catalogue:** The reviewed model tools available to every agent run.
+- **Capability catalogue generation:** The deterministic content identity of one Capability catalogue.
+- **Context source Module:** One statically registered source of candidate items for a Context pack.
+- **Health observation:** One read-only, content-free event sent through a fail-open telemetry seam.
 - **Plan artifact:** One reusable structured draft for any owner planning task.
 - **Short reply binding:** An expiring link from one reply to one pending action.
 - **Memory candidate:** An unconfirmed proposed fact revision.
@@ -131,6 +135,12 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Only the current turn revision can commit and deliver its reply.
 - The core Worker enforces every domain invariant.
 - Every agent run receives the same reviewed capability catalogue.
+- Every Tool belongs to exactly one statically registered Capability Module.
+- The capability catalogue and its safety metadata produce one deterministic generation.
+- Each new agent run records that generation. Core and Agent must agree before model execution.
+- Context source Modules form one complete, ordered, static registry.
+- ContextStore owns source precedence, deduplication, budgets, and final Context pack assembly.
+- Runtime discovery, package installation, or mutable hooks cannot add capability or authority.
 - Message wording does not grant Tool authority. Domain modules enforce each action invariant.
 - The agent never calls Sendblue directly.
 - A Bob Instance never receives a shared Nango environment secret.
@@ -161,6 +171,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Alchemy creates Access service tokens and Tunnel credentials before OpenBao receives their runtime copies.
 - No Cloudflare resource has two infrastructure owners.
 - Coolify and OpenBao stay outside Alchemy.
+- Health observation is read-only, content-free, validated, and fail-open.
 - Effect composes I/O. Pure domain rules stay as normal TypeScript.
 - Drizzle owns application schemas and queries. Better Auth uses its built-in D1 adapter for auth tables.
 - Drizzle schemas and queries stay with their owning domain modules.
