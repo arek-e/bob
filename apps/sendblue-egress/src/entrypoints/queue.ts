@@ -4,6 +4,7 @@ import { OutboxClaim, type DeliveryResult } from "@bob/contracts/delivery"
 import { OutboundJob, type OutboundJob as OutboundJobValue } from "@bob/contracts/jobs"
 import { flushCloudflareTelemetry } from "@bob/observability/cloudflare"
 import { recordDecision, withBobSpan } from "@bob/observability/effect"
+import { observeHealth } from "@bob/observability/events"
 import {
   externalParentFromTraceparent,
   injectCurrentTraceparent
@@ -113,19 +114,17 @@ function processOutboundJobEffect(job: OutboundJobValue, composition: EgressComp
       ).pipe(
         Effect.catchTag("ProviderOutcomeFailure", (failure) => Effect.succeed(failure.outcome))
       )
-      yield* Effect.tryPromise(() =>
-        Promise.resolve(
-          composition.events.emit({
-            type: "delivery",
-            correlationId: claim.correlationId,
-            outboxId: claim.outboxId,
-            attemptId: claim.attemptId,
-            status: outcome.state,
-            code: outcome.state === "accepted" ? "accepted" : outcome.code,
-            durationMs: Math.max(0, Date.now() - startedAt)
-          })
-        )
-      ).pipe(Effect.catch(() => Effect.void))
+      yield* Effect.promise(() =>
+        observeHealth(composition.events, {
+          type: "delivery",
+          correlationId: claim.correlationId,
+          outboxId: claim.outboxId,
+          attemptId: claim.attemptId,
+          status: outcome.state,
+          code: outcome.state === "accepted" ? "accepted" : outcome.code,
+          durationMs: Math.max(0, Date.now() - startedAt)
+        })
+      )
 
       const occurredAt = new Date().toISOString()
       let result: DeliveryResult =

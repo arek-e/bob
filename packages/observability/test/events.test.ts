@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { agentRunSpanCode, featureForTools, tokenBudgetState } from "../src/attribution.ts"
-import { parseHealthEvent } from "../src/events.ts"
+import { observeHealth, parseHealthEvent } from "../src/events.ts"
 import { captureEvents } from "../src/testing.ts"
 import {
   formatTraceparent,
@@ -11,6 +11,25 @@ import {
 } from "../src/trace.ts"
 
 describe("content-free telemetry", () => {
+  it("keeps validation and sink failures outside application control flow", async () => {
+    const emit = vi.fn(() => {
+      throw new Error("unavailable")
+    })
+    await expect(
+      observeHealth(
+        { emit },
+        {
+          type: "webhook",
+          correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
+          status: "accepted",
+          code: "accepted",
+          durationMs: 3
+        }
+      )
+    ).resolves.toBeUndefined()
+    expect(emit).toHaveBeenCalledOnce()
+  })
+
   it("rejects arbitrary content fields", () => {
     expect(() =>
       parseHealthEvent({

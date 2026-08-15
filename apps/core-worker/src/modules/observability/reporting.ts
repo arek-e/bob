@@ -1,21 +1,11 @@
 import type { AgentRunResult } from "@bob/contracts/agent"
-import type { EventSink } from "@bob/observability/events"
+
+import { observeHealth, type EventSink } from "@bob/observability/events"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { AlertStore } from "../alerts/store.ts"
 
 import { recordAgentUsage, type AgentUsageInput, type UsageBudgetResult } from "./store.ts"
-
-async function emitSafely(
-  events: EventSink,
-  event: Parameters<EventSink["emit"]>[0]
-): Promise<void> {
-  try {
-    await events.emit(event)
-  } catch {
-    // Telemetry must not change a durable workflow.
-  }
-}
 
 export async function reportAgentUsage(
   database: CoreDatabase,
@@ -35,7 +25,7 @@ export async function reportAgentUsage(
       feature: input.feature,
       workflow: "agent_turn" as const
     }
-    await emitSafely(events, {
+    await observeHealth(events, {
       type: "token_budget",
       ...common,
       window: "run",
@@ -44,7 +34,7 @@ export async function reportAgentUsage(
       consumedTokens: usage.run.consumedTokens,
       budgetTokens: usage.run.budgetTokens
     })
-    await emitSafely(events, {
+    await observeHealth(events, {
       type: "token_budget",
       ...common,
       window: "utc_day",

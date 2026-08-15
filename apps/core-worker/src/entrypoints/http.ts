@@ -12,6 +12,7 @@ import {
 } from "@bob/contracts/ui"
 import { featureForToolName } from "@bob/observability/attribution"
 import { recordDecision, withBobSpan, type BobSpan } from "@bob/observability/effect"
+import { observeHealth } from "@bob/observability/events"
 import { externalParentFromTraceparent } from "@bob/observability/propagation"
 import { Effect, Schema } from "effect"
 
@@ -426,18 +427,14 @@ export async function handleHttp(
           )
         )
       } finally {
-        try {
-          await composition.services.events.emit({
-            type: "tool_call",
-            correlationId,
-            runId: command.runId,
-            toolName: command.name,
-            status,
-            durationMs: Math.max(0, Date.now() - startedAt)
-          })
-        } catch {
-          // Telemetry must not change a tool result.
-        }
+        await observeHealth(composition.services.events, {
+          type: "tool_call",
+          correlationId,
+          runId: command.runId,
+          toolName: command.name,
+          status,
+          durationMs: Math.max(0, Date.now() - startedAt)
+        })
       }
     }
 

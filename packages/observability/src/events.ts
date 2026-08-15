@@ -185,6 +185,15 @@ export interface EventSink {
   emit(event: HealthEvent): void | Promise<void>
 }
 
+/** Validate and emit one read-only event without changing application control flow. */
+export async function observeHealth(sink: EventSink, event: HealthEvent): Promise<void> {
+  try {
+    await sink.emit(parseHealthEvent(event))
+  } catch {
+    // Observation cannot change the result of the observed workflow.
+  }
+}
+
 export function parseHealthEvent<Input>(value: Input): HealthEvent {
   const input = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(value)
   const event = Schema.decodeUnknownSync(HealthEvent)(input)
