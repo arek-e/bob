@@ -31,7 +31,9 @@ The contract declares:
 - readiness behavior;
 - the reviewed backup command.
 
-The release record includes the contract digest and every immutable image digest.
+The release record includes the contract digest, its reviewed HTTPS locator, and every immutable image digest.
+
+The locator must bind to the reviewed Runtime source revision.
 
 The contract contains no secret value, managed resource identifier, or host-specific path.
 

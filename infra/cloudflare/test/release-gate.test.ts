@@ -148,6 +148,7 @@ describe("trusted infrastructure plan", () => {
     expect(automaticRelease).toContain("cloudflared_digest")
     expect(automaticRelease).toContain("observer_digest")
     expect(automaticRelease).toContain("contract_digest")
+    expect(automaticRelease).toContain("deploymentContractUri")
     expect(automaticRelease).toContain('name: "cloudflared"')
     expect(automaticRelease).toContain('name: "observer"')
     expect(automaticRelease).toContain("scripts/verify-release-manifest-delta.mjs")
