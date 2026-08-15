@@ -1,7 +1,7 @@
 # Production deployment
 
 Status: active
-Runtime authority: Coolify
+Runtime authority: Bob Control Plane
 
 Use this runbook for Bob production releases.
 
@@ -21,33 +21,21 @@ The image workflow publishes these immutable images:
 
 - `ghcr.io/arek-e/bob-agent:sha-$RELEASE_SHA`
 - `ghcr.io/arek-e/bob-data-backup:sha-$RELEASE_SHA`
+- `ghcr.io/arek-e/bob-release:sha-$RELEASE_SHA`
 
-Read each manifest digest from the registry.
+The last image is an OCI release bundle. It binds the source, configuration, deployment contract, and all image digests.
 
 ```sh
 gh workflow run release-images.yml --ref main -f release_sha="$RELEASE_SHA"
 ```
 
-## Create the deployment commit
-
-Change only these values in `infra/coolify/release.json`:
-
-- `sourceSha`
-- `agentDigest`
-- `backupDigest`
-
-Set `sourceSha` to `RELEASE_SHA`.
-
-Commit the manifest change on `main`.
+Read the immutable bundle reference from the completed workflow summary.
 
 ```sh
-export DEPLOYMENT_SHA="$(git rev-parse HEAD)"
-node scripts/verify-release-manifest-delta.mjs "$RELEASE_SHA" "$DEPLOYMENT_SHA"
+export BUNDLE_REFERENCE="ghcr.io/arek-e/bob-release@sha256:<digest>"
 ```
 
-The private Control Plane gate permits only the three release values between both commits.
-
-It also binds both registry digests to `RELEASE_SHA`.
+Do not commit generated release data to the Runtime source branch.
 
 ## Apply the release
 
@@ -57,14 +45,15 @@ Production validation and deployment run only in the private Control Plane.
 
 ```sh
 gh workflow run release.yml -R arek-e/bob-control-plane --ref main \
-  -f source_sha="$RELEASE_SHA" \
-  -f deployment_sha="$DEPLOYMENT_SHA" \
+  -f bundle_reference="$BUNDLE_REFERENCE" \
   -f deploy=true
 ```
 
-The reviewed manifest supplies the agent, backup, Tunnel, and observer image digests.
+The Control Plane pulls and validates the exact OCI bundle.
 
-The Control Plane selects `DEPLOYMENT_SHA` and verifies every immutable digest.
+It verifies the image digests and build provenance against the bundle source revision.
+
+The Control Plane promotes the exact bundle digest and records the durable Operation.
 
 The assigned Bob Runner applies the reviewed contract. Independent assurance records acceptance.
 
@@ -72,18 +61,20 @@ Coolify can host the initial Compose target. It is not part of the orchestration
 
 Wait for the agent, Tunnel, backup runner, and observer to become healthy.
 
-## Automatic releases
+## Automatic release preparation
 
 `.github/workflows/auto-release.yml` prepares artifacts after successful `main` CI runs.
 
-Set the repository variable `BOB_RELEASE_PREPARATION_ENABLED` to `true` when each green `main` commit must prepare release artifacts.
+Set `BOB_RELEASE_PREPARATION_ENABLED` to `true` to prepare each green `main` commit.
 
 The public workflow performs these actions:
 
 1. Confirm that the successful commit is still the tip of `main`.
-2. Skip commits that change only `infra/coolify/release.json`.
-3. Build and attest both immutable runtime images.
-4. Commit only the three reviewed release values to `main`.
+2. Build and attest both Runtime images.
+3. Create one canonical release bundle.
+4. Publish the bundle to GHCR by immutable digest.
+
+The workflow does not write to `main`.
 
 It does not use a production environment, production identity, private network, or Control Plane endpoint.
 
@@ -95,11 +86,9 @@ Dispatch the private Control Plane workflow when these checks pass:
 - The Runner can report observations without changing Runtime state.
 - A canary release completed independent assurance.
 
-Leave the variable unset to require manual image and manifest preparation.
+Leave the variable unset to require manual artifact preparation.
 
-Offline Runtime checks continue to run on every pull request and `main` push.
-
-The private Control Plane verifies the release delta, image digests, provenance, Runtime checks, and production plan. It then requests and observes one durable release Operation.
+The private Control Plane verifies the bundle, image digests, provenance, Runtime checks, and production plan.
 
 Do not give either repository a Coolify administrator token.
 
@@ -110,8 +99,6 @@ Keep `/health` as the public liveness check.
 Call `/v1/admin/readiness` through the admin Cloudflare Access policy.
 
 Require HTTP 200 and both checks to report `ready`.
-
-This check proves that the agent can read its OAuth record and reach Core.
 
 Run one synthetic inbound message through the canary number.
 
@@ -125,22 +112,23 @@ Confirm that the latest Bob backup age is below 18,000 seconds.
 
 ## Keep Cloudflare ownership separate
 
-Do not apply Runtime Alchemy in production. `teampitch-ops` OpenTofu owns
-Cloudflare resources and tunnel configuration. Use its reviewed change path
-for Cloudflare updates.
+Do not apply Runtime Alchemy in production.
+
+`teampitch-ops` OpenTofu owns Cloudflare resources and Tunnel configuration.
 
 ## Observe
 
-Observe delivery errors, queue depth, Agent failures, and failures from enabled Vertical Modules.
+Observe delivery errors, queue depth, Agent failures, and enabled Vertical Module failures.
 
 Keep the release under observation for at least 30 minutes.
 
-Record the source SHA, deployment SHA, image digests, and backup result.
+Record the bundle digest, source revision, image digests, and backup result.
 
 ## Roll back
 
-Request rollback through the Bob Control Plane. It selects the previous
-accepted Runtime Release and records the result.
+Request rollback through the Bob Control Plane.
+
+It selects the previous accepted Runtime release bundle and records the result.
 
 Do not retry an uncertain delivery during rollback.
 

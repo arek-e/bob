@@ -1,4 +1,3 @@
-const COMMIT_PATTERN = /^[a-f0-9]{40}$/u
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u
 
 function parseJson(value, label) {
@@ -14,21 +13,17 @@ function requireText(value, marker, message) {
 }
 
 export function assertDeploymentReadiness(input) {
-  const release = parseJson(input.releaseManifest, "The Coolify release manifest")
+  const baseImages = parseJson(input.baseImages, "The Coolify base image manifest")
   const runtime = parseJson(input.runtimeContract, "The Coolify runtime contract")
   const compose = input.coolifyCompose
   const agentPolicy = input.agentPolicy
 
-  if (release.schemaVersion !== 2 || !COMMIT_PATTERN.test(release.sourceSha)) {
-    throw new Error("The Coolify release needs one full source commit")
-  }
   if (
-    !DIGEST_PATTERN.test(release.agentDigest) ||
-    !DIGEST_PATTERN.test(release.backupDigest) ||
-    !DIGEST_PATTERN.test(release.cloudflaredDigest) ||
-    !DIGEST_PATTERN.test(release.observerDigest)
+    baseImages.schemaVersion !== 1 ||
+    !DIGEST_PATTERN.test(baseImages.cloudflaredDigest) ||
+    !DIGEST_PATTERN.test(baseImages.observerDigest)
   ) {
-    throw new Error("The Runtime release needs all image digests")
+    throw new Error("The Runtime base images need immutable digests")
   }
   if (runtime.schemaVersion !== 1) throw new Error("The runtime contract version is unsupported")
   if (
@@ -94,5 +89,5 @@ export function assertDeploymentReadiness(input) {
     throw new Error("The agent OpenBao policy grants unrelated access")
   }
 
-  return { release, runtime }
+  return { baseImages, runtime }
 }

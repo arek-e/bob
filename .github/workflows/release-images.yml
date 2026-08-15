@@ -14,6 +14,12 @@ on:
       backup_digest:
         description: Immutable backup image digest
         value: ${{ jobs.publish-backup.outputs.digest }}
+      bundle_digest:
+        description: Canonical Runtime release bundle digest
+        value: ${{ jobs.publish-bundle.outputs.bundle_digest }}
+      bundle_reference:
+        description: Immutable OCI Runtime release bundle reference
+        value: ${{ jobs.publish-bundle.outputs.bundle_reference }}
   workflow_dispatch:
     inputs:
       release_sha:
@@ -241,3 +247,54 @@ jobs:
             echo "Agent: ghcr.io/arek-e/bob-agent@$AGENT_DIGEST"
             echo "Backup: ghcr.io/arek-e/bob-data-backup@$BACKUP_DIGEST"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-bundle:
+    needs: [publish-agent, publish-backup, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      bundle_digest: ${{ steps.bundle.outputs.bundle_digest }}
+      bundle_reference: ${{ steps.bundle.outputs.bundle_reference }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 1
+      - uses: oras-project/setup-oras@v1
+        with:
+          version: 1.3.3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the immutable Runtime release bundle
+        id: bundle
+        env:
+          SOURCE_SHA: ${{ inputs.release_sha }}
+          AGENT_DIGEST: ${{ needs.publish-agent.outputs.digest }}
+          BACKUP_DIGEST: ${{ needs.publish-backup.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_digest="$(node scripts/release-bundle.mjs create release-bundle.json)"
+          bundle_tag="ghcr.io/arek-e/bob-release:sha-${SOURCE_SHA}"
+          oras push "$bundle_tag" \
+            --artifact-type application/vnd.bob.runtime.release.v1+json \
+            release-bundle.json:application/vnd.bob.runtime.release.v1+json
+          artifact_digest="$(oras resolve "$bundle_tag")"
+          [[ "$bundle_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$artifact_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          bundle_reference="ghcr.io/arek-e/bob-release@${artifact_digest}"
+          echo "bundle_digest=$bundle_digest" >> "$GITHUB_OUTPUT"
+          echo "bundle_reference=$bundle_reference" >> "$GITHUB_OUTPUT"
+          {
+            echo "Release bundle: $bundle_reference"
+            echo "Bundle content digest: $bundle_digest"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bob-release-${{ inputs.release_sha }}
+          path: release-bundle.json
+          if-no-files-found: error
+          retention-days: 90

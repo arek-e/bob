@@ -22,7 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      release_required: ${{ steps.source.outputs.release_required }}
       source_sha: ${{ steps.source.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v4
@@ -40,17 +39,10 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA"
 
-          mapfile -t changed_paths < <(git diff-tree --no-commit-id --name-only -r HEAD)
-          if [[ "${#changed_paths[@]}" -eq 1 && "${changed_paths[0]}" == "infra/coolify/release.json" ]]; then
-            echo "release_required=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "release_required=true" >> "$GITHUB_OUTPUT"
-          fi
           echo "source_sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
 
   build-images:
     needs: select-source
-    if: needs.select-source.outputs.release_required == 'true'
     permissions:
       contents: read
       packages: write
@@ -58,55 +50,32 @@ jobs:
     with:
       release_sha: ${{ needs.select-source.outputs.source_sha }}
 
-  pin-release:
+  record-release:
     needs: [select-source, build-images]
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-      - name: Commit the immutable release pins
+      - name: Record the immutable release bundle
         env:
           SOURCE_SHA: ${{ needs.select-source.outputs.source_sha }}
           AGENT_DIGEST: ${{ needs.build-images.outputs.agent_digest }}
           BACKUP_DIGEST: ${{ needs.build-images.outputs.backup_digest }}
+          BUNDLE_DIGEST: ${{ needs.build-images.outputs.bundle_digest }}
+          BUNDLE_REFERENCE: ${{ needs.build-images.outputs.bundle_reference }}
         shell: bash
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$AGENT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "$BACKUP_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
-          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-
-          jq \
-            --arg source_sha "$SOURCE_SHA" \
-            --arg agent_digest "$AGENT_DIGEST" \
-            --arg backup_digest "$BACKUP_DIGEST" \
-            '.sourceSha = $source_sha | .agentDigest = $agent_digest | .backupDigest = $backup_digest' \
-            infra/coolify/release.json > infra/coolify/release.json.next
-          mv infra/coolify/release.json.next infra/coolify/release.json
-
-          mapfile -t changed_paths < <(git diff --name-only)
-          test "${#changed_paths[@]}" -eq 1
-          test "${changed_paths[0]}" = "infra/coolify/release.json"
-          git diff --check
-
-          git config user.name "bob-release-bot"
-          git config user.email "bob-release-bot@users.noreply.github.com"
-          git add infra/coolify/release.json
-          git commit -m "Release Bob runtime $SOURCE_SHA"
-          deployment_sha="$(git rev-parse HEAD)"
-          node scripts/verify-release-manifest-delta.mjs "$SOURCE_SHA" "$deployment_sha" >/dev/null
-          git push origin HEAD:main
+          [[ "$BUNDLE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$BUNDLE_REFERENCE" =~ ^ghcr.io/arek-e/bob-release@sha256:[0-9a-f]{64}$ ]]
 
           {
             echo "Runtime release artifacts are ready for the private Control Plane."
             echo "Source SHA: $SOURCE_SHA"
-            echo "Deployment SHA: $deployment_sha"
             echo "Agent digest: $AGENT_DIGEST"
             echo "Backup digest: $BACKUP_DIGEST"
+            echo "Release bundle: $BUNDLE_REFERENCE"
+            echo "Bundle content digest: $BUNDLE_DIGEST"
           } >> "$GITHUB_STEP_SUMMARY"

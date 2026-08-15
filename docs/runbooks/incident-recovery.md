@@ -63,7 +63,7 @@ Then run one synthetic inbound and outbound check.
 
 Recreate the Coolify application from `infra/coolify/compose.yaml`.
 
-Use the reviewed values in `infra/coolify/release.json`.
+Use the reviewed values in the last accepted Runtime release bundle.
 
 Restore the AppRole secret through the Docker secret source.
 

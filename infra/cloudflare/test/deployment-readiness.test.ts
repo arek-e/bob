@@ -7,13 +7,13 @@ import { assertDeploymentReadiness } from "../../../scripts/deployment-readiness
 const repositoryRoot = new URL("../../../", import.meta.url)
 
 async function contract() {
-  const [releaseManifest, runtimeContract, coolifyCompose, agentPolicy] = await Promise.all([
-    readFile(new URL("infra/coolify/release.json", repositoryRoot), "utf8"),
+  const [baseImages, runtimeContract, coolifyCompose, agentPolicy] = await Promise.all([
+    readFile(new URL("infra/coolify/base-images.json", repositoryRoot), "utf8"),
     readFile(new URL("infra/coolify/runtime-contract.json", repositoryRoot), "utf8"),
     readFile(new URL("infra/coolify/compose.yaml", repositoryRoot), "utf8"),
     readFile(new URL("infra/openbao/agent-production-policy.hcl", repositoryRoot), "utf8")
   ])
-  return { releaseManifest, runtimeContract, coolifyCompose, agentPolicy }
+  return { baseImages, runtimeContract, coolifyCompose, agentPolicy }
 }
 
 describe("Coolify production deployment readiness", () => {
