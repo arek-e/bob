@@ -51,6 +51,7 @@ for (const sourceRoot of sourceRoots) {
       const sendblueConsumer =
         workspace === "apps/sendblue-ingress" ||
         workspace === "apps/sendblue-egress" ||
+        workspace === "apps/managed-channel-router" ||
         workspace === "tools/sendblue-reconcile"
       if (!sendblueConsumer && specifier.startsWith("@bob/sendblue")) {
         violations.push(`${file}: this workspace cannot import @bob/sendblue`)
