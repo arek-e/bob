@@ -18,6 +18,31 @@ It also made short replies depend on capability hints from prior runs.
 
 Give every agent run the same reviewed capability catalogue.
 
+Build the catalogue from one complete static set of Capability Modules.
+
+Keep each domain's Tool definitions, feature attribution, and safety metadata in its Capability
+Module.
+
+Every Tool belongs to exactly one Capability Module.
+
+Conformance checks reject missing Tools, duplicate ownership, and unowned safety metadata.
+
+A Capability Module cannot grant authority beyond its owning domain Module.
+
+Derive one deterministic generation from the complete catalogue content.
+
+Store that generation in each new immutable agent run request.
+
+Reject a new run before model execution when its generation does not match the Agent catalogue.
+
+Accept stored requests without a generation during the legacy snapshot migration.
+
+The generation detects rollout skew. It does not grant Tool authority.
+
+Adding a Capability Module requires compile-time registration and conformance tests.
+
+Do not discover, install, self-register, or hot-reload Capability Modules.
+
 Let the model select a Tool from the owner's meaning and current turn.
 Do not use message keywords to add or remove model Tools.
 
