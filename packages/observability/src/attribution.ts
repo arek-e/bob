@@ -1,3 +1,6 @@
+import { capabilityForToolName, ToolName } from "@bob/contracts/tools"
+import { Schema } from "effect"
+
 import type { TelemetryFeature, TelemetrySpanCode } from "./events.ts"
 
 const featureOrder: readonly TelemetryFeature[] = [
@@ -9,21 +12,8 @@ const featureOrder: readonly TelemetryFeature[] = [
 ]
 
 export function featureForToolName(toolName: string): TelemetryFeature {
-  if (toolName.startsWith("reminder_")) return "reminders"
-  if (toolName.startsWith("memory_")) return "memory"
-  if (toolName.startsWith("journal_")) return "journal"
-  if (toolName.startsWith("settings_")) return "settings"
-  if (toolName.startsWith("connection_")) return "settings"
-  if (
-    toolName.startsWith("gym_") ||
-    toolName.startsWith("exercise_") ||
-    toolName.startsWith("equipment_") ||
-    toolName.startsWith("routine_") ||
-    toolName.startsWith("workout_")
-  ) {
-    return "training"
-  }
-  return "assistant"
+  const name = Schema.decodeUnknownOption(ToolName)(toolName)
+  return name._tag === "None" ? "assistant" : capabilityForToolName(name.value).feature
 }
 
 export function featureForTools(toolNames: readonly string[]): TelemetryFeature {

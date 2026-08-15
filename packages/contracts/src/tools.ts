@@ -199,6 +199,29 @@ export interface ToolDefinition<Name extends ToolDefinitionName = ToolDefinition
   readonly inputSchema: ToolInputSchema
 }
 
+export const CapabilityId = Schema.Literals([
+  "reminders",
+  "memory",
+  "journal",
+  "training",
+  "settings",
+  "connections"
+])
+
+export type CapabilityId = typeof CapabilityId.Type
+export type CapabilityFeature = "reminders" | "memory" | "journal" | "training" | "settings"
+
+export interface CapabilityModule {
+  readonly id: CapabilityId
+  readonly version: number
+  readonly feature: CapabilityFeature
+  readonly names: readonly ToolName[]
+  readonly definitions: Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
+  readonly readOnly: readonly ToolName[]
+  readonly sourceBound: readonly ToolName[]
+  readonly externalOutcomeUnknown: readonly ToolName[]
+}
+
 const emptyInputSchema = {
   type: "object",
   properties: {},
@@ -247,7 +270,7 @@ const workoutHistoryInputSchema = {
   additionalProperties: false
 } as const satisfies ToolInputSchema
 
-const toolDefinitions = {
+const reminderToolDefinitions = {
   reminder_create: {
     name: "reminder_create",
     description: "Create one confirmed reminder with an absolute local date and time.",
@@ -321,7 +344,10 @@ const toolDefinitions = {
       required: ["reminderId"],
       additionalProperties: false
     } as const
-  },
+  }
+} as const satisfies Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
+
+const memoryToolDefinitions = {
   memory_search: {
     name: "memory_search",
     description: "Find policy-cleared personal records with source labels.",
@@ -368,7 +394,10 @@ const toolDefinitions = {
     name: "memory_confirm",
     description: "Confirm one owner-approved memory candidate.",
     inputSchema: idInputSchema
-  },
+  }
+} as const satisfies Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
+
+const journalToolDefinitions = {
   journal_link_create: {
     name: "journal_link_create",
     description:
@@ -383,7 +412,10 @@ const toolDefinitions = {
       properties: { tag: { type: "string" } },
       additionalProperties: false
     } as const
-  },
+  }
+} as const satisfies Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
+
+const trainingToolDefinitions = {
   gym_list: {
     name: "gym_list",
     description:
@@ -528,7 +560,10 @@ const toolDefinitions = {
     name: "workout_history",
     description: "List prior workouts.",
     inputSchema: workoutHistoryInputSchema
-  },
+  }
+} as const satisfies Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
+
+const settingsToolDefinitions = {
   settings_get: {
     name: "settings_get",
     description: "Get the owner's locality and linked account status.",
@@ -547,7 +582,10 @@ const toolDefinitions = {
       },
       additionalProperties: false
     } as const
-  },
+  }
+} as const satisfies Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
+
+const connectionToolDefinitions = {
   connection_list: {
     name: "connection_list",
     description: "List the owner's linked service status.",
@@ -569,9 +607,149 @@ const toolDefinitions = {
       additionalProperties: false
     } as const
   }
+} as const satisfies Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
+
+export const capabilityModules = Object.freeze([
+  {
+    id: "reminders",
+    version: 1,
+    feature: "reminders",
+    names: [
+      "reminder_create",
+      "reminder_list",
+      "reminder_acknowledge",
+      "reminder_complete",
+      "reminder_snooze",
+      "reminder_cancel"
+    ],
+    definitions: reminderToolDefinitions,
+    readOnly: ["reminder_list"],
+    sourceBound: ["reminder_create"],
+    externalOutcomeUnknown: []
+  },
+  {
+    id: "memory",
+    version: 1,
+    feature: "memory",
+    names: ["memory_search", "memory_propose", "memory_confirm", "memory_correct"],
+    definitions: memoryToolDefinitions,
+    readOnly: ["memory_search"],
+    sourceBound: ["memory_propose"],
+    externalOutcomeUnknown: []
+  },
+  {
+    id: "journal",
+    version: 1,
+    feature: "journal",
+    names: ["journal_link_create", "journal_search_metadata"],
+    definitions: journalToolDefinitions,
+    readOnly: ["journal_search_metadata"],
+    sourceBound: [],
+    externalOutcomeUnknown: []
+  },
+  {
+    id: "training",
+    version: 1,
+    feature: "training",
+    names: [
+      "gym_list",
+      "gym_create",
+      "equipment_list",
+      "exercise_create",
+      "exercise_list",
+      "gym_add_equipment",
+      "equipment_map_exercise",
+      "routine_save",
+      "routine_get",
+      "workout_start",
+      "workout_log_set",
+      "workout_finish",
+      "workout_last",
+      "workout_history"
+    ],
+    definitions: trainingToolDefinitions,
+    readOnly: [
+      "gym_list",
+      "equipment_list",
+      "exercise_list",
+      "routine_get",
+      "workout_last",
+      "workout_history"
+    ],
+    sourceBound: [],
+    externalOutcomeUnknown: []
+  },
+  {
+    id: "settings",
+    version: 1,
+    feature: "settings",
+    names: ["settings_get", "settings_update"],
+    definitions: settingsToolDefinitions,
+    readOnly: ["settings_get"],
+    sourceBound: [],
+    externalOutcomeUnknown: []
+  },
+  {
+    id: "connections",
+    version: 1,
+    feature: "settings",
+    names: ["connection_list", "connection_link_create"],
+    definitions: connectionToolDefinitions,
+    readOnly: ["connection_list"],
+    sourceBound: [],
+    externalOutcomeUnknown: ["connection_link_create"]
+  }
+] as const satisfies readonly CapabilityModule[])
+
+const toolDefinitions = {
+  ...reminderToolDefinitions,
+  ...memoryToolDefinitions,
+  ...journalToolDefinitions,
+  ...trainingToolDefinitions,
+  ...settingsToolDefinitions,
+  ...connectionToolDefinitions
 } as const satisfies {
   readonly [Name in ToolDefinitionName]: ToolDefinition<Name>
 }
+
+const capabilityByToolName = new Map(
+  capabilityModules.flatMap((capability) =>
+    capability.names.map((name) => [name, capability] as const)
+  )
+)
+
+export function validateCapabilityCatalogue(): void {
+  const ids = capabilityModules.map((capability) => capability.id)
+  if (new Set(ids).size !== ids.length) throw new Error("Duplicate capability ID")
+  const names = capabilityModules.flatMap((capability) => capability.names)
+  if (new Set(names).size !== names.length) throw new Error("Duplicate capability Tool name")
+  if (
+    names.length !== ToolName.literals.length ||
+    ToolName.literals.some((name) => !names.includes(name))
+  ) {
+    throw new Error("Capability catalogue does not own every Tool name")
+  }
+  for (const capability of capabilityModules) {
+    const owned = new Set<ToolName>(capability.names)
+    const policies = [
+      capability.readOnly,
+      capability.sourceBound,
+      capability.externalOutcomeUnknown
+    ]
+    if (policies.some((items) => items.some((name) => !owned.has(name)))) {
+      throw new Error(`Capability ${capability.id} declares policy for an unowned Tool`)
+    }
+    if (
+      Object.keys(capability.definitions).some(
+        (name) => !owned.has(Schema.decodeUnknownSync(ToolName)(name))
+      )
+    ) {
+      throw new Error(`Capability ${capability.id} defines an unowned Tool`)
+    }
+  }
+}
+
+validateCapabilityCatalogue()
 
 export { toolDefinitions }
 
@@ -588,22 +766,22 @@ export function toolDefinitionForName(name: ToolName): ToolDefinition | undefine
   return toolDefinitions[name]
 }
 
-const readOnlyToolNames = new Set<ToolName>([
-  "reminder_list",
-  "memory_search",
-  "journal_search_metadata",
-  "gym_list",
-  "equipment_list",
-  "exercise_list",
-  "routine_get",
-  "workout_last",
-  "workout_history",
-  "settings_get",
-  "connection_list"
-])
+export function capabilityForToolName(name: ToolName): CapabilityModule {
+  const capability = capabilityByToolName.get(name)
+  if (capability === undefined) throw new Error(`No capability owns Tool ${name}`)
+  return capability
+}
 
 export function isReadOnlyToolName(name: ToolName): boolean {
-  return readOnlyToolNames.has(name)
+  return capabilityForToolName(name).readOnly.some((candidate) => candidate === name)
+}
+
+export function isSourceBoundToolName(name: ToolName): boolean {
+  return capabilityForToolName(name).sourceBound.some((candidate) => candidate === name)
+}
+
+export function hasUnknownExternalOutcome(name: ToolName): boolean {
+  return capabilityForToolName(name).externalOutcomeUnknown.some((candidate) => candidate === name)
 }
 
 function isJsonObject(value: typeof Schema.Json.Type): value is typeof JsonObject.Type {

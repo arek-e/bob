@@ -1,6 +1,8 @@
 import { AgentRunRequest } from "@bob/contracts/agent"
 import {
   conversationMutationIdempotencyKey,
+  capabilityForToolName,
+  hasUnknownExternalOutcome,
   isReadOnlyToolName,
   ToolCommand,
   ToolName,
@@ -229,11 +231,10 @@ function latestFragmentBlocksMutation(request: typeof AgentRunRequest.Type): boo
   return mutationReviewQuestion.test(normalized) && !directMutationRequestQuestion.test(normalized)
 }
 
-const externalMutationTools = new Set<ToolName>(["connection_link_create"])
 const mutatingToolNames = ToolName.literals.filter((name) => !isReadOnlyToolName(name))
 
 export function expiredToolCallOutcome(name: ToolName): ToolResult | undefined {
-  if (!externalMutationTools.has(name)) return undefined
+  if (!hasUnknownExternalOutcome(name)) return undefined
   return {
     ok: false,
     code: "external_outcome_unknown",
@@ -417,45 +418,19 @@ export function makeToolExecutor(
       messageId: context.messageId
     }
     const adapterContext: ToolCommandAdapterContext = { command, run }
-    switch (command.name) {
-      case "reminder_create":
-      case "reminder_list":
-      case "reminder_acknowledge":
-      case "reminder_complete":
-      case "reminder_snooze":
-      case "reminder_cancel":
+    switch (capabilityForToolName(command.name).id) {
+      case "reminders":
         return adapters.reminders.execute(adapterContext)
-      case "memory_search":
-      case "memory_propose":
-      case "memory_confirm":
-      case "memory_correct":
+      case "memory":
         return adapters.memory.execute(adapterContext)
-      case "journal_link_create":
-      case "journal_search_metadata":
+      case "journal":
         return adapters.journal.execute(adapterContext)
-      case "gym_list":
-      case "gym_create":
-      case "equipment_list":
-      case "exercise_create":
-      case "exercise_list":
-      case "gym_add_equipment":
-      case "equipment_map_exercise":
-      case "routine_save":
-      case "routine_get":
-      case "workout_start":
-      case "workout_log_set":
-      case "workout_finish":
-      case "workout_last":
-      case "workout_history":
+      case "training":
         return adapters.training.execute(adapterContext)
-      case "settings_get":
-      case "settings_update":
+      case "settings":
         return adapters.settings.execute(adapterContext)
-      case "connection_list":
-      case "connection_link_create":
+      case "connections":
         return adapters.connections.execute(adapterContext)
-      default:
-        return domainError()
     }
   }
 
