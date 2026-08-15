@@ -1,0 +1,20 @@
+export interface ManagedChannelRouterBindings {
+  ROUTES: D1Database
+  DELIVERY_QUEUE: Queue<{ readonly eventId: string }>
+  RUNTIME_INGRESS: Fetcher
+  SENDBLUE_ACCOUNT_ID: string
+  SENDBLUE_LINE_ID: string
+  SENDBLUE_WEBHOOK_SIGNING_SECRET: string
+  SENDBLUE_FROM_NUMBER: string
+  ROUTE_LOOKUP_KEY: string
+  ROUTER_EVENT_KEY: string
+  ROUTER_EVENT_KEY_VERSION: string
+  ROUTER_ADMIN_TOKEN: string
+  CONTROL_PLANE_URL: string
+  CONTROL_PLANE_TOKEN: string
+  RUNTIME_INGRESS_TOKEN: string
+  MANAGED_REGION: string
+  MANAGED_ISOLATION_CLASS: string
+  MANAGED_RESOURCE_POLICY_ID: string
+  MANAGED_RELEASE_CHANNEL?: string
+}
