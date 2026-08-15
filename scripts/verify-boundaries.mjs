@@ -9,6 +9,7 @@ const importPattern = /(?:from\s+|import\s*\()["']([^"']+)["']/g
 const violations = []
 const generalCoreFiles = new Set([
   "apps/core-worker/src/core-composition.ts",
+  "apps/core-worker/src/bindings.ts",
   "apps/core-worker/src/process-inbound.ts",
   "apps/core-worker/src/entrypoints/http.ts",
   "apps/core-worker/src/entrypoints/scheduled.ts",
@@ -21,6 +22,14 @@ function isGeneralCoreFile(file) {
     generalCoreFiles.has(file) ||
     file.startsWith("apps/core-worker/src/modules/policy/") ||
     file.startsWith("apps/core-worker/src/modules/delivery/")
+  )
+}
+
+function isDomainNeutralAgentFile(file) {
+  return (
+    file.startsWith("packages/pi-agent/src/") ||
+    file === "packages/contracts/src/agent.ts" ||
+    file === "packages/contracts/src/output-safety.ts"
   )
 }
 
@@ -52,6 +61,19 @@ for (const sourceRoot of sourceRoots) {
 
   for (const file of files) {
     const text = await readFile(new URL(file, root), "utf8")
+    if (
+      file.startsWith("tools/agent-evals/src/") &&
+      !file.startsWith("tools/agent-evals/src/evaluation-packs/") &&
+      /\b(?:reminder|journal|training|workout|gym|connector|calendar)\b/iu.test(text)
+    ) {
+      violations.push(`${file}: the generic evaluation Module contains Vertical vocabulary`)
+    }
+    if (
+      isDomainNeutralAgentFile(file) &&
+      /\b(?:reminder|journal|training|workout|gym|exercise|routine|calendar)\b/iu.test(text)
+    ) {
+      violations.push(`${file}: the General Agent Interface contains Vertical vocabulary`)
+    }
     for (const match of text.matchAll(importPattern)) {
       const specifier = match[1]
       const workspace = topWorkspace(file)

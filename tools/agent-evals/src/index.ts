@@ -5,7 +5,8 @@ import { pathToFileURL } from "node:url"
 
 import { summarizeBenchmarkTracking, type BenchmarkTrackingReport } from "./benchmark-tracking.ts"
 import { compareEvaluationReports, type EvaluationComparison } from "./comparison.ts"
-import { evaluateSuite, metricNames, version1MetricNames, type EvaluationReport } from "./gate.ts"
+import { coreEvaluationProfile } from "./evaluation-packs/core.ts"
+import { evaluateSuite, type EvaluationReport } from "./gate.ts"
 import {
   loadBenchmarkCatalog,
   loadBenchmarkRunLedger,
@@ -14,6 +15,7 @@ import {
   loadEvaluationSuite
 } from "./io.ts"
 import { runBoundedLiveEvaluation } from "./live.ts"
+import { evaluateProfile } from "./packs.ts"
 import { createProcessAdapter } from "./process-adapter.ts"
 
 export * from "./gate.ts"
@@ -21,6 +23,8 @@ export * from "./benchmark-tracking.ts"
 export * from "./comparison.ts"
 export * from "./io.ts"
 export * from "./live.ts"
+export * from "./packs.ts"
+export * from "./evaluation-packs/core.ts"
 export * from "./schemas.ts"
 
 export interface DeterministicEvaluation {
@@ -65,15 +69,37 @@ function renderReport(report: EvaluationReport): string {
     `Suite: ${report.suiteId}`,
     `Cases: ${report.cases.passed}/${report.cases.total}`
   ]
-  const reportMetricNames = report.schemaVersion === 1 ? version1MetricNames : metricNames
-  for (const name of reportMetricNames) {
-    const metric = report.metrics[name]
+  for (const name of report.metricNames) {
+    const metric = report.metrics[name]!
     lines.push(
       `${name}: ${metric.value.toFixed(3)} (${metric.comparison} ${metric.threshold.toFixed(3)}; ${metric.numerator}/${metric.denominator})`
     )
   }
   if (report.failures.length > 0) lines.push(`Failures: ${report.failures.join(", ")}`)
   return lines.join("\n")
+}
+
+async function runProfile(args: readonly string[]): Promise<void> {
+  const id = option(args, "--profile") ?? "core"
+  const profile =
+    id === "core"
+      ? coreEvaluationProfile
+      : id === "transitional"
+        ? (await import("./evaluation-packs/transitional.ts")).transitionalEvaluationProfile
+        : undefined
+  if (profile === undefined) throw new Error("evaluation_profile_unknown")
+  const report = await evaluateProfile(profile)
+  console.log(
+    args.includes("--json")
+      ? JSON.stringify(report)
+      : [
+          `Bob evaluation profile: ${report.passed ? "PASS" : "FAIL"}`,
+          `Profile: ${report.profileId}`,
+          ...report.packs.map((pack) => `${pack.packId}: ${pack.passed ? "PASS" : "FAIL"}`),
+          ...(report.failures.length === 0 ? [] : [`Failures: ${report.failures.join(", ")}`])
+        ].join("\n")
+  )
+  if (!report.passed) process.exitCode = 1
 }
 
 function renderComparison(comparison: EvaluationComparison): string {
@@ -167,6 +193,7 @@ async function runLive(args: readonly string[]): Promise<void> {
 async function main(args: readonly string[]): Promise<void> {
   const command = args[0] ?? "offline"
   if (command === "offline") return runOffline(args.slice(1))
+  if (command === "profile") return runProfile(args.slice(1))
   if (command === "compare") return runComparison(args.slice(1))
   if (command === "benchmarks") return runBenchmarkTracking(args.slice(1))
   if (command === "live") return runLive(args.slice(1))

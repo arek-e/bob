@@ -1,6 +1,8 @@
 # Evaluation fixtures
 
-`v1/offline-candidates.json` contains reviewed synthetic observations.
+The versioned files contain reviewed synthetic observations.
+
+Each evaluation pack selects only the observations that it owns.
 
 Store only synthetic observations. Do not store redacted owner data.
 

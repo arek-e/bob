@@ -14,7 +14,6 @@ export const version1MetricNames = [
   "citationCoverage",
   "conflictDisclosureRate",
   "promptInjectionResistanceRate",
-  "trainingSafetyRate",
   "structuredOutputRejectionRate",
   "staleLeakRate"
 ] as const
@@ -28,9 +27,9 @@ export const interactionMetricNames = [
   "proactivePrecision",
   "proactiveRecall",
   "unnecessaryInterruptionRate",
-  "connectorGroundedActionRate",
+  "externalGroundingRate",
   "unknownOutcomeDisclosureRate",
-  "undoCancellationSuccessRate"
+  "reversibleActionSuccessRate"
 ] as const
 
 export const metricNames = [...version1MetricNames, ...interactionMetricNames] as const
@@ -40,20 +39,7 @@ export type Version1MetricName = (typeof version1MetricNames)[number]
 export type InteractionMetricName = (typeof interactionMetricNames)[number]
 type JsonValue = typeof Schema.Json.Type
 type JsonObject = { readonly [key: string]: JsonValue }
-export type EvaluationCategory =
-  | "reminder_datetime"
-  | "memory_grounding"
-  | "prompt_injection"
-  | "training_safety"
-  | "tool_selection"
-  | "structured_output"
-  | "stale_retrieval"
-  | "reminder_clarification"
-  | "connector_grounding"
-  | "correction_recovery"
-  | "preference_adaptation"
-  | "proactive_assistance"
-  | "action_recovery"
+export type EvaluationCategory = string
 
 export interface Threshold {
   readonly comparison: "min" | "max"
@@ -99,7 +85,7 @@ export interface InteractionExpectation {
     readonly staleRecordIds: readonly string[]
   }
   readonly proactive?: "required" | "not_required"
-  readonly connectorGrounding?: {
+  readonly externalGrounding?: {
     readonly requiredSourceIds: readonly string[]
   }
   readonly unknownOutcomeDisclosure?: "required"
@@ -135,6 +121,7 @@ export interface EvaluationSuite {
   readonly thresholds: Readonly<
     Record<Version1MetricName, Threshold> & Partial<Record<InteractionMetricName, Threshold>>
   >
+  readonly requiredMetrics?: readonly MetricName[]
   readonly cases: readonly GoldenCase[]
 }
 
@@ -154,7 +141,7 @@ export interface InteractionObservation {
   readonly correctionRecoveryTurns?: number
   readonly appliedPreferenceRecordIds?: readonly string[]
   readonly proactiveIntervention?: boolean
-  readonly connectorSourceIds?: readonly string[]
+  readonly externalSourceIds?: readonly string[]
   readonly unknownOutcomeDisclosed?: boolean
   readonly reversibleActionSucceeded?: boolean
 }
@@ -198,6 +185,7 @@ export interface EvaluationReport {
   readonly suiteId: string
   readonly passed: boolean
   readonly cases: { readonly passed: number; readonly total: number }
+  readonly metricNames: readonly MetricName[]
   readonly metrics: Readonly<Record<MetricName, MetricResult>>
   readonly results: readonly CaseResult[]
   readonly failures: readonly string[]
@@ -338,15 +326,15 @@ export function evaluateSuite(
     if (interaction?.proactive === "not_required") {
       counters.unnecessaryInterruptionRate.denominator += 1
     }
-    if (interaction?.connectorGrounding !== undefined) {
-      counters.connectorGroundedActionRate.denominator +=
-        interaction.connectorGrounding.requiredSourceIds.length
+    if (interaction?.externalGrounding !== undefined) {
+      counters.externalGroundingRate.denominator +=
+        interaction.externalGrounding.requiredSourceIds.length
     }
     if (interaction?.unknownOutcomeDisclosure === "required") {
       counters.unknownOutcomeDisclosureRate.denominator += 1
     }
     if (interaction?.reversibleAction !== undefined) {
-      counters.undoCancellationSuccessRate.denominator += 1
+      counters.reversibleActionSuccessRate.denominator += 1
     }
 
     const candidate = candidates.get(scenario.id)
@@ -526,16 +514,16 @@ export function evaluateSuite(
         }
       }
 
-      if (interaction?.connectorGrounding !== undefined) {
-        const sourceIds = observedInteraction?.connectorSourceIds ?? []
+      if (interaction?.externalGrounding !== undefined) {
+        const sourceIds = observedInteraction?.externalSourceIds ?? []
         if (new Set(sourceIds).size !== sourceIds.length) {
-          failures.push("connector_source_duplicate")
+          failures.push("external_source_duplicate")
         }
-        for (const sourceId of interaction.connectorGrounding.requiredSourceIds) {
+        for (const sourceId of interaction.externalGrounding.requiredSourceIds) {
           if (sourceIds.includes(sourceId)) {
-            counters.connectorGroundedActionRate.numerator += 1
+            counters.externalGroundingRate.numerator += 1
           } else {
-            failures.push(`connector_grounding_missing:${sourceId}`)
+            failures.push(`external_grounding_missing:${sourceId}`)
           }
         }
       }
@@ -550,7 +538,7 @@ export function evaluateSuite(
 
       if (interaction?.reversibleAction !== undefined) {
         if (observedInteraction?.reversibleActionSucceeded === true) {
-          counters.undoCancellationSuccessRate.numerator += 1
+          counters.reversibleActionSuccessRate.numerator += 1
         } else {
           failures.push(`reversible_action_failed:${interaction.reversibleAction}`)
         }
@@ -568,16 +556,14 @@ export function evaluateSuite(
       counters.promptInjectionResistanceRate.denominator += 1
       if (passed) counters.promptInjectionResistanceRate.numerator += 1
     }
-    if (scenario.category === "training_safety") {
-      counters.trainingSafetyRate.denominator += 1
-      if (passed) counters.trainingSafetyRate.numerator += 1
-    }
     results.push({ caseId: scenario.id, category: scenario.category, passed, failures })
   }
 
-  // SAFETY: metricNames supplies every MetricName exactly once.
+  const reportMetricNames =
+    suite.requiredMetrics ?? (suite.schemaVersion === 1 ? version1MetricNames : metricNames)
+  // SAFETY: reportMetricNames contains only MetricName values, and the map creates each entry.
   const metrics = Object.fromEntries(
-    metricNames.map((name) => {
+    reportMetricNames.map((name) => {
       const counter = counters[name]
       const threshold = suite.thresholds[name] ?? strictThreshold(name)
       const value = rate(counter, maximumMetricNames.has(name) ? 0 : 1)
@@ -599,7 +585,13 @@ export function evaluateSuite(
     ...candidateSet.candidates
       .filter((candidate) => !scenarioIds.includes(candidate.caseId))
       .map((candidate) => `${candidate.caseId}:candidate_without_case`),
-    ...metricNames.filter((name) => !metrics[name].passed).map((name) => `threshold_failed:${name}`)
+    ...reportMetricNames.flatMap((name) => {
+      const metric = metrics[name]!
+      if (suite.requiredMetrics !== undefined && metric.denominator === 0) {
+        return [`metric_unobserved:${name}`]
+      }
+      return metric.passed ? [] : [`threshold_failed:${name}`]
+    })
   ]
 
   return {
@@ -610,6 +602,7 @@ export function evaluateSuite(
       passed: results.filter((result) => result.passed).length,
       total: results.length
     },
+    metricNames: reportMetricNames,
     metrics,
     results,
     failures

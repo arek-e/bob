@@ -2,7 +2,6 @@ import {
   decodeCandidateSet,
   decodeEvaluationSuite,
   evaluateSuite,
-  metricNames,
   type EvaluationReport
 } from "@bob/agent-evals/runtime"
 
@@ -26,6 +25,6 @@ export function evaluateCommittedInteractionSuite(): CommittedEvaluation {
 export function reportScores(report: EvaluationReport): readonly (readonly [string, number])[] {
   return [
     ["gatePass", report.passed ? 1 : 0],
-    ...metricNames.map((name) => [name, report.metrics[name].value] as const)
+    ...report.metricNames.map((name) => [name, report.metrics[name]!.value] as const)
   ]
 }

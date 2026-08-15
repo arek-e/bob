@@ -1,4 +1,4 @@
-import { metricNames, type EvaluationReport, type MetricName } from "./gate.ts"
+import type { EvaluationReport, MetricName } from "./gate.ts"
 
 export interface MetricComparison {
   readonly baseline: number
@@ -13,7 +13,7 @@ export interface EvaluationComparison {
   readonly passed: boolean
   readonly regressedCases: readonly string[]
   readonly improvedCases: readonly string[]
-  readonly metrics: Readonly<Record<MetricName, MetricComparison>>
+  readonly metrics: Readonly<Partial<Record<MetricName, MetricComparison>>>
   readonly failures: readonly string[]
 }
 
@@ -31,6 +31,12 @@ export function compareEvaluationReports(
   if (candidate.schemaVersion !== baseline.schemaVersion) {
     throw new Error("comparison_schema_version_mismatch")
   }
+  if (
+    candidate.metricNames.length !== baseline.metricNames.length ||
+    candidate.metricNames.some((name) => !baseline.metricNames.includes(name))
+  ) {
+    throw new Error("comparison_metric_set_mismatch")
+  }
 
   const baselineCases = new Map(baseline.results.map((result) => [result.caseId, result]))
   const candidateCases = new Map(candidate.results.map((result) => [result.caseId, result]))
@@ -47,11 +53,11 @@ export function compareEvaluationReports(
   const improvedCases = [...baselineCases].flatMap(([caseId, result]) =>
     !result.passed && candidateCases.get(caseId)?.passed === true ? [caseId] : []
   )
-  // SAFETY: metricNames supplies every MetricName exactly once.
+  // SAFETY: both reports have the same validated metric names and values.
   const metrics = Object.fromEntries(
-    metricNames.map((name) => {
-      const baselineMetric = baseline.metrics[name]
-      const candidateMetric = candidate.metrics[name]
+    baseline.metricNames.map((name) => {
+      const baselineMetric = baseline.metrics[name]!
+      const candidateMetric = candidate.metrics[name]!
       const improvement =
         baselineMetric.comparison === "min"
           ? candidateMetric.value - baselineMetric.value
@@ -66,11 +72,11 @@ export function compareEvaluationReports(
         } satisfies MetricComparison
       ]
     })
-  ) as Record<MetricName, MetricComparison>
+  ) as Partial<Record<MetricName, MetricComparison>>
   const failures = [
     ...regressedCases.map((caseId) => `case_regressed:${caseId}`),
-    ...metricNames
-      .filter((name) => metrics[name].status === "regressed")
+    ...baseline.metricNames
+      .filter((name) => metrics[name]!.status === "regressed")
       .map((name) => `metric_regressed:${name}`),
     ...candidate.failures.map((failure) => `candidate_failed:${failure}`)
   ]

@@ -1,6 +1,8 @@
 # Evaluation scenarios
 
-`v1/golden-cases.json` contains the current synthetic expectations.
+The versioned files contain the synthetic case corpus.
+
+Static pack definitions select Core and optional domain cases from this corpus.
 
 Keep all scenario text synthetic and free of personal data.
 
