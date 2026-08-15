@@ -3,12 +3,12 @@ import { env } from "cloudflare:workers"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createCoreDatabase } from "../src/database.ts"
-import { makeContextStore } from "../src/modules/context/store.ts"
 import { users } from "../src/modules/conversations/schema.ts"
 import { factRevisions, facts, searchDocuments } from "../src/modules/memory/schema.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { reminderOccurrences, reminders } from "../src/modules/reminders/schema.ts"
 import { exercises, routines, routineSteps } from "../src/modules/training/schema.ts"
+import { makeTestContextStore } from "./context-store-fixture.ts"
 import { decodeTestMigrations } from "./migrations.ts"
 
 declare global {
@@ -101,7 +101,7 @@ describe("general context retrieval", () => {
       })
     ])
 
-    const context = makeContextStore(database, protection, {})
+    const context = makeTestContextStore(database, protection)
 
     await expect(context.build(request("Hello"))).resolves.toEqual([])
   })
@@ -157,7 +157,7 @@ describe("general context retrieval", () => {
       }
     ])
 
-    const context = makeContextStore(database, protection, {})
+    const context = makeTestContextStore(database, protection)
     const items = await context.build(request("What is my mobility plan?"))
 
     expect(items).toHaveLength(1)
@@ -237,7 +237,7 @@ describe("general context retrieval", () => {
       })
     }
 
-    const context = makeContextStore(database, protection, {})
+    const context = makeTestContextStore(database, protection)
     await expect(context.build(request("Which reminders are due?"))).resolves.toEqual([])
     await expect(context.build(request("Vilka påminnelser ska snart skickas?"))).resolves.toEqual(
       []
@@ -278,7 +278,7 @@ describe("general context retrieval", () => {
       })
     ])
 
-    const context = makeContextStore(database, protection, {})
+    const context = makeTestContextStore(database, protection)
     await expect(context.build(request("Show my training routine."))).resolves.toEqual([])
     await expect(context.build(request("Visa min träningsrutin."))).resolves.toEqual([])
   })

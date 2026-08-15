@@ -11,31 +11,62 @@ export interface ContextBuildRequest {
   readonly timeZone: string
 }
 
-/** Reviewed source precedence for every immutable Context pack. */
-export const contextSourceOrder = Object.freeze([
-  "inline_reply",
-  "profile",
-  "conversation",
-  "artifact",
-  "lexical"
-] as const)
+export type ContextSourceId = string
 
-export type ContextSourceId = (typeof contextSourceOrder)[number]
+export interface ContextCandidate {
+  readonly item: ContextItem
+  readonly disclosure: "model_and_channel"
+}
 
 export interface ContextSourceModule {
   readonly id: ContextSourceId
-  readonly order: number
-  load(input: ContextBuildRequest, key: CryptoKey): Promise<readonly ContextItem[]>
+  readonly deduplicateAgainst?: readonly ContextSourceId[]
+  load(input: ContextBuildRequest): Promise<readonly ContextCandidate[]>
 }
 
-type ContextSourceLoader = ContextSourceModule["load"]
-type ContextSourceLoaders = Readonly<Record<ContextSourceId, ContextSourceLoader>>
+export interface ContextSourceRegistry {
+  readonly profileId: string
+  readonly modules: readonly ContextSourceModule[]
+}
 
-/** Build the complete static source list. Callers cannot omit or add a source. */
-export function defineContextSourceModules(
-  loaders: ContextSourceLoaders
-): readonly ContextSourceModule[] {
-  return Object.freeze(
-    contextSourceOrder.map((id, order) => Object.freeze({ id, order, load: loaders[id] }))
-  )
+export function makeContextSourceRegistry(
+  profileId: string,
+  modules: readonly ContextSourceModule[]
+): ContextSourceRegistry {
+  if (profileId.trim().length === 0) throw new Error("Context profile ID is required")
+  const ids = new Set<string>()
+  for (const module of modules) {
+    if (module.id.trim().length === 0) throw new Error("Context source ID is required")
+    if (ids.has(module.id)) throw new Error(`Duplicate Context source ${module.id}`)
+    ids.add(module.id)
+  }
+  for (const module of modules) {
+    for (const dependency of module.deduplicateAgainst ?? []) {
+      if (!ids.has(dependency)) {
+        throw new Error(`Context source ${module.id} references unknown source ${dependency}`)
+      }
+    }
+  }
+  return Object.freeze({ profileId, modules: Object.freeze([...modules]) })
+}
+
+export function approvedContextItem(item: ContextItem): ContextCandidate {
+  return Object.freeze({ item, disclosure: "model_and_channel" })
+}
+
+export function boundContextItems(
+  items: readonly ContextItem[],
+  totalCharacterBudget: number,
+  itemCharacterBudget: number
+): readonly ContextItem[] {
+  const bounded: ContextItem[] = []
+  let remaining = totalCharacterBudget
+  for (const item of items) {
+    if (remaining <= 0) break
+    const text = item.text.slice(0, Math.min(itemCharacterBudget, remaining))
+    if (text.length === 0) continue
+    bounded.push({ ...item, text })
+    remaining -= text.length
+  }
+  return Object.freeze(bounded)
 }

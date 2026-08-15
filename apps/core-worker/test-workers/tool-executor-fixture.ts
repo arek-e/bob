@@ -61,7 +61,13 @@ export function makeTestToolExecutor(
   const registry = makeToolAdapterRegistry(transitionalDeploymentProfile, [
     makeReminderToolAdapter(modules.reminders),
     makeMemoryToolAdapter(modules.memory),
-    makeJournalToolAdapter(modules.journal, { uiBaseUrl: options.uiBaseUrl }),
+    makeJournalToolAdapter(
+      modules.journal,
+      { excludeFromContext: async () => true },
+      {
+        uiBaseUrl: options.uiBaseUrl
+      }
+    ),
     makeTrainingToolAdapter(training),
     makeSettingsToolAdapter(modules.settings),
     makeConnectionsToolAdapter(modules.connections)

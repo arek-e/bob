@@ -23,7 +23,6 @@ import { handleInboundQueue } from "../src/entrypoints/queue.ts"
 import { operationalAlerts } from "../src/modules/alerts/schema.ts"
 import { artifactRevisions, artifacts } from "../src/modules/artifacts/schema.ts"
 import { makeArtifactStore } from "../src/modules/artifacts/store.ts"
-import { makeContextStore } from "../src/modules/context/store.ts"
 import { makeAgentRunStore } from "../src/modules/conversations/run-store.ts"
 import {
   agentRuns,
@@ -66,6 +65,7 @@ import {
 } from "../src/modules/training/schema.ts"
 import { makeTrainingStore } from "../src/modules/training/store.ts"
 import { processInbound } from "../src/process-inbound.ts"
+import { makeTestContextStore } from "./context-store-fixture.ts"
 import { decodeTestMigrations } from "./migrations.ts"
 import { makeTestToolExecutor } from "./tool-executor-fixture.ts"
 
@@ -614,7 +614,7 @@ describe("D1 migrations and durability", () => {
 
   it("never sends stored raw messages in model context", async () => {
     const { database, protection } = await seedRunData()
-    const context = makeContextStore(database, protection, {})
+    const context = makeTestContextStore(database, protection)
     expect(await context.build(ownerId, channelId)).toEqual([])
   })
 
@@ -955,7 +955,7 @@ describe("D1 migrations and durability", () => {
       ].join("\n")
     })
     await expect(
-      makeContextStore(database, protection, {}).build({
+      makeTestContextStore(database, protection).build({
         ownerId,
         channelId,
         currentMessageId: messageId,

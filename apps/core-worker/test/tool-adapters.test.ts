@@ -46,6 +46,8 @@ function run(userText: string): ToolRunContext {
       allowedTools: [],
       protocolVersion: 1,
       correlationId: "00000000-0000-4000-8000-000000000004",
+      conversationTurnId: "00000000-0000-4000-8000-000000000005",
+      conversationTurnRevision: 1,
       contextItems: [],
       limits: {
         maxTurns: 4,
@@ -159,15 +161,32 @@ describe("domain-owned Tool command Adapters", () => {
         expiresAt: "2026-08-11T10:10:00.000Z"
       })
     })
-    const result = await makeJournalToolAdapter(journal, {
-      uiBaseUrl: "https://bob.example.invalid"
-    }).execute(commandContext("journal_link_create", {}))
+    const excludeFromContext = vi.fn().mockResolvedValue(true)
+    const result = await makeJournalToolAdapter(
+      journal,
+      { excludeFromContext },
+      { uiBaseUrl: "https://bob.example.invalid" }
+    ).execute(commandContext("journal_link_create", {}))
 
     expect(result).toMatchObject({
       ok: true,
       code: "journal_link_created",
       data: { path: "https://bob.example.invalid/journal/handoff", bearerToken: false }
     })
+    expect(excludeFromContext).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000005", 1)
+  })
+
+  it("fails a private Tool before execution when turn exclusion fails", async () => {
+    const createHandoff = vi.fn()
+    const journal = testFixture<JournalStore>({ createHandoff })
+    const result = await makeJournalToolAdapter(
+      journal,
+      { excludeFromContext: vi.fn().mockResolvedValue(false) },
+      { uiBaseUrl: "https://bob.example.invalid" }
+    ).execute(commandContext("journal_link_create", {}))
+
+    expect(result).toMatchObject({ ok: false, code: "privacy_policy_failed" })
+    expect(createHandoff).not.toHaveBeenCalled()
   })
 
   it("keeps recall behavior in the Memory Adapter", async () => {

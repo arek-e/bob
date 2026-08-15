@@ -14,7 +14,8 @@ import {
   makeConnectionStore
 } from "./modules/connections/store.ts"
 import { makeConnectionsToolAdapter } from "./modules/connections/tool-adapter.ts"
-import { ContextStore, makeContextStore, contextStoreLayer } from "./modules/context/store.ts"
+import { makeApplicationContextStore } from "./modules/context/composition.ts"
+import { ContextStore, contextStoreLayer } from "./modules/context/store.ts"
 import {
   AgentRunStore,
   makeAgentRunStore,
@@ -159,12 +160,15 @@ export function composeCore(bindings: CoreBindings) {
     trainingStore,
     makeTrainingProposalStore(database, protection, trainingStore, {})
   )
-  const context = makeContextStore(database, protection, {})
+  const context = makeApplicationContextStore(database, protection, transitionalDeploymentProfile, {
+    artifacts,
+    memory
+  })
   const runs = makeAgentRunStore(database, protection, {})
   const toolAdapters = makeToolAdapterRegistry(transitionalDeploymentProfile, [
     makeReminderToolAdapter(reminders),
     makeMemoryToolAdapter(memory),
-    makeJournalToolAdapter(journal, { uiBaseUrl: config.UI_BASE_URL }),
+    makeJournalToolAdapter(journal, turns, { uiBaseUrl: config.UI_BASE_URL }),
     makeTrainingToolAdapter(training),
     makeSettingsToolAdapter(settings),
     makeConnectionsToolAdapter(connections)

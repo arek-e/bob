@@ -32,6 +32,8 @@ export interface ConversationTurnStore {
   claimReady(turnId?: string, leaseMs?: number): Promise<ConversationTurnSnapshot | undefined>
   nextWakeAt(): Promise<string | undefined>
   currentRevision(turnId: string): Promise<number | undefined>
+  excludeFromContext(turnId: string, revision: number): Promise<boolean>
+  excludeMessageFromContext(messageId: string): Promise<boolean>
   markRunning(turnId: string, revision: number, runId: string): Promise<boolean>
   markSettling(
     turnId: string,
@@ -178,6 +180,7 @@ export function makeConversationTurnStore(
               channelId: event.channelId,
               status: "collecting",
               revision: 1,
+              contextEligible: true,
               latestInboundEventId: inboundEventId,
               latestMessageId: event.messageId,
               quietUntil,
@@ -468,6 +471,43 @@ export function makeConversationTurnStore(
         .where(eq(conversationTurns.id, turnId))
         .limit(1)
       return turn?.revision
+    },
+
+    async excludeFromContext(turnId, revision) {
+      const [excluded] = await database
+        .update(conversationTurns)
+        .set({ contextEligible: false, updatedAt: now().toISOString() })
+        .where(
+          and(
+            eq(conversationTurns.id, turnId),
+            eq(conversationTurns.revision, revision),
+            ne(conversationTurns.status, "replied")
+          )
+        )
+        .returning({ id: conversationTurns.id })
+      return excluded !== undefined
+    },
+
+    async excludeMessageFromContext(messageId) {
+      const [membership] = await database
+        .select({ turnId: conversationTurns.id, revision: conversationTurns.revision })
+        .from(conversationTurnMessages)
+        .innerJoin(conversationTurns, eq(conversationTurns.id, conversationTurnMessages.turnId))
+        .where(eq(conversationTurnMessages.messageId, messageId))
+        .limit(1)
+      if (membership === undefined) return false
+      const [excluded] = await database
+        .update(conversationTurns)
+        .set({ contextEligible: false, updatedAt: now().toISOString() })
+        .where(
+          and(
+            eq(conversationTurns.id, membership.turnId),
+            eq(conversationTurns.revision, membership.revision),
+            ne(conversationTurns.status, "replied")
+          )
+        )
+        .returning({ id: conversationTurns.id })
+      return excluded !== undefined
     },
 
     async markRunning(turnId, revision, runId) {

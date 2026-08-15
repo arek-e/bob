@@ -44,6 +44,7 @@ function localizedComposition(text: string) {
         completeInbound: vi.fn(async () => undefined)
       },
       training: { stopActiveForSafety: vi.fn() },
+      turns: { excludeMessageFromContext: vi.fn(async () => true) },
       journal: {
         createHandoff: vi.fn(async () => ({ id: "private-link" }))
       },

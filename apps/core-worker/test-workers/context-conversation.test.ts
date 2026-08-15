@@ -4,7 +4,6 @@ import { eq } from "drizzle-orm"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createCoreDatabase } from "../src/database.ts"
-import { makeContextStore } from "../src/modules/context/store.ts"
 import {
   agentRuns,
   channels,
@@ -20,6 +19,7 @@ import { deliveryAttempts, outboxMessages } from "../src/modules/delivery/schema
 import { makeDeliveryStore } from "../src/modules/delivery/store.ts"
 import { factRevisions, facts } from "../src/modules/memory/schema.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
+import { makeTestContextStore } from "./context-store-fixture.ts"
 import { decodeTestMigrations } from "./migrations.ts"
 
 declare global {
@@ -82,6 +82,7 @@ async function seedPriorTurn(
     readonly attemptState?: "accepted" | "delivered" | "failed"
     readonly outboxState?: "pending" | "accepted" | "failed"
     readonly turnStatus?: "collecting" | "committing" | "replied"
+    readonly contextEligible?: boolean
   }
 ) {
   const turnId = uuid(input.sequence)
@@ -132,6 +133,7 @@ async function seedPriorTurn(
     channelId: actualChannelId,
     status: input.turnStatus ?? "replied",
     revision: inboundRecords.length,
+    contextEligible: input.contextEligible ?? true,
     latestInboundEventId: latest.eventId,
     latestMessageId: latest.messageId,
     quietUntil: input.inboundAt,
@@ -233,7 +235,7 @@ describe("recent conversation context", () => {
       completedAt: "2026-08-12T10:02:30.000Z"
     })
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
 
     const items = await context.build({
       ownerId,
@@ -313,7 +315,7 @@ describe("recent conversation context", () => {
       }
     ])
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
     const capabilityRequest = {
       ownerId,
       channelId,
@@ -341,7 +343,7 @@ describe("recent conversation context", () => {
       attemptState: "delivered"
     })
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
     const items = await context.build({
       ownerId,
       channelId,
@@ -415,7 +417,7 @@ describe("recent conversation context", () => {
       })
     ])
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
     const items = await context.build({
       ownerId,
       channelId,
@@ -464,7 +466,7 @@ describe("recent conversation context", () => {
       .update(messages)
       .set({ occurredAt: "2026-08-12T10:04:01.000Z" })
       .where(eq(messages.id, prior.inboundIds[1]!))
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
 
     const items = await context.build({
       ownerId,
@@ -561,7 +563,7 @@ describe("recent conversation context", () => {
       outboxState: "pending"
     })
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
     const items = await context.build({
       ownerId,
       channelId,
@@ -580,7 +582,7 @@ describe("recent conversation context", () => {
     })
   })
 
-  it("excludes an entire prior turn when its messages show journal intent", async () => {
+  it("excludes an entire prior turn when its source marks it ineligible", async () => {
     const fixture = await seedOwner()
     await seedPriorTurn(fixture, {
       sequence: 870,
@@ -588,7 +590,8 @@ describe("recent conversation context", () => {
       outboundText: "Open your private journal link.",
       inboundAt: "2026-08-12T10:07:00.000Z",
       deliveredAt: "2026-08-12T10:08:00.000Z",
-      attemptState: "delivered"
+      attemptState: "delivered",
+      contextEligible: false
     })
     await seedPriorTurn(fixture, {
       sequence: 900,
@@ -599,7 +602,7 @@ describe("recent conversation context", () => {
       attemptState: "delivered"
     })
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
     const items = await context.build({
       ownerId,
       channelId,
@@ -616,6 +619,60 @@ describe("recent conversation context", () => {
     expect(JSON.stringify(items)).not.toContain("journal")
   })
 
+  it("does not infer privacy from message words", async () => {
+    const fixture = await seedOwner()
+    await seedPriorTurn(fixture, {
+      sequence: 932,
+      inboundTexts: ["The project journal is public"],
+      outboundText: "I can discuss that public record.",
+      inboundAt: "2026-08-12T10:05:00.000Z",
+      deliveredAt: "2026-08-12T10:06:00.000Z",
+      attemptState: "delivered"
+    })
+
+    const context = makeTestContextStore(fixture.database, fixture.protection)
+    const items = await context.build({
+      ownerId,
+      channelId,
+      currentConversationTurnId: currentTurnId,
+      currentMessageId: uuid(934),
+      currentUserText: "Continue",
+      localTime: "2026-08-12T10:10:00.000Z",
+      timeZone: "Europe/Stockholm"
+    })
+
+    expect(items[0]?.text).toContain("project journal")
+  })
+
+  it("treats historical turns without explicit eligibility as ineligible", async () => {
+    const fixture = await seedOwner()
+    const prior = await seedPriorTurn(fixture, {
+      sequence: 935,
+      inboundTexts: ["Historical owner text"],
+      outboundText: "Historical reply",
+      inboundAt: "2026-08-12T10:05:00.000Z",
+      deliveredAt: "2026-08-12T10:06:00.000Z",
+      attemptState: "delivered"
+    })
+    await fixture.database
+      .update(conversationTurns)
+      .set({ contextEligible: null })
+      .where(eq(conversationTurns.id, prior.turnId))
+
+    const context = makeTestContextStore(fixture.database, fixture.protection)
+    await expect(
+      context.build({
+        ownerId,
+        channelId,
+        currentConversationTurnId: currentTurnId,
+        currentMessageId: uuid(940),
+        currentUserText: "Continue",
+        localTime: "2026-08-12T10:10:00.000Z",
+        timeZone: "Europe/Stockholm"
+      })
+    ).resolves.toEqual([])
+  })
+
   it("keeps at most six messages from the most recent delivered turns", async () => {
     const fixture = await seedOwner()
     for (const [index, minute] of [4, 6, 8, 9].entries()) {
@@ -629,7 +686,7 @@ describe("recent conversation context", () => {
       })
     }
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
     const items = await context.build({
       ownerId,
       channelId,
@@ -662,7 +719,7 @@ describe("recent conversation context", () => {
       })
     }
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
     const items = await context.build({
       ownerId,
       channelId,
@@ -688,7 +745,7 @@ describe("recent conversation context", () => {
       attemptState: "delivered"
     })
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
 
     await expect(
       context.build({
@@ -745,7 +802,7 @@ describe("recent conversation context", () => {
       completedAt: "2026-08-12T10:09:00.000Z"
     })
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
     const items = await context.build({
       ownerId,
       channelId,
@@ -833,7 +890,7 @@ describe("recent conversation context", () => {
       }
     ])
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
     const receipts = await context.priorToolReceipts({
       ownerId,
       channelId,
@@ -984,7 +1041,7 @@ describe("recent conversation context", () => {
       revision: 1
     })
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
     const receipts = await context.priorToolReceipts({
       ownerId,
       channelId,
@@ -1102,7 +1159,7 @@ describe("recent conversation context", () => {
       ])
     }
 
-    const context = makeContextStore(fixture.database, fixture.protection, {})
+    const context = makeTestContextStore(fixture.database, fixture.protection)
     const items = await context.build({
       ownerId,
       channelId,

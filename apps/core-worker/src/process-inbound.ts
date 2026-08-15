@@ -423,6 +423,10 @@ function deterministicReply(
         response = fixedHelpText(language)
         break
       case "journal": {
+        const excluded = yield* promiseEffect(() =>
+          composition.services.turns.excludeMessageFromContext(claimed.messageId)
+        )
+        if (!excluded) throw new Error("Private turn context exclusion failed")
         const handoff = yield* promiseEffect(() =>
           composition.services.journal.createHandoff(
             claimed.ownerId,
