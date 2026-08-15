@@ -102,7 +102,7 @@ Test both restore paths through the backup runbook.
 
 Run the complete repository gate before each release.
 
-Verify the Bob image attestations against the release commit.
+Verify the Bob image attestations against the bundle source revision.
 
 Validate the resolved Compose model without printing its environment.
 

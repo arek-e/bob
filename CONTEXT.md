@@ -105,7 +105,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Delivery recovery:** A bounded decision that restores a safe delivery or raises an operational alert.
 - **Scheduled recovery:** Independent repair phases that continue after one item fails.
 - **Runtime assurance:** Evidence that the private runtime, backups, and credentials meet the production contract.
-- **Production release:** One reviewed source revision and its immutable runtime artifacts.
+- **Production release:** One immutable bundle of a reviewed source revision, configuration revision, and runtime artifacts.
 - **Acknowledged:** The owner confirms seeing one reminder occurrence.
 - **Completed:** The owner confirms finishing one task.
 - **Snoozed:** One occurrence closes and a linked successor is created.
@@ -163,6 +163,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Managed production release identities and GitHub environments belong to the private Control Plane.
 - Runtime Alchemy owns portable and self-hosted plans. It does not write managed production resources.
 - The Runtime deployment contract contains no hosting-provider identifier or secret value.
+- Runtime source history does not contain deployment-only commits.
+- Each promoted Runtime release uses one immutable OCI bundle digest.
 - Bob Runner remains outside the Bob Instance application stack.
 - The Connections Gateway derives Instance scope from verified Instance identity.
 - The Connections Gateway namespaces every Nango owner reference with the Bob Instance ID.

@@ -7,7 +7,9 @@ Coolify hosts the initial Compose target. It does not own orchestration policy.
 
 `infra/coolify/compose.yaml` owns the service model.
 
-`infra/coolify/release.json` owns source and image pins.
+The immutable Runtime release bundle owns source and image pins.
+
+`infra/coolify/base-images.json` owns reviewed third-party image pins.
 
 `infra/coolify/runtime-contract.json` owns scheduled task and readiness requirements.
 
@@ -106,7 +108,7 @@ Run one backup and verify the independent copy.
 
 ## Recovery
 
-Recreate the application from the reviewed Compose and release files.
+Recreate the application from the reviewed Compose revision and release bundle.
 
 Recreate the backup task from the runtime contract.
 

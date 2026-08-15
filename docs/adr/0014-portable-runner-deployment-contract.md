@@ -5,6 +5,7 @@
 - Scope: Runtime deployment boundary and managed orchestration
 - Related: Bob Control Plane ADR 0004, "Use a fenced Runner pull protocol"
 - Amended by: ADR 0015 for Runtime materialization and isolated lifecycle
+- Amended by: ADR 0018 for immutable release bundles
 
 ## Context
 
@@ -59,7 +60,7 @@ Coolify can host the Control Plane, Runner, or Runtime. It is not part of the de
 
 The Bob Runtime repository owns the deployment contract schema and Runtime application images.
 
-It can prepare reviewed images and release-manifest commits. It does not hold a managed production identity or GitHub environment.
+It prepares reviewed images and an immutable OCI release bundle. It does not hold a managed production identity or GitHub environment.
 
 The Bob Control Plane repository owns the Runner protocol, managed Runner, assignments, Leases, and assurance policy.
 

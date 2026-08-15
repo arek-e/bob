@@ -7,8 +7,9 @@ Status: active
 - [ ] `pnpm check` passes.
 - [ ] `pnpm secrets:scan:trusted` passes.
 - [ ] `node scripts/verify-deployment-readiness.mjs` passes.
-- [ ] The release commit changes only `infra/coolify/release.json`.
-- [ ] The source SHA and both image digests match the registry.
+- [ ] The release workflow does not write to the source branch.
+- [ ] The bundle source revision and all image digests match the registry.
+- [ ] The OCI bundle reference uses an immutable digest.
 
 ## Runtime assurance
 

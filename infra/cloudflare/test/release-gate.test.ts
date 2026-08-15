@@ -34,17 +34,20 @@ describe("public Runtime release boundary", () => {
     expect(preparation).toContain("github.event.workflow_run.head_branch == 'main'")
     expect(preparation).toContain("vars.BOB_RELEASE_PREPARATION_ENABLED == 'true'")
     expect(preparation).toContain("git ls-remote origin refs/heads/main")
-    expect(preparation).toContain('changed_paths[0]}" == "infra/coolify/release.json"')
     expect(preparation).toContain("uses: ./.github/workflows/release-images.yml")
-    expect(preparation).toContain("infra/coolify/release.json.next")
-    expect(preparation).toContain("scripts/verify-release-manifest-delta.mjs")
-    expect(preparation).toContain("git push origin HEAD:main")
+    expect(preparation).toContain("BUNDLE_REFERENCE")
+    expect(preparation).not.toContain("git push origin HEAD:main")
+    expect(preparation).not.toContain("contents: write")
     expect(preparation).toContain("ready for the private Control Plane")
     expect(preparation).not.toContain("gh workflow run")
     expect(preparation).not.toContain("gh run watch")
     expect(images).toContain("workflow_call:")
     expect(images).toContain("agent_digest:")
     expect(images).toContain("backup_digest:")
+    expect(images).toContain("bundle_digest:")
+    expect(images).toContain("bundle_reference:")
+    expect(images).toContain("oras push")
+    expect(images).toContain("scripts/release-bundle.mjs create")
   })
 
   it("publishes both images from the exact source SHA", async () => {
@@ -64,8 +67,7 @@ describe("public Runtime release boundary", () => {
     )
 
     expect(deployment).toContain("gh workflow run release.yml -R arek-e/bob-control-plane")
-    expect(deployment).toContain('-f source_sha="$RELEASE_SHA"')
-    expect(deployment).toContain('-f deployment_sha="$DEPLOYMENT_SHA"')
+    expect(deployment).toContain('-f bundle_reference="$BUNDLE_REFERENCE"')
     expect(deployment).toContain(
       "Production validation and deployment run only in the private Control Plane"
     )
