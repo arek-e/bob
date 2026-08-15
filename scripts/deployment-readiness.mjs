@@ -19,11 +19,16 @@ export function assertDeploymentReadiness(input) {
   const compose = input.coolifyCompose
   const agentPolicy = input.agentPolicy
 
-  if (release.schemaVersion !== 1 || !COMMIT_PATTERN.test(release.sourceSha)) {
+  if (release.schemaVersion !== 2 || !COMMIT_PATTERN.test(release.sourceSha)) {
     throw new Error("The Coolify release needs one full source commit")
   }
-  if (!DIGEST_PATTERN.test(release.agentDigest) || !DIGEST_PATTERN.test(release.backupDigest)) {
-    throw new Error("The Coolify release needs full agent and backup digests")
+  if (
+    !DIGEST_PATTERN.test(release.agentDigest) ||
+    !DIGEST_PATTERN.test(release.backupDigest) ||
+    !DIGEST_PATTERN.test(release.cloudflaredDigest) ||
+    !DIGEST_PATTERN.test(release.observerDigest)
+  ) {
+    throw new Error("The Runtime release needs all image digests")
   }
   if (runtime.schemaVersion !== 1) throw new Error("The runtime contract version is unsupported")
   if (
@@ -57,12 +62,13 @@ export function assertDeploymentReadiness(input) {
   for (const marker of [
     "ghcr.io/arek-e/bob-agent@${BOB_AGENT_IMAGE_DIGEST:?}",
     "ghcr.io/arek-e/bob-data-backup@${BOB_BACKUP_IMAGE_DIGEST:?}",
+    "docker.io/cloudflare/cloudflared@${CLOUDFLARED_IMAGE_DIGEST:?}",
+    "docker.io/otel/opentelemetry-collector-contrib@${BOB_OBSERVER_IMAGE_DIGEST:?}",
     "BAO_APPROLE_SECRET_ID_PATH: /run/secrets/openbao_approle_secret_id",
     "target: openbao_approle_secret_id",
     "environment: BAO_APPROLE_SECRET_ID",
     "bob-backups:/backups",
-    "file_stats/bob_backup:",
-    "file_stats/nango_backup:"
+    "file_stats/bob_backup:"
   ]) {
     requireText(compose, marker, `The Coolify Compose contract is missing ${marker}`)
   }

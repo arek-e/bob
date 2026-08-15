@@ -58,14 +58,29 @@ gh workflow run release.yml -R arek-e/bob-control-plane --ref main \
   -f deploy=true
 ```
 
-The Control Plane selects `DEPLOYMENT_SHA`, verifies the immutable image
-digests, deploys through Coolify, and records the accepted release.
+The reviewed manifest supplies the agent, backup, Tunnel, and observer image digests.
 
-Wait for the agent, Tunnel, Nango, backup runner, and observer to become healthy.
+The Control Plane selects `DEPLOYMENT_SHA` and verifies every immutable digest.
+
+The assigned Bob Runner applies the reviewed contract. Independent assurance records acceptance.
+
+Coolify can host the initial Compose target. It is not part of the orchestration Interface.
+
+Wait for the agent, Tunnel, backup runner, and observer to become healthy.
 
 ## Automatic releases
 
 `.github/workflows/auto-release.yml` starts after successful `main` CI runs.
+
+Set the repository variable `BOB_RUNNER_RELEASE_ENABLED` to `true` only after these checks pass:
+
+- The shared Connections Gateway is healthy.
+- Existing Nango connections use Instance-scoped owner references.
+- The target Bob Runner is enrolled and assigned.
+- The Runner can report observations without changing Runtime state.
+- A canary release completed independent assurance.
+
+Leave the variable unset during the migration. A `main` merge will not deploy Runtime changes.
 
 It performs these actions:
 
@@ -102,7 +117,7 @@ Run the Coolify backup task once.
 
 Require `independentCopy` to report `completed`.
 
-Confirm that the latest Bob and Nango backup age is below 18,000 seconds.
+Confirm that the latest Bob backup age is below 18,000 seconds.
 
 ## Keep Cloudflare ownership separate
 

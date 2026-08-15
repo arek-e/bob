@@ -1,7 +1,7 @@
 # Bob context
 
 Status: product and architecture context  
-Updated: 2026-08-12
+Updated: 2026-08-15
 
 ## Product
 
@@ -101,6 +101,10 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Routine:** An ordered training plan independent from one gym.
 - **Workout session:** One dated performance of a routine.
 - **Trusted helper:** A separate person with explicit, revocable scopes.
+- **Connections Gateway:** The shared application data-plane Module that gives one Bob Instance scoped access to external connections.
+- **Instance identity:** The verified workload identity that selects one Bob Instance at the Connections Gateway.
+- **Runtime deployment contract:** The versioned, provider-neutral manifest for one reviewed Runtime Release.
+- **Bob Runner:** The external compute-plane Module that applies desired state through a Runtime Driver.
 
 ## System invariants
 
@@ -124,6 +128,11 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Every agent run receives the same reviewed capability catalogue.
 - Message wording does not grant Tool authority. Domain modules enforce each action invariant.
 - The agent never calls Sendblue directly.
+- A Bob Instance never receives a shared Nango environment secret.
+- The Runtime deployment contract contains no hosting-provider identifier or secret value.
+- Bob Runner remains outside the Bob Instance application stack.
+- The Connections Gateway derives Instance scope from verified Instance identity.
+- The Connections Gateway namespaces every Nango owner reference with the Bob Instance ID.
 - The Sendblue modules never receive Pi OAuth credentials.
 - OpenBao is authoritative for production configuration and credentials.
 - Varlock defines and validates each runnable workspace's environment surface.
@@ -171,7 +180,10 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - [ADR 0004: Alchemy, Effect v4, and Drizzle v1 RC](docs/adr/0004-alchemy-effect-drizzle.md)
 - [ADR 0005: Varlock environment contracts](docs/adr/0005-varlock-environment-contracts.md)
 - [ADR 0007: Bob-owned Pi AI loop](docs/adr/0007-bob-owned-pi-ai-loop.md)
+- [ADR 0008: Effect telemetry and trace contract](docs/adr/0008-effect-telemetry-and-trace-contract.md)
 - [ADR 0009: Coolify private runtime](docs/adr/0009-coolify-private-runtime.md)
 - [ADR 0010: Revisioned conversation turns](docs/adr/0010-revisioned-conversation-turns.md)
 - [ADR 0011: Evaluation records and artifacts](docs/adr/0011-evaluation-storage.md)
 - [ADR 0012: Model-directed capability selection](docs/adr/0012-model-directed-capability-selection.md)
+- [ADR 0013: Shared Connections Gateway](docs/adr/0013-shared-connections-gateway.md)
+- [ADR 0014: Portable Bob Runner deployment contract](docs/adr/0014-portable-runner-deployment-contract.md)

@@ -1,15 +1,7 @@
 import { readFile } from "node:fs/promises"
 
 const composePath = new URL("../infra/coolify/compose.yaml", import.meta.url)
-const requiredServices = [
-  "agent-secret-init",
-  "agent",
-  "tunnel",
-  "nango",
-  "nango-redis",
-  "backup-runner",
-  "observer"
-]
+const requiredServices = ["agent-secret-init", "agent", "tunnel", "backup-runner", "observer"]
 const immutableImage = /image:\s+[^\s@]+@(?:sha256:[a-f0-9]{64}|\$\{[A-Z0-9_]+(?::\?[^}]*)?\})/u
 
 function serviceSection(source, service) {
@@ -48,7 +40,6 @@ export function assertCoolifyComposeReadiness(source) {
   for (const marker of [
     "BOB_RELEASE_SHA",
     "CLOUDFLARED_TUNNEL_TOKEN",
-    "NANGO_RECORDS_DATABASE_URL",
     "BACKUP_OUTPUT_DIRECTORY",
     "bob-backups:"
   ]) {

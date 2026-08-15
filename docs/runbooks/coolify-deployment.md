@@ -1,9 +1,9 @@
 # Coolify private runtime
 
 Status: active
-Authority: Coolify
+Authority: Bob Runner
 
-Coolify owns the agent, Tunnel, Nango, backup runner, observer, and backup task.
+Coolify hosts the initial Compose target. It does not own orchestration policy.
 
 `infra/coolify/compose.yaml` owns the service model.
 
@@ -20,6 +20,9 @@ Use `infra/coolify/compose.yaml` from the reviewed deployment commit.
 Do not publish a host port.
 
 Do not assign a proxy domain to a Compose service.
+
+The core Worker uses an Instance-specific identity to call the shared
+Connections Gateway. The Bob Instance never receives the Nango environment secret.
 
 Route public traffic only through the scoped Cloudflare Tunnel.
 
@@ -55,16 +58,6 @@ The guest stores `/run` in tmpfs. The read-only agent mounts that directory at `
 The agent container does not receive it as an environment value.
 
 Rotate the secret ID every 30 days or after suspected exposure.
-
-## Configure Nango
-
-Create one private PostgreSQL database.
-
-Disable its public port.
-
-Configure its S3 backup every four hours.
-
-Require one successful backup before production traffic.
 
 ## Configure Bob backups
 
@@ -117,6 +110,6 @@ Recreate the application from the reviewed Compose and release files.
 
 Recreate the backup task from the runtime contract.
 
-Restore Nango and Bob from the latest independent copies.
+Restore Bob from the latest independent copy.
 
 The shared host and Cloudflare account remain accepted failure domains.

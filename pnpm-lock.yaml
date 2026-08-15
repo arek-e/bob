@@ -83,6 +83,16 @@ importers:
         specifier: 0.25.9
         version: 0.25.9
 
+  apps/connections-gateway:
+    dependencies:
+      jose:
+        specifier: 6.2.8
+        version: 6.2.8
+    devDependencies:
+      esbuild:
+        specifier: 0.25.9
+        version: 0.25.9
+
   apps/core-worker:
     dependencies:
       '@bob/contracts':
@@ -280,6 +290,18 @@ importers:
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
+
+  packages/deployment-contract:
+    devDependencies:
+      '@types/node':
+        specifier: 22.18.0
+        version: 22.18.0
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
 
   packages/observability:
     dependencies:

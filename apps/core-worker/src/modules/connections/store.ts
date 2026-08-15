@@ -8,7 +8,7 @@ import { and, eq } from "drizzle-orm"
 import { Context, Layer } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
-import type { NangoClient, NangoConnection } from "./nango.ts"
+import type { ConnectionsGatewayClient, ProviderConnection } from "./gateway.ts"
 
 import { externalConnections } from "./schema.ts"
 
@@ -20,32 +20,27 @@ export interface ConnectionStore {
 export const ConnectionStore = Context.Service<ConnectionStore>("bob/ConnectionStore")
 
 export interface ConnectionStoreOptions {
-  readonly integrations: Readonly<Record<ConnectionProvider, string>>
   readonly now?: () => Date
   readonly randomUuid?: () => string
 }
 
 function newestConnection(
-  connections: readonly NangoConnection[],
-  integrationId: string,
-  ownerId: string
-): NangoConnection | undefined {
+  connections: readonly ProviderConnection[],
+  provider: ConnectionProvider
+): ProviderConnection | undefined {
   return connections
-    .filter(
-      (connection) =>
-        connection.integrationId === integrationId && connection.tags.end_user_id === ownerId
-    )
+    .filter((connection) => connection.provider === provider)
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0]
 }
 
 export function makeConnectionStore(
   database: CoreDatabase,
-  nango: NangoClient,
+  gateway: ConnectionsGatewayClient,
   options: ConnectionStoreOptions
 ): ConnectionStore {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
-  const providers = Object.keys(options.integrations) as ConnectionProvider[]
+  const providers: ReadonlyArray<ConnectionProvider> = ["google_calendar", "microsoft_calendar"]
 
   async function saved(ownerId: string) {
     return database
@@ -56,9 +51,9 @@ export function makeConnectionStore(
 
   return {
     async list(ownerId) {
-      let live: readonly NangoConnection[]
+      let live: readonly ProviderConnection[]
       try {
-        live = await nango.listConnections(ownerId)
+        live = await gateway.listConnections(ownerId)
       } catch {
         return providers.map((provider) => ({
           provider,
@@ -68,7 +63,7 @@ export function makeConnectionStore(
 
       const at = now().toISOString()
       for (const provider of providers) {
-        const connection = newestConnection(live, options.integrations[provider], ownerId)
+        const connection = newestConnection(live, provider)
         if (connection === undefined) {
           await database
             .delete(externalConnections)
@@ -86,7 +81,7 @@ export function makeConnectionStore(
             id: randomUuid(),
             ownerId,
             provider,
-            integrationId: connection.integrationId,
+            integrationId: connection.provider,
             connectionId: connection.connectionId,
             status: connection.healthy ? "connected" : "unavailable",
             connectedAt: connection.createdAt,
@@ -95,7 +90,7 @@ export function makeConnectionStore(
           .onConflictDoUpdate({
             target: [externalConnections.ownerId, externalConnections.provider],
             set: {
-              integrationId: connection.integrationId,
+              integrationId: connection.provider,
               connectionId: connection.connectionId,
               status: connection.healthy ? "connected" : "unavailable",
               connectedAt: connection.createdAt,
@@ -111,9 +106,9 @@ export function makeConnectionStore(
     },
 
     async createSession(ownerId, provider) {
-      const session = await nango.createConnectSession({
+      const session = await gateway.createConnectSession({
         ownerId,
-        integrationId: options.integrations[provider]
+        provider
       })
       return {
         provider,
