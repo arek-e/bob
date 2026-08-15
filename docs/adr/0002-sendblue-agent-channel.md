@@ -1,6 +1,6 @@
 # ADR 0002: Put a durable Sendblue channel before Pi
 
-- Status: Accepted for the first implementation slice
+- Status: Accepted
 - Date: 2026-08-10
 - Scope: Bob's automatic iMessage channel
 - Repository topology: Amended by ADR 0003
@@ -280,7 +280,7 @@ A placeholder endpoint would drop or expose messages.
 
 ## Verification
 
-The first slice must pass these tests:
+The channel must pass these tests:
 
 1. A missing or wrong shared secret returns `401`.
 2. An unknown line creates no stored event.

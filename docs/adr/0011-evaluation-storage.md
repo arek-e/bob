@@ -1,7 +1,7 @@
 # ADR 0011: Evaluation records and artifacts
 
-Status: Accepted
-Date: 2026-08-12
+- Status: Accepted
+- Date: 2026-08-12
 
 ## Context
 
@@ -39,7 +39,7 @@ The Worker receives scoped D1 and R2 bindings.
 
 It receives no owner data, production assistant storage, connector access, or model credentials.
 
-The first runner validates scheduling, evaluation, and storage.
+The synthetic runner validates scheduling, evaluation, and storage.
 
 It does not produce live-model or official public benchmark scores.
 
@@ -57,6 +57,6 @@ The evaluation runner cannot read owner messages or private objects.
 
 Cloudflare deployment creates two additional retained resources.
 
-The first runner gives Bob a continuous deterministic regression record.
+The synthetic runner gives Bob a continuous deterministic regression record.
 
 Live-model and public benchmark adapters remain separate reviewed work.

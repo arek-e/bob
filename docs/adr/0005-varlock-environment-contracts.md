@@ -1,6 +1,6 @@
 # ADR 0005: Use Varlock for environment contracts
 
-- Status: Accepted for the feasibility slice
+- Status: Accepted
 - Date: 2026-08-11
 - Scope: Environment schemas, OpenBao resolution, local commands, and deployment bootstrap
 - Runtime authority: Amended by ADR 0009 and ADR 0014
@@ -45,7 +45,9 @@ Varlock must not become a second secret store.
 
 Alchemy remains the Cloudflare infrastructure authority.
 
-Kubernetes remains the Node runtime authority.
+Varlock does not own the Runtime host.
+
+ADR 0009 owns self-hosted Runtime hosting. ADRs 0014 and 0015 own managed materialization.
 
 ### Schema layout
 
@@ -139,9 +141,9 @@ Do not use `varlock-wrangler deploy`.
 
 It would create a second owner for Worker variables and secrets.
 
-Do not import Varlock's Cloudflare runtime into Workers in the first release.
+Do not import Varlock's Cloudflare runtime into Workers.
 
-Do not install `@varlock/cloudflare-integration` in the first release.
+Do not install `@varlock/cloudflare-integration`.
 
 Alchemy cannot currently create Varlock's `__VARLOCK_ENV` runtime binding.
 
@@ -155,7 +157,9 @@ Run the private agent through `varlock run --inject vars --skip-cache --`.
 
 Varlock validates bootstrap configuration before the Node process starts.
 
-The Node service still uses Kubernetes authentication for runtime OpenBao access.
+The self-hosted Runtime uses its scoped OpenBao AppRole projection.
+
+Managed Instances use the protected Secret Projection from ADR 0015.
 
 Do not fetch deployment credentials for each user request.
 

@@ -1,6 +1,6 @@
 # ADR 0001: Store Pi OpenAI Codex OAuth credentials in OpenBao
 
-- Status: Accepted for the feasibility spike
+- Status: Accepted
 - Date: 2026-08-10
 - Scope: Bob's private Pi runtime
 - Amended by: ADR 0009 for Runtime authentication and ADR 0015 for per-Instance credentials
@@ -67,7 +67,7 @@ The server bootstrap uses device login because it does not depend on localhost r
 
 ## Credential record
 
-The first single-Owner deployment uses one OpenBao KV v2 path for the production Pi provider.
+The self-hosted single-Owner deployment uses one OpenBao KV v2 path for the production Pi provider.
 
 Use this fixed path:
 
@@ -97,7 +97,11 @@ The runtime policy can read, create, and update only this provider path.
 
 A separate administration policy controls credential deletion.
 
-Use OpenBao Kubernetes authentication. Do not place these credentials in environment files.
+The self-hosted Runtime reads this record through its scoped OpenBao AppRole projection.
+
+Managed Instances receive a protected per-Instance Secret Projection under ADR 0015.
+
+Do not place these credentials in environment files.
 
 Do not store these credentials in D1, R2, logs, traces, prompts, or Sendblue.
 
@@ -145,7 +149,7 @@ A failed refresh keeps the last stored credential.
 
 Never switch to an API key after a refresh failure.
 
-Run one active Pi process in the first release.
+Run one active Pi process for each Bob Instance.
 
 Use a recreate deployment strategy. Do not overlap old and new Pi processes.
 

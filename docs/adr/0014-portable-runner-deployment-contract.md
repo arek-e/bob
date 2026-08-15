@@ -39,7 +39,9 @@ The contract contains no secret value, managed resource identifier, or host-spec
 
 Bob Runner consumes this contract through a Runtime Driver.
 
-The first Driver uses Docker Compose. Future Drivers can use Kubernetes with KEDA or another executor.
+Docker Compose is the current reviewed Runtime Driver.
+
+Future Drivers can use Kubernetes with KEDA or another executor.
 
 The Control Plane sends complete desired state through its versioned ConnectRPC Interface.
 
@@ -51,7 +53,7 @@ The Runtime Driver must reject a fence below its durable maximum.
 
 Secret values reach the Runtime through protected local projections. The protocol carries only secret references and versions.
 
-Coolify can host the Control Plane, Runner, or Runtime during migration. It is not part of the deployment contract.
+Coolify can host the Control Plane, Runner, or Runtime. It is not part of the deployment contract.
 
 ## Repository ownership
 

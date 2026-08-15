@@ -1,12 +1,12 @@
 # ADR 0006: Personal context cache policy
 
-Status: accepted
+- Status: Accepted
 
-Date: 2026-08-11
+- Date: 2026-08-11
 
 ## Decision
 
-Bob does not cache model responses in the first production release.
+Bob does not cache model responses.
 
 Personal facts, journal records, reminders, training state, and tool results can change between turns.
 
@@ -25,7 +25,7 @@ Record these values before adding a Bob-owned cache:
 
 Do not add a cache when the eligible request rate is low.
 
-## Future cache contract
+## Reconsideration contract
 
 A future cache can store read-only model results only.
 

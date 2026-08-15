@@ -153,21 +153,7 @@ A same-turn receipt can confirm an action claim for the current turn.
 
 A predecessor receipt supplies context only. It cannot confirm a current action claim.
 
-### Short follow-up tool selection
-
-Do not use recalled message text to expand the tool set.
-
-For a short list follow-up, load one capability hint from the newest delivered turn.
-
-Derive the hint from the completed run and tool name for that exact turn revision.
-
-Allow only reviewed read-only capabilities. The first release allows `reminder_list`.
-
-Do not infer mutation or journal capabilities.
-
-Do not skip across a newer unrelated delivered turn.
-
-The latest explicit intent or retraction overrides the hint.
+ADR 0012 supersedes the earlier short-follow-up Tool selection design.
 
 ## Consequences
 
@@ -203,8 +189,6 @@ The application must test races at run, tool, reply, and delivery boundaries.
 12. Logs and traces contain no message content.
 13. An identical mutation across revisions returns one prior durable result.
 14. Reflection context contains tool results but no prior private tool arguments.
-15. A short follow-up can reuse only the latest delivered safe read capability.
-16. Recalled text, mutations, and journal metadata cannot expand the follow-up tool set.
-17. One turn cannot start two distinct mutations.
-18. Action receipts contain no private arguments, result data, IDs, messages, or drafts.
-19. A predecessor receipt cannot confirm an action claim for the current turn.
+15. One turn cannot start two distinct mutations.
+16. Action receipts contain no private arguments, result data, IDs, messages, or drafts.
+17. A predecessor receipt cannot confirm an action claim for the current turn.

@@ -1,6 +1,6 @@
 # ADR 0003: Use one Bob agent runtime with domain-owned workflows
 
-- Status: Accepted for the first release
+- Status: Accepted
 - Date: 2026-08-10
 - Scope: Agent implementation and repository structure
 
@@ -53,7 +53,7 @@ Do not add a second agent loop inside Pi or another package.
 
 Do not run Codex app-server inside the Pi path.
 
-Do not use sub-agents in the first release.
+Do not add sub-agent authority without a reviewed contract.
 
 Keep Bob's durable state in the core Worker.
 
@@ -126,27 +126,19 @@ ADR 0010 permits one bounded current turn and recent delivered same-channel turn
 
 Outside that contract, never send stored raw messages or journal text to Pi.
 
-Do not send journal summaries to Pi in the first release.
+Do not send journal summaries to Pi.
 
 This stricter privacy rule replaces the earlier conversation-window design.
 
 Mark recalled content as data.
 
-Use deterministic retrieval rules in the first release.
-
 Always include the small confirmed profile pack.
 
-Retrieve personal records for recall, reminder, and training intents.
+Use lexical recall for relevant confirmed records.
 
-Let `memory_search` handle deeper follow-up searches.
+Read domain records through reviewed Tools when the request needs them.
 
-Do not add a model-only retrieval gate yet.
-
-A future gate can skip optional retrieval after evaluation.
-
-Its failure must return to the deterministic plan.
-
-It must never bypass access or sensitivity policy.
+ADR 0012 owns capability selection and context-retrieval policy.
 
 ### Tools
 
@@ -171,7 +163,7 @@ Return structured results with stable error codes.
 
 Do not rely on prompt text to prevent duplicate mutations.
 
-Keep these first-release tool groups:
+Keep these Tool groups in the reviewed capability catalogue:
 
 - Reminders
 - Memory proposals and recall
@@ -211,7 +203,7 @@ A correction creates a proposed revision and preserves history.
 
 Ranking decay never deletes a source record or its evidence link.
 
-Do not load raw journal text into Pi during the first release.
+Do not load raw journal text into Pi.
 
 Do not let Pi edit its persona or create skills.
 
@@ -219,19 +211,17 @@ Do not let Pi edit its persona or create skills.
 
 Use plain domain state machines for reminders, delivery, and memory review.
 
-Do not add a generic graph engine in the first release.
-
 The reminder module already defines its durable workflow.
 
 The delivery module already defines its durable workflow.
 
 The memory module already defines its review workflow.
 
-Add a graph module only after two real workflows need shared graph behavior.
+Add a graph Module only after two real workflows need shared graph behavior.
 
 Scheduled reminders do not need Pi.
 
-Scheduled summaries use a fresh agent run and a narrow tool set.
+Scheduled summaries use a fresh agent run and the reviewed capability catalogue.
 
 Persist each external action before dispatch.
 
@@ -297,68 +287,37 @@ Deployable seams follow runtime and credential changes.
 Module seams follow domain ownership and change locality.
 
 ```text
-.env.schema             Shared non-sensitive environment definitions
-
 apps/
-  core-worker/          D1 authority, API, Queue consumer, Cron, and reminder clock
-    .env.schema         Core Worker deployment bindings
-    src/
-      index.ts          Cloudflare entrypoints only
-      composition.ts    Complete module wiring
-      entrypoints/      HTTP, Queue, Cron, and Durable Object adapters
-      modules/
-        conversations/  Inbound events, runs, ordering, and short replies
-        delivery/       Outbox, attempts, callbacks, and opt-out state
-        reminders/      Schedules, occurrences, claims, and reconciliation
-        context/        Context selection, budgets, sources, and disclosure
-        policy/         Access, confirmation, and channel decisions
-        memory/         Candidates, facts, evidence, recall, and projections
-        journal/        Private handoffs, entries, metadata, and deletion
-        training/       Gyms, equipment, routines, sessions, and sets
-      migrations/       Ordered D1 migrations
-  sendblue-ingress/     Public webhook; webhook secret only
-    .env.schema         Ingress-only Sendblue fields
-  sendblue-egress/      Outbound Queue; Sendblue send credentials only
-    .env.schema         Egress-only Sendblue fields
-  agent/                Private Node host for Pi
-    .env.schema         Node bootstrap configuration
-  ui/                   Private owner interface
-    .env.schema         Public browser configuration only
+  agent/                  Private Node host for Pi
+  connections-gateway/    Scoped external connection access
+  core-worker/            Owner data and domain workflow authority
+  eval-worker/            Isolated synthetic evaluation runner
+  managed-channel-router/ Managed sender routing and staged events
+  sendblue-egress/        Outbound Sendblue delivery
+  sendblue-ingress/       Public Sendblue webhook
+  ui/                     Private owner interface
 
 packages/
-  contracts/            Versioned cross-runtime schemas
-  sendblue/             Provider verifier, decoder, client, and reconciler
-  pi-agent/             Bob's Pi loop, prompts, tools, auth, and safety
-  observability/        Content-free events and runtime adapters
+  contracts/              Versioned cross-runtime schemas
+  deployment-contract/    Portable Runtime deployment contract
+  observability/          Content-free events and runtime adapters
+  pi-agent/               Bob's Pi loop, prompts, Tools, auth, and safety
+  sendblue/               Provider verifier, decoder, client, and reconciler
 
 tools/
-  sendblue-reconcile/   Account webhook check and apply command
-    .env.schema         Sendblue account reconciliation fields
-  pi-smoke/             Pi login, refresh, model, and tool smoke checks
-  agent-evals/          Public Pi-agent evaluation runner
+  agent-evals/            Public Pi-agent evaluation runner
+  data-backup/            Encrypted application backup runner
+  oxlint/                 Repository lint policy
+  pi-smoke/               Pi login, refresh, model, and Tool smoke checks
+  sendblue-reconcile/     Account webhook reconciliation
 
-evals/
-  deterministic/        Exact state and safety assertions
-  judged/               Response-quality scoring
-  scenarios/            Versioned personal-assistant cases
-  fixtures/             Redacted provider and model events
-
-skills/                 Reviewed procedural instructions
 infra/
-  cloudflare/            Workers, D1, R2, Queues, Access, and domains
-    .env.schema          Alchemy and Cloudflare deployment fields
-  kubernetes/            Private Pi host deployment
-  openbao/               Policies, roles, and secret paths
-docs/
-  adr/                   Architecture decisions
-  runbooks/              Operations and recovery
+  cloudflare/             Cloudflare application plans
+  coolify/                Self-hosted Runtime implementation
+  openbao/                Policies, roles, and secret paths
 ```
 
-Create only modules required by the current milestone.
-
-The first slice creates conversations, delivery, reminders, context, and policy.
-
-Do not create empty memory, journal, or training folders early.
+Add a deployable only when its privilege or runtime isolation justifies a new seam.
 
 ### Application composition
 
@@ -413,7 +372,7 @@ Validate every value at each process seam.
 
 Do not add a generic channel interface before a second channel exists.
 
-Ingress, egress, and the reconciliation tool consume this package.
+Ingress, egress, managed routing, and the reconciliation tool consume this package.
 
 Use explicit exports for `webhooks`, `client`, and `account`.
 
@@ -453,11 +412,11 @@ Those names split one feature across technical layers or add shallow pass-throug
 - Apps never import another app's source.
 - Apps communicate through validated HTTP, Queue, or service-binding contracts.
 - Only `@bob/pi-agent` imports Pi packages.
-- Only Sendblue apps and tools import `@bob/sendblue`.
-- Only the core Worker imports D1, R2, and Durable Object types.
-- Only the core Worker imports Drizzle D1 adapters and table schemas.
+- Only Sendblue ingress, egress, managed routing, and reconciliation import `@bob/sendblue`.
+- Platform binding types stay within the deployable that owns each binding.
+- Drizzle schemas and queries stay with their owning domain Module.
 - Worker apps do not import `@effect/platform-node`.
-- First-release code does not import `effect/unstable/*`.
+- Application code does not import `effect/unstable/*`.
 - The agent host imports no Sendblue or Cloudflare binding types.
 - The ingress app receives no outbound Sendblue credential.
 - The egress app receives no Pi OAuth credential.
@@ -477,33 +436,13 @@ Keep Node at version 22.19 or newer.
 
 Do not add a task runner yet.
 
-## Deletion test
-
-Merge the planned agent dispatcher into the core Worker.
-
-Deleting it moves one Queue handler without spreading new complexity.
-
-Merge the planned scheduler Worker into the core Worker.
-
-Deleting it keeps D1 claims, alarms, and reconciliation together.
-
-Keep Sendblue ingress and egress separate.
-
-Their privilege isolation justifies their small interfaces.
-
-Remove the planned `domain`, `db`, `memory`, `tools`, and `config` packages.
-
-Their deletion improves feature locality.
-
-Add a new shared package only after two real consumers need one invariant.
-
 ## Verification
 
 1. Every architecture box maps to one app or named module.
 2. Each app exposes one readable composition module.
 3. Import rules reject Pi outside `@bob/pi-agent`.
 4. Import rules reject Sendblue outside approved consumers.
-5. Import rules reject D1 outside the core Worker.
+5. Platform binding imports stay within their owning deployable.
 6. Every cross-runtime message passes runtime validation.
 7. Core module tests run against real D1 migrations.
 8. Agent evaluations call the public Pi-agent interface.
