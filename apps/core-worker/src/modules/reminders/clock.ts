@@ -132,7 +132,7 @@ export class ReminderClock implements DurableObject {
     const reminders = composition.extensions?.reminders ?? composition.services.reminders
     const outboxIds = await reminders.claimDueAndCreateOutbox(composition.config.OWNER_ID, 60_000)
     for (const outboxId of outboxIds) {
-      const [outbox] = await composition.database
+      const [outbox] = await (composition.applicationStorage ?? composition.database)
         .select({
           correlationId: outboxMessages.correlationId,
           dispatchGeneration: outboxMessages.dispatchGeneration,

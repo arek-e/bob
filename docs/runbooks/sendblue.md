@@ -12,9 +12,10 @@ The tool preserves unrelated hooks. It stops when the global secret differs.
 
 ## Test
 
-Send harmless text from the allowed number. Confirm one inbound D1 record.
+Send harmless text from the allowed number. Confirm one inbound record through the production D1
+Adapter.
 
-Replay the webhook. Confirm Bob creates no second agent run.
+Replay the webhook. Confirm Bob creates no second Agent Runtime run.
 
 Test an outbound timeout. Confirm the attempt becomes `uncertain`.
 

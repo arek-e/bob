@@ -1,0 +1,30 @@
+{
+  "name": "@bob/sendblue-channel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./egress": "./egress/src/index.ts",
+    "./egress/bindings": "./egress/src/bindings.ts",
+    "./egress/queue": "./egress/src/entrypoints/queue.ts",
+    "./ingress": "./ingress/src/index.ts",
+    "./ingress/bindings": "./ingress/src/bindings.ts",
+    "./ingress/http": "./ingress/src/entrypoints/http.ts"
+  },
+  "scripts": {
+    "build": "esbuild ingress/src/index.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/ingress/index.js && esbuild egress/src/index.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/egress/index.js",
+    "env:check": "varlock load --agent --path ingress --skip-cache && varlock load --agent --path egress --skip-cache",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/contracts": "workspace:*",
+    "@bob/job-queue": "workspace:*",
+    "@bob/observability": "workspace:*",
+    "@bob/sendblue": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260810.1",
+    "esbuild": "0.25.9"
+  }
+}

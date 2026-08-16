@@ -12,7 +12,14 @@ for (const root of roots) {
 const exactVersion = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u
 const failures = []
 for (const manifest of manifests) {
-  const value = JSON.parse(await readFile(manifest, "utf8"))
+  let source
+  try {
+    source = await readFile(manifest, "utf8")
+  } catch (cause) {
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") continue
+    throw cause
+  }
+  const value = JSON.parse(source)
   const dependencies = {
     ...value.dependencies,
     ...value.devDependencies,

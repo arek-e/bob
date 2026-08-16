@@ -67,7 +67,7 @@ export async function handleAgentHttp(
 ): Promise<Response> {
   const url = new URL(request.url)
   if (request.method === "GET" && url.pathname === "/health") {
-    return json({ healthy: true, service: "agent", version: 1 })
+    return json({ healthy: true, service: "agent-runtime", version: 1 })
   }
 
   try {
@@ -103,7 +103,7 @@ export async function handleAgentHttp(
             credentials: credentialsReady ? "ready" : "unavailable",
             core: coreReady ? "ready" : "unavailable"
           },
-          service: "agent",
+          service: "agent-runtime",
           version: 1,
           deploymentProfileId: composition.profile.profileId,
           capabilityCatalogueGeneration: composition.profile.generation

@@ -57,6 +57,7 @@ export interface ConversationStoreOptions {
   readonly ownerId: string
   readonly ownerTimeZone: string
   readonly ownerDataKeys?: OwnerDataKeyStore
+  readonly channelProviderId: string
   readonly now?: () => Date
   readonly randomUuid?: () => string
 }
@@ -80,7 +81,7 @@ export function makeConversationStore(
       .from(channels)
       .where(
         and(
-          eq(channels.provider, "sendblue"),
+          eq(channels.provider, options.channelProviderId),
           eq(channels.accountId, event.accountId),
           eq(channels.lineId, event.lineId),
           eq(channels.senderHash, senderHash)
@@ -97,7 +98,7 @@ export function makeConversationStore(
       .values({
         id,
         userId: options.ownerId,
-        provider: "sendblue",
+        provider: options.channelProviderId,
         accountId: event.accountId,
         lineId: event.lineId,
         senderHash,
@@ -114,7 +115,7 @@ export function makeConversationStore(
       .from(channels)
       .where(
         and(
-          eq(channels.provider, "sendblue"),
+          eq(channels.provider, options.channelProviderId),
           eq(channels.accountId, event.accountId),
           eq(channels.lineId, event.lineId),
           eq(channels.senderHash, senderHash)

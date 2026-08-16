@@ -21,7 +21,7 @@ function interactionComposition(
   return testFixture<CoreComposition>({
     config: {
       UI_BASE_URL: "https://bob.example.invalid",
-      SENDBLUE_EGRESS_URL: "https://egress.example.invalid",
+      CHANNEL_EGRESS_URL: "https://egress.example.invalid",
       EGRESS_CALLER_SECRET: "e".repeat(64)
     },
     services: {

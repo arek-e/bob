@@ -10,8 +10,7 @@ const artifactPaths = [
   "apps/core-worker/dist",
   "apps/eval-worker/dist",
   "apps/managed-channel-router/dist",
-  "apps/sendblue-egress/dist",
-  "apps/sendblue-ingress/dist",
+  "apps/sendblue-channel/dist",
   "apps/ui/dist",
   "tools/data-backup/dist"
 ]

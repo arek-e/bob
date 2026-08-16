@@ -1,0 +1,6 @@
+{
+  "name": "@bob/compose-smoke-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module"
+}

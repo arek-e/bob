@@ -9,9 +9,15 @@ function isWorkspaceDirectory(directory) {
   const parts = directory.split("/")
   return (
     ((parts[0] === "apps" || parts[0] === "packages" || parts[0] === "tools") &&
-      parts.length === 2) ||
+      parts.length >= 2) ||
     directory === "infra/cloudflare"
   )
+}
+
+function workspaceManifest(directory) {
+  if (directory === "infra/cloudflare") return "infra/cloudflare/package.json"
+  const [root, workspace] = directory.split("/")
+  return `${root}/${workspace}/package.json`
 }
 
 export function environmentSchemaDirectories(trackedFiles) {
@@ -21,7 +27,7 @@ export function environmentSchemaDirectories(trackedFiles) {
     .filter((path) => path.endsWith("/.env.schema"))
     .map((path) => posix.dirname(path))
     .filter(isWorkspaceDirectory)
-    .filter((directory) => tracked.has(`${directory}/package.json`))
+    .filter((directory) => tracked.has(workspaceManifest(directory)))
     .sort()
 }
 

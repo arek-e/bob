@@ -4,7 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./job-processors": "./src/entrypoints/queue.ts",
+    "./runtime": "./src/runtime/public.ts",
+    "./database-snapshot": "./migrations/20260815182922_narrow_jazinda/snapshot.json"
   },
   "scripts": {
     "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/index.js && node ../../scripts/verify-core-bundle.mjs",
@@ -15,6 +18,8 @@
   },
   "dependencies": {
     "@bob/contracts": "workspace:*",
+    "@bob/job-queue": "workspace:*",
+    "@bob/object-store": "workspace:*",
     "@bob/observability": "workspace:*",
     "@js-temporal/polyfill": "0.5.1",
     "better-auth": "1.6.26",

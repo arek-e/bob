@@ -46,7 +46,7 @@ The green check did not prove the runtime and recovery paths.
 12. Add immutable image inputs, `.dockerignore`, and secret provisioning gates.
 13. Accept every documented Sendblue status and prevent state regression.
 14. Bound the complete context pack and each context item.
-15. Recover inbound work after Queue exhaustion.
+15. Recover inbound work after Job Queue exhaustion.
 16. Preserve typed agent failure codes instead of mapping every failure to timeout.
 17. Bound device-login startup and require an approved production completion and refresh check.
 18. Run the composed Effect Layers instead of keeping them compile-only.
@@ -58,14 +58,14 @@ Add tests that prove these cases:
 - Alchemy can load and evaluate the stack.
 - Core rejects the wrong caller on every protected route.
 - D1 migrations apply in the Workers test runtime.
-- A D1 batch rolls back after an injected failure.
+- An Application Storage transaction rolls back after an injected failure.
 - An inbound lease can expire and reuse the same snapshot.
 - A completed run repairs a missing response outbox.
 - A lost Sendblue result becomes uncertain and does not resend.
 - A callback before handle binding is replayed later.
 - Late callbacks do not regress a terminal state.
 - STOP blocks all delivery and START resumes delivery.
-- A scheduler command updates one Durable Object alarm.
+- A Scheduler command updates one Run Coordinator wake.
 - Alarm failure and lease expiry recover without duplicate occurrences.
 - Accepted delivery creates one expiring reply binding.
 - `SEEN` acknowledges and `DONE` completes the targeted occurrence.

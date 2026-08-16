@@ -69,6 +69,34 @@ export function createAccessVerifier(options: {
   }
 }
 
+export function createSharedSecretAccessVerifier(options: {
+  readonly secret: string
+  readonly runSubject: string
+  readonly adminSubject: string
+}): AccessVerifier {
+  const expected = new TextEncoder().encode(options.secret)
+  return {
+    async verify(request, scope) {
+      const supplied = request.headers.get("CF-Access-Client-Secret")
+      if (supplied === null) throw new Error("access_denied")
+      const suppliedHash = new Uint8Array(
+        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(supplied))
+      )
+      const expectedHash = new Uint8Array(await crypto.subtle.digest("SHA-256", expected))
+      let difference = suppliedHash.byteLength ^ expectedHash.byteLength
+      for (let index = 0; index < Math.min(suppliedHash.length, expectedHash.length); index += 1) {
+        difference |= suppliedHash[index]! ^ expectedHash[index]!
+      }
+      if (difference !== 0) throw new Error("access_denied")
+      return {
+        subject: "",
+        commonName: scope === "run" ? options.runSubject : options.adminSubject,
+        scope
+      }
+    }
+  }
+}
+
 export function accessVerifierLayer(service: AccessVerifier) {
   return Layer.succeed(AccessVerifier, service)
 }

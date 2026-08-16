@@ -1,7 +1,7 @@
 # Bob context
 
 Status: product and architecture context  
-Updated: 2026-08-15
+Updated: 2026-08-16
 
 ## Product
 
@@ -51,6 +51,26 @@ The authority model follows these rules:
 
 [Personal agent interaction research](docs/research/personal-agent-interaction.md) records the
 research basis, public benchmarks, and proposed evaluation plan.
+
+## System map
+
+These names describe responsibilities. They are stable across deployment providers.
+Provider names appear only in Runtime Adapter details, configuration, and implementation notes.
+
+| System              | Responsibility                                                         | Runtime Adapter examples                                                |
+| ------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Core Runtime        | Serves the API and UI. Owns core conversation and workflow invariants. | Cloudflare Adapter: Worker; Compose Adapter: Node process               |
+| Agent Runtime       | Runs the bounded model and Tool loop.                                  | Compose Adapter: Node process                                           |
+| Channel Runtime     | Receives normalized events and sends replies.                          | Sendblue Adapter; Compose Adapter: HTTP host                            |
+| Job Queue           | Publishes durable work and tracks attempts.                            | Cloudflare Adapter: Queues; Compose Adapter: BullMQ over Redis          |
+| Application Storage | Stores durable relational records and atomic changes.                  | Cloudflare Adapter: D1; Compose Adapter: PostgreSQL                     |
+| Object Storage      | Stores private objects outside relational records.                     | Cloudflare Adapter: R2; Compose Adapter: filesystem or S3               |
+| Run Coordinator     | Serializes owner runs and schedules delayed wakes.                     | Cloudflare Adapter: Durable Objects; Compose Adapter: delayed jobs      |
+| Scheduler           | Starts periodic maintenance and recovery work.                         | Cloudflare Adapter: Cron; Compose Adapter: Node interval                |
+| Observability       | Exports content-free health, metrics, logs, and traces.                | Cloudflare Adapter: telemetry; Compose Adapter: OpenTelemetry Collector |
+
+The Core Runtime composes these systems through provider-neutral Interfaces.
+One deployment selects one Adapter for each system.
 
 ## Non-goals
 
@@ -126,27 +146,33 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Managed Channel Router:** The application data-plane Module that maps an authorized sender to one Bob Instance.
 - **Staged channel event:** One durable authorized event that waits for its Bob Instance to become ready.
 - **Runtime materialization:** Verified contract acquisition and protected local Secret Projection by a Bob Runner.
+- **Job Queue:** Durable job publication and attempts behind a provider-neutral Interface.
+- **Application Storage:** Durable relational records and atomic changes behind a provider-neutral Interface.
+- **Object Storage:** Private objects behind a provider-neutral Interface.
+- **Run Coordinator:** Owner-run ordering and delayed wake coordination behind a provider-neutral Interface.
+- **Scheduler:** Periodic work and recovery triggers behind a provider-neutral Interface.
+- **Runtime Adapter:** One hosting-specific Implementation of a Runtime Interface.
 
 ## System invariants
 
-- D1 is authoritative for application records.
+- Application Storage is authoritative for application records. The Cloudflare Adapter uses D1.
 - Better Auth owns the `auth_user`, `auth_session`, `auth_account`, `auth_verification`, and `auth_rate_limit` tables.
 - Cloudflare Access protects only Core internal routes and the one-time owner setup route.
 - Better Auth sessions protect owner API routes.
 - The owner record is authoritative for live locality settings.
 - A locality change affects new requests. An installed scheduling Module keeps saved schedules stable.
-- Durable Objects coordinate run order and any installed scheduled wake-ups.
-- Durable Object state is not authoritative application data.
+- Run Coordinator coordinates run order and any installed scheduled wake-ups. The Cloudflare Adapter uses Durable Objects.
+- Run Coordinator state is not authoritative application data.
 - Bob's Pi loop owns the single model and tool loop policy.
 - Pi permanently owns provider streaming, model normalization, and OAuth support.
 - One agent run uses one immutable context pack.
 - One agent run uses one immutable conversation-turn revision.
 - The latest message in a conversation-turn revision is its response target.
 - A receipt-backed reflection can add one internal revision without a new message.
-- The run attempt and reflection revision change in one D1 batch.
-- A transient Agent host failure releases the same run revision for bounded checkpoint replay.
+- The run attempt and reflection revision change in one atomic Application Storage operation.
+- A transient Agent Runtime failure releases the same run revision for bounded checkpoint replay.
 - Only the current turn revision can commit and deliver its reply.
-- The core Worker enforces cross-capability invariants. Each Capability Module enforces its own invariants.
+- The Core Runtime enforces cross-capability invariants. Each Capability Module enforces its own invariants.
 - Every agent run in one deployment profile receives the same reviewed capability catalogue.
 - Every Tool belongs to exactly one statically registered Capability Module.
 - The capability catalogue and its safety metadata produce one deterministic generation.
@@ -169,6 +195,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Runtime Alchemy owns portable and self-hosted plans. It does not write managed production resources.
 - The Runtime deployment contract contains no hosting-provider identifier or secret value.
 - Runtime source history does not contain deployment-only commits.
+- Each Runtime Adapter passes the same conformance tests before promotion.
+- One Bob Instance uses one authoritative Runtime Adapter set at a time.
 - Each promoted Runtime release uses one immutable OCI bundle digest.
 - Bob Runner remains outside the Bob Instance application stack.
 - The Connections Gateway derives Instance scope from verified Instance identity.
@@ -182,19 +210,19 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Secret values never enter committed environment files.
 - Alchemy state credentials stay in Cloudflare Secrets Store.
 - Alchemy owns each Bob Cloudflare resource that it declares.
-- A separate D1 database stores continuous public benchmark run metadata.
-- A separate private R2 bucket stores public or synthetic evaluation artifacts.
-- A scheduled Cloudflare Worker runs the committed synthetic interaction gate each day.
-- The evaluation Worker can access only the separate evaluation D1 database and R2 bucket.
-- Production assistant Workers cannot access evaluation storage.
+- A separate Application Storage instance stores continuous public benchmark run metadata.
+- A separate Object Storage instance stores public or synthetic evaluation artifacts.
+- A scheduled evaluation process runs the committed synthetic interaction gate each day.
+- The evaluation process can access only the separate evaluation Application Storage and Object Storage instances.
+- Production Core and Agent Runtimes cannot access evaluation storage.
 - Alchemy creates Access service tokens and Tunnel credentials before OpenBao receives their runtime copies.
 - No Cloudflare resource has two infrastructure owners.
 - Coolify and OpenBao stay outside Alchemy.
 - Health observation is read-only, content-free, validated, and fail-open.
 - Effect composes I/O. Pure domain rules stay as normal TypeScript.
-- Drizzle owns application schemas and queries. Better Auth uses its built-in D1 adapter for auth tables.
+- Drizzle owns application schemas and queries. Better Auth uses the selected Application Storage Adapter for auth tables.
 - Drizzle schemas and queries stay with their owning domain modules.
-- D1 atomic writes use batch operations, not callback transactions.
+- Each Application Storage Adapter preserves the reviewed atomic-write behavior.
 - Every mutating tool uses database idempotency.
 - Deterministic channel commands run outside Pi.
 - Only confirmed and model-eligible facts enter context packs.
@@ -207,7 +235,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Installed scheduling workflows run outside the model.
 - Delivery does not imply acknowledgment or completion.
 - A provider timeout does not cause an automatic duplicate send.
-- A delivery claim and its first attempt enter D1 in one atomic batch.
+- A delivery claim and its first attempt enter Application Storage in one atomic operation.
 - An exhausted outbound queue item gets a bounded recovery decision.
 - One scheduled recovery failure does not stop unrelated recovery work.
 

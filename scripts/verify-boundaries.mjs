@@ -5,6 +5,8 @@ const root = new URL("../", import.meta.url)
 const sourceRoots = ["apps", "packages", "tools", "infra/cloudflare"]
 const sourceExtensions = new Set([".ts", ".tsx", ".mts", ".js", ".mjs"])
 const importPattern = /(?:from\s+|import\s*\()["']([^"']+)["']/g
+const providerVocabulary =
+  /\b(?:BullMQ|Redis|PostgreSQL|Postgres|Cloudflare|D1|R2|Durable Objects?|Cron|Sendblue)\b/iu
 
 const violations = []
 const generalCoreFiles = new Set([
@@ -16,6 +18,12 @@ const generalCoreFiles = new Set([
   "apps/core-worker/src/entrypoints/scheduled.ts",
   "apps/core-worker/src/entrypoints/durable-objects.ts",
   "packages/contracts/src/deployment-profiles/core.ts"
+])
+const providerNeutralInterfaceFiles = new Set([
+  "packages/contracts/src/channel.ts",
+  "packages/contracts/src/jobs.ts",
+  "packages/job-queue/src/index.ts",
+  "packages/object-store/src/index.ts"
 ])
 
 function isGeneralCoreFile(file) {
@@ -62,6 +70,9 @@ for (const sourceRoot of sourceRoots) {
 
   for (const file of files) {
     const text = await readFile(new URL(file, root), "utf8")
+    if (providerNeutralInterfaceFiles.has(file) && providerVocabulary.test(text)) {
+      violations.push(`${file}: provider vocabulary must stay in an Adapter or entrypoint`)
+    }
     if (
       file.startsWith("tools/agent-evals/src/") &&
       !file.startsWith("tools/agent-evals/src/evaluation-packs/") &&
@@ -113,8 +124,8 @@ for (const sourceRoot of sourceRoots) {
       }
 
       const sendblueConsumer =
-        workspace === "apps/sendblue-ingress" ||
-        workspace === "apps/sendblue-egress" ||
+        workspace === "apps/sendblue-channel" ||
+        workspace === "apps/channel-runtime" ||
         workspace === "apps/managed-channel-router" ||
         workspace === "tools/sendblue-reconcile"
       if (!sendblueConsumer && specifier.startsWith("@bob/sendblue")) {
@@ -126,12 +137,12 @@ for (const sourceRoot of sourceRoots) {
       }
 
       if (workspace !== "apps/core-worker" && specifier === "drizzle-orm/d1") {
-        violations.push(`${file}: only the core Worker can import the D1 adapter`)
+        violations.push(`${file}: only the Core Runtime can import the Application Storage Adapter`)
       }
 
       if (workspace.startsWith("apps/") && workspace !== "apps/agent") {
         if (specifier.startsWith("@effect/platform-node")) {
-          violations.push(`${file}: Worker and browser apps cannot import Node platform code`)
+          violations.push(`${file}: Cloudflare and browser apps cannot import Node platform code`)
         }
       }
 

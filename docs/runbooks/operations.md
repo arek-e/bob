@@ -2,7 +2,7 @@
 
 ## Daily checks
 
-Check Queue age, failed messages, uncertain sends, and overdue reminders.
+Check Job Queue age, failed messages, uncertain sends, and overdue reminders.
 
 Check the last provider completion. Check OAuth refresh and authentication failures.
 
@@ -14,7 +14,7 @@ Use **Review safely** only after you inspect the related durable state.
 
 Only the owner can run an alert recovery action.
 
-## Agent telemetry
+## Agent Runtime telemetry
 
 Cloudflare receives Worker invocation logs and traces. Bob requests full head sampling and trace persistence.
 
@@ -48,7 +48,7 @@ Cloudflare Access accepts only the dedicated Worker OTLP service token.
 
 The existing Tunnel sends that host to collector port 4318. The collector has no public service.
 
-Core, Sendblue ingress, and Sendblue egress use the same reviewed release SHA.
+Core Runtime and Channel Runtime use the same reviewed release SHA.
 
 The `teampitch-ops` OpenTofu stacks own the Worker metadata and bindings.
 
@@ -92,7 +92,8 @@ validator result. This attribute never contains model text or a schema error.
 
 Create token charts from `token_usage`. Group the charts by `feature`, `workflow`, and `model`.
 
-Use this D1 query for durable token attribution:
+Use this Application Storage query for durable token attribution.
+This example uses the Cloudflare D1 Adapter:
 
 ```sql
 SELECT
@@ -149,18 +150,18 @@ Review the target after three full months. Do not weaken a target to hide an inc
 
 The initial recovery objectives are a four-hour recovery point and a one-day recovery time.
 
-## Reminder recovery
+## Scheduled recovery
 
 Cron reconciles reminders each minute. Alert when recovery takes more than five minutes.
 
-Inspect the D1 claim before any retry. Release only an expired claim.
+Inspect the Application Storage claim before any retry. Release only an expired claim.
 
-Treat every Queue event and Durable Object alarm as repeatable.
+Treat every Job Queue event and Run Coordinator wake as repeatable.
 
 After six alarm failures, repair the cause. Then run the private retry action.
 
-The Core Worker consumes the inbound dead-letter Queue.
-It clears an expired D1 claim and republishes the stored event.
+The Core Runtime consumes the inbound dead-letter Job Queue route.
+It clears an expired Application Storage claim and republishes the stored event.
 It stops after three recovery cycles.
 
 Inspect `dead_lettered_at` and `recovery_count` before a manual retry.

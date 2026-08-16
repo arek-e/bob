@@ -269,7 +269,7 @@ export function createBobStack(options: BobStackOptions) {
           BETTER_AUTH_SECRET: Redacted.make(ENV.BETTER_AUTH_SECRET),
           INGRESS_CALLER_SECRET: ingressCallerSecret,
           EGRESS_CALLER_SECRET: egressCallerSecret,
-          SENDBLUE_EGRESS_URL: `https://${egressHost}`,
+          CHANNEL_EGRESS_URL: `https://${egressHost}`,
           ACCESS_TEAM_DOMAIN: ENV.ACCESS_TEAM_DOMAIN,
           CORE_ACCESS_AUDIENCE: coreApplication.aud,
           SETUP_ACCESS_AUDIENCE: setupApplication.aud,
@@ -336,7 +336,7 @@ export function createBobStack(options: BobStackOptions) {
         )
 
         const ingress = yield* Cloudflare.Worker("SendblueIngress", {
-          main: "../../apps/sendblue-ingress/src/index.ts",
+          main: "../../apps/sendblue-channel/ingress/src/index.ts",
           workersDev: false,
           domain: ingressHost,
           compatibility: { date: "2026-08-10" },
@@ -365,7 +365,7 @@ export function createBobStack(options: BobStackOptions) {
         ingressUrl = ingress.url
 
         const egress = yield* Cloudflare.Worker("SendblueEgress", {
-          main: "../../apps/sendblue-egress/src/index.ts",
+          main: "../../apps/sendblue-channel/egress/src/index.ts",
           workersDev: false,
           domain: egressHost,
           crons: ["*/2 * * * *"],

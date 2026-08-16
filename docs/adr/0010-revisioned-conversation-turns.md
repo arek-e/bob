@@ -54,7 +54,7 @@ Let an external action that already started reach a durable result.
 
 Then reflect again with the new message and that result.
 
-Supersede the exact agent attempt and open its reflection revision in one D1 batch.
+Supersede the exact Agent Runtime attempt and open its reflection revision in one Application Storage transaction.
 
 Keep an existing newer user revision instead of adding another internal revision.
 
@@ -62,7 +62,7 @@ If the action is complete, make the reflection ready after the collection deadli
 
 If the action is active, keep the turn settling until its exact Tool lease deadline.
 
-Schedule that deadline as a Durable Object alarm before the process returns.
+Schedule that deadline through the Run Coordinator before the process returns.
 
 An expired action lease makes the same stable action ready for recovery.
 
@@ -162,7 +162,7 @@ Bob can treat a burst of short messages as one response target.
 
 Later corrections supersede stale model output.
 
-Durable revision checks work after Worker or Durable Object restarts.
+Run Coordinator revision checks work after a runtime or provider Adapter restart.
 
 Already-started external actions remain explicit and idempotent.
 

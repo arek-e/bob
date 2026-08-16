@@ -1,5 +1,5 @@
 import { InboundJob } from "@bob/contracts/jobs"
-import { recordDecision, withBobSpan, type BobDecisionCode } from "@bob/observability/effect"
+import { recordDecision, withBobSpan } from "@bob/observability/effect"
 import {
   externalParentFromTraceparent,
   injectCurrentTraceparent
@@ -10,6 +10,7 @@ import type { CoreBindings } from "../bindings.ts"
 
 import { composeCore } from "../composition.ts"
 import { processConversationTurn } from "../process-inbound.ts"
+import { makeOwnerTurnEngine } from "../runtime/owner-turn-engine.ts"
 import { makeCoreTelemetryInvocation, scheduleTelemetryWork } from "../telemetry.ts"
 
 export interface CoreDurableDependencies {
@@ -22,13 +23,6 @@ const coreDurableDependencies: CoreDurableDependencies = {
   composeCore,
   processConversationTurn,
   makeCoreTelemetryInvocation
-}
-
-function promiseEffect<A>(operation: (signal: AbortSignal) => PromiseLike<A>) {
-  return Effect.tryPromise({
-    try: (signal) => Promise.resolve(operation(signal)),
-    catch: (error) => error
-  })
 }
 
 function withTraceparentParent<A, E>(
@@ -62,12 +56,10 @@ async function requestAgentSteer(
       signal: controller.signal
     })
     if (!response.ok) return "unavailable"
-    const result = Schema.decodeUnknownSync(
+    return Schema.decodeUnknownSync(
       Schema.Struct({ status: Schema.Literals(["aborted_model", "queued", "missing"]) })
-    )(await response.json())
-    return result.status
+    )(await response.json()).status
   } catch {
-    // D1 revision checks suppress stale replies when live steering is unavailable.
     return "unavailable"
   } finally {
     clearTimeout(timeout)
@@ -81,10 +73,55 @@ export class OwnerRunCoordinator implements DurableObject {
     private readonly dependencies: CoreDurableDependencies = coreDurableDependencies
   ) {}
 
+  private engine(
+    composition: ReturnType<typeof composeCore>,
+    telemetry: ReturnType<typeof makeCoreTelemetryInvocation>
+  ) {
+    return makeOwnerTurnEngine({
+      turns: composition.services.turns,
+      serialize: (operation) => this.state.blockConcurrencyWhile(operation),
+      schedule: (at) => scheduleEarliestAlarm(this.state.storage, at),
+      process: (snapshot) =>
+        this.dependencies.processConversationTurn(snapshot, this.bindings, composition, telemetry),
+      steer: async (runId, correlationId, traceparent, turn) => {
+        const effect = withTraceparentParent(
+          traceparent,
+          withBobSpan(
+            {
+              name: "bob.run.cancel_request",
+              correlationId,
+              runId,
+              conversationTurnId: turn.turnId,
+              conversationRevision: turn.revision,
+              feature: "assistant"
+            },
+            Effect.gen(function* () {
+              const headers = yield* injectCurrentTraceparent({
+                "content-type": "application/json",
+                "CF-Access-Client-Id": composition.config.AGENT_ACCESS_CLIENT_ID,
+                "CF-Access-Client-Secret": composition.config.AGENT_ACCESS_CLIENT_SECRET,
+                "x-bob-correlation-id": correlationId
+              })
+              const status = yield* Effect.promise(() =>
+                requestAgentSteer(composition, runId, headers)
+              )
+              yield* recordDecision({
+                name: "bob.decision.steering",
+                code: status === "aborted_model" ? "abort_model" : "wait_effect",
+                outcome: "applied"
+              })
+              return status
+            })
+          )
+        )
+        return telemetry.runPromise(effect)
+      }
+    })
+  }
+
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
-    const path = url.pathname
-    if (request.method === "POST" && path === "/wake") {
+    if (request.method === "POST" && url.pathname === "/wake") {
       const requestedAt = url.searchParams.get("at")
       const scheduled = requestedAt === null ? new Date() : new Date(requestedAt)
       if (!Number.isFinite(scheduled.getTime())) {
@@ -93,119 +130,49 @@ export class OwnerRunCoordinator implements DurableObject {
       await scheduleEarliestAlarm(this.state.storage, scheduled)
       return Response.json({ ok: true })
     }
-    if (request.method !== "POST" || path !== "/run") {
+    if (request.method !== "POST" || url.pathname !== "/run") {
       return new Response(null, { status: 404 })
     }
+
     try {
       const job = Schema.decodeUnknownSync(InboundJob)(await request.json())
-      const telemetry = this.dependencies.makeCoreTelemetryInvocation(this.bindings)
-      const suppliedCorrelationId = request.headers.get("x-bob-correlation-id")
       const correlationId =
-        suppliedCorrelationId === null
-          ? (job.correlationId ?? job.eventId)
-          : Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(suppliedCorrelationId)
+        request.headers.get("x-bob-correlation-id") ?? job.correlationId ?? job.eventId
       const incomingTraceparent = request.headers.get("traceparent") ?? job.traceparent
-      const state = this.state
-      const bindings = this.bindings
-      const composition = this.dependencies.composeCore(bindings)
+      const composition = this.dependencies.composeCore(this.bindings)
+      const telemetry = this.dependencies.makeCoreTelemetryInvocation(this.bindings)
+      const engine = this.engine(composition, telemetry)
       const accepted = telemetry.runPromise(
         withTraceparentParent(
           incomingTraceparent,
           withBobSpan(
-            {
-              name: "bob.coordinator.run",
-              correlationId,
-              feature: "assistant"
-            },
-            Effect.gen(function* () {
-              return yield* withBobSpan(
-                {
-                  name: "bob.turn.collect",
-                  correlationId,
-                  feature: "assistant"
-                },
-                Effect.gen(function* () {
-                  const headers = yield* injectCurrentTraceparent()
-                  const traceparent = headers.get("traceparent") ?? incomingTraceparent
-                  const offered = yield* promiseEffect(() =>
-                    state.blockConcurrencyWhile(async () => {
-                      const stored = await composition.services.turns.offer(
-                        job.eventId,
-                        traceparent
-                      )
-                      await scheduleEarliestAlarm(state.storage, new Date(stored.quietUntil))
-                      return stored
-                    })
-                  )
-                  yield* recordDecision({
-                    name: "bob.state.transition",
-                    code: offered.revision === 1 ? "new" : "burst_append",
-                    outcome: "applied",
-                    conversationRevision: offered.revision
-                  })
-                  yield* Effect.annotateCurrentSpan({
-                    "bob.conversation.turn_id": offered.turnId,
-                    "bob.conversation.revision": offered.revision
-                  })
-                  return { offered, collectTraceparent: traceparent }
-                })
-              )
-            })
-          )
-        )
-      )
-      scheduleTelemetryWork(this.state, accepted.then(telemetry.flush, telemetry.flush))
-      const { offered, collectTraceparent } = await accepted
-      if (offered.appended && offered.activeRunId !== undefined) {
-        const settling = await composition.services.turns.markSettling(
-          offered.turnId,
-          offered.revision,
-          offered.activeRunId
-        )
-        if (!settling) {
-          return Response.json(
-            { ok: true, turnId: offered.turnId, revision: offered.revision },
-            { status: 202 }
-          )
-        }
-        await scheduleEarliestAlarm(state.storage, new Date(settling.claimExpiresAt))
-        await telemetry.runPromise(
-          withTraceparentParent(
-            collectTraceparent,
+            { name: "bob.coordinator.run", correlationId, feature: "assistant" },
             withBobSpan(
-              {
-                name: "bob.run.cancel_request",
-                correlationId,
-                runId: offered.activeRunId,
-                conversationTurnId: offered.turnId,
-                conversationRevision: offered.revision,
-                feature: "assistant"
-              },
+              { name: "bob.turn.collect", correlationId, feature: "assistant" },
               Effect.gen(function* () {
-                const headers = yield* injectCurrentTraceparent({
-                  "content-type": "application/json",
-                  "CF-Access-Client-Id": composition.config.AGENT_ACCESS_CLIENT_ID,
-                  "CF-Access-Client-Secret": composition.config.AGENT_ACCESS_CLIENT_SECRET,
-                  "x-bob-correlation-id": correlationId
-                })
-                const status = yield* promiseEffect(() =>
-                  requestAgentSteer(composition, offered.activeRunId!, headers)
+                const headers = yield* injectCurrentTraceparent()
+                const traceparent = headers.get("traceparent") ?? incomingTraceparent
+                const offered = yield* Effect.promise(() =>
+                  engine.accept(job, correlationId, traceparent)
                 )
-                const code: BobDecisionCode =
-                  status === "aborted_model" ? "abort_model" : "wait_effect"
                 yield* recordDecision({
-                  name: "bob.decision.steering",
-                  code,
+                  name: "bob.state.transition",
+                  code: offered.revision === 1 ? "new" : "burst_append",
                   outcome: "applied",
                   conversationRevision: offered.revision
                 })
-                return status
+                yield* Effect.annotateCurrentSpan({
+                  "bob.conversation.turn_id": offered.turnId,
+                  "bob.conversation.revision": offered.revision
+                })
+                return offered
               })
             )
           )
         )
-        scheduleTelemetryWork(this.state, telemetry.flush())
-      }
+      )
+      scheduleTelemetryWork(this.state, accepted.then(telemetry.flush, telemetry.flush))
+      const offered = await accepted
       return Response.json(
         { ok: true, turnId: offered.turnId, revision: offered.revision },
         { status: 202 }
@@ -216,30 +183,10 @@ export class OwnerRunCoordinator implements DurableObject {
   }
 
   async alarm(): Promise<void> {
-    await this.runReadyTurn()
-  }
-
-  private async runReadyTurn(): Promise<void> {
     const telemetry = this.dependencies.makeCoreTelemetryInvocation(this.bindings)
     const composition = this.dependencies.composeCore(this.bindings)
-    while (true) {
-      const ready = await this.state.blockConcurrencyWhile(() =>
-        composition.services.turns.claimReady()
-      )
-      if (ready === undefined) break
-      await scheduleEarliestAlarm(this.state.storage, new Date(ready.claimExpiresAt))
-      const processed = this.dependencies.processConversationTurn(
-        ready,
-        this.bindings,
-        composition,
-        telemetry
-      )
-      scheduleTelemetryWork(this.state, processed.then(telemetry.flush, telemetry.flush))
-      await processed
-    }
-    const nextWakeAt = await composition.services.turns.nextWakeAt()
-    if (nextWakeAt !== undefined) {
-      await scheduleEarliestAlarm(this.state.storage, new Date(nextWakeAt))
-    }
+    const processed = this.engine(composition, telemetry).wake()
+    scheduleTelemetryWork(this.state, processed.then(telemetry.flush, telemetry.flush))
+    await processed
   }
 }

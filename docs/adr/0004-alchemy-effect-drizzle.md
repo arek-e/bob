@@ -167,7 +167,7 @@ Compose one visible application Layer in each `composition.ts` file.
 
 Use Effect Schema at every untrusted runtime seam.
 
-Use it for webhooks, Queue jobs, APIs, Pi tools, and stored JSON.
+Use it for webhooks, Job Queue jobs, APIs, Pi tools, and stored JSON.
 
 Do not duplicate Drizzle table schemas with Effect Schema.
 

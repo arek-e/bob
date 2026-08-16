@@ -35,6 +35,7 @@ declare global {
 const ownerId = "00000000-0000-4000-8000-000000000601"
 const channelId = "00000000-0000-4000-8000-000000000602"
 const currentTurnId = "00000000-0000-4000-8000-000000000603"
+const channelProviderId = "sendblue"
 
 function key(byte: number): string {
   let binary = ""
@@ -988,6 +989,7 @@ describe("recent conversation context", () => {
     ])
     let nextDeliveryId = 1_150
     const delivery = makeDeliveryStore(fixture.database, fixture.protection, {
+      channelProviderId,
       now: () => new Date("2026-08-12T10:05:00.000Z"),
       randomUuid: () => uuid(nextDeliveryId++)
     })

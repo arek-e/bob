@@ -8,6 +8,7 @@ import { DeliveryReconciliationResponse, DeliveryResult } from "@bob/contracts/d
 import { OwnerSettingsUpdate } from "@bob/contracts/settings"
 import { ToolCommand } from "@bob/contracts/tools"
 import { MemoryCandidateCorrection } from "@bob/contracts/ui/core"
+import { makeCloudflareJobPublisher } from "@bob/job-queue/cloudflare"
 import { featureForToolName } from "@bob/observability/attribution"
 import { recordDecision, withBobSpan, type BobSpan } from "@bob/observability/effect"
 import { observeHealth } from "@bob/observability/events"
@@ -26,7 +27,6 @@ import {
 } from "../modules/policy/access.ts"
 
 async function wakeSettledConversationRun(
-  bindings: CoreBindings,
   composition: ReturnType<typeof composeCore>,
   runId: string
 ): Promise<void> {
@@ -35,10 +35,9 @@ async function wakeSettledConversationRun(
     if (activity.status === "active") return
     const released = await composition.services.turns.releaseSettlingForRun(runId)
     if (released === undefined) return
-    const coordinators = bindings.OWNER_RUN_COORDINATOR.jurisdiction("eu")
-    await coordinators
-      .get(coordinators.idFromName(released.ownerId))
-      .fetch("https://coordinator.internal/wake", { method: "POST" })
+    await (composition.runCoordinator ?? composition.ownerRunCoordinator).wake({
+      ownerId: released.ownerId
+    })
   } catch {
     // The released turn remains recoverable after a lost live wake-up.
   }
@@ -187,7 +186,7 @@ export async function handleHttp(
   const runTelemetry = telemetry?.runPromise ?? Effect.runPromise
   const url = new URL(request.url)
   if (request.method === "GET" && url.pathname === "/health") {
-    return json({ healthy: true, service: "core", version: 1 })
+    return json({ healthy: true, service: "core-runtime", version: 1 })
   }
 
   if (url.pathname === "/api/auth" || url.pathname.startsWith("/api/auth/")) {
@@ -223,11 +222,20 @@ export async function handleHttp(
       return json({ code: "unauthorized" }, 401)
     }
   } else {
+    if (bindings.ASSETS !== undefined) return bindings.ASSETS.fetch(request)
     return json({ code: "not_found" }, 404)
   }
 
   try {
     const composition = compose(bindings)
+    const inboundJobs =
+      composition.jobQueue?.inbound ??
+      composition.jobs?.inbound ??
+      makeCloudflareJobPublisher(bindings.INBOUND_QUEUE)
+    const outboundJobs =
+      composition.jobQueue?.outbound ??
+      composition.jobs?.outbound ??
+      makeCloudflareJobPublisher(bindings.OUTBOUND_QUEUE)
 
     if (request.method === "GET" && url.pathname === "/internal/readiness") {
       const result = await bindings.DB.prepare("SELECT 1 AS ready").first<{ ready: number }>()
@@ -297,7 +305,7 @@ export async function handleHttp(
         )
       )
       await publishDeliveryFollowups(
-        bindings,
+        outboundJobs,
         composition.services.delivery,
         readyFollowups,
         event.correlationId
@@ -378,7 +386,7 @@ export async function handleHttp(
         )
       )
       await publishDeliveryFollowups(
-        bindings,
+        outboundJobs,
         composition.services.delivery,
         readyFollowups,
         result.correlationId ?? result.outboxId
@@ -426,7 +434,7 @@ export async function handleHttp(
                     outcome: result.ok ? "allowed" : "denied"
                   })
                   yield* promiseEffect(async () => {
-                    await wakeSettledConversationRun(bindings, composition, command.runId)
+                    await wakeSettledConversationRun(composition, command.runId)
                   })
                   return result
                 })
@@ -516,7 +524,7 @@ export async function handleHttp(
           4
         )
         if (decision === "recover") {
-          await bindings.INBOUND_QUEUE.send({ eventId: alert.objectId })
+          await inboundJobs.publish({ eventId: alert.objectId })
           await composition.services.conversations.markEnqueued(
             alert.objectId,
             new Date().toISOString()
@@ -535,7 +543,7 @@ export async function handleHttp(
           4
         )
         if (decision.status === "recover") {
-          await bindings.OUTBOUND_QUEUE.send({
+          await outboundJobs.publish({
             outboxId: alert.objectId,
             dispatchGeneration: decision.dispatchGeneration
           })
@@ -564,7 +572,7 @@ export async function handleHttp(
           const target = await composition.services.delivery.reconciliationTarget(alert.objectId)
           if (target !== undefined) {
             const response = await fetch(
-              `${composition.config.SENDBLUE_EGRESS_URL}/internal/delivery-reconciliation`,
+              `${composition.config.CHANNEL_EGRESS_URL}/internal/delivery-reconciliation`,
               {
                 method: "POST",
                 headers: {
@@ -684,9 +692,6 @@ export async function handleHttp(
     if (request.method === "POST" && url.pathname === "/internal/agent/result") {
       Schema.decodeUnknownSync(AgentRunResult)(await readJson(request))
       return json({ ok: true })
-    }
-    if (bindings.ASSETS !== undefined && !url.pathname.startsWith("/internal/")) {
-      return bindings.ASSETS.fetch(request)
     }
     return json({ code: "not_found" }, 404)
   } catch (error) {

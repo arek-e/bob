@@ -27,5 +27,8 @@ Git history keeps removed plans and superseded implementation details.
 | [0017](0017-static-runtime-profile-adapters.md)               | Use static runtime profile Adapters                          | Accepted                  |
 | [0018](0018-separate-source-and-promotion-history.md)         | Separate Runtime source and promotion history                | Accepted                  |
 | [0019](0019-use-coolify-promotion-for-the-current-runtime.md) | Use Coolify promotion for the current Runtime                | Accepted                  |
+| [0020](0020-durable-agent-run-operations.md)                  | Checkpoint completed Agent run operations                    | Accepted                  |
+| [0021](0021-provider-neutral-runtime-interfaces.md)           | Use provider-neutral runtime systems and Interfaces          | Accepted                  |
+| [0022](0022-group-channel-adapter-entrypoints.md)             | Group Sendblue entrypoints in one app                        | Accepted                  |
 
 ADR 0009 does not define managed orchestration. ADRs 0013 through 0015 own that design.

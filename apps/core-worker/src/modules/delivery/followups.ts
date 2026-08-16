@@ -1,16 +1,16 @@
 import type { OutboundJob } from "@bob/contracts/jobs"
+import type { JobPublisher } from "@bob/job-queue"
 
-import type { CoreBindings } from "../../bindings.ts"
 import type { DeliveryStore } from "./store.ts"
 
 export async function publishDeliveryFollowups(
-  bindings: CoreBindings,
+  publisher: JobPublisher<OutboundJob>,
   delivery: DeliveryStore,
   outboxIds: readonly string[],
   correlationId: string
 ): Promise<void> {
   for (const outboxId of outboxIds) {
-    await bindings.OUTBOUND_QUEUE.send({
+    await publisher.publish({
       outboxId,
       dispatchGeneration: 0,
       correlationId

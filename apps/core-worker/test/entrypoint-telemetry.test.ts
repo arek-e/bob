@@ -201,7 +201,7 @@ describe("Core telemetry composition", () => {
     const composition = testFixture<CoreComposition>({ services: { turns } })
     const waits = makeWaitUntilHarness()
     const capture = makeCaptureTelemetry({
-      serviceName: "bob-core-worker",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
@@ -308,7 +308,7 @@ describe("Core telemetry composition", () => {
       })
     )
     const capture = makeCaptureTelemetry({
-      serviceName: "bob-core-worker",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
@@ -392,7 +392,7 @@ describe("Core telemetry composition", () => {
     const secondCorrelationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db98"
     const occurrenceId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db99"
     const capture = makeCaptureTelemetry({
-      serviceName: "bob-core-worker",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
