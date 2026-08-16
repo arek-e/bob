@@ -81,7 +81,7 @@ describe("Runtime release boundary", () => {
 
     expect(deployment).toContain("protected `Release Runtime` workflow")
     expect(deployment).toContain("Coolify records the deployment")
-    expect(deployment).toContain("restores the prior image pins")
+    expect(deployment).toContain("restores the prior source and image pins")
     expect(deployment).toContain("`teampitch-ops` OpenTofu owns")
     expect(deployment).toContain("Do not apply Runtime Alchemy in production")
   })

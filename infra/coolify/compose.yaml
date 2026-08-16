@@ -250,7 +250,7 @@ services:
   backup-runner:
     <<: *runtime-security
     image: ghcr.io/arek-e/bob-data-backup@${BOB_BACKUP_IMAGE_DIGEST:?}
-    command: [sh, -c, "trap 'exit 0' TERM INT; while :; do sleep 86400; done"]
+    command: [sh, -c, "trap 'exit 0' TERM INT; while :; do sleep 60 & wait $!; done"]
     environment:
       BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:?}
       BACKUP_COPY_ACCESS_KEY_ID: ${BACKUP_COPY_ACCESS_KEY_ID:?}

@@ -53,6 +53,8 @@ describe("Coolify production stack", () => {
     expect(compose).toContain("external: true")
     expect(compose).toContain("bob-backups:/backups")
     expect(compose).toContain("Date.now()-newest>18000000")
+    expect(compose).toContain("while :; do sleep 60 & wait $!; done")
+    expect(compose).not.toContain("sleep 86400")
     expect(model.services.agent.read_only).toBe(true)
     expect(model.services["agent-secret-init"].read_only).not.toBe(true)
     expect(model.services["agent-secret-init"].user).toBe("0:0")
