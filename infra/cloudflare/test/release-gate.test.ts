@@ -24,6 +24,8 @@ describe("Runtime release boundary", () => {
     expect(release).toContain("environment: production")
     expect(release).toContain("BAO_JWT_ROLE_AUTO_RELEASE")
     expect(release).toContain("tailscale/github-action")
+    expect(release).toContain("COOLIFY_HOST_ADDRESS")
+    expect(release).toContain("sudo tee -a /etc/hosts")
     expect(release).toContain("COOLIFY_RUNTIME_APPLICATION_UUID")
     expect(release).not.toContain("CONTROL_PLANE_URL")
   })
