@@ -1225,7 +1225,7 @@ export async function processInbound(
         if (retry.status === "released") {
           if (conversationTurn !== undefined) {
             yield* wakeConversationTurn(
-              bindings,
+              composition,
               retry.wakeAt === undefined
                 ? { ownerId: conversationTurn.ownerId }
                 : { ownerId: conversationTurn.ownerId, wakeAt: retry.wakeAt }
