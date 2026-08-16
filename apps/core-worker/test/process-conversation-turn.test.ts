@@ -392,6 +392,111 @@ describe("conversation turn processing", () => {
     ).toBe(true)
   })
 
+  it("releases a transient Agent failure for checkpoint replay", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 503 }))
+    )
+    const releaseForRetry = vi.fn(async () => ({
+      status: "released" as const,
+      wakeAt: "2026-08-12T10:00:00.000Z"
+    }))
+    const completeWithResponse = vi.fn()
+    // SAFETY: This focused test double implements every platform member exercised by this test.
+    const composition = testFixture<CoreComposition>({
+      config: {
+        AGENT_URL: "https://agent.example.invalid",
+        AGENT_ACCESS_CLIENT_ID: "client",
+        AGENT_ACCESS_CLIENT_SECRET: "secret",
+        BOB_MODEL: "gpt-test",
+        BOB_RUN_TOKEN_BUDGET: 32_000,
+        BOB_DAILY_TOKEN_BUDGET: 250_000
+      },
+      database: {},
+      services: {
+        events: { emit: vi.fn(async () => undefined) },
+        conversations: { claimReaction: vi.fn(async () => false) },
+        turns: {
+          markRunning: vi.fn(async () => true),
+          currentRevision: vi.fn(async () => 2)
+        },
+        training: { stopActiveForSafety: vi.fn() },
+        journal: { createHandoff: vi.fn() },
+        reminders: { applyBoundReply: vi.fn() },
+        settings: {
+          get: vi.fn(async () => ({
+            timeZone: "Europe/Stockholm",
+            locale: "en",
+            hourCycle: "h23"
+          }))
+        },
+        context: { build: vi.fn(async () => []) },
+        runs: {
+          loadForInbound: vi.fn(async () => undefined),
+          loadForTurn: vi.fn(async () => undefined),
+          create: vi.fn(async (request: { runId: string }) => ({
+            runId: request.runId,
+            duplicate: false
+          })),
+          claim: vi.fn(async () => attemptId),
+          releaseForRetry,
+          completeWithResponse
+        },
+        alerts: { record: vi.fn(async () => undefined) }
+      }
+    })
+    const snapshot: ConversationTurnSnapshot = {
+      turnId,
+      ownerId,
+      channelId,
+      revision: 2,
+      claimExpiresAt,
+      latest: {
+        eventId: latestEventId,
+        messageId: latestMessageId,
+        text: "List",
+        ordinal: 2,
+        providerMessageHandle: "provider-latest",
+        service: "sms",
+        isGroup: false,
+        correlationId,
+        number: "+46700000000",
+        fromNumber: "+46711111111"
+      },
+      messages: [
+        { eventId: firstEventId, messageId: firstMessageId, text: "Lost my reminders", ordinal: 1 },
+        { eventId: latestEventId, messageId: latestMessageId, text: "List", ordinal: 2 }
+      ]
+    }
+    const wake = vi.fn(async () => new Response(null, { status: 200 }))
+    const jurisdiction = {
+      idFromName: vi.fn(() => ({ toString: () => ownerId })),
+      get: vi.fn(() => ({ fetch: wake }))
+    }
+
+    await processConversationTurn(
+      snapshot,
+      // SAFETY: This focused test double implements every platform member exercised by this test.
+      testFixture<CoreBindings>({
+        OWNER_RUN_COORDINATOR: { jurisdiction: vi.fn(() => jurisdiction) }
+      }),
+      composition
+    )
+
+    expect(releaseForRetry).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed", errorCode: "provider" }),
+      attemptId,
+      3,
+      30_000,
+      { conversationTurnId: turnId, conversationTurnRevision: 2 }
+    )
+    expect(wake).toHaveBeenCalledWith(
+      new URL("https://coordinator.internal/wake?at=2026-08-12T10%3A00%3A00.000Z"),
+      { method: "POST" }
+    )
+    expect(completeWithResponse).not.toHaveBeenCalled()
+  })
+
   it("suppresses a stale attempt before it reaches the agent host", async () => {
     const invoke = vi.fn()
     vi.stubGlobal("fetch", invoke)

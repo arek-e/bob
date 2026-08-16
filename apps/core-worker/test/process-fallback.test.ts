@@ -76,6 +76,7 @@ describe("core model failure fallback", () => {
             duplicate: false
           })),
           claim: vi.fn(async () => attemptId),
+          releaseForRetry: vi.fn(async () => ({ status: "exhausted" as const })),
           completeWithResponse
         },
         tools: { execute: toolExecute },

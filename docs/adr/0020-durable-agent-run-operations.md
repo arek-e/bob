@@ -54,6 +54,14 @@ Include one explicit loop version in each operation. Reject unsupported versions
 On retry, rebuild the Pi model context from the immutable Agent run input and the ordered operation
 log. Restore usage counters, Tool evidence, and the next incomplete Tool call.
 
+Treat provider, timeout, and checkpoint availability failures as retryable when no mutation needs
+recovery. Release the attempt and the current conversation revision in one D1 batch. Retry the same
+run from its operation log after 30 seconds. Stop after three Agent run attempts and return the normal
+bounded failure response.
+
+Keep authentication, quota, policy, invalid output, and owner steering results terminal. Let mutation
+recovery take priority over Agent run retry.
+
 Do not repeat a checkpointed model call.
 
 The Tool Executor remains authoritative for Tool idempotency and external action outcomes. A replayed
@@ -99,3 +107,5 @@ Plan artifacts stay independent from workflow execution state.
 10. Operation payloads are encrypted at rest.
 11. Logs and traces contain no operation payload content.
 12. A checkpointed final result returns without another model call.
+13. A transient Agent host failure retries the same run without a terminal reply.
+14. Retry exhaustion produces one terminal failure response.

@@ -511,6 +511,13 @@ function failedAgentResult(
   }
 }
 
+function isRetryableAgentResult(result: AgentRunResult): boolean {
+  return (
+    result.status !== "completed" &&
+    (result.errorCode === "provider" || result.errorCode === "timeout")
+  )
+}
+
 function cancelledAgentResult(request: AgentRunRequest, model: string): AgentRunResult {
   return {
     protocolVersion: 1,
@@ -1145,6 +1152,72 @@ export async function processInbound(
           Effect.succeed(failedAgentResult(agentRequest, composition.config.BOB_MODEL, error))
         )
       )
+      let mutationActivity = yield* promiseEffect(
+        () =>
+          composition.services.tools?.mutationActivity?.(agentRequest.runId) ?? { status: "none" }
+      )
+      let mutationCompletedDuringRecovery = false
+      if (
+        mutationActivity.status === "active" &&
+        mutationActivity.recoveryRequired &&
+        agentRequest.conversationTurnRevision !== undefined &&
+        (mutationActivity.recoveryExhausted ||
+          (mutationActivity.originRevision !== undefined &&
+            agentRequest.conversationTurnRevision > mutationActivity.originRevision))
+      ) {
+        const expired = yield* promiseEffect(() =>
+          composition.services.tools.expireMutationRecovery(agentRequest.runId)
+        )
+        mutationActivity = yield* promiseEffect(() =>
+          composition.services.tools.mutationActivity(agentRequest.runId)
+        )
+        mutationCompletedDuringRecovery = mutationActivity.status === "completed"
+        if (expired && mutationActivity.status === "none") {
+          result = unknownMutationAgentResult(agentRequest, composition.config.BOB_MODEL)
+        }
+      }
+      if (mutationActivity.status === "unknown") {
+        result = unknownMutationAgentResult(agentRequest, composition.config.BOB_MODEL)
+      }
+      if (mutationActivity.status === "none" && isRetryableAgentResult(result)) {
+        const retry = yield* promiseEffect(() =>
+          composition.services.runs.releaseForRetry(
+            result,
+            runAttemptId,
+            conversationTiming.maxAgentRunAttempts,
+            conversationTiming.agentRunRetryDelayMs,
+            conversationTurn === undefined
+              ? undefined
+              : {
+                  conversationTurnId: conversationTurn.turnId,
+                  conversationTurnRevision: conversationTurn.revision
+                }
+          )
+        )
+        yield* recordDecision({
+          name: "bob.decision.idempotency",
+          code:
+            retry.status === "released"
+              ? "allowed"
+              : retry.status === "exhausted"
+                ? "limit"
+                : "in_progress",
+          outcome: retry.status === "released" ? "allowed" : "skipped"
+        })
+        if (retry.status === "lost") return
+        if (retry.status === "released") {
+          if (conversationTurn !== undefined) {
+            yield* wakeConversationTurn(
+              bindings,
+              retry.wakeAt === undefined
+                ? { ownerId: conversationTurn.ownerId }
+                : { ownerId: conversationTurn.ownerId, wakeAt: retry.wakeAt }
+            )
+            return
+          }
+          return yield* Effect.fail(new AgentCallError(result.errorCode ?? "provider"))
+        }
+      }
       yield* promiseEffect(() =>
         reportAgentUsage(
           composition.database,
@@ -1173,33 +1246,6 @@ export async function processInbound(
       yield* promiseEffect(() =>
         reportAgentFailure(composition.services.alerts, claimed.ownerId, result)
       )
-      let mutationActivity = yield* promiseEffect(
-        () =>
-          composition.services.tools?.mutationActivity?.(agentRequest.runId) ?? { status: "none" }
-      )
-      let mutationCompletedDuringRecovery = false
-      if (
-        mutationActivity.status === "active" &&
-        mutationActivity.recoveryRequired &&
-        agentRequest.conversationTurnRevision !== undefined &&
-        (mutationActivity.recoveryExhausted ||
-          (mutationActivity.originRevision !== undefined &&
-            agentRequest.conversationTurnRevision > mutationActivity.originRevision))
-      ) {
-        const expired = yield* promiseEffect(() =>
-          composition.services.tools.expireMutationRecovery(agentRequest.runId)
-        )
-        mutationActivity = yield* promiseEffect(() =>
-          composition.services.tools.mutationActivity(agentRequest.runId)
-        )
-        mutationCompletedDuringRecovery = mutationActivity.status === "completed"
-        if (expired && mutationActivity.status === "none") {
-          result = unknownMutationAgentResult(agentRequest, composition.config.BOB_MODEL)
-        }
-      }
-      if (mutationActivity.status === "unknown") {
-        result = unknownMutationAgentResult(agentRequest, composition.config.BOB_MODEL)
-      }
       const receiptBackedRun =
         agentRequest.priorToolReceipts?.some((receipt) => receipt.origin === "same_turn") === true
       if (

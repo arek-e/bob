@@ -143,6 +143,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - The latest message in a conversation-turn revision is its response target.
 - A receipt-backed reflection can add one internal revision without a new message.
 - The run attempt and reflection revision change in one D1 batch.
+- A transient Agent host failure releases the same run revision for bounded checkpoint replay.
 - Only the current turn revision can commit and deliver its reply.
 - The core Worker enforces cross-capability invariants. Each Capability Module enforces its own invariants.
 - Every agent run in one deployment profile receives the same reviewed capability catalogue.
