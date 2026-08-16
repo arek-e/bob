@@ -1,7 +1,7 @@
 # Bob context
 
 Status: product and architecture context  
-Updated: 2026-08-16
+Updated: 2026-08-17
 
 ## Product
 
@@ -54,17 +54,17 @@ The authority model follows these rules:
 These names describe responsibilities. They are stable across deployment providers.
 Provider names appear only in Runtime Adapter details, configuration, and implementation notes.
 
-| System              | Responsibility                                                         | Runtime Adapter examples                     |
-| ------------------- | ---------------------------------------------------------------------- | -------------------------------------------- |
-| Core Runtime        | Serves the API and UI. Owns core conversation and workflow invariants. | Node process                                 |
-| Agent Runtime       | Runs the bounded model and Tool loop.                                  | Compose Adapter: Node process                |
-| Channel Runtime     | Receives normalized events and sends replies.                          | Sendblue Adapter; Compose Adapter: HTTP host |
-| Job Queue           | Publishes durable work and tracks attempts.                            | BullMQ over Redis                            |
-| Application Storage | Stores durable relational records and atomic changes.                  | PostgreSQL with Drizzle ORM                  |
-| Object Storage      | Stores private objects outside relational records.                     | Filesystem or S3                             |
-| Run Coordinator     | Serializes owner runs and schedules delayed wakes.                     | Redis-backed delayed jobs                    |
-| Scheduler           | Starts periodic maintenance and recovery work.                         | Node interval                                |
-| Observability       | Exports content-free health, metrics, logs, and traces.                | OpenTelemetry Collector                      |
+| System                 | Responsibility                                                         | Runtime Adapter examples                     |
+| ---------------------- | ---------------------------------------------------------------------- | -------------------------------------------- |
+| Core Runtime           | Serves the API and UI. Owns core conversation and workflow invariants. | Node process                                 |
+| Agent Worker           | Runs the bounded model and Tool loop.                                  | Compose Adapter: Node process                |
+| Channel Runtime        | Receives normalized events and sends replies.                          | Sendblue Adapter; Compose Adapter: HTTP host |
+| Job Queue              | Publishes durable work and tracks attempts.                            | BullMQ over Redis                            |
+| Database               | Stores durable relational records and atomic changes.                  | PostgreSQL with Drizzle ORM                  |
+| Object Storage         | Stores private objects outside relational records.                     | Filesystem or S3                             |
+| Owner Run Coordination | Accepts owner turns and schedules delayed wakes.                       | Core Runtime with Redis-backed delayed jobs  |
+| Scheduler              | Starts periodic maintenance and recovery work.                         | Node interval                                |
+| Observability          | Exports content-free health, metrics, logs, and traces.                | OpenTelemetry Collector                      |
 
 The Core Runtime composes these systems through provider-neutral Interfaces.
 One deployment selects one Adapter for each system.
@@ -76,6 +76,26 @@ The root `compose.yaml` is the primary portable deployment profile.
 
 Infrastructure as code lives in `iac`. Each top-level directory names its deployment system.
 Each runnable app owns its Dockerfile.
+
+Package projects follow the system map:
+
+- `packages/domains/<domain>/types` owns one domain Module's public Interface and validation schemas.
+- `packages/domains/<domain>/service` owns that domain Module's rules, queries, workflows, and Adapters.
+- `packages/core/<module>/types` owns one General Agent Core Module's public Interface.
+- `packages/core/<module>/service` owns that General Agent Core Module's Implementation.
+- `packages/<runtime-system>/types` owns one provider-neutral Runtime Interface.
+- `packages/<runtime-system>/runtime` owns the reviewed Runtime Adapters for that Interface.
+- `packages/db/types` owns the Database Interface.
+- `packages/db/service` owns Drizzle schemas, migrations, and the PostgreSQL Adapter.
+- `packages/agent/types` owns the provider-neutral Agent Interface and credential schemas.
+- `packages/agent/service` owns the model loop and reviewed Model SDK Adapters.
+- `apps/agent-worker` composes the Agent Module with one model SDK and credential Adapter.
+- A `runtime` project can depend on its matching `types` project. A `types` project never depends on
+  its matching `runtime` project.
+- The Database `service` project can depend on `db/types`. The Database Interface never depends on
+  `db/service`.
+- Model SDK types stay inside `packages/agent/service` and `apps/agent-worker`.
+- Core uses only `packages/agent/types` contracts.
 
 ## Non-goals
 
@@ -100,12 +120,12 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Channel event:** One normalized provider event from a Channel Adapter.
 - **Conversation:** Ordered messages for one owner and channel session.
 - **Conversation turn:** One revisioned message burst with one latest response target.
-- **Agent run:** One bounded Bob-owned Pi turn over an immutable input snapshot.
+- **Agent run:** One bounded Bob-owned model and Tool loop over an immutable input snapshot.
 - **External action attempt:** One durable attempt to change state or call an external system.
 - **Context pack:** Confirmed and policy-cleared data supplied to one agent run.
-- **Tool command:** One typed request from Bob's Pi loop to an owning Capability Module.
+- **Tool command:** One typed request from Bob's Agent loop to an owning Capability Module.
 - **Capability Module:** One statically registered group of Tool definitions, execution Adapters, and safety metadata.
-- **General Agent Core:** Domain-neutral Modules for conversation, the Pi harness, retrieval, memory, planning, policy, action evidence, and delivery.
+- **General Agent Core:** Domain-neutral Modules for conversation, the Agent harness, retrieval, memory, planning, policy, action evidence, and delivery.
 - **Vertical Module:** One optional domain-owned set of capability, Context source, workflow, storage, route, and schedule Implementations.
 - **Deployment profile:** One reviewed, immutable composition of the core profile and Vertical Modules for a release.
 - **Core profile:** The minimum deployment profile. It contains the General Agent Core and no Vertical Module.
@@ -148,31 +168,34 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Managed Channel Router:** The application data-plane Module that maps an authorized sender to one Bob Instance.
 - **Staged channel event:** One durable authorized event that waits for its Bob Instance to become ready.
 - **Job Queue:** Durable job publication and attempts behind a provider-neutral Interface.
-- **Application Storage:** Durable relational records and atomic changes behind a provider-neutral Interface.
+- **Database:** Durable relational records and atomic changes behind a provider-neutral Interface.
 - **Object Storage:** Private objects behind a provider-neutral Interface.
-- **Run Coordinator:** Owner-run ordering and delayed wake coordination behind a provider-neutral Interface.
+- **Owner Run Coordination:** Core Runtime behavior that accepts owner turns and schedules durable wakes.
 - **Scheduler:** Periodic work and recovery triggers behind a provider-neutral Interface.
 - **Runtime Adapter:** One hosting-specific Implementation of a Runtime Interface.
 
 ## System invariants
 
-- Application Storage is authoritative for application records. The primary Runtime uses PostgreSQL.
-- `packages/db` owns all Drizzle schemas, the PostgreSQL connection, migrations, and Better Auth storage.
+- Database is authoritative for application records. The primary Runtime uses PostgreSQL.
+- The Database `service` project owns all Drizzle schemas, the PostgreSQL connection,
+  the migration registry, and Better Auth storage.
+- Each owning domain or General Agent Core Module owns its Drizzle queries.
 - Better Auth owns the `auth_user`, `auth_session`, `auth_account`, `auth_verification`, and `auth_rate_limit` tables.
 - A one-time setup token protects owner setup in the primary Runtime.
 - Better Auth sessions protect owner API routes.
 - The owner record is authoritative for live locality settings.
 - A locality change affects new requests. An installed scheduling Module keeps saved schedules stable.
-- Run Coordinator coordinates run order and installed scheduled wake-ups through Redis jobs.
-- Run Coordinator state is not authoritative application data.
-- Bob's Pi loop owns the single model and tool loop policy.
-- Pi permanently owns provider streaming, model normalization, and OAuth support.
+- Core Runtime coordinates owner-turn acceptance and scheduled wake-ups through Redis jobs.
+- Database turn state is authoritative. Wake jobs are recoverable processing triggers.
+- Bob's Agent Module owns the single model and Tool loop policy.
+- The selected Model SDK Adapter owns provider streaming and model normalization.
+- The Agent Worker owns provider credential storage and authentication composition.
 - One agent run uses one immutable context pack.
 - One agent run uses one immutable conversation-turn revision.
 - The latest message in a conversation-turn revision is its response target.
 - A receipt-backed reflection can add one internal revision without a new message.
-- The run attempt and reflection revision change in one atomic Application Storage operation.
-- A transient Agent Runtime failure releases the same run revision for bounded checkpoint replay.
+- The run attempt and reflection revision change in one atomic Database operation.
+- A transient Agent Worker failure releases the same run revision for bounded checkpoint replay.
 - Only the current turn revision can commit and deliver its reply.
 - The Core Runtime enforces cross-capability invariants. Each Capability Module enforces its own invariants.
 - Every agent run in one deployment profile receives the same reviewed capability catalogue.
@@ -198,7 +221,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - One Bob Instance uses one authoritative Runtime Adapter set at a time.
 - The Connections Gateway derives Instance scope from verified Instance identity.
 - The Connections Gateway namespaces every Nango owner reference with the Bob Instance ID.
-- The Sendblue modules never receive Pi OAuth credentials.
+- The Sendblue modules never receive model-provider credentials.
 - OpenBao is authoritative for production configuration and credentials.
 - Varlock defines and validates each runnable workspace's environment surface.
 - Varlock resolves approved OpenBao values without owning them.
@@ -208,14 +231,15 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - No runtime resource has two infrastructure owners.
 - Health observation is read-only, content-free, validated, and fail-open.
 - Effect composes I/O. Pure domain rules stay as normal TypeScript.
-- Drizzle owns application schemas and queries. Better Auth uses the selected Application Storage Adapter for auth tables.
-- Drizzle schemas and queries stay with their owning domain modules.
-- Each Application Storage Adapter preserves the reviewed atomic-write behavior.
+- Drizzle owns application schemas and queries. Better Auth uses the selected Database Adapter for auth tables.
+- Drizzle schemas stay in the Database `service` project.
+- Drizzle queries stay with their owning domain or General Agent Core Modules.
+- Each Database Adapter preserves the reviewed atomic-write behavior.
 - Every mutating tool uses database idempotency.
-- Deterministic channel commands run outside Pi.
+- Deterministic channel commands run outside the Agent loop.
 - Only confirmed and model-eligible facts enter context packs.
 - Each recalled personal fact includes a source label.
-- Raw private records from an installed journal Module do not enter Pi.
+- Raw private records from an installed journal Module do not enter the Agent loop.
 - Recent conversation context contains only bounded delivered same-channel turns.
 - An installed private-record Module can exclude its turns from recent conversation context.
 - Memory extraction creates candidates. It never confirms them.
@@ -223,6 +247,6 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Installed scheduling workflows run outside the model.
 - Delivery does not imply acknowledgment or completion.
 - A provider timeout does not cause an automatic duplicate send.
-- A delivery claim and its first attempt enter Application Storage in one atomic operation.
+- A delivery claim and its first attempt enter Database in one atomic operation.
 - An exhausted outbound queue item gets a bounded recovery decision.
 - One scheduled recovery failure does not stop unrelated recovery work.

@@ -1,4 +1,4 @@
-import type { DeliveryResult } from "@bob/contracts/delivery"
+import type { DeliveryResult } from "@bob/core-types/delivery"
 
 import type { RuntimeFetcher, RuntimeQueue } from "../../src/runtime.ts"
 

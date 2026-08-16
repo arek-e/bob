@@ -1,6 +1,5 @@
+import { degradedRecall } from "@bob/core-service/policy/degraded-recall"
 import { describe, expect, it } from "vitest"
-
-import { degradedRecall } from "../src/modules/policy/degraded-recall.ts"
 
 describe("deterministic degraded recall", () => {
   it("answers a recall question from one approved context item", () => {

@@ -1,18 +1,17 @@
-import { describe, expect, it } from "vitest"
-
 import type {
   RankedRetrievalCandidate,
   RankedRetrievalUnit,
   RetrievalCandidate
-} from "../src/modules/retrieval/rules.ts"
+} from "@bob/core-service/retrieval/rules"
 
-import { retrievalProjection } from "../src/modules/retrieval/projection.ts"
+import { retrievalProjection } from "@bob/core-service/retrieval/projection"
 import {
   analyzeRetrievalQuery,
   boundRetrievalReading,
   buildFtsQuery,
   selectRelevantCandidates
-} from "../src/modules/retrieval/rules.ts"
+} from "@bob/core-service/retrieval/rules"
+import { describe, expect, it } from "vitest"
 
 const referenceTime = "2026-08-11T10:00:00.000Z"
 const current = { mode: "current", at: referenceTime } as const

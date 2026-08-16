@@ -1,4 +1,4 @@
-import type { InboundJob } from "@bob/contracts/jobs"
+import type { InboundJob } from "@bob/core-types/jobs"
 
 import type { RuntimeFetcher, RuntimeQueue } from "../../src/runtime.ts"
 

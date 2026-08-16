@@ -1,6 +1,5 @@
+import { selectAgentResponse } from "@bob/core-service/policy/agent-response"
 import { describe, expect, it } from "vitest"
-
-import { selectAgentResponse } from "../src/modules/policy/agent-response.ts"
 
 const request = {
   protocolVersion: 1 as const,

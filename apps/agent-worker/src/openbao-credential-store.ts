@@ -1,0 +1,265 @@
+import type {
+  Credential,
+  CredentialInfo,
+  CredentialOperationOptions,
+  CredentialStore
+} from "@bob/agent-types"
+
+import { Schema } from "effect"
+
+const OAuthRecord = Schema.Struct({
+  type: Schema.Literal("oauth"),
+  access: Schema.String,
+  refresh: Schema.String,
+  expires: Schema.Number,
+  accountId: Schema.String
+})
+
+const LoginResponse = Schema.Struct({
+  auth: Schema.Struct({
+    client_token: Schema.String,
+    lease_duration: Schema.Number
+  })
+})
+
+const KvReadResponse = Schema.Struct({
+  data: Schema.Struct({
+    data: OAuthRecord,
+    metadata: Schema.Struct({ version: Schema.Number })
+  })
+})
+
+export class CredentialConflictError extends Schema.TaggedError<CredentialConflictError>()(
+  "CredentialConflictError",
+  { message: Schema.String }
+) {}
+
+export class CredentialStoreError extends Schema.TaggedError<CredentialStoreError>()(
+  "CredentialStoreError",
+  {
+    operation: Schema.Literals(["authenticate", "read", "write", "delete"]),
+    message: Schema.String,
+    status: Schema.optionalKey(Schema.Number)
+  }
+) {}
+
+interface OpenBaoCredentialStoreBaseOptions {
+  readonly address: string
+  readonly mount?: string
+  readonly authMount?: string
+  readonly allowDelete?: boolean
+  readonly fetch?: typeof fetch
+  readonly now?: () => number
+}
+
+interface OpenBaoKubernetesCredentialStoreOptions {
+  readonly authMethod?: "kubernetes"
+  readonly kubernetesRole: string
+  readonly getKubernetesJwt: (signal?: AbortSignal) => Promise<string>
+}
+
+interface OpenBaoAppRoleCredentialStoreOptions {
+  readonly authMethod: "approle"
+  readonly appRoleId: string
+  readonly getAppRoleSecretId: (signal?: AbortSignal) => Promise<string>
+}
+
+export type OpenBaoCredentialStoreOptions = OpenBaoCredentialStoreBaseOptions &
+  (OpenBaoKubernetesCredentialStoreOptions | OpenBaoAppRoleCredentialStoreOptions)
+
+interface VersionedCredential {
+  readonly credential: Credential
+  readonly version: number
+}
+
+function combineSignals(first?: AbortSignal, second?: AbortSignal): AbortSignal | undefined {
+  const signals = [first, second].filter((signal): signal is AbortSignal => signal !== undefined)
+  return signals.length === 0 ? undefined : AbortSignal.any(signals)
+}
+
+export class OpenBaoCredentialStore implements CredentialStore {
+  private readonly request: typeof fetch
+  private readonly mount: string
+  private readonly authMount: string
+  private readonly now: () => number
+  private token?: { value: string; expiresAt: number }
+  private readonly locks = new Map<string, Promise<void>>()
+
+  constructor(private readonly options: OpenBaoCredentialStoreOptions) {
+    this.request = options.fetch ?? fetch
+    this.mount = options.mount ?? "ops"
+    this.authMount = options.authMount ?? options.authMethod ?? "kubernetes"
+    this.now = options.now ?? Date.now
+  }
+
+  private providerPath(providerId: string): string | undefined {
+    if (providerId !== "openai-codex") return undefined
+    return "apps/prod/bob/pi-auth/openai-codex"
+  }
+
+  private async withLock<A>(providerId: string, action: () => Promise<A>): Promise<A> {
+    const previous = this.locks.get(providerId) ?? Promise.resolve()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const current = previous.then(() => gate)
+    this.locks.set(providerId, current)
+    await previous
+    try {
+      return await action()
+    } finally {
+      release()
+      if (this.locks.get(providerId) === current) this.locks.delete(providerId)
+    }
+  }
+
+  private async vaultToken(signal?: AbortSignal): Promise<string> {
+    if (this.token !== undefined && this.token.expiresAt > this.now() + 30_000)
+      return this.token.value
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15_000)
+    try {
+      const body =
+        this.options.authMethod === "approle"
+          ? {
+              role_id: this.options.appRoleId,
+              secret_id: await this.options.getAppRoleSecretId(signal)
+            }
+          : {
+              role: this.options.kubernetesRole,
+              jwt: await this.options.getKubernetesJwt(signal)
+            }
+      const authMethod = this.options.authMethod ?? "kubernetes"
+      const requestSignal = combineSignals(signal, controller.signal)
+      const requestInit: RequestInit = {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body)
+      }
+      if (requestSignal !== undefined) Object.assign(requestInit, { signal: requestSignal })
+      const response = await this.request(
+        `${this.options.address}/v1/auth/${this.authMount}/login`,
+        requestInit
+      )
+      if (!response.ok)
+        throw new CredentialStoreError({
+          operation: "authenticate",
+          message: `OpenBao ${authMethod} authentication failed: ${response.status}`,
+          status: response.status
+        })
+      const login = Schema.decodeUnknownSync(LoginResponse)(await response.json())
+      this.token = {
+        value: login.auth.client_token,
+        expiresAt: this.now() + login.auth.lease_duration * 1_000
+      }
+      return this.token.value
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  private async readVersioned(
+    providerId: string,
+    options?: CredentialOperationOptions
+  ): Promise<VersionedCredential | undefined> {
+    const path = this.providerPath(providerId)
+    if (path === undefined) return undefined
+    const requestInit: RequestInit = {
+      headers: { "X-Vault-Token": await this.vaultToken(options?.signal) }
+    }
+    if (options?.signal !== undefined) Object.assign(requestInit, { signal: options.signal })
+    const response = await this.request(
+      `${this.options.address}/v1/${this.mount}/data/${path}`,
+      requestInit
+    )
+    if (response.status === 404) return undefined
+    if (!response.ok)
+      throw new CredentialStoreError({
+        operation: "read",
+        message: `OpenBao credential read failed: ${response.status}`,
+        status: response.status
+      })
+    const value = Schema.decodeUnknownSync(KvReadResponse)(await response.json())
+    return { credential: value.data.data, version: value.data.metadata.version }
+  }
+
+  async read(
+    providerId: string,
+    options?: CredentialOperationOptions
+  ): Promise<Credential | undefined> {
+    return (await this.readVersioned(providerId, options))?.credential
+  }
+
+  async list(options?: CredentialOperationOptions): Promise<readonly CredentialInfo[]> {
+    const credential = await this.read("openai-codex", options)
+    return credential === undefined ? [] : [{ providerId: "openai-codex", type: credential.type }]
+  }
+
+  async modify(
+    providerId: string,
+    fn: (current: Credential | undefined) => Promise<Credential | undefined>,
+    options?: CredentialOperationOptions
+  ): Promise<Credential | undefined> {
+    const path = this.providerPath(providerId)
+    if (path === undefined) return undefined
+    return this.withLock(providerId, async () => {
+      const current = await this.readVersioned(providerId, options)
+      const next = await fn(current?.credential)
+      if (next === undefined) return current?.credential
+      const validated = Schema.decodeUnknownSync(OAuthRecord)(next)
+      const requestInit: RequestInit = {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-Vault-Token": await this.vaultToken(options?.signal)
+        },
+        body: JSON.stringify({ data: validated, options: { cas: current?.version ?? 0 } })
+      }
+      if (options?.signal !== undefined) Object.assign(requestInit, { signal: options.signal })
+      const response = await this.request(
+        `${this.options.address}/v1/${this.mount}/data/${path}`,
+        requestInit
+      )
+      if (response.status === 400 || response.status === 409) {
+        await this.readVersioned(providerId, options)
+        throw new CredentialConflictError({ message: "A concurrent credential update won" })
+      }
+      if (!response.ok)
+        throw new CredentialStoreError({
+          operation: "write",
+          message: `OpenBao credential write failed: ${response.status}`,
+          status: response.status
+        })
+      return validated
+    })
+  }
+
+  async delete(providerId: string, options?: CredentialOperationOptions): Promise<void> {
+    if (!this.options.allowDelete)
+      throw new CredentialStoreError({
+        operation: "delete",
+        message: "Credential deletion requires administration policy"
+      })
+    const path = this.providerPath(providerId)
+    if (path === undefined) return
+    await this.withLock(providerId, async () => {
+      const requestInit: RequestInit = {
+        method: "DELETE",
+        headers: { "X-Vault-Token": await this.vaultToken(options?.signal) }
+      }
+      if (options?.signal !== undefined) Object.assign(requestInit, { signal: options.signal })
+      const response = await this.request(
+        `${this.options.address}/v1/${this.mount}/metadata/${path}`,
+        requestInit
+      )
+      if (!response.ok && response.status !== 404) {
+        throw new CredentialStoreError({
+          operation: "delete",
+          message: `OpenBao credential deletion failed: ${response.status}`,
+          status: response.status
+        })
+      }
+    })
+  }
+}

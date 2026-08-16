@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "../../packages/db/src/sql.d.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "../../packages/db/service/src/sql.d.ts"]
 }

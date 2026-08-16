@@ -1,0 +1,18 @@
+{
+  "name": "@bob/object-store-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./filesystem": "./src/filesystem.ts",
+    "./s3": "./src/s3.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1101.0",
+    "@bob/object-store-types": "workspace:*"
+  }
+}

@@ -1,6 +1,5 @@
+import { makeConnectionsGatewayClient } from "@bob/connections-service/gateway"
 import { describe, expect, it, vi } from "vitest"
-
-import { makeConnectionsGatewayClient } from "../src/modules/connections/gateway.ts"
 
 describe("Connections Gateway client", () => {
   it("creates an owner-scoped Connect session with Instance credentials", async () => {

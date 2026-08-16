@@ -1,5 +1,3 @@
-import { InboundAcceptance } from "@bob/contracts/channel"
-import { OwnerWakeJob } from "@bob/contracts/jobs"
 import { makeCoreJobConsumerRoutes } from "@bob/core-runtime/job-processors"
 import {
   composeCoreWithRuntime,
@@ -12,11 +10,13 @@ import {
   type CoreBindings,
   type CoreRuntimeAdapters
 } from "@bob/core-runtime/runtime"
-import { connectPostgresqlDatabase } from "@bob/db/postgresql"
-import { decodeJobProcessor, retryJob } from "@bob/job-queue"
-import { makeBullMqJobPublisher } from "@bob/job-queue/bullmq"
-import { startBullMqWorkerHost } from "@bob/job-queue/bullmq-host"
-import { makeFilesystemPrivateObjectStore } from "@bob/object-store/filesystem"
+import { InboundAcceptance } from "@bob/core-types/channel"
+import { OwnerWakeJob } from "@bob/core-types/jobs"
+import { connectPostgresqlDatabase } from "@bob/db-service/postgresql"
+import { makeBullMqJobPublisher } from "@bob/job-queue-runtime/bullmq"
+import { startBullMqWorkerHost } from "@bob/job-queue-runtime/bullmq-host"
+import { decodeJobProcessor, retryJob } from "@bob/job-queue-types"
+import { makeFilesystemPrivateObjectStore } from "@bob/object-store-runtime/filesystem"
 import { nodeEventSink } from "@bob/observability/node"
 import { Queue, type ConnectionOptions } from "bullmq"
 import { Schema } from "effect"
@@ -62,7 +62,7 @@ function applicationStorageErrorQuery(error: Error): string | undefined {
 
 async function main(): Promise<void> {
   const config = readCoreRuntimeConfiguration(process.env)
-  const database = connectPostgresqlDatabase(config.APPLICATION_STORAGE_URL)
+  const database = connectPostgresqlDatabase(config.DATABASE_URL)
   await database.migrate()
   const connection = redisConnection(config.JOB_QUEUE_URL)
   const queueOptions = { connection, prefix: "bob" }

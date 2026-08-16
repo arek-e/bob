@@ -1,0 +1,22 @@
+{
+  "name": "@bob/journal-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/core-capabilities-types": "workspace:*",
+    "@bob/core-service": "workspace:*",
+    "@bob/core-types": "workspace:*",
+    "@bob/db-service": "workspace:*",
+    "@bob/journal-types": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.4",
+    "effect": "4.0.0-beta.107"
+  }
+}

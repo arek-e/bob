@@ -5,7 +5,7 @@ const Environment = Schema.Struct({
     Schema.check(Schema.isBetween({ minimum: 1, maximum: 65_535 }))
   ),
   AUTO_ENQUEUE_INBOUND: Schema.Literals(["true", "false"]),
-  APPLICATION_STORAGE_URL: Schema.URLFromString,
+  DATABASE_URL: Schema.URLFromString,
   JOB_QUEUE_URL: Schema.URLFromString,
   OBJECT_STORAGE_DIRECTORY: Schema.String.check(Schema.isMinLength(1)),
   ASSETS_DIRECTORY: Schema.String.check(Schema.isMinLength(1)),
@@ -38,7 +38,7 @@ export function readCoreRuntimeConfiguration(environment: NodeJS.ProcessEnv) {
   return {
     ...value,
     PORT: value.PORT,
-    APPLICATION_STORAGE_URL: value.APPLICATION_STORAGE_URL.toString(),
+    DATABASE_URL: value.DATABASE_URL.toString(),
     JOB_QUEUE_URL: value.JOB_QUEUE_URL.toString(),
     AGENT_URL: value.AGENT_URL.toString().replace(/\/$/u, ""),
     CHANNEL_EGRESS_URL: value.CHANNEL_EGRESS_URL.toString().replace(/\/$/u, ""),

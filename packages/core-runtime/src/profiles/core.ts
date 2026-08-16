@@ -1,8 +1,7 @@
-import { coreDeploymentProfile } from "@bob/contracts/deployment-profiles/core"
+import { coreDeploymentProfile } from "@bob/core-types/profiles/core"
+import { makeRuntimeModules } from "@bob/core-types/runtime-module"
 
 import type { DeploymentRuntimeProfile } from "./types.ts"
-
-import { makeRuntimeModules } from "../modules/runtime/module.ts"
 
 export const coreRuntimeProfile: DeploymentRuntimeProfile = {
   catalogue: coreDeploymentProfile,

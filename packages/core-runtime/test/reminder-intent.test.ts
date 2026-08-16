@@ -1,9 +1,8 @@
-import { describe, expect, it } from "vitest"
-
 import {
   reminderMutationMatchesRequest,
   type ReminderMutationIntent
-} from "../src/modules/reminders/rules.ts"
+} from "@bob/reminders-service/rules"
+import { describe, expect, it } from "vitest"
 
 describe("reminder mutation intent", () => {
   const affirmative: ReadonlyArray<readonly [ReminderMutationIntent, string, string]> = [

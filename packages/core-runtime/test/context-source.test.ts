@@ -1,10 +1,9 @@
+import type { ContextSourceModule } from "@bob/core-service/context/source"
+
+import { makeContextSourceRegistry } from "@bob/core-service/context/source"
+import { makeContextStore } from "@bob/core-service/context/store"
+import { makeRetrievalContextSource } from "@bob/core-service/retrieval/context-source"
 import { describe, expect, it, vi } from "vitest"
-
-import type { ContextSourceModule } from "../src/modules/context/source.ts"
-
-import { makeContextSourceRegistry } from "../src/modules/context/source.ts"
-import { makeContextStore } from "../src/modules/context/store.ts"
-import { makeRetrievalContextSource } from "../src/modules/retrieval/context-source.ts"
 
 const request = {
   ownerId: "owner",

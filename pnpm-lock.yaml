@@ -39,17 +39,23 @@ importers:
         specifier: 4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
 
-  apps/agent:
+  apps/agent-worker:
     dependencies:
-      '@bob/contracts':
+      '@bob/agent-service':
         specifier: workspace:*
-        version: link:../../packages/contracts
+        version: link:../../packages/agent/service
+      '@bob/agent-types':
+        specifier: workspace:*
+        version: link:../../packages/agent/types
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../packages/core/capabilities/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../packages/core/general/types
       '@bob/observability':
         specifier: workspace:*
         version: link:../../packages/observability
-      '@bob/pi-agent':
-        specifier: workspace:*
-        version: link:../../packages/pi-agent
       '@effect/platform-node':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)(ioredis@5.11.1)
@@ -66,13 +72,19 @@ importers:
 
   apps/channel:
     dependencies:
-      '@bob/contracts':
+      '@bob/core-capabilities-types':
         specifier: workspace:*
-        version: link:../../packages/contracts
-      '@bob/job-queue':
+        version: link:../../packages/core/capabilities/types
+      '@bob/core-types':
         specifier: workspace:*
-        version: link:../../packages/job-queue
-      '@bob/sendblue-runtime':
+        version: link:../../packages/core/general/types
+      '@bob/job-queue-runtime':
+        specifier: workspace:*
+        version: link:../../packages/job-queue/runtime
+      '@bob/job-queue-types':
+        specifier: workspace:*
+        version: link:../../packages/job-queue/types
+      '@bob/sendblue-channel-runtime':
         specifier: workspace:*
         version: link:../../packages/sendblue-channel
       bullmq:
@@ -88,21 +100,30 @@ importers:
 
   apps/core:
     dependencies:
-      '@bob/contracts':
+      '@bob/core-capabilities-types':
         specifier: workspace:*
-        version: link:../../packages/contracts
+        version: link:../../packages/core/capabilities/types
       '@bob/core-runtime':
         specifier: workspace:*
         version: link:../../packages/core-runtime
-      '@bob/db':
+      '@bob/core-types':
         specifier: workspace:*
-        version: link:../../packages/db
-      '@bob/job-queue':
+        version: link:../../packages/core/general/types
+      '@bob/db-service':
         specifier: workspace:*
-        version: link:../../packages/job-queue
-      '@bob/object-store':
+        version: link:../../packages/db/service
+      '@bob/job-queue-runtime':
         specifier: workspace:*
-        version: link:../../packages/object-store
+        version: link:../../packages/job-queue/runtime
+      '@bob/job-queue-types':
+        specifier: workspace:*
+        version: link:../../packages/job-queue/types
+      '@bob/object-store-runtime':
+        specifier: workspace:*
+        version: link:../../packages/object-store/runtime
+      '@bob/object-store-types':
+        specifier: workspace:*
+        version: link:../../packages/object-store/types
       '@bob/observability':
         specifier: workspace:*
         version: link:../../packages/observability
@@ -119,9 +140,12 @@ importers:
 
   apps/ui:
     dependencies:
-      '@bob/contracts':
+      '@bob/core-capabilities-types':
         specifier: workspace:*
-        version: link:../../packages/contracts
+        version: link:../../packages/core/capabilities/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../packages/core/general/types
       '@tanstack/solid-router':
         specifier: 1.170.24
         version: 1.170.24(solid-js@1.9.14)
@@ -157,29 +181,81 @@ importers:
         specifier: 2.11.14
         version: 2.11.14(solid-js@1.9.14)(vite@7.3.6(@types/node@22.18.0)(jiti@2.7.0)(lightningcss@1.33.0)(tsx@4.23.12)(yaml@2.9.0))
 
-  packages/contracts:
+  packages/agent/service:
     dependencies:
+      '@bob/agent-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../core/capabilities/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../core/general/types
+      '@bob/observability':
+        specifier: workspace:*
+        version: link:../../observability
+      '@earendil-works/pi-ai':
+        specifier: 0.84.1
+        version: 0.84.1(ws@8.21.3)(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+    devDependencies:
+      '@effect/vitest':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)(vitest@4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))
+
+  packages/agent/types:
+    dependencies:
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../core/capabilities/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../core/general/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
 
   packages/core-runtime:
     dependencies:
-      '@bob/contracts':
+      '@bob/connections-service':
         specifier: workspace:*
-        version: link:../contracts
-      '@bob/db':
+        version: link:../domains/connections/service
+      '@bob/core-capabilities-types':
         specifier: workspace:*
-        version: link:../db
-      '@bob/job-queue':
+        version: link:../core/capabilities/types
+      '@bob/core-service':
         specifier: workspace:*
-        version: link:../job-queue
-      '@bob/object-store':
+        version: link:../core/general/service
+      '@bob/core-types':
         specifier: workspace:*
-        version: link:../object-store
+        version: link:../core/general/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../db/service
+      '@bob/job-queue-runtime':
+        specifier: workspace:*
+        version: link:../job-queue/runtime
+      '@bob/job-queue-types':
+        specifier: workspace:*
+        version: link:../job-queue/types
+      '@bob/journal-service':
+        specifier: workspace:*
+        version: link:../domains/journal/service
+      '@bob/object-store-types':
+        specifier: workspace:*
+        version: link:../object-store/types
       '@bob/observability':
         specifier: workspace:*
         version: link:../observability
+      '@bob/reminders-service':
+        specifier: workspace:*
+        version: link:../domains/reminders/service
+      '@bob/training-service':
+        specifier: workspace:*
+        version: link:../domains/training/service
       '@js-temporal/polyfill':
         specifier: 0.5.1
         version: 0.5.1
@@ -200,8 +276,77 @@ importers:
         specifier: 4.1.9
         version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.25.9)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
 
-  packages/db:
+  packages/core/capabilities/types:
     dependencies:
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/core/general/service:
+    dependencies:
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../capabilities/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/job-queue-types':
+        specifier: workspace:*
+        version: link:../../../job-queue/types
+      '@bob/observability':
+        specifier: workspace:*
+        version: link:../../../observability
+      '@js-temporal/polyfill':
+        specifier: 0.5.1
+        version: 0.5.1
+      better-auth:
+        specifier: 1.6.26
+        version: 1.6.26(@cloudflare/workers-types@5.20260810.1)(@opentelemetry/api@1.9.0)(@tanstack/solid-start@1.168.41(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(solid-js@1.9.14)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3))(pg@8.23.0)(react@19.2.8)(solid-js@1.9.14)(vitest@4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))
+      drizzle-orm:
+        specifier: 1.0.0-rc.4
+        version: 1.0.0-rc.4(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/core/general/types:
+    dependencies:
+      '@bob/connections-types':
+        specifier: workspace:*
+        version: link:../../../domains/connections/types
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../capabilities/types
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/journal-types':
+        specifier: workspace:*
+        version: link:../../../domains/journal/types
+      '@bob/reminders-types':
+        specifier: workspace:*
+        version: link:../../../domains/reminders/types
+      '@bob/training-types':
+        specifier: workspace:*
+        version: link:../../../domains/training/types
+      better-auth:
+        specifier: 1.6.26
+        version: 1.6.26(@cloudflare/workers-types@5.20260810.1)(@opentelemetry/api@1.9.0)(@tanstack/solid-start@1.168.41(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(solid-js@1.9.14)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3))(pg@8.23.0)(react@19.2.8)(solid-js@1.9.14)(vitest@4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))
+      drizzle-orm:
+        specifier: 1.0.0-rc.4
+        version: 1.0.0-rc.4(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/db/service:
+    dependencies:
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../types
       better-auth:
         specifier: 1.6.26
         version: 1.6.26(@cloudflare/workers-types@5.20260810.1)(@opentelemetry/api@1.9.0)(@tanstack/solid-start@1.168.41(esbuild@0.28.2)(rolldown@1.2.3)(rollup@4.62.4)(solid-js@1.9.14)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(drizzle-kit@1.0.0-rc.4)(drizzle-orm@1.0.0-rc.4(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3))(pg@8.23.0)(react@19.2.8)(solid-js@1.9.14)(vitest@4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))
@@ -216,65 +361,234 @@ importers:
         specifier: 1.0.0-rc.4
         version: 1.0.0-rc.4
 
-  packages/job-queue:
+  packages/db/types:
     dependencies:
+      drizzle-orm:
+        specifier: 1.0.0-rc.4
+        version: 1.0.0-rc.4(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+
+  packages/domains/connections/service:
+    dependencies:
+      '@bob/connections-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../../core/capabilities/types
+      '@bob/core-service':
+        specifier: workspace:*
+        version: link:../../../core/general/service
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../../core/general/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      drizzle-orm:
+        specifier: 1.0.0-rc.4
+        version: 1.0.0-rc.4(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/domains/connections/types:
+    dependencies:
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../../core/capabilities/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/domains/journal/service:
+    dependencies:
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../../core/capabilities/types
+      '@bob/core-service':
+        specifier: workspace:*
+        version: link:../../../core/general/service
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../../core/general/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/journal-types':
+        specifier: workspace:*
+        version: link:../types
+      drizzle-orm:
+        specifier: 1.0.0-rc.4
+        version: 1.0.0-rc.4(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/domains/journal/types:
+    dependencies:
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../../core/capabilities/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/domains/reminders/service:
+    dependencies:
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../../core/capabilities/types
+      '@bob/core-service':
+        specifier: workspace:*
+        version: link:../../../core/general/service
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../../core/general/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/observability':
+        specifier: workspace:*
+        version: link:../../../observability
+      '@bob/reminders-types':
+        specifier: workspace:*
+        version: link:../types
+      '@js-temporal/polyfill':
+        specifier: 0.5.1
+        version: 0.5.1
+      drizzle-orm:
+        specifier: 1.0.0-rc.4
+        version: 1.0.0-rc.4(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/domains/reminders/types:
+    dependencies:
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../../core/capabilities/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/domains/training/service:
+    dependencies:
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../../core/capabilities/types
+      '@bob/core-service':
+        specifier: workspace:*
+        version: link:../../../core/general/service
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../../core/general/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/training-types':
+        specifier: workspace:*
+        version: link:../types
+      drizzle-orm:
+        specifier: 1.0.0-rc.4
+        version: 1.0.0-rc.4(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/domains/training/types:
+    dependencies:
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../../core/capabilities/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/job-queue/runtime:
+    dependencies:
+      '@bob/job-queue-types':
+        specifier: workspace:*
+        version: link:../types
       bullmq:
         specifier: 6.1.2
         version: 6.1.2(ioredis@5.11.1)(pg@8.23.0)
 
-  packages/object-store:
+  packages/job-queue/types: {}
+
+  packages/object-store/runtime:
     dependencies:
       '@aws-sdk/client-s3':
         specifier: 3.1101.0
         version: 3.1101.0
+      '@bob/object-store-types':
+        specifier: workspace:*
+        version: link:../types
+
+  packages/object-store/types: {}
 
   packages/observability:
     dependencies:
-      '@bob/contracts':
+      '@bob/core-capabilities-types':
         specifier: workspace:*
-        version: link:../contracts
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/pi-agent:
-    dependencies:
-      '@bob/contracts':
+        version: link:../core/capabilities/types
+      '@bob/core-types':
         specifier: workspace:*
-        version: link:../contracts
-      '@bob/observability':
-        specifier: workspace:*
-        version: link:../observability
-      '@earendil-works/pi-ai':
-        specifier: 0.84.1
-        version: 0.84.1(ws@8.21.3)(zod@4.4.3)
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/sendblue:
-    dependencies:
-      '@bob/contracts':
-        specifier: workspace:*
-        version: link:../contracts
+        version: link:../core/general/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
 
   packages/sendblue-channel:
     dependencies:
-      '@bob/contracts':
+      '@bob/core-capabilities-types':
         specifier: workspace:*
-        version: link:../contracts
-      '@bob/job-queue':
+        version: link:../core/capabilities/types
+      '@bob/core-types':
         specifier: workspace:*
-        version: link:../job-queue
+        version: link:../core/general/types
+      '@bob/job-queue-runtime':
+        specifier: workspace:*
+        version: link:../job-queue/runtime
+      '@bob/job-queue-types':
+        specifier: workspace:*
+        version: link:../job-queue/types
       '@bob/observability':
         specifier: workspace:*
         version: link:../observability
-      '@bob/sendblue':
+      '@bob/sendblue-runtime':
         specifier: workspace:*
-        version: link:../sendblue
+        version: link:../sendblue/runtime
+      '@bob/sendblue-types':
+        specifier: workspace:*
+        version: link:../sendblue/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/sendblue/runtime:
+    dependencies:
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../core/capabilities/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../core/general/types
+      '@bob/sendblue-types':
+        specifier: workspace:*
+        version: link:../types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/sendblue/types:
+    dependencies:
+      '@bob/core-capabilities-types':
+        specifier: workspace:*
+        version: link:../../core/capabilities/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../core/general/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
@@ -3429,7 +3743,7 @@ snapshots:
       '@aws-crypto/sha256-js': 5.2.0
       '@aws-crypto/supports-web-crypto': 5.2.0
       '@aws-crypto/util': 5.2.0
-      '@aws-sdk/types': 3.974.2
+      '@aws-sdk/types': 3.974.4
       '@aws-sdk/util-locate-window': 3.965.8
       '@smithy/util-utf8': 2.3.0
       tslib: 2.8.1
@@ -3437,7 +3751,7 @@ snapshots:
   '@aws-crypto/sha256-js@5.2.0':
     dependencies:
       '@aws-crypto/util': 5.2.0
-      '@aws-sdk/types': 3.974.2
+      '@aws-sdk/types': 3.974.4
       tslib: 2.8.1
 
   '@aws-crypto/supports-web-crypto@5.2.0':
@@ -3446,7 +3760,7 @@ snapshots:
 
   '@aws-crypto/util@5.2.0':
     dependencies:
-      '@aws-sdk/types': 3.974.2
+      '@aws-sdk/types': 3.974.4
       '@smithy/util-utf8': 2.3.0
       tslib: 2.8.1
 
@@ -3462,27 +3776,27 @@ snapshots:
     dependencies:
       '@aws-crypto/sha256-browser': 5.2.0
       '@aws-crypto/sha256-js': 5.2.0
-      '@aws-sdk/core': 3.977.6
+      '@aws-sdk/core': 3.977.8
       '@aws-sdk/credential-provider-node': 3.972.78
       '@aws-sdk/eventstream-handler-node': 3.972.31
       '@aws-sdk/middleware-eventstream': 3.972.26
       '@aws-sdk/middleware-websocket': 3.972.49
       '@aws-sdk/token-providers': 3.1048.0
-      '@aws-sdk/types': 3.974.2
+      '@aws-sdk/types': 3.974.4
       '@smithy/core': 3.31.1
       '@smithy/fetch-http-handler': 5.6.13
-      '@smithy/node-http-handler': 4.7.3
+      '@smithy/node-http-handler': 4.9.13
       '@smithy/types': 4.16.1
       tslib: 2.8.1
 
   '@aws-sdk/client-s3@3.1101.0':
     dependencies:
       '@aws-sdk/checksums': 3.1000.28
-      '@aws-sdk/core': 3.977.6
+      '@aws-sdk/core': 3.977.8
       '@aws-sdk/credential-provider-node': 3.972.78
       '@aws-sdk/middleware-sdk-s3': 3.972.74
-      '@aws-sdk/signature-v4-multi-region': 3.996.43
-      '@aws-sdk/types': 3.974.2
+      '@aws-sdk/signature-v4-multi-region': 3.996.45
+      '@aws-sdk/types': 3.974.4
       '@smithy/core': 3.31.1
       '@smithy/fetch-http-handler': 5.6.13
       '@smithy/node-http-handler': 4.9.13
@@ -3597,14 +3911,14 @@ snapshots:
 
   '@aws-sdk/eventstream-handler-node@3.972.31':
     dependencies:
-      '@aws-sdk/types': 3.974.2
+      '@aws-sdk/types': 3.974.4
       '@smithy/core': 3.31.1
       '@smithy/types': 4.16.1
       tslib: 2.8.1
 
   '@aws-sdk/middleware-eventstream@3.972.26':
     dependencies:
-      '@aws-sdk/types': 3.974.2
+      '@aws-sdk/types': 3.974.4
       '@smithy/core': 3.31.1
       '@smithy/types': 4.16.1
       tslib: 2.8.1
@@ -3620,8 +3934,8 @@ snapshots:
 
   '@aws-sdk/middleware-websocket@3.972.49':
     dependencies:
-      '@aws-sdk/core': 3.977.6
-      '@aws-sdk/types': 3.974.2
+      '@aws-sdk/core': 3.977.8
+      '@aws-sdk/types': 3.974.4
       '@smithy/core': 3.31.1
       '@smithy/fetch-http-handler': 5.6.13
       '@smithy/signature-v4': 5.6.12
@@ -3655,9 +3969,9 @@ snapshots:
 
   '@aws-sdk/token-providers@3.1048.0':
     dependencies:
-      '@aws-sdk/core': 3.977.6
+      '@aws-sdk/core': 3.977.8
       '@aws-sdk/nested-clients': 3.997.41
-      '@aws-sdk/types': 3.974.2
+      '@aws-sdk/types': 3.974.4
       '@smithy/core': 3.31.1
       '@smithy/types': 4.16.1
       tslib: 2.8.1

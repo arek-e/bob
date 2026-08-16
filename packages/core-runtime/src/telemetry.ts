@@ -1,3 +1,4 @@
+import type { CoreBindings } from "@bob/core-types/bindings"
 import type { SafeSpanProcessor, Telemetry } from "@bob/observability/effect"
 
 import {
@@ -6,8 +7,6 @@ import {
   makeInvocationSpanProcessor
 } from "@bob/observability/invocation"
 import { Effect, type Layer } from "effect"
-
-import type { CoreBindings } from "./bindings.ts"
 
 export interface CoreTelemetryInvocation {
   readonly layer: Layer.Layer<Telemetry>

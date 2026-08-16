@@ -1,0 +1,25 @@
+{
+  "name": "@bob/db-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./postgresql": "./src/postgresql.ts",
+    "./schema/*": "./src/schema/*.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/db-types": "workspace:*",
+    "better-auth": "1.6.26",
+    "drizzle-orm": "1.0.0-rc.4",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "drizzle-kit": "1.0.0-rc.4"
+  }
+}

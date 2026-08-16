@@ -1,30 +1,29 @@
-import { describe, expect, it } from "vitest"
-
-import { boundContextItems } from "../src/modules/context/store.ts"
-import { journalAgentMetadata, journalModelContext } from "../src/modules/journal/rules.ts"
-import { decideCandidate, deriveMemoryPolicy } from "../src/modules/memory/rules.ts"
+import { boundContextItems } from "@bob/core-service/context/store"
+import { decideCandidate, deriveMemoryPolicy } from "@bob/core-service/memory/rules"
 import {
   classifyDeterministicCommand,
   isArtifactResendRequest,
   resolveShortReply,
   urgentSafetyResponse
-} from "../src/modules/policy/rules.ts"
+} from "@bob/core-service/policy/rules"
+import {
+  isSettingsMutationRequest,
+  settingsUpdateMatchesRequest
+} from "@bob/core-service/settings/rules"
+import { journalAgentMetadata, journalModelContext } from "@bob/journal-service/rules"
 import {
   nextRecurringDueAt,
   resolveLocalDueAt,
   transitionOccurrence
-} from "../src/modules/reminders/rules.ts"
-import {
-  isSettingsMutationRequest,
-  settingsUpdateMatchesRequest
-} from "../src/modules/settings/rules.ts"
+} from "@bob/reminders-service/rules"
 import {
   hasExplicitRoutineApproval,
   isTrainingMutationRequest,
   trainingSafetyResponse,
   trainingSafetySignal,
   trainingSafetyDecision
-} from "../src/modules/training/rules.ts"
+} from "@bob/training-service/rules"
+import { describe, expect, it } from "vitest"
 
 describe("deterministic domain rules", () => {
   it("uses the earlier offset when Stockholm local time repeats", () => {

@@ -1,9 +1,15 @@
-import type { JobConsumerRoute, JobDisposition, JobPayload, JobPublisher } from "@bob/job-queue"
+import type {
+  JobConsumerRoute,
+  JobDisposition,
+  JobPayload,
+  JobPublisher
+} from "@bob/job-queue-types"
 
-import { DeliveryResult } from "@bob/contracts/delivery"
-import { InboundJob, OutboundJob } from "@bob/contracts/jobs"
-import { outboxMessages } from "@bob/db/schema/delivery"
-import { completeJob, decodeJobProcessor, retryJob } from "@bob/job-queue"
+import { publishDeliveryFollowups } from "@bob/core-service/delivery/followups"
+import { DeliveryResult } from "@bob/core-types/delivery"
+import { InboundJob, OutboundJob } from "@bob/core-types/jobs"
+import { outboxMessages } from "@bob/db-service/schema/delivery"
+import { completeJob, decodeJobProcessor, retryJob } from "@bob/job-queue-types"
 import { recordDecision, withBobSpan } from "@bob/observability/effect"
 import {
   externalParentFromTraceparent,
@@ -14,8 +20,6 @@ import { Effect, Schema } from "effect"
 
 import type { CoreComposition } from "../composition.ts"
 import type { CoreWorkflowTelemetryRunner } from "../process-inbound.ts"
-
-import { publishDeliveryFollowups } from "../modules/delivery/followups.ts"
 
 function promiseEffect<A>(operation: (signal: AbortSignal) => PromiseLike<A>) {
   return Effect.tryPromise({

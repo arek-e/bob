@@ -1,7 +1,6 @@
+import { renderArtifact } from "@bob/core-service/artifacts/render"
+import { legacyTrainingArtifactReader } from "@bob/training-service/legacy-artifact"
 import { describe, expect, it } from "vitest"
-
-import { renderArtifact } from "../src/modules/artifacts/render.ts"
-import { legacyTrainingArtifactReader } from "../src/modules/training/legacy-artifact.ts"
 
 describe("artifact rendering", () => {
   it("renders a general plan as stable copyable text", () => {

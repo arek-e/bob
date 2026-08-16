@@ -1,9 +1,21 @@
-import type { OutboundJob } from "@bob/contracts/jobs"
-import type { JobPublisher } from "@bob/job-queue"
+import type { ConversationTurnSnapshot } from "@bob/core-service/conversations/turn-store"
+import type { CoreBindings } from "@bob/core-types/bindings"
+import type { OutboundJob } from "@bob/core-types/jobs"
+import type { JobPublisher } from "@bob/job-queue-types"
 
-import { AgentRunResult, type AgentArtifact, type AgentRunRequest } from "@bob/contracts/agent"
-import { requiresPersonalGrounding } from "@bob/contracts/output-safety"
-import { makeQueueBindingJobPublisher } from "@bob/job-queue/queue-binding"
+import { conversationTiming } from "@bob/core-service/conversations/timing"
+import { reportAgentFailure, reportAgentUsage } from "@bob/core-service/observability/reporting"
+import { selectAgentResponse } from "@bob/core-service/policy/agent-response"
+import {
+  classifyDeterministicCommand,
+  deterministicCommandLanguage,
+  fixedHelpText,
+  isArtifactResendRequest,
+  urgentSafetyResponse
+} from "@bob/core-service/policy/rules"
+import { AgentRunResult, type AgentArtifact, type AgentRunRequest } from "@bob/core-types/agent"
+import { requiresPersonalGrounding } from "@bob/core-types/output-safety"
+import { makeQueueBindingJobPublisher } from "@bob/job-queue-runtime/queue-binding"
 import { featureForTools } from "@bob/observability/attribution"
 import {
   recordDecision,
@@ -19,20 +31,7 @@ import {
 } from "@bob/observability/propagation"
 import { Effect, Schema } from "effect"
 
-import type { CoreBindings } from "./bindings.ts"
 import type { CoreComposition } from "./composition.ts"
-import type { ConversationTurnSnapshot } from "./modules/conversations/turn-store.ts"
-
-import { conversationTiming } from "./modules/conversations/timing.ts"
-import { reportAgentFailure, reportAgentUsage } from "./modules/observability/reporting.ts"
-import { selectAgentResponse } from "./modules/policy/agent-response.ts"
-import {
-  classifyDeterministicCommand,
-  deterministicCommandLanguage,
-  fixedHelpText,
-  isArtifactResendRequest,
-  urgentSafetyResponse
-} from "./modules/policy/rules.ts"
 
 class AgentCallError extends Error {
   readonly _tag = "AgentCallError"

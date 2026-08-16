@@ -1,4 +1,5 @@
-import type { OutboundJob } from "@bob/contracts/jobs"
+import type { CoreBindings } from "@bob/core-types/bindings"
+import type { OutboundJob } from "@bob/core-types/jobs"
 
 import { withBobSpan } from "@bob/observability/effect"
 import {
@@ -10,7 +11,6 @@ import { captureEvents, makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
 import { processConversationTurn } from "../src/process-inbound.ts"

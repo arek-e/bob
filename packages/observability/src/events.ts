@@ -1,4 +1,4 @@
-import { ToolName } from "@bob/contracts/tools"
+import { ToolName } from "@bob/core-capabilities-types/tools"
 import { Schema } from "effect"
 
 const OpaqueId = Schema.String.check(Schema.isUUID())

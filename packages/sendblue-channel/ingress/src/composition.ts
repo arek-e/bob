@@ -1,7 +1,7 @@
-import type { InboundJob } from "@bob/contracts/jobs"
-import type { JobPublisher } from "@bob/job-queue"
+import type { InboundJob } from "@bob/core-types/jobs"
+import type { JobPublisher } from "@bob/job-queue-types"
 
-import { makeQueueBindingJobPublisher } from "@bob/job-queue/queue-binding"
+import { makeQueueBindingJobPublisher } from "@bob/job-queue-runtime/queue-binding"
 import { noopSpanProcessor } from "@bob/observability/effect"
 import {
   invocationEventSink,

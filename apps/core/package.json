@@ -9,11 +9,14 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@bob/contracts": "workspace:*",
+    "@bob/core-capabilities-types": "workspace:*",
     "@bob/core-runtime": "workspace:*",
-    "@bob/db": "workspace:*",
-    "@bob/job-queue": "workspace:*",
-    "@bob/object-store": "workspace:*",
+    "@bob/core-types": "workspace:*",
+    "@bob/db-service": "workspace:*",
+    "@bob/job-queue-runtime": "workspace:*",
+    "@bob/job-queue-types": "workspace:*",
+    "@bob/object-store-runtime": "workspace:*",
+    "@bob/object-store-types": "workspace:*",
     "@bob/observability": "workspace:*",
     "bullmq": "6.1.2",
     "effect": "4.0.0-beta.107"

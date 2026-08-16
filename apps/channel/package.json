@@ -8,9 +8,11 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@bob/contracts": "workspace:*",
-    "@bob/job-queue": "workspace:*",
-    "@bob/sendblue-runtime": "workspace:*",
+    "@bob/core-capabilities-types": "workspace:*",
+    "@bob/core-types": "workspace:*",
+    "@bob/job-queue-runtime": "workspace:*",
+    "@bob/job-queue-types": "workspace:*",
+    "@bob/sendblue-channel-runtime": "workspace:*",
     "bullmq": "6.1.2",
     "effect": "4.0.0-beta.107"
   },

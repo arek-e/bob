@@ -17,9 +17,9 @@
     "test:unit": "vitest run",
     "test:watch": "vitest",
     "typecheck": "pnpm -r --if-present typecheck",
-    "db:generate": "pnpm --filter @bob/db db:generate",
-    "agent:check": "pnpm --filter @bob/pi-agent typecheck && pnpm --filter @bob/agent typecheck && pnpm exec vitest run packages/pi-agent/test apps/agent/test && pnpm --filter @bob/agent build",
-    "agent:start": "pnpm --filter @bob/agent start"
+    "db:generate": "pnpm --filter @bob/db-service db:generate",
+    "agent:check": "pnpm --filter @bob/agent-types typecheck && pnpm --filter @bob/agent-service typecheck && pnpm --filter @bob/agent-worker typecheck && pnpm exec vitest run packages/agent/service/test apps/agent-worker/test && pnpm --filter @bob/agent-worker build",
+    "agent:start": "pnpm --filter @bob/agent-worker start"
   },
   "devDependencies": {
     "@effect/vitest": "4.0.0-beta.107",

@@ -1,7 +1,8 @@
+import type { CoreBindings } from "@bob/core-types/bindings"
+
 import { captureEvents } from "@bob/observability/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
 import { processConversationTurn } from "../src/process-inbound.ts"

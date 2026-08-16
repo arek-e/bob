@@ -1,14 +1,14 @@
-import type { OutboundJob } from "@bob/contracts/jobs"
+import type { ConversationTurnSnapshot } from "@bob/core-service/conversations/turn-store"
+import type { CoreBindings } from "@bob/core-types/bindings"
+import type { OutboundJob } from "@bob/core-types/jobs"
 
-import { AgentRunRequest } from "@bob/contracts/agent"
-import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
+import { AgentRunRequest } from "@bob/core-types/agent"
+import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect, Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
-import type { ConversationTurnSnapshot } from "../src/modules/conversations/turn-store.ts"
 
 import { processConversationTurn } from "../src/process-inbound.ts"
 import { testFixture } from "./test-fixture.ts"

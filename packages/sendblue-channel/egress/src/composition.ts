@@ -1,14 +1,14 @@
-import type { DeliveryResult } from "@bob/contracts/delivery"
-import type { JobPublisher } from "@bob/job-queue"
+import type { DeliveryResult } from "@bob/core-types/delivery"
+import type { JobPublisher } from "@bob/job-queue-types"
 
-import { makeQueueBindingJobPublisher } from "@bob/job-queue/queue-binding"
+import { makeQueueBindingJobPublisher } from "@bob/job-queue-runtime/queue-binding"
 import { noopSpanProcessor } from "@bob/observability/effect"
 import {
   invocationEventSink,
   invocationTelemetryLayer,
   makeInvocationSpanProcessor
 } from "@bob/observability/invocation"
-import { createSendblueClient } from "@bob/sendblue/client"
+import { createSendblueClient } from "@bob/sendblue-runtime/client"
 import { Context, Effect, Layer, Schema } from "effect"
 
 import type { RuntimeFetcher } from "../../src/runtime.ts"
