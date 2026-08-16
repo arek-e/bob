@@ -1,0 +1,164 @@
+name: bob-runtime
+
+x-runtime-security: &runtime-security
+  cap_drop: [ALL]
+  read_only: true
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+
+services:
+  application-storage:
+    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    environment:
+      POSTGRES_DB: bob
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_USER: bob
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U bob -d bob]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [runtime]
+    volumes: [application-storage-data:/var/lib/postgresql/data]
+
+  job-queue:
+    image: redis:8.2.1-alpine@sha256:987c376c727652f99625c7d205a1cba3cb2c53b92b0b62aade2bd48ee1593232
+    command: [redis-server, --appendonly, "yes"]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [runtime]
+    volumes: [job-queue-data:/data]
+
+  core:
+    <<: *runtime-security
+    build:
+      context: ../..
+      dockerfile: apps/core-runtime/Dockerfile
+    depends_on:
+      application-storage: { condition: service_healthy }
+      job-queue: { condition: service_healthy }
+    environment:
+      AGENT_CALLER_SECRET: ${AGENT_CALLER_SECRET:?}
+      AGENT_URL: http://agent:8787
+      ASSETS_DIRECTORY: /app/ui
+      AUTO_ENQUEUE_INBOUND: "false"
+      BOB_DAILY_TOKEN_BUDGET: ${BOB_DAILY_TOKEN_BUDGET:-250000}
+      BOB_MODEL: ${BOB_MODEL:?}
+      BOB_RUN_TOKEN_BUDGET: ${BOB_RUN_TOKEN_BUDGET:-32000}
+      APPLICATION_STORAGE_URL: postgres://bob:${POSTGRES_PASSWORD:?}@application-storage:5432/bob
+      DATA_KEK_ACTIVE_VERSION: ${DATA_KEK_ACTIVE_VERSION:?}
+      DATA_KEK_KEYRING_JSON: ${DATA_KEK_KEYRING_JSON:?}
+      DATA_LOOKUP_KEY: ${DATA_LOOKUP_KEY:?}
+      EGRESS_CALLER_SECRET: ${EGRESS_CALLER_SECRET:?}
+      INGRESS_CALLER_SECRET: ${INGRESS_CALLER_SECRET:?}
+      OWNER_ID: ${OWNER_ID:?}
+      OWNER_TIME_ZONE: ${OWNER_TIME_ZONE:-Europe/Stockholm}
+      PORT: "8788"
+      OBJECT_STORAGE_DIRECTORY: /data/object-storage
+      JOB_QUEUE_URL: redis://job-queue:6379
+      SCHEDULER_INTERVAL_MS: ${SCHEDULER_INTERVAL_MS:-60000}
+      CHANNEL_EGRESS_URL: http://channel:8786
+    expose: ["8788"]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:8788/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [runtime]
+    tmpfs: [/tmp]
+    volumes: [object-storage-data:/data/object-storage]
+
+  agent:
+    <<: *runtime-security
+    build:
+      context: ../..
+      dockerfile: apps/agent/Dockerfile
+    environment:
+      ACCESS_TEAM_DOMAIN: ${ACCESS_TEAM_DOMAIN:?}
+      ADMIN_ACCESS_AUDIENCE: ${ADMIN_ACCESS_AUDIENCE:?}
+      ADMIN_ACCESS_SUBJECT: ${ADMIN_ACCESS_SUBJECT:?}
+      BAO_ADDR: ${BAO_ADDR:?}
+      BAO_APPROLE_ROLE_ID: ${BAO_APPROLE_ROLE_ID:?}
+      BAO_APPROLE_SECRET_ID: ${BAO_APPROLE_SECRET_ID:?}
+      BAO_AUTH_METHOD: approle
+      BOB_ALLOWED_MODELS: ${BOB_ALLOWED_MODELS:?}
+      BOB_MODEL: ${BOB_MODEL:?}
+      BOB_PROVIDER: openai-codex
+      BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
+      BOB_RUNTIME_DRIVER: compose
+      CORE_ACCESS_CLIENT_ID: bob-compose-agent
+      CORE_ACCESS_CLIENT_SECRET: ${AGENT_CALLER_SECRET:?}
+      CORE_URL: http://core:8788
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:?}
+      PORT: "8787"
+      RUN_ACCESS_AUDIENCE: ${RUN_ACCESS_AUDIENCE:?}
+      RUN_ACCESS_SUBJECT: ${RUN_ACCESS_SUBJECT:?}
+      RUNTIME_SHARED_SECRET: ${AGENT_CALLER_SECRET:?}
+    expose: ["8787"]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [runtime]
+    tmpfs: [/tmp]
+
+  channel:
+    <<: *runtime-security
+    build:
+      context: ../..
+      dockerfile: apps/channel-runtime/Dockerfile
+    depends_on:
+      core: { condition: service_healthy }
+      job-queue: { condition: service_healthy }
+    environment:
+      BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
+      CORE_CALLER_SECRET: ${EGRESS_CALLER_SECRET:?}
+      CORE_URL: http://core:8788
+      PORT: "8786"
+      JOB_QUEUE_URL: redis://job-queue:6379
+      SENDBLUE_ACCOUNT_ID: ${SENDBLUE_ACCOUNT_ID:?}
+      SENDBLUE_ALLOWED_USER_NUMBER: ${SENDBLUE_ALLOWED_USER_NUMBER:?}
+      SENDBLUE_API_KEY_ID: ${SENDBLUE_API_KEY_ID:?}
+      SENDBLUE_API_SECRET_KEY: ${SENDBLUE_API_SECRET_KEY:?}
+      SENDBLUE_FROM_NUMBER: ${SENDBLUE_FROM_NUMBER:?}
+      SENDBLUE_LINE_ID: ${SENDBLUE_LINE_ID:?}
+      SENDBLUE_STATUS_CALLBACK_URL: ${SENDBLUE_STATUS_CALLBACK_URL:?}
+      SENDBLUE_WEBHOOK_SIGNING_SECRET: ${SENDBLUE_WEBHOOK_SIGNING_SECRET:?}
+    expose: ["8786"]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:8786/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [runtime]
+    tmpfs: [/tmp]
+
+networks:
+  runtime:
+
+volumes:
+  application-storage-data:
+  object-storage-data:
+  job-queue-data:

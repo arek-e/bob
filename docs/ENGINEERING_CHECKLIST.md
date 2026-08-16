@@ -16,8 +16,8 @@ Status: active
 - [ ] Every Compose image uses an immutable digest.
 - [ ] The AppRole secret ID enters the agent through a Docker secret file.
 - [ ] No Compose service publishes a host port.
-- [ ] Agent `/health` reports liveness.
-- [ ] Agent `/v1/admin/readiness` reports credentials and Core as ready.
+- [ ] Agent Runtime `/health` reports liveness.
+- [ ] Agent Runtime `/v1/admin/readiness` reports credentials and Core Runtime as ready.
 - [ ] The live backup task matches `infra/coolify/runtime-contract.json`.
 - [ ] Backup failure notifications are enabled.
 - [ ] Bob and Nango backup ages are below 18,000 seconds.
@@ -25,8 +25,8 @@ Status: active
 
 ## Delivery reliability
 
-- [ ] An outbound claim and attempt commit in one D1 batch.
-- [ ] The outbound dead-letter Queue has a Core consumer.
+- [ ] An outbound claim and attempt commit in one Application Storage transaction.
+- [ ] The outbound dead-letter Job Queue route has a Core Runtime consumer.
 - [ ] Recovery republishes only a pending outbox without an attempt.
 - [ ] Recovery stops after three decisions.
 - [ ] An uncertain delivery reconciles provider status before manual retry.

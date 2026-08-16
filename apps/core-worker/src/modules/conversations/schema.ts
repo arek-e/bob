@@ -20,7 +20,7 @@ export const channels = sqliteTable(
   {
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
-    provider: text("provider", { enum: ["sendblue"] }).notNull(),
+    provider: text("provider").notNull(),
     accountId: text("account_id").notNull(),
     lineId: text("line_id").notNull(),
     senderHash: text("sender_hash").notNull(),

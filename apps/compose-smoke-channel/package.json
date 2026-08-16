@@ -1,0 +1,16 @@
+{
+  "name": "@bob/compose-smoke-channel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=cjs --platform=node --target=node22 --outfile=dist/index.cjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "bullmq": "6.1.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9"
+  }
+}

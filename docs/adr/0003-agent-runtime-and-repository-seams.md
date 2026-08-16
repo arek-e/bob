@@ -55,7 +55,7 @@ Do not run Codex app-server inside the Pi path.
 
 Do not add sub-agent authority without a reviewed contract.
 
-Keep Bob's durable state in the core Worker.
+Keep Bob's durable state in Application Storage.
 
 Use deterministic domain workflows outside the model.
 
@@ -82,9 +82,9 @@ Use this sequence:
 9. Store the run result and response intent.
 10. Send the response later through the delivery outbox.
 
-An owner-scoped Durable Object serializes runs for the owner.
+An owner-scoped Run Coordinator serializes runs for the owner.
 
-D1 claims remain authoritative for run state.
+Application Storage claims remain authoritative for run state.
 
 The Pi host does not own durable conversation state.
 
@@ -94,7 +94,7 @@ The model never receives Sendblue credentials or Cloudflare bindings.
 
 ### Context assembly
 
-The core Worker builds the context pack.
+The Core Runtime builds the context pack.
 
 The Bob Pi loop renders that pack into a `pi-ai` model context.
 
@@ -118,7 +118,7 @@ The pack contains:
 - Reviewed skill instructions
 - Explicit uncertainty and conflict markers
 
-Do not send D1 rows directly to Pi.
+Do not send Application Storage rows directly to Pi.
 
 The current request supplies the current user text separately.
 
@@ -149,9 +149,9 @@ Do not use prompt wording or run type to add or remove Tools.
 [ADR 0012](0012-model-directed-capability-selection.md) defines Capability Modules and catalogue
 identity.
 
-Pi tool handlers call narrow core Worker routes.
+Pi tool handlers call narrow Core Runtime routes.
 
-The core Worker checks authorization and domain invariants again.
+The Core Runtime checks authorization and domain invariants again.
 
 Every mutating call includes a run ID, tool-call ID, and idempotency key.
 
@@ -332,17 +332,17 @@ The composition module must stay readable in one screen when practical.
 
 ### Core modules
 
-Keep D1 queries beside the module that owns their invariants.
+Keep Application Storage queries beside the Module that owns their invariants.
 
 Keep each Drizzle schema beside its owning module.
 
 Expose database operations through local Effect services.
 
-Use D1 batch operations for atomic writes.
+Use D1 batch operations for atomic writes in the Cloudflare Adapter.
 
-Use real local D1 in module tests.
+Use real local D1 in Cloudflare Adapter tests.
 
-Do not create generic repository interfaces for D1.
+Do not create generic repository Interfaces for Application Storage.
 
 Keep global numbered migrations in `apps/core-worker/migrations`.
 
@@ -406,12 +406,12 @@ Those names split one feature across technical layers or add shallow pass-throug
 
 - Packages never import apps.
 - Apps never import another app's source.
-- Apps communicate through validated HTTP, Queue, or service-binding contracts.
+- Apps communicate through validated HTTP, Job Queue, or service-binding contracts.
 - Only `@bob/pi-agent` imports Pi packages.
 - Only Sendblue ingress, egress, managed routing, and reconciliation import `@bob/sendblue`.
 - Platform binding types stay within the deployable that owns each binding.
 - Drizzle schemas and queries stay with their owning domain Module.
-- Worker apps do not import `@effect/platform-node`.
+- Cloudflare app entrypoints do not import `@effect/platform-node`.
 - Application code does not import `effect/unstable/*`.
 - The agent host imports no Sendblue or Cloudflare binding types.
 - The ingress app receives no outbound Sendblue credential.
@@ -440,13 +440,13 @@ Do not add a task runner yet.
 4. Import rules reject Sendblue outside approved consumers.
 5. Platform binding imports stay within their owning deployable.
 6. Every cross-runtime message passes runtime validation.
-7. Core module tests run against real D1 migrations.
+7. Core Module tests run against real D1 migrations.
 8. Agent evaluations call the public Pi-agent interface.
 9. Fault tests stop after each durable write and external call.
 10. Trace fixtures contain no personal content.
 11. A memory extractor creates only proposed candidates.
 12. The core profile compiles, tests, and deploys without a Vertical Module.
-13. An owner coordinator prevents concurrent Pi runs for one owner.
+13. A Run Coordinator prevents concurrent Pi runs for one owner.
 14. An unknown external action cannot retry before reconciliation.
 15. A selected scheduled Vertical Module can complete deterministic work without starting Pi.
 

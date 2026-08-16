@@ -23,7 +23,7 @@ Require the result field `independentCopy` to equal `completed`.
 
 Enable Coolify failure notifications for the task.
 
-The observer reports content-free file age for Bob and Nango backups.
+The Observability system reports content-free file age for Bob and Nango backups.
 
 ## Manual backup
 
@@ -67,7 +67,7 @@ Restore the newest independent archive.
 
 Point the reviewed Cloudflare plan at the restored targets.
 
-Run Core, agent, delivery, and reminder acceptance checks.
+Run Core Runtime, Agent Runtime, Channel Runtime, and delivery acceptance checks.
 
 Resume the Tunnel only after readiness passes.
 

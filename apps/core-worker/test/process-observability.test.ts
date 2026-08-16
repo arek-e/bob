@@ -35,7 +35,7 @@ describe("core workflow telemetry", () => {
   it("keeps one safe trace through inbound processing and outbox publish", async () => {
     const events = captureEvents()
     const telemetry = makeCaptureTelemetry({
-      serviceName: "bob-core",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })

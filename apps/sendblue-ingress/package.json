@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./bindings": "./src/bindings.ts",
+    "./http": "./src/entrypoints/http.ts"
   },
   "scripts": {
     "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/index.js",
@@ -13,6 +15,7 @@
   },
   "dependencies": {
     "@bob/contracts": "workspace:*",
+    "@bob/job-queue": "workspace:*",
     "@bob/observability": "workspace:*",
     "@bob/sendblue": "workspace:*",
     "effect": "4.0.0-beta.107"

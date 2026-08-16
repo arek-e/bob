@@ -142,7 +142,7 @@ describe("agent tool telemetry", () => {
 
   it("propagates the active trace and emits no tool arguments", async () => {
     const telemetry = makeCaptureTelemetry({
-      serviceName: "bob-agent",
+      serviceName: "bob-agent-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })

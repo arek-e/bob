@@ -81,18 +81,18 @@ Keep Sendblue transport separate from Pi and Codex authentication.
 
 ```mermaid
 flowchart LR
-    S[Sendblue] -->|receive webhook| I[Ingress Worker]
-    I -->|service binding| C[Core Worker]
-    C --> D[(D1 event)]
-    I -->|opaque event id| Q[Inbound Queue]
+    S[Sendblue provider] -->|receive webhook| I[Channel Runtime]
+    I -->|internal HTTP| C[Core Runtime]
+    C --> D[(Application Storage event)]
+    I -->|opaque event id| Q[Job Queue]
     Q --> C
-    C --> N[Private Node host]
+    C --> N[Agent Runtime]
     N --> P[Pi openai-codex]
     P --> T[Bob domain tools]
     T --> C
-    C --> O[(D1 outbox)]
-    O --> X[Outbound Queue]
-    X --> E[Sendblue egress]
+    C --> O[(Application Storage outbox)]
+    O --> X[Job Queue]
+    X --> E[Channel Runtime]
     E --> S
     S -->|outbound status| I
     B[OpenBao] -->|scoped credential sync| I
@@ -114,23 +114,23 @@ ADR 0015 defines managed sender authorization and routing.
 
 ### Inbound path
 
-1. Sendblue posts a receive event to the ingress Worker.
-2. The Worker compares `sb-signing-secret` with timing-safe equality.
-3. The Worker rejects an unknown destination line.
-4. The Worker rejects a sender outside the phone allowlist.
-5. The Worker accepts only inbound `RECEIVED` messages.
-6. The Worker validates body size and the complete event schema.
-7. The API stores the normalized event in D1.
+1. Sendblue posts a receive event to the Channel Runtime.
+2. The Channel Runtime compares `sb-signing-secret` with timing-safe equality.
+3. The Channel Runtime rejects an unknown destination line.
+4. The Channel Runtime rejects a sender outside the phone allowlist.
+5. The Channel Runtime accepts only inbound `RECEIVED` messages.
+6. The Channel Runtime validates body size and the complete event schema.
+7. The Core Runtime stores the normalized event in Application Storage.
 8. A unique key prevents duplicate provider events.
 9. The unique key uses the account, line, and `message_handle`.
-10. The Worker publishes only the event identifier to the Queue.
-11. The Worker records successful Queue publication.
-12. The Worker returns `2xx` after both durable actions succeed.
-13. The Worker returns `5xx` when Queue publication fails.
+10. The Channel Runtime publishes only the event identifier to the Job Queue.
+11. The Channel Runtime records successful Job Queue publication.
+12. The Channel Runtime returns `2xx` after both durable actions succeed.
+13. The Channel Runtime returns `5xx` when Job Queue publication fails.
 
 Sendblue can retry a failed delivery.
 
-D1 deduplication makes that retry safe.
+Application Storage deduplication makes that retry safe.
 
 Serialize work by account and sender.
 
@@ -138,7 +138,7 @@ Run deterministic channel commands under the same session lock.
 
 ### Pi and Codex path
 
-The core Worker loads one stored event and builds the context pack.
+The Core Runtime loads one stored event and builds the context pack.
 
 It calls the private Node Pi host.
 
@@ -162,7 +162,7 @@ The Pi run can use only reviewed Bob domain tools.
 4. Use the inbound sender as `number`.
 5. Use Bob's Sendblue line as `from_number`.
 6. Store the returned outbound `message_handle`.
-7. Process outbound status events through the ingress Worker.
+7. Process outbound status events through the Channel Runtime.
 8. Keep provider status separate from task state.
 
 A provider timeout creates an `uncertain` attempt.
@@ -213,7 +213,7 @@ Add one deployment command:
 pnpm sendblue:reconcile --environment production
 ```
 
-The command runs after the ingress Worker has a stable HTTPS URL.
+The command runs after the Channel Runtime has a stable HTTPS URL.
 
 It uses this process:
 
@@ -242,7 +242,7 @@ Use `DELETE` only for an exact Bob-owned endpoint.
 
 Provide a read-only check mode for deployments and operations.
 
-Do not change Sendblue during every Worker start.
+Do not change Sendblue during every Channel Runtime start.
 
 The Cloudflare URL is stable.
 
@@ -274,7 +274,7 @@ Changing runtimes would break that decision.
 
 ### Register webhooks before deployment
 
-Bob does not have a live Worker URL yet.
+Bob does not have a live Channel Runtime URL yet.
 
 A placeholder endpoint would drop or expose messages.
 
@@ -286,7 +286,7 @@ The channel must pass these tests:
 2. An unknown line creates no stored event.
 3. An unknown sender creates no agent run.
 4. Two copies of one `message_handle` create one agent run.
-5. A Queue failure returns `5xx` after the D1 insert.
+5. A Job Queue failure returns `5xx` after the Application Storage insert.
 6. A retry publishes the stored event once.
 7. An agent crash leaves recoverable work.
 8. A provider timeout does not send an automatic duplicate.

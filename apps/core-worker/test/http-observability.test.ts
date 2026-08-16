@@ -44,7 +44,7 @@ describe("Core HTTP telemetry", () => {
       CORE_ACCESS_AUDIENCE: "core"
     })
     const telemetry = makeCaptureTelemetry({
-      serviceName: "bob-core-worker",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
@@ -102,6 +102,7 @@ describe("Core HTTP telemetry", () => {
     const wake = vi.fn(async () => new Response(null, { status: 200 }))
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     compositionHarness.current = testFixture<CoreComposition>({
+      ownerRunCoordinator: { wake },
       services: {
         tools: {
           execute: vi.fn(async () => ({ ok: true, code: "reminder_seen", message: "Seen." })),
@@ -117,13 +118,7 @@ describe("Core HTTP telemetry", () => {
       EGRESS_CALLER_SECRET: "e".repeat(64),
       AGENT_CALLER_SUBJECT: "agent",
       ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
-      CORE_ACCESS_AUDIENCE: "core",
-      OWNER_RUN_COORDINATOR: {
-        jurisdiction: vi.fn(() => ({
-          idFromName: vi.fn(() => ({ toString: () => ownerId })),
-          get: vi.fn(() => ({ fetch: wake }))
-        }))
-      }
+      CORE_ACCESS_AUDIENCE: "core"
     })
     const response = await handleHttp(
       new Request("https://core.test/internal/tools", {

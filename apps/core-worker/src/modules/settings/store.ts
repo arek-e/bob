@@ -33,6 +33,7 @@ export const OwnerSettingsStore = Context.Service<OwnerSettingsStore>("bob/Owner
 
 export interface OwnerSettingsStoreOptions {
   readonly defaultTimeZone: string
+  readonly channelProviderId: string
   readonly defaultLocale?: string
   readonly defaultHourCycle?: HourCycle
   readonly now?: () => Date
@@ -176,11 +177,11 @@ export function makeOwnerSettingsStore(
       const [channel] = await database
         .select({ id: channels.id, optedOutAt: channels.optedOutAt })
         .from(channels)
-        .where(and(eq(channels.userId, ownerId), eq(channels.provider, "sendblue")))
+        .where(and(eq(channels.userId, ownerId), eq(channels.provider, options.channelProviderId)))
         .limit(1)
       return [
         {
-          provider: "sendblue",
+          provider: options.channelProviderId,
           status:
             channel === undefined
               ? "not_connected"

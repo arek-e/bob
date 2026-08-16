@@ -14,7 +14,7 @@ Open the private journal list. Select **Delete entry** and confirm the consequen
 
 The API replaces encrypted text with a tombstone. It clears tags and approved summaries.
 
-The same D1 batch removes search documents, candidates, and fact evidence.
+The same Application Storage transaction removes search documents, candidates, and fact evidence.
 
 Verify the entry cannot open. Verify search returns no derived result.
 
@@ -32,6 +32,6 @@ Do not implement reverse import from exported Markdown.
 
 Full owner deletion remains a Milestone 4 gate. Do not claim it is complete.
 
-Delete primary content, R2 objects, search data, vectors, candidates, and evidence.
+Delete primary content, Object Storage objects, search data, vectors, candidates, and evidence.
 
 Keep only redacted operational audit data. Set backup expiry for the deleted data.

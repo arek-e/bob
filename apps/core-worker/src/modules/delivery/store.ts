@@ -140,6 +140,7 @@ export function makeDeliveryStore(
   database: CoreDatabase,
   protection: DataProtection,
   options: {
+    readonly channelProviderId: string
     readonly now?: () => Date
     readonly randomUuid?: () => string
     readonly targetAdapters?: readonly DeliveryTargetAdapter[]
@@ -461,7 +462,7 @@ export function makeDeliveryStore(
       const payloadFingerprint = await sha256Hex(smsSafeText)
       const claimExpiresAt = new Date(claimedAt.getTime() + leaseMs).toISOString()
       await database.batch([
-        // This update and the attempt insert share one D1 transaction. The existing trigger
+        // This update and the attempt insert share one application storage transaction. The existing trigger
         // closes an exact conversation turn only if the attempt insert can also commit.
         database
           .update(outboxMessages)
@@ -701,7 +702,7 @@ export function makeDeliveryStore(
           .set({ optedOutAt: event.occurredAt, optedInAt: null })
           .where(
             and(
-              eq(channels.provider, "sendblue"),
+              eq(channels.provider, options.channelProviderId),
               eq(channels.accountId, event.accountId),
               eq(channels.lineId, event.lineId),
               eq(channels.senderHash, destinationHash)
@@ -713,7 +714,7 @@ export function makeDeliveryStore(
         .insert(providerEvents)
         .values({
           id: event.id,
-          provider: "sendblue",
+          provider: options.channelProviderId,
           providerMessageHandle: event.messageHandle,
           providerStatus: event.status,
           providerEventKey: eventKey,

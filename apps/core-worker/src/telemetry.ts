@@ -45,7 +45,7 @@ export function makeCoreTelemetryInvocation(bindings: CoreBindings): CoreTelemet
   const processor: SafeSpanProcessor = configured(bindings)
     ? makeCloudflareSpanProcessor({
         endpoint: bindings.OTEL_EXPORTER_OTLP_ENDPOINT,
-        serviceName: "bob-core-worker",
+        serviceName: "bob-core-runtime",
         serviceVersion: bindings.BOB_RELEASE_SHA,
         deploymentEnvironment: "prod",
         headers: {

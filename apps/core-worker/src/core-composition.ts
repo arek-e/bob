@@ -1,10 +1,9 @@
-import { cloudflareEventSink } from "@bob/observability/cloudflare"
 import { Effect, Layer, Schema } from "effect"
 
 import type { GeneralCoreBindings } from "./bindings.ts"
 import type { DeploymentRuntimeProfile } from "./profiles/types.ts"
+import type { CoreRuntimeAdapters } from "./runtime/core-runtime.ts"
 
-import { createCoreDatabase } from "./database.ts"
 import { AlertStore, alertStoreLayer, makeAlertStore } from "./modules/alerts/store.ts"
 import { ArtifactStore, artifactStoreLayer, makeArtifactStore } from "./modules/artifacts/store.ts"
 import { makeApplicationContextStore } from "./modules/context/composition.ts"
@@ -61,7 +60,7 @@ const Configuration = Schema.Struct({
   DATA_LOOKUP_KEY: Schema.String.check(Schema.isMinLength(40)),
   INGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   EGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
-  SENDBLUE_EGRESS_URL: Schema.String,
+  CHANNEL_EGRESS_URL: Schema.String,
   BETTER_AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
   ACCESS_TEAM_DOMAIN: Schema.String.check(Schema.isPattern(/^[a-z0-9-]+\.cloudflareaccess\.com$/)),
   CORE_ACCESS_AUDIENCE: Schema.String.check(Schema.isMinLength(1)),
@@ -88,11 +87,11 @@ const Configuration = Schema.Struct({
 
 export function composeGeneralCore<Extensions extends object>(
   bindings: GeneralCoreBindings,
-  runtimeProfile: DeploymentRuntimeProfile<Extensions>
+  runtimeProfile: DeploymentRuntimeProfile<Extensions>,
+  adapters: CoreRuntimeAdapters
 ) {
   const config = Schema.decodeUnknownSync(Configuration)(bindings)
-  const events = cloudflareEventSink()
-  const database = createCoreDatabase(bindings.DB)
+  const { applicationStorage, events, channelProviderId } = adapters
   const activeKekVersion = Number.parseInt(config.DATA_KEK_ACTIVE_VERSION, 10)
   const keyringInput = Schema.decodeUnknownSync(
     Schema.Record(Schema.String, Schema.String.check(Schema.isMinLength(40)))
@@ -106,18 +105,22 @@ export function composeGeneralCore<Extensions extends object>(
   )
   if (keyring[activeKekVersion] === undefined) throw new Error("Active KEK is missing")
   const protection = createDataProtection(keyring, activeKekVersion, config.DATA_LOOKUP_KEY)
-  const settings = makeOwnerSettingsStore(database, protection, {
-    defaultTimeZone: config.OWNER_TIME_ZONE
+  const settings = makeOwnerSettingsStore(applicationStorage, protection, {
+    defaultTimeZone: config.OWNER_TIME_ZONE,
+    channelProviderId
   })
-  const conversations = makeConversationStore(database, protection, {
+  const conversations = makeConversationStore(applicationStorage, protection, {
     ownerId: config.OWNER_ID,
     ownerTimeZone: config.OWNER_TIME_ZONE,
-    dataKeyVersion: activeKekVersion
+    dataKeyVersion: activeKekVersion,
+    channelProviderId
   })
-  const turns = makeConversationTurnStore(database, protection, { ownerId: config.OWNER_ID })
+  const turns = makeConversationTurnStore(applicationStorage, protection, {
+    ownerId: config.OWNER_ID
+  })
   const prepared = runtimeProfile.prepare({
     bindings,
-    database,
+    database: applicationStorage,
     protection,
     conversations,
     turns,
@@ -125,37 +128,42 @@ export function composeGeneralCore<Extensions extends object>(
     ownerId: config.OWNER_ID,
     ownerTimeZone: config.OWNER_TIME_ZONE
   })
-  const alerts = makeAlertStore(database, {})
-  const artifacts = makeArtifactStore(database, protection, {
+  const alerts = makeAlertStore(applicationStorage, {})
+  const artifacts = makeArtifactStore(applicationStorage, protection, {
     legacyReaders: prepared.legacyArtifactReaders
   })
-  const delivery = makeDeliveryStore(database, protection, {
+  const delivery = makeDeliveryStore(applicationStorage, protection, {
+    channelProviderId,
     targetAdapters: prepared.deliveryTargets
   })
-  const privateText = makePrivateTextReader(database, protection)
+  const privateText = makePrivateTextReader(applicationStorage, protection)
   const evidenceSources = makeEvidenceSourceRegistry(runtimeProfile.catalogue.profileId, [
-    makeConversationEvidenceSource(database, privateText, protection),
-    makeFactEvidenceSource(database, privateText, protection),
+    makeConversationEvidenceSource(applicationStorage, privateText, protection),
+    makeFactEvidenceSource(applicationStorage, privateText, protection),
     ...prepared.evidenceSources
   ])
-  const memory = makeMemoryStore(database, protection, evidenceSources, {})
-  const retrieval = makeRetrievalPipeline(database)
-  const context = makeApplicationContextStore(database, protection, runtimeProfile.catalogue, {
-    artifacts,
-    retrieval
-  })
-  const runs = makeAgentRunStore(database, protection, {})
+  const memory = makeMemoryStore(applicationStorage, protection, evidenceSources, {})
+  const retrieval = makeRetrievalPipeline(applicationStorage)
+  const context = makeApplicationContextStore(
+    applicationStorage,
+    protection,
+    runtimeProfile.catalogue,
+    {
+      artifacts,
+      retrieval
+    }
+  )
+  const runs = makeAgentRunStore(applicationStorage, protection, {})
   const toolAdapters = makeToolAdapterRegistry(runtimeProfile.catalogue, [
     makeMemoryToolAdapter(memory, retrieval),
     makeSettingsToolAdapter(settings),
     ...prepared.toolAdapters({ memory, retrieval })
   ])
-  const tools = makeToolExecutor(database, protection, toolAdapters, {
+  const tools = makeToolExecutor(applicationStorage, protection, toolAdapters, {
     toolLeaseMs: conversationTiming.mutationSettleLeaseMs
   })
   const agentExperience = makeAgentExperienceRegistry(runtimeProfile.catalogue.profileId, [])
   const reviewedSkills = makeReviewedSkillRegistry(runtimeProfile.catalogue.profileId, [])
-
   const layer = Layer.mergeAll(
     conversationStoreLayer(conversations),
     conversationTurnStoreLayer(turns),
@@ -194,7 +202,15 @@ export function composeGeneralCore<Extensions extends object>(
     runtime: prepared.runtime,
     extensions: prepared.extensions,
     memoryClasses: Object.freeze({ agentExperience, reviewedSkills }),
-    database,
+    jobQueue: adapters.jobQueue,
+    objectStorage: adapters.objectStorage,
+    runCoordinator: adapters.runCoordinator,
+    applicationStorage,
+    // Compatibility aliases keep existing Module and test callers stable.
+    jobs: adapters.jobQueue,
+    privateObjects: adapters.objectStorage,
+    ownerRunCoordinator: adapters.runCoordinator,
+    database: applicationStorage,
     layer,
     services
   }

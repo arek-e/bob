@@ -12,6 +12,7 @@ const apiBase =
 
 export default defineConfig({
   server: {
+    host: "127.0.0.1",
     port: 3000
   },
   resolve: {
@@ -30,7 +31,8 @@ export default defineConfig({
         prerender: {
           outputPath: "/index.html",
           crawlLinks: false,
-          retryCount: 0
+          retryCount: 3,
+          retryDelay: 250
         }
       }
     }),

@@ -22,6 +22,7 @@ declare global {
 const ownerId = "00000000-0000-4000-8000-000000000001"
 const channelId = "00000000-0000-4000-8000-000000000002"
 const turnId = "00000000-0000-4000-8000-000000000003"
+const channelProviderId = "sendblue"
 
 function key(byte: number): string {
   let binary = ""
@@ -88,6 +89,7 @@ async function seedOwnerChannelAndTurn() {
 
   let next = 100
   const delivery = makeDeliveryStore(database, protection, {
+    channelProviderId,
     now: () => new Date("2026-08-12T10:00:01.000Z"),
     randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
   })

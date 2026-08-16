@@ -56,7 +56,7 @@ function composition(
   readonly telemetry: ReturnType<typeof makeCaptureTelemetry>
 } {
   const telemetry = makeCaptureTelemetry({
-    serviceName: "bob-agent",
+    serviceName: "bob-agent-runtime",
     serviceVersion: "0123456789abcdef0123456789abcdef01234567",
     deploymentEnvironment: "test"
   })
@@ -121,7 +121,7 @@ describe("agent HTTP boundary", () => {
   it("keeps health content-free and public", async () => {
     const response = await handleAgentHttp(new Request("http://agent/health"), composition(false))
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ healthy: true, service: "agent", version: 1 })
+    expect(await response.json()).toEqual({ healthy: true, service: "agent-runtime", version: 1 })
   })
 
   it("checks credentials and Core through the private readiness route", async () => {
@@ -138,7 +138,7 @@ describe("agent HTTP boundary", () => {
     expect(await response.json()).toEqual({
       ready: true,
       checks: { credentials: "ready", core: "ready" },
-      service: "agent",
+      service: "agent-runtime",
       version: 1,
       deploymentProfileId: transitionalDeploymentProfile.profileId,
       capabilityCatalogueGeneration: transitionalDeploymentProfile.generation

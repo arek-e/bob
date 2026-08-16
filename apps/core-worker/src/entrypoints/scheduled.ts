@@ -1,3 +1,4 @@
+import { makeCloudflareJobPublisher } from "@bob/job-queue/cloudflare"
 import { withBobRootSpan, withBobSpan, type BobSpan } from "@bob/observability/effect"
 import {
   externalParentFromTraceparent,
@@ -48,6 +49,10 @@ export async function handleScheduled(
   compose: typeof composeCore = composeCore
 ): Promise<void> {
   const composition = compose(bindings)
+  const outboundJobs =
+    composition.jobQueue?.outbound ??
+    composition.jobs?.outbound ??
+    makeCloudflareJobPublisher(bindings.OUTBOUND_QUEUE)
   const runTelemetry = telemetry?.runPromise ?? Effect.runPromise
   const scheduledTrace: ScheduledTraceContext = trace ?? { correlationId: crypto.randomUUID() }
   const startedAt = new Date().toISOString()
@@ -81,7 +86,7 @@ export async function handleScheduled(
 
   let pendingOutbox: PendingOutbox[] = []
   await recover(async () => {
-    pendingOutbox = await composition.database
+    pendingOutbox = await (composition.applicationStorage ?? composition.database)
       .select({
         id: outboxMessages.id,
         correlationId: outboxMessages.correlationId
@@ -108,7 +113,7 @@ export async function handleScheduled(
               traceparent === null
                 ? { outboxId: item.id, correlationId: item.correlationId }
                 : { outboxId: item.id, correlationId: item.correlationId, traceparent }
-            yield* promiseEffect(() => bindings.OUTBOUND_QUEUE.send(message))
+            yield* promiseEffect(() => outboundJobs.publish(message))
             yield* promiseEffect(() =>
               composition.services.delivery.markEnqueued(item.id, new Date().toISOString())
             )
@@ -136,7 +141,7 @@ export async function handleScheduled(
                 "x-bob-correlation-id": scheduledTrace.correlationId
               })
               return yield* promiseEffect((signal) =>
-                fetch(`${bindings.SENDBLUE_EGRESS_URL}/internal/inbound-reconcile`, {
+                fetch(`${bindings.CHANNEL_EGRESS_URL}/internal/inbound-reconcile`, {
                   method: "POST",
                   headers,
                   signal
@@ -146,7 +151,7 @@ export async function handleScheduled(
           )
         )
       )
-      if (!recoveryResponse.ok) throw new Error("sendblue_inbound_reconcile_failed")
+      if (!recoveryResponse.ok) throw new Error("channel_inbound_reconcile_failed")
     })
   }
 

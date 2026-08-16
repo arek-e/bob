@@ -39,7 +39,7 @@ describe("conversation turn processing", () => {
     const markEventsProcessed = vi.fn(async () => 1)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const composition = testFixture<CoreComposition>({
-      config: { SENDBLUE_EGRESS_URL: "" },
+      config: { CHANNEL_EGRESS_URL: "" },
       services: {
         events: { emit: vi.fn(async () => undefined) },
         conversations: { claimReaction: vi.fn(async () => false) },
@@ -186,7 +186,7 @@ describe("conversation turn processing", () => {
   it("runs one immutable request for the newest revision and publishes one reply", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
     const telemetry = makeCaptureTelemetry({
-      serviceName: "bob-core-worker",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
@@ -934,6 +934,7 @@ describe("conversation turn processing", () => {
   it("releases a settling turn only after the active run returns", async () => {
     const releaseSettling = vi.fn(async () => ({ ready: true, quietUntil: "2026-08-12T10:00:03Z" }))
     const currentRevision = vi.fn(async () => 3)
+    const wake = vi.fn(async () => undefined)
     currentRevision.mockResolvedValueOnce(2)
     vi.stubGlobal(
       "fetch",
@@ -965,6 +966,7 @@ describe("conversation turn processing", () => {
         BOB_DAILY_TOKEN_BUDGET: 250_000
       },
       database: {},
+      ownerRunCoordinator: { wake },
       services: {
         events: { emit: vi.fn(async () => undefined) },
         conversations: { claimReaction: vi.fn(async () => false) },
@@ -1035,24 +1037,15 @@ describe("conversation turn processing", () => {
       ]
     }
 
-    const wake = vi.fn(async () => new Response(null, { status: 200 }))
-    const jurisdiction = {
-      idFromName: vi.fn(() => ({ toString: () => ownerId })),
-      get: vi.fn(() => ({ fetch: wake }))
-    }
     await processConversationTurn(
       snapshot,
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-      testFixture<CoreBindings>({
-        OWNER_RUN_COORDINATOR: { jurisdiction: vi.fn(() => jurisdiction) }
-      }),
+      testFixture<CoreBindings>({}),
       composition
     )
 
     expect(releaseSettling).toHaveBeenCalledWith(turnId, expect.any(String))
-    expect(wake).toHaveBeenCalledWith(new URL("https://coordinator.internal/wake"), {
-      method: "POST"
-    })
+    expect(wake).toHaveBeenCalledWith({ ownerId })
   })
 
   it.each([
@@ -1169,6 +1162,7 @@ describe("conversation turn processing", () => {
       const commitReply = vi.fn(async () => "committed" as const)
       const markEventsProcessed = vi.fn(async () => 1)
       const publish = vi.fn(async () => undefined)
+      const wake = vi.fn(async () => undefined)
       vi.stubGlobal(
         "fetch",
         vi.fn(async () => new Response(null, { status: 500 }))
@@ -1188,6 +1182,7 @@ describe("conversation turn processing", () => {
           BOB_DAILY_TOKEN_BUDGET: 250_000
         },
         database: {},
+        ownerRunCoordinator: { wake },
         services: {
           events: { emit: vi.fn(async () => undefined) },
           conversations: { claimReaction: vi.fn(async () => false) },
@@ -1270,17 +1265,11 @@ describe("conversation turn processing", () => {
         ]
       }
 
-      const wake = vi.fn(async () => new Response(null, { status: 200 }))
-      const jurisdiction = {
-        idFromName: vi.fn(() => ({ toString: () => ownerId })),
-        get: vi.fn(() => ({ fetch: wake }))
-      }
       await processConversationTurn(
         snapshot,
         // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         testFixture<CoreBindings>({
-          OUTBOUND_QUEUE: { send: publish },
-          OWNER_RUN_COORDINATOR: { jurisdiction: vi.fn(() => jurisdiction) }
+          OUTBOUND_QUEUE: { send: publish }
         }),
         composition
       )
@@ -1320,12 +1309,7 @@ describe("conversation turn processing", () => {
             }
       )
       expect(wake).toHaveBeenCalledWith(
-        releasesAfterTransition
-          ? new URL("https://coordinator.internal/wake")
-          : new URL(
-              `https://coordinator.internal/wake?at=${encodeURIComponent(transition.wakeAt)}`
-            ),
-        { method: "POST" }
+        releasesAfterTransition ? { ownerId } : { ownerId, wakeAt: transition.wakeAt }
       )
     }
   )

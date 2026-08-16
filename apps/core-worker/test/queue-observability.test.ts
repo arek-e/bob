@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
-import { handleInboundQueue } from "../src/entrypoints/queue.ts"
+import { handleInboundQueue, makeCoreJobConsumerRoutes } from "../src/entrypoints/queue.ts"
 import { testFixture } from "./test-fixture.ts"
 
 const compositionHarness = vi.hoisted(() => ({
@@ -50,9 +50,51 @@ beforeEach(() => {
 })
 
 describe("Core Queue telemetry", () => {
+  it("exposes the same five provider-neutral consumer routes", async () => {
+    const composition = testFixture<CoreComposition>({
+      jobs: {
+        inbound: { publish: vi.fn(async () => undefined) },
+        outbound: { publish: vi.fn(async () => undefined) }
+      }
+    })
+    const routes = makeCoreJobConsumerRoutes(composition, {
+      inbound: "inbound",
+      inboundDeadLetter: "inbound-dead-letter",
+      outboundDeadLetter: "outbound-dead-letter",
+      deliveryResult: "delivery-result",
+      deliveryResultDeadLetter: "delivery-result-dead-letter"
+    })
+
+    expect(routes.map((route) => route.queueName)).toEqual([
+      "inbound",
+      "inbound-dead-letter",
+      "outbound-dead-letter",
+      "delivery-result",
+      "delivery-result-dead-letter"
+    ])
+    await expect(routes[0]!.processor.process({ invalid: true })).resolves.toEqual({
+      state: "retry",
+      delayMs: 30_000
+    })
+    await expect(routes[1]!.processor.process({ invalid: true })).resolves.toEqual({
+      state: "complete"
+    })
+    await expect(routes[2]!.processor.process({ invalid: true })).resolves.toEqual({
+      state: "complete"
+    })
+    await expect(routes[3]!.processor.process({ invalid: true })).resolves.toEqual({
+      state: "retry",
+      delayMs: 60_000
+    })
+    await expect(routes[4]!.processor.process({ invalid: true })).resolves.toEqual({
+      state: "retry",
+      delayMs: 60_000
+    })
+  })
+
   it("recovers an exhausted outbound job only after the delivery store allows it", async () => {
     const telemetry = makeCaptureTelemetry({
-      serviceName: "bob-core",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
@@ -60,6 +102,7 @@ describe("Core Queue telemetry", () => {
     const prepareOutboundRecovery = vi.fn(async () => "recover" as const)
     const markEnqueued = vi.fn(async () => undefined)
     const record = vi.fn(async () => "alert-id")
+    const send = vi.fn(async () => undefined)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     compositionHarness.current = testFixture<CoreComposition>({
       database: {
@@ -70,9 +113,11 @@ describe("Core Queue telemetry", () => {
       services: {
         delivery: { prepareOutboundRecovery, markEnqueued },
         alerts: { record }
+      },
+      jobs: {
+        outbound: { publish: send }
       }
     })
-    const send = vi.fn(async () => undefined)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const bindings = testFixture<CoreBindings>({
       OUTBOUND_DEAD_LETTER_QUEUE_NAME: "outbound-dead-letter",
@@ -95,7 +140,7 @@ describe("Core Queue telemetry", () => {
     })
     expect(prepareOutboundRecovery).toHaveBeenCalledWith(outboxId, 3)
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ outboxId, correlationId }), {
-      delaySeconds: 300
+      delayMs: 300_000
     })
     expect(markEnqueued).toHaveBeenCalledWith(outboxId, expect.any(String))
     expect(message.ack).toHaveBeenCalledOnce()
@@ -104,7 +149,7 @@ describe("Core Queue telemetry", () => {
 
   it("continues the inbound trace through the Queue consumer", async () => {
     const telemetry = makeCaptureTelemetry({
-      serviceName: "bob-core",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
@@ -116,30 +161,34 @@ describe("Core Queue telemetry", () => {
         conversations: {
           getInboundOwner: vi.fn(async () => ownerId)
         }
+      },
+      ownerRunCoordinator: {
+        run: vi.fn(async (request) => {
+          const headers = new Headers({
+            "x-bob-correlation-id": request.correlationId
+          })
+          if (request.traceparent !== undefined) headers.set("traceparent", request.traceparent)
+          forwarded.push({
+            body:
+              request.traceparent === undefined
+                ? { ...request.job, correlationId: request.correlationId }
+                : {
+                    ...request.job,
+                    correlationId: request.correlationId,
+                    traceparent: request.traceparent
+                  },
+            headers
+          })
+          return Response.json({ ok: true })
+        })
       }
     })
-    const coordinator = {
-      fetch: vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-        forwarded.push({
-          // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-          body: JSON.parse(String(init?.body)) as unknown,
-          headers: new Headers(init?.headers)
-        })
-        return Response.json({ ok: true })
-      })
-    }
-    const namespace = {
-      idFromName: vi.fn(() => ({ toString: () => ownerId })),
-      get: vi.fn(() => coordinator)
-    }
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const bindings = testFixture<CoreBindings>({
       DELIVERY_RESULT_QUEUE_NAME: "delivery-result",
       DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: "delivery-result-dead-letter",
       INBOUND_DEAD_LETTER_QUEUE_NAME: "inbound-dead-letter",
-      OWNER_RUN_COORDINATOR: {
-        jurisdiction: vi.fn(() => namespace)
-      }
+      OWNER_RUN_COORDINATOR: testFixture<DurableObjectNamespace>({})
     })
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const batch = testFixture<MessageBatch<unknown>>({
@@ -180,7 +229,7 @@ describe("Core Queue telemetry", () => {
 
   it("publishes an inbound DLQ recovery from one producer span", async () => {
     const telemetry = makeCaptureTelemetry({
-      serviceName: "bob-core",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
@@ -196,6 +245,9 @@ describe("Core Queue telemetry", () => {
           markEnqueued
         },
         alerts: { record: vi.fn(async () => undefined) }
+      },
+      jobs: {
+        inbound: { publish: send }
       }
     })
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
@@ -235,7 +287,7 @@ describe("Core Queue telemetry", () => {
 
   it("traces delivery result consumption and recording without provider data", async () => {
     const telemetry = makeCaptureTelemetry({
-      serviceName: "bob-core",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
@@ -254,6 +306,9 @@ describe("Core Queue telemetry", () => {
     compositionHarness.current = testFixture<CoreComposition>({
       services: {
         delivery: { recordResult }
+      },
+      jobs: {
+        outbound: { publish: vi.fn(async () => undefined) }
       }
     })
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
@@ -294,7 +349,7 @@ describe("Core Queue telemetry", () => {
 
   it("keeps the durable retry when delivery result recording fails", async () => {
     const telemetry = makeCaptureTelemetry({
-      serviceName: "bob-core",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
@@ -315,6 +370,9 @@ describe("Core Queue telemetry", () => {
             throw new Error(privateError)
           })
         }
+      },
+      jobs: {
+        outbound: { publish: vi.fn(async () => undefined) }
       }
     })
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
