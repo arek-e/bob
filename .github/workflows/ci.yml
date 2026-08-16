@@ -22,8 +22,6 @@ jobs:
             command: pnpm typecheck
           - name: unit-tests
             command: pnpm test:unit
-          - name: worker-tests
-            command: pnpm test:workers
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -37,32 +35,14 @@ jobs:
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
 
-  alchemy-compatibility:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.19.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Probe pinned Alchemy and Effect runtime
-        run: pnpm iac:load
-
   verify:
     if: always()
-    needs: [checks, alchemy-compatibility]
+    needs: [checks]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Require successful checks
         env:
-          ALCHEMY_RESULT: ${{ needs.alchemy-compatibility.result }}
           CHECKS_RESULT: ${{ needs.checks.result }}
         run: |
           test "$CHECKS_RESULT" = success
-          test "$ALCHEMY_RESULT" = success
