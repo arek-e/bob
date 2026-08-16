@@ -16,13 +16,8 @@ describe("agent configuration", () => {
       BOB_RELEASE_SHA: "f974ae0fc5b53ca1c233faa0dfd69e9f814cb25f",
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.example.invalid:4318/",
       CORE_URL: "https://bob.example.invalid/",
-      CORE_ACCESS_CLIENT_ID: "fixture-client-id",
-      CORE_ACCESS_CLIENT_SECRET: "fixture-client-value",
-      ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
-      RUN_ACCESS_AUDIENCE: "fixture-run-audience",
-      RUN_ACCESS_SUBJECT: "fixture-run-subject",
-      ADMIN_ACCESS_AUDIENCE: "fixture-admin-audience",
-      ADMIN_ACCESS_SUBJECT: "fixture-admin-subject"
+      RUNTIME_SHARED_SECRET: "runtime-shared-secret-value-1234567890",
+      CORE_CALLER_SECRET: "core-caller-secret-value-123456789012"
     })
 
     expect(configuration.baoAddress).toBe("https://openbao.example.invalid")
@@ -51,13 +46,8 @@ describe("agent configuration", () => {
       BOB_RELEASE_SHA: "f974ae0fc5b53ca1c233faa0dfd69e9f814cb25f",
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.example.invalid:4318/",
       CORE_URL: "https://bob.example.invalid/",
-      CORE_ACCESS_CLIENT_ID: "fixture-client-id",
-      CORE_ACCESS_CLIENT_SECRET: "fixture-client-value",
-      ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
-      RUN_ACCESS_AUDIENCE: "fixture-run-audience",
-      RUN_ACCESS_SUBJECT: "fixture-run-subject",
-      ADMIN_ACCESS_AUDIENCE: "fixture-admin-audience",
-      ADMIN_ACCESS_SUBJECT: "fixture-admin-subject"
+      RUNTIME_SHARED_SECRET: "runtime-shared-secret-value-1234567890",
+      CORE_CALLER_SECRET: "core-caller-secret-value-123456789012"
     })
 
     expect(configuration.baoAuthentication).toEqual({
@@ -80,13 +70,8 @@ describe("agent configuration", () => {
       BOB_RELEASE_SHA: "f974ae0fc5b53ca1c233faa0dfd69e9f814cb25f",
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.example.invalid:4318/",
       CORE_URL: "https://bob.example.invalid/",
-      CORE_ACCESS_CLIENT_ID: "fixture-client-id",
-      CORE_ACCESS_CLIENT_SECRET: "fixture-client-value",
-      ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
-      RUN_ACCESS_AUDIENCE: "fixture-run-audience",
-      RUN_ACCESS_SUBJECT: "fixture-run-subject",
-      ADMIN_ACCESS_AUDIENCE: "fixture-admin-audience",
-      ADMIN_ACCESS_SUBJECT: "fixture-admin-subject"
+      RUNTIME_SHARED_SECRET: "runtime-shared-secret-value-1234567890",
+      CORE_CALLER_SECRET: "core-caller-secret-value-123456789012"
     })
 
     expect(configuration.baoAuthentication).toEqual({

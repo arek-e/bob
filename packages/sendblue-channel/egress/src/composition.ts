@@ -1,16 +1,17 @@
 import type { DeliveryResult } from "@bob/contracts/delivery"
 import type { JobPublisher } from "@bob/job-queue"
 
-import { makeCloudflareJobPublisher } from "@bob/job-queue/cloudflare"
-import {
-  cloudflareEventSink,
-  cloudflareTelemetryLayer,
-  makeCloudflareSpanProcessor
-} from "@bob/observability/cloudflare"
+import { makeQueueBindingJobPublisher } from "@bob/job-queue/queue-binding"
 import { noopSpanProcessor } from "@bob/observability/effect"
+import {
+  invocationEventSink,
+  invocationTelemetryLayer,
+  makeInvocationSpanProcessor
+} from "@bob/observability/invocation"
 import { createSendblueClient } from "@bob/sendblue/client"
 import { Context, Effect, Layer, Schema } from "effect"
 
+import type { RuntimeFetcher } from "../../src/runtime.ts"
 import type { EgressBindings } from "./bindings.ts"
 
 const ApplicationConfiguration = Schema.Struct({
@@ -22,13 +23,11 @@ const ApplicationConfiguration = Schema.Struct({
 
 const TelemetryConfiguration = Schema.Struct({
   OTEL_EXPORTER_OTLP_ENDPOINT: Schema.URLFromString,
-  OTEL_ACCESS_CLIENT_ID: Schema.String.check(Schema.isMinLength(1)),
-  OTEL_ACCESS_CLIENT_SECRET: Schema.String.check(Schema.isMinLength(1)),
   BOB_RELEASE_SHA: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/))
 })
 
 interface EgressPorts {
-  readonly core: Fetcher
+  readonly core: RuntimeFetcher
   readonly deliveryResults: JobPublisher<DeliveryResult>
   readonly sendblue: ReturnType<typeof createSendblueClient>
 }
@@ -37,15 +36,11 @@ const EgressPorts = Context.Service<EgressPorts>("bob/EgressPorts")
 function telemetryProcessor(bindings: EgressBindings) {
   try {
     const config = Schema.decodeUnknownSync(TelemetryConfiguration)(bindings)
-    return makeCloudflareSpanProcessor({
+    return makeInvocationSpanProcessor({
       endpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT.toString(),
       serviceName: "bob-sendblue-egress",
       serviceVersion: config.BOB_RELEASE_SHA,
-      deploymentEnvironment: "prod",
-      headers: {
-        "CF-Access-Client-Id": config.OTEL_ACCESS_CLIENT_ID,
-        "CF-Access-Client-Secret": config.OTEL_ACCESS_CLIENT_SECRET
-      }
+      deploymentEnvironment: "prod"
     })
   } catch {
     return noopSpanProcessor
@@ -54,10 +49,10 @@ function telemetryProcessor(bindings: EgressBindings) {
 
 export function composeEgress(bindings: EgressBindings) {
   const config = Schema.decodeUnknownSync(ApplicationConfiguration)(bindings)
-  const events = cloudflareEventSink()
+  const events = invocationEventSink()
   const ports: EgressPorts = {
     core: bindings.CORE,
-    deliveryResults: makeCloudflareJobPublisher(bindings.DELIVERY_RESULT_QUEUE),
+    deliveryResults: makeQueueBindingJobPublisher(bindings.DELIVERY_RESULT_QUEUE),
     sendblue: createSendblueClient({
       apiKeyId: config.SENDBLUE_API_KEY_ID,
       apiSecretKey: config.SENDBLUE_API_SECRET_KEY
@@ -66,7 +61,7 @@ export function composeEgress(bindings: EgressBindings) {
   const processor = telemetryProcessor(bindings)
   const layer = Layer.merge(
     Layer.succeed(EgressPorts, ports),
-    cloudflareTelemetryLayer({ processor })
+    invocationTelemetryLayer({ processor })
   )
   return {
     config,

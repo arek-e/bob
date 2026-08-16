@@ -39,9 +39,7 @@ describe("Core HTTP telemetry", () => {
     const bindings = testFixture<CoreBindings>({
       INGRESS_CALLER_SECRET: ingressSecret,
       EGRESS_CALLER_SECRET: "e".repeat(64),
-      AGENT_CALLER_SUBJECT: "agent",
-      ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
-      CORE_ACCESS_AUDIENCE: "core"
+      AGENT_CALLER_SECRET: "a".repeat(64)
     })
     const telemetry = makeCaptureTelemetry({
       serviceName: "bob-core-runtime",
@@ -59,7 +57,6 @@ describe("Core HTTP telemetry", () => {
         }
       }),
       bindings,
-      undefined,
       {
         runPromise: (effect) => Effect.runPromise(effect.pipe(Effect.provide(telemetry.layer)))
       },
@@ -116,14 +113,15 @@ describe("Core HTTP telemetry", () => {
     const bindings = testFixture<CoreBindings>({
       INGRESS_CALLER_SECRET: "i".repeat(64),
       EGRESS_CALLER_SECRET: "e".repeat(64),
-      AGENT_CALLER_SUBJECT: "agent",
-      ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
-      CORE_ACCESS_AUDIENCE: "core"
+      AGENT_CALLER_SECRET: "a".repeat(64)
     })
     const response = await handleHttp(
       new Request("https://core.test/internal/tools", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-bob-caller-token": "a".repeat(64)
+        },
         body: JSON.stringify({
           runId,
           toolCallId: "tool-call",
@@ -134,7 +132,6 @@ describe("Core HTTP telemetry", () => {
         })
       }),
       bindings,
-      async () => ({ subject: "", commonName: "agent", audience: ["core"] }),
       undefined,
       composeTestCore
     )

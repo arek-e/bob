@@ -25,8 +25,6 @@ const bindings = {
   SENDBLUE_STATUS_CALLBACK_URL: "https://ingress.example.invalid/webhooks/outbound",
   CORE_CALLER_SECRET: "c".repeat(64),
   OTEL_EXPORTER_OTLP_ENDPOINT: "",
-  OTEL_ACCESS_CLIENT_ID: "",
-  OTEL_ACCESS_CLIENT_SECRET: "",
   BOB_RELEASE_SHA: ""
 } as EgressBindings
 

@@ -131,9 +131,6 @@ services:
       openbao-bootstrap: { condition: service_completed_successfully }
       telemetry: { condition: service_started }
     environment:
-      ACCESS_TEAM_DOMAIN: compose.cloudflareaccess.com
-      ADMIN_ACCESS_AUDIENCE: bob-compose-agent-admin
-      ADMIN_ACCESS_SUBJECT: bob-compose-core
       BAO_ADDR: http://openbao:8200
       BAO_APPROLE_ROLE_ID: bob-agent
       BAO_APPROLE_SECRET_ID_PATH: /run/bob-secrets/openbao_approle_secret_id
@@ -142,14 +139,10 @@ services:
       BOB_MODEL: ${BOB_MODEL:?}
       BOB_PROVIDER: openai-codex
       BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
-      BOB_RUNTIME_DRIVER: compose
-      CORE_ACCESS_CLIENT_ID: bob-compose-agent
-      CORE_ACCESS_CLIENT_SECRET: ${AGENT_CALLER_SECRET:?}
+      CORE_CALLER_SECRET: ${AGENT_CALLER_SECRET:?}
       CORE_URL: http://core:8788
       OTEL_EXPORTER_OTLP_ENDPOINT: http://telemetry:4318
       PORT: "8787"
-      RUN_ACCESS_AUDIENCE: bob-compose-agent-run
-      RUN_ACCESS_SUBJECT: bob-compose-core
       RUNTIME_SHARED_SECRET: ${AGENT_CALLER_SECRET:?}
     expose: ["8787"]
     healthcheck:

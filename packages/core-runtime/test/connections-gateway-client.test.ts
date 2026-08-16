@@ -12,8 +12,7 @@ describe("Connections Gateway client", () => {
     )
     const client = makeConnectionsGatewayClient({
       url: "https://connections.example",
-      accessClientId: "instance-client",
-      accessClientSecret: "instance-secret",
+      callerSecret: "instance-secret",
       fetch: request
     })
 
@@ -27,8 +26,7 @@ describe("Connections Gateway client", () => {
     const [url, init] = request.mock.calls[0] ?? []
     expect(String(url)).toBe("https://connections.example/v1/connect-sessions")
     expect(Object.fromEntries(new Headers(init?.headers))).toMatchObject({
-      "cf-access-client-id": "instance-client",
-      "cf-access-client-secret": "instance-secret"
+      "x-bob-caller-token": "instance-secret"
     })
     expect(JSON.parse(String(init?.body))).toEqual({
       ownerId: "owner-1",
@@ -52,8 +50,7 @@ describe("Connections Gateway client", () => {
     )
     const client = makeConnectionsGatewayClient({
       url: "https://connections.example",
-      accessClientId: "instance-client",
-      accessClientSecret: "instance-secret",
+      callerSecret: "instance-secret",
       fetch: request
     })
 
@@ -71,8 +68,7 @@ describe("Connections Gateway client", () => {
     expect(() =>
       makeConnectionsGatewayClient({
         url: "http://connections.example",
-        accessClientId: "instance-client",
-        accessClientSecret: "instance-secret"
+        callerSecret: "instance-secret"
       })
     ).toThrow("Connections Gateway URL must use HTTPS")
   })

@@ -41,8 +41,7 @@ const Configuration = Schema.Struct({
   ),
   UI_BASE_URL: Schema.String,
   CONNECTIONS_GATEWAY_URL: Schema.String,
-  CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID: Schema.String.check(Schema.isMinLength(1)),
-  CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET: Schema.String.check(Schema.isMinLength(1))
+  CONNECTIONS_GATEWAY_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32))
 })
 
 export interface TransitionalExtensions {
@@ -61,8 +60,7 @@ export const transitionalRuntimeProfile: DeploymentRuntimeProfile<TransitionalEx
       context.database,
       makeConnectionsGatewayClient({
         url: config.CONNECTIONS_GATEWAY_URL,
-        accessClientId: config.CONNECTIONS_GATEWAY_ACCESS_CLIENT_ID,
-        accessClientSecret: config.CONNECTIONS_GATEWAY_ACCESS_CLIENT_SECRET
+        callerSecret: config.CONNECTIONS_GATEWAY_CALLER_SECRET
       }),
       {}
     )

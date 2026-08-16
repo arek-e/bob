@@ -2,11 +2,9 @@ import type { SendOutcome } from "@bob/sendblue/client"
 
 import { OutboxClaim, type DeliveryResult } from "@bob/contracts/delivery"
 import { OutboundJob, type OutboundJob as OutboundJobValue } from "@bob/contracts/jobs"
-import { completeJob, retryJob } from "@bob/job-queue"
-import { processCloudflareMessage } from "@bob/job-queue/cloudflare"
-import { flushCloudflareTelemetry } from "@bob/observability/cloudflare"
 import { recordDecision, withBobSpan } from "@bob/observability/effect"
 import { observeHealth } from "@bob/observability/events"
+import { flushInvocationTelemetry } from "@bob/observability/invocation"
 import {
   externalParentFromTraceparent,
   injectCurrentTraceparent
@@ -14,6 +12,7 @@ import {
 import { buildSendblueStatusCallback } from "@bob/sendblue/status-callback"
 import { Effect, Schema } from "effect"
 
+import type { RuntimeLifecycle } from "../../../src/runtime.ts"
 import type { EgressBindings } from "../bindings.ts"
 
 import { composeEgress } from "../composition.ts"
@@ -208,11 +207,11 @@ async function runOutboundJob(
 
 function scheduleFlush(
   composition: EgressComposition,
-  context: ExecutionContext | undefined
+  context: RuntimeLifecycle | undefined
 ): void {
   if (context === undefined) return
   try {
-    context.waitUntil(Effect.runPromise(flushCloudflareTelemetry(composition.processor)))
+    context.waitUntil(Effect.runPromise(flushInvocationTelemetry(composition.processor)))
   } catch {
     // Telemetry must not change Queue acknowledgement.
   }
@@ -221,7 +220,7 @@ function scheduleFlush(
 export async function processOutboundJob<Input>(
   input: Input,
   bindings: EgressBindings,
-  context?: ExecutionContext
+  context?: RuntimeLifecycle
 ): Promise<"done" | "retry"> {
   const job = Schema.decodeUnknownSync(OutboundJob)(input)
   const composition = composeEgress(bindings)
@@ -232,34 +231,4 @@ export async function processOutboundJob<Input>(
   }
 }
 
-export async function handleOutboundQueue(
-  batch: MessageBatch<unknown>,
-  bindings: EgressBindings,
-  context: ExecutionContext
-): Promise<void> {
-  let composition: EgressComposition
-  try {
-    composition = composeEgress(bindings)
-  } catch {
-    for (const message of batch.messages) message.retry({ delaySeconds: 30 })
-    return
-  }
-  try {
-    for (const message of batch.messages) {
-      await processCloudflareMessage(
-        message,
-        {
-          process: async (input) => {
-            const job = Schema.decodeUnknownSync(OutboundJob)(input)
-            const outcome = await runOutboundJob(job, composition)
-            return outcome === "done" ? completeJob : retryJob(30_000)
-          }
-        },
-        { unexpectedErrorDelayMs: 30_000 }
-      )
-    }
-  } finally {
-    scheduleFlush(composition, context)
-  }
-}
 const ConflictResponse = Schema.Struct({ disposition: Schema.optionalKey(Schema.String) })

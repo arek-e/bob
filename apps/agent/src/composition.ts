@@ -7,12 +7,7 @@ import { OpenBaoCredentialStore } from "@bob/pi-agent/auth"
 import { Layer, ManagedRuntime } from "effect"
 import { readFile } from "node:fs/promises"
 
-import {
-  AccessVerifier,
-  accessVerifierLayer,
-  createAccessVerifier,
-  createSharedSecretAccessVerifier
-} from "./access.ts"
+import { AccessVerifier, accessVerifierLayer, createSharedSecretAccessVerifier } from "./access.ts"
 import { readAgentConfiguration, type AgentConfiguration } from "./configuration.ts"
 import { CoreToolClient, coreToolClientLayer, createCoreToolClient } from "./core-tools.ts"
 
@@ -34,25 +29,11 @@ export interface AgentComposition {
 
 export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
   const config = readAgentConfiguration(environment)
-  const access =
-    config.runtimeDriver === "compose"
-      ? createSharedSecretAccessVerifier({
-          secret: requiredRuntimeSharedSecret(config),
-          runSubject: config.runAccessSubject,
-          adminSubject: config.adminAccessSubject
-        })
-      : createAccessVerifier({
-          teamDomain: config.accessTeamDomain,
-          runAudience: config.runAccessAudience,
-          runSubject: config.runAccessSubject,
-          adminAudience: config.adminAccessAudience,
-          adminSubject: config.adminAccessSubject
-        })
+  const access = createSharedSecretAccessVerifier(config.runtimeSharedSecret)
   const coreTools = createCoreToolClient({
     catalogue: defaultAgentProfile,
     coreUrl: config.coreUrl,
-    accessClientId: config.coreAccessClientId,
-    accessClientSecret: config.coreAccessClientSecret
+    callerSecret: config.coreCallerSecret
   })
   const credentials = new OpenBaoCredentialStore({
     address: config.baoAddress,
@@ -97,13 +78,6 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
     runtime,
     services: { access, agent, coreTools }
   }
-}
-
-function requiredRuntimeSharedSecret(config: AgentConfiguration): string {
-  if (config.runtimeSharedSecret === undefined) {
-    throw new Error("Agent Runtime shared secret is unavailable")
-  }
-  return config.runtimeSharedSecret
 }
 
 function readSecretValue(value: string): (signal?: AbortSignal) => Promise<string> {

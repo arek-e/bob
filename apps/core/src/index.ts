@@ -73,21 +73,15 @@ async function main(): Promise<void> {
     inbound: makeBullMqJobPublisher(inboundQueue, "inbound"),
     outbound: makeBullMqJobPublisher(outboundQueue, "outbound")
   })
-  // SAFETY: Portable composition never reads Cloudflare-only bindings from this sentinel.
-  const unavailablePlatformBinding = {} as never
   const applicationStorage = database.applicationStorage
   const bindings: CoreBindings = {
     AUTH_DATABASE: database.authDatabase,
     DB: applicationStorage,
-    PRIVATE_OBJECTS: unavailablePlatformBinding,
     ASSETS: makeFilesystemAssetFetcher(config.ASSETS_DIRECTORY),
-    INBOUND_QUEUE: unavailablePlatformBinding,
     INBOUND_DEAD_LETTER_QUEUE_NAME: queueNames.inboundDeadLetter,
     DELIVERY_RESULT_QUEUE_NAME: queueNames.deliveryResult,
     DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: queueNames.deliveryResultDeadLetter,
     OUTBOUND_DEAD_LETTER_QUEUE_NAME: queueNames.outboundDeadLetter,
-    OUTBOUND_QUEUE: unavailablePlatformBinding,
-    OWNER_RUN_COORDINATOR: unavailablePlatformBinding,
     OWNER_ID: config.OWNER_ID,
     OWNER_TIME_ZONE: config.OWNER_TIME_ZONE,
     DATA_KEK_ACTIVE_VERSION: config.DATA_KEK_ACTIVE_VERSION,
@@ -97,17 +91,11 @@ async function main(): Promise<void> {
     EGRESS_CALLER_SECRET: config.EGRESS_CALLER_SECRET,
     CHANNEL_EGRESS_URL: config.CHANNEL_EGRESS_URL,
     BETTER_AUTH_SECRET: config.AGENT_CALLER_SECRET,
-    ACCESS_TEAM_DOMAIN: "compose.cloudflareaccess.com",
-    CORE_ACCESS_AUDIENCE: "bob-compose-core",
-    SETUP_ACCESS_AUDIENCE: "bob-compose-setup",
+    SETUP_TOKEN: config.SETUP_TOKEN,
     OWNER_ACCESS_EMAIL: config.OWNER_ACCESS_EMAIL,
-    AGENT_CALLER_SUBJECT: "bob-compose-agent",
+    AGENT_CALLER_SECRET: config.AGENT_CALLER_SECRET,
     AGENT_URL: config.AGENT_URL,
-    AGENT_ACCESS_CLIENT_ID: "bob-compose-core",
-    AGENT_ACCESS_CLIENT_SECRET: config.AGENT_CALLER_SECRET,
     AGENT_ADMIN_URL: config.AGENT_URL,
-    AGENT_ADMIN_ACCESS_CLIENT_ID: "bob-compose-core",
-    AGENT_ADMIN_ACCESS_CLIENT_SECRET: config.AGENT_CALLER_SECRET,
     UI_BASE_URL: config.UI_BASE_URL,
     BOB_MODEL: config.BOB_MODEL,
     BOB_PROVIDER: "openai-codex",
@@ -148,7 +136,7 @@ async function main(): Promise<void> {
       try {
         const headers = new Headers({
           "content-type": "application/json",
-          "CF-Access-Client-Secret": config.AGENT_CALLER_SECRET,
+          "x-bob-caller-token": config.AGENT_CALLER_SECRET,
           "x-bob-correlation-id": correlationId
         })
         if (traceparent !== undefined) headers.set("traceparent", traceparent)
@@ -216,32 +204,7 @@ async function main(): Promise<void> {
   const server = createServer(async (incoming, outgoing) => {
     try {
       const request = await webRequest(incoming)
-      const response = await handleHttp(
-        request,
-        bindings,
-        async (authorizedRequest, access) => {
-          const setupRequest = access.accessAudience === "bob-compose-setup"
-          const supplied = authorizedRequest.headers.get(
-            setupRequest ? "x-bob-setup-token" : "CF-Access-Client-Secret"
-          )
-          const expected = setupRequest ? config.SETUP_TOKEN : config.AGENT_CALLER_SECRET
-          if (!(await secretsMatch(supplied, expected))) throw new Error("access_denied")
-          return setupRequest
-            ? {
-                subject: config.OWNER_ID,
-                commonName: config.OWNER_ACCESS_EMAIL,
-                email: config.OWNER_ACCESS_EMAIL,
-                audience: [access.accessAudience]
-              }
-            : {
-                subject: "",
-                commonName: "bob-compose-agent",
-                audience: [access.accessAudience]
-              }
-        },
-        undefined,
-        () => composition
-      )
+      const response = await handleHttp(request, bindings, undefined, () => composition)
       if (
         config.AUTO_ENQUEUE_INBOUND === "true" &&
         request.method === "POST" &&
@@ -282,18 +245,6 @@ async function main(): Promise<void> {
   }
   process.once("SIGTERM", () => void shutdown())
   process.once("SIGINT", () => void shutdown())
-}
-
-async function secretsMatch(supplied: string | null, expected: string): Promise<boolean> {
-  if (supplied === null) return false
-  const digest = async (value: string) =>
-    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))
-  const [left, right] = await Promise.all([digest(supplied), digest(expected)])
-  let difference = left.byteLength ^ right.byteLength
-  for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
-    difference |= left[index]! ^ right[index]!
-  }
-  return difference === 0
 }
 
 void main().catch((error: Error) => {

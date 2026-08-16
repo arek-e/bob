@@ -20,11 +20,7 @@ import type { CoreComposer, CoreComposition } from "../composition.ts"
 
 import { createOwnerAuth, ownerSession } from "../modules/auth/service.ts"
 import { publishDeliveryFollowups } from "../modules/delivery/followups.ts"
-import {
-  authorizeCoreRequest,
-  authorizeSetupRequest,
-  type AccessTokenVerifier
-} from "../modules/policy/access.ts"
+import { authorizeCoreRequest, authorizeSetupRequest } from "../modules/policy/access.ts"
 
 async function wakeSettledConversationRun(
   composition: CoreComposition,
@@ -121,19 +117,10 @@ async function authUserExists(bindings: CoreBindings): Promise<boolean> {
 async function handleSetup(
   request: Request,
   bindings: CoreBindings,
-  verifyAccess: AccessTokenVerifier | undefined,
   compose: CoreComposer
 ): Promise<Response> {
   try {
-    await authorizeSetupRequest(
-      request,
-      {
-        ownerEmail: bindings.OWNER_ACCESS_EMAIL,
-        accessIssuer: `https://${bindings.ACCESS_TEAM_DOMAIN}`,
-        accessAudience: bindings.SETUP_ACCESS_AUDIENCE
-      },
-      verifyAccess
-    )
+    await authorizeSetupRequest(request, { setupToken: bindings.SETUP_TOKEN })
   } catch {
     return json({ code: "unauthorized" }, 401)
   }
@@ -179,7 +166,6 @@ async function handleSetup(
 export async function handleHttp(
   request: Request,
   bindings: CoreBindings,
-  verifyAccess?: AccessTokenVerifier,
   telemetry?: CoreTelemetryRunner,
   compose?: CoreComposer
 ): Promise<Response> {
@@ -195,7 +181,7 @@ export async function handleHttp(
 
   if (url.pathname === "/setup/api") {
     if (compose === undefined) throw new Error("Core composition is required")
-    return handleSetup(request, bindings, verifyAccess, compose)
+    return handleSetup(request, bindings, compose)
   }
 
   if (url.pathname.startsWith("/api/")) {
@@ -208,17 +194,11 @@ export async function handleHttp(
     }
   } else if (url.pathname.startsWith("/internal/")) {
     try {
-      await authorizeCoreRequest(
-        request,
-        {
-          ingressSecret: bindings.INGRESS_CALLER_SECRET,
-          egressSecret: bindings.EGRESS_CALLER_SECRET,
-          agentSubject: bindings.AGENT_CALLER_SUBJECT,
-          accessIssuer: `https://${bindings.ACCESS_TEAM_DOMAIN}`,
-          accessAudience: bindings.CORE_ACCESS_AUDIENCE
-        },
-        verifyAccess
-      )
+      await authorizeCoreRequest(request, {
+        ingressSecret: bindings.INGRESS_CALLER_SECRET,
+        egressSecret: bindings.EGRESS_CALLER_SECRET,
+        agentSecret: bindings.AGENT_CALLER_SECRET
+      })
     } catch {
       return json({ code: "unauthorized" }, 401)
     }
@@ -605,8 +585,7 @@ export async function handleHttp(
       if (alert.code === "agent_authentication_failed") {
         const response = await fetch(`${composition.config.AGENT_ADMIN_URL}/v1/admin/auth/status`, {
           headers: {
-            "CF-Access-Client-Id": composition.config.AGENT_ADMIN_ACCESS_CLIENT_ID,
-            "CF-Access-Client-Secret": composition.config.AGENT_ADMIN_ACCESS_CLIENT_SECRET
+            "x-bob-caller-token": composition.config.AGENT_CALLER_SECRET
           }
         })
         const status = Schema.decodeUnknownSync(
@@ -667,8 +646,7 @@ export async function handleHttp(
     if (request.method === "GET" && url.pathname === "/api/agent/status") {
       const response = await fetch(`${composition.config.AGENT_ADMIN_URL}/v1/admin/auth/status`, {
         headers: {
-          "CF-Access-Client-Id": composition.config.AGENT_ADMIN_ACCESS_CLIENT_ID,
-          "CF-Access-Client-Secret": composition.config.AGENT_ADMIN_ACCESS_CLIENT_SECRET
+          "x-bob-caller-token": composition.config.AGENT_CALLER_SECRET
         }
       })
       return json(await response.json(), response.status)
@@ -680,8 +658,7 @@ export async function handleHttp(
         {
           method: "POST",
           headers: {
-            "CF-Access-Client-Id": composition.config.AGENT_ADMIN_ACCESS_CLIENT_ID,
-            "CF-Access-Client-Secret": composition.config.AGENT_ADMIN_ACCESS_CLIENT_SECRET
+            "x-bob-caller-token": composition.config.AGENT_CALLER_SECRET
           }
         }
       )

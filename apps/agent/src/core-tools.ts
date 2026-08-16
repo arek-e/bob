@@ -23,8 +23,7 @@ export const CoreToolClient = Context.Service<CoreToolClient>("bob/CoreToolClien
 export function createCoreToolClient(options: {
   readonly catalogue: CapabilityCatalogue
   readonly coreUrl: string
-  readonly accessClientId: string
-  readonly accessClientSecret: string
+  readonly callerSecret: string
   readonly fetch?: typeof fetch
   readonly now?: () => number
 }): CoreToolClient {
@@ -42,8 +41,7 @@ export function createCoreToolClient(options: {
         const execution = Effect.gen(function* () {
           const headers = yield* injectCurrentTraceparent({
             "content-type": "application/json",
-            "CF-Access-Client-Id": options.accessClientId,
-            "CF-Access-Client-Secret": options.accessClientSecret,
+            "x-bob-caller-token": options.callerSecret,
             "x-bob-correlation-id": correlationId
           })
           const result = yield* Effect.tryPromise({
@@ -90,8 +88,7 @@ export function createCoreToolClient(options: {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "CF-Access-Client-Id": options.accessClientId,
-          "CF-Access-Client-Secret": options.accessClientSecret
+          "x-bob-caller-token": options.callerSecret
         },
         body: JSON.stringify({ runId, attemptId }),
         signal: AbortSignal.timeout(15_000)
@@ -105,8 +102,7 @@ export function createCoreToolClient(options: {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "CF-Access-Client-Id": options.accessClientId,
-          "CF-Access-Client-Secret": options.accessClientSecret
+          "x-bob-caller-token": options.callerSecret
         },
         body: JSON.stringify({ operation, attemptId }),
         signal: AbortSignal.timeout(15_000)
@@ -121,8 +117,7 @@ export function createCoreToolClient(options: {
           : AbortSignal.any([signal, AbortSignal.timeout(5_000)])
       const response = await request(`${options.coreUrl}/internal/readiness`, {
         headers: {
-          "CF-Access-Client-Id": options.accessClientId,
-          "CF-Access-Client-Secret": options.accessClientSecret
+          "x-bob-caller-token": options.callerSecret
         },
         signal: requestSignal
       })

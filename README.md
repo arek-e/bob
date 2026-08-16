@@ -4,8 +4,7 @@ Bob Runtime is an AGPLv3-licensed private continuity assistant.
 
 It uses iMessage through Sendblue.
 
-The portable runtime uses Node, PostgreSQL, and BullMQ.
-Cloudflare compatibility packages remain available during migration.
+The runtime uses Node, PostgreSQL, and BullMQ.
 
 The Runtime is licensed under the GNU Affero General Public License, version 3.
 See [LICENSE](LICENSE). The private Control Plane is not part of this repository.

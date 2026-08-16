@@ -5,7 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./cloudflare": "./src/cloudflare.ts",
     "./filesystem": "./src/filesystem.ts",
     "./s3": "./src/s3.ts"
   },

@@ -9,8 +9,6 @@ The `apps` directory contains Bob's primary portable runtime processes and brows
 | `channel` | Receives channel events and delivers replies.                  | Node, BullMQ, and Sendblue.               |
 | `ui`      | Provides setup, settings, review, and recovery.                | Browser application.                      |
 
-Cloudflare compatibility Implementations live in `packages/cloudflare`.
-
 The root Compose profile runs these production images. It does not replace them with fixtures.
 
 An application needs a process, browser, credential, or runtime isolation Seam. Libraries,

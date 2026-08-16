@@ -18,7 +18,6 @@
     "@bob/pi-agent": "workspace:*",
     "@effect/platform-node": "4.0.0-beta.107",
     "effect": "4.0.0-beta.107",
-    "jose": "6.2.8",
     "varlock": "1.16.1"
   },
   "devDependencies": {

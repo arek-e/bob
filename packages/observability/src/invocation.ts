@@ -1,12 +1,14 @@
 import { Effect, Layer, Tracer } from "effect"
 
+import type { SafeSpanProcessor } from "./effect.ts"
 import type { EventSink, HealthEvent } from "./events.ts"
+import type { OtlpHttpSpanProcessorOptions } from "./otlp.ts"
 
-import { makeSafeTracer, type SafeSpanProcessor, Telemetry } from "./effect.ts"
+import { makeSafeTracer, Telemetry } from "./effect.ts"
 import { parseHealthEvent } from "./events.ts"
-import { makeOtlpHttpSpanProcessor, type OtlpHttpSpanProcessorOptions } from "./otlp.ts"
+import { makeOtlpHttpSpanProcessor } from "./otlp.ts"
 
-export function cloudflareEventSink(write: (line: string) => void = console.log): EventSink {
+export function invocationEventSink(write: (line: string) => void = console.log): EventSink {
   return {
     emit(event: HealthEvent): void {
       write(JSON.stringify(parseHealthEvent(event)))
@@ -14,18 +16,18 @@ export function cloudflareEventSink(write: (line: string) => void = console.log)
   }
 }
 
-export type CloudflareSpanProcessorOptions = Omit<
+export type InvocationSpanProcessorOptions = Omit<
   OtlpHttpSpanProcessorOptions,
   "scheduledDelayMs" | "flushOnShutdown"
 >
 
-export function makeCloudflareSpanProcessor(
-  options: CloudflareSpanProcessorOptions
+export function makeInvocationSpanProcessor(
+  options: InvocationSpanProcessorOptions
 ): SafeSpanProcessor {
   return makeOtlpHttpSpanProcessor(options)
 }
 
-export function cloudflareTelemetryLayer(options: {
+export function invocationTelemetryLayer(options: {
   readonly processor: SafeSpanProcessor
   readonly writeHealth?: (event: HealthEvent) => void
 }): Layer.Layer<Telemetry> {
@@ -44,6 +46,6 @@ export function cloudflareTelemetryLayer(options: {
   )
 }
 
-export function flushCloudflareTelemetry(processor: SafeSpanProcessor): Effect.Effect<void> {
+export function flushInvocationTelemetry(processor: SafeSpanProcessor): Effect.Effect<void> {
   return processor.forceFlush.pipe(Effect.catchCause(() => Effect.void))
 }
