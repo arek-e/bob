@@ -497,6 +497,95 @@ describe("conversation turn processing", () => {
     expect(completeWithResponse).not.toHaveBeenCalled()
   })
 
+  it("suppresses a transient Agent failure after the turn revision changes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 503 }))
+    )
+    const currentRevision = vi
+      .fn<() => Promise<number | undefined>>()
+      .mockResolvedValueOnce(2)
+      .mockResolvedValue(3)
+    const releaseForRetry = vi.fn()
+    const completeWithoutResponse = vi.fn(async () => true)
+    const releaseSettling = vi.fn(async () => ({ ready: false }))
+    const composition = testFixture<CoreComposition>({
+      config: {
+        AGENT_URL: "https://agent.example.invalid",
+        AGENT_ACCESS_CLIENT_ID: "client",
+        AGENT_ACCESS_CLIENT_SECRET: "secret",
+        BOB_MODEL: "gpt-test"
+      },
+      database: {},
+      services: {
+        events: { emit: vi.fn(async () => undefined) },
+        conversations: { claimReaction: vi.fn(async () => false) },
+        turns: {
+          markRunning: vi.fn(async () => true),
+          currentRevision,
+          releaseSettling
+        },
+        training: { stopActiveForSafety: vi.fn() },
+        journal: { createHandoff: vi.fn() },
+        reminders: { applyBoundReply: vi.fn() },
+        settings: {
+          get: vi.fn(async () => ({
+            timeZone: "Europe/Stockholm",
+            locale: "en",
+            hourCycle: "h23"
+          }))
+        },
+        context: { build: vi.fn(async () => []) },
+        tools: { mutationActivity: vi.fn(async () => ({ status: "none" as const })) },
+        runs: {
+          loadForInbound: vi.fn(async () => undefined),
+          loadForTurn: vi.fn(async () => undefined),
+          create: vi.fn(async (request: { runId: string }) => ({
+            runId: request.runId,
+            duplicate: false
+          })),
+          claim: vi.fn(async () => attemptId),
+          releaseForRetry,
+          completeWithoutResponse
+        },
+        alerts: { record: vi.fn(async () => undefined) }
+      }
+    })
+    const snapshot: ConversationTurnSnapshot = {
+      turnId,
+      ownerId,
+      channelId,
+      revision: 2,
+      claimExpiresAt,
+      latest: {
+        eventId: latestEventId,
+        messageId: latestMessageId,
+        text: "List",
+        ordinal: 2,
+        providerMessageHandle: "provider-latest",
+        service: "sms",
+        isGroup: false,
+        correlationId,
+        number: "+46700000000",
+        fromNumber: "+46711111111"
+      },
+      messages: [
+        { eventId: firstEventId, messageId: firstMessageId, text: "Lost my reminders", ordinal: 1 },
+        { eventId: latestEventId, messageId: latestMessageId, text: "List", ordinal: 2 }
+      ]
+    }
+
+    await processConversationTurn(snapshot, testFixture<CoreBindings>({}), composition)
+
+    expect(currentRevision).toHaveBeenCalledTimes(2)
+    expect(releaseForRetry).not.toHaveBeenCalled()
+    expect(completeWithoutResponse).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "failed", errorCode: "provider" }),
+      attemptId
+    )
+    expect(releaseSettling).toHaveBeenCalledWith(turnId, expect.any(String))
+  })
+
   it("suppresses a stale attempt before it reaches the agent host", async () => {
     const invoke = vi.fn()
     vi.stubGlobal("fetch", invoke)

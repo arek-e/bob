@@ -10,8 +10,20 @@ import {
   AgentSteerResult,
   PriorToolReceipt
 } from "../src/agent.ts"
+import { MAX_TOOL_RESULT_BYTES, ToolResult } from "../src/tools.ts"
 
 describe("AgentRunRequest rollout compatibility", () => {
+  it("rejects a Tool result that cannot fit in one checkpoint", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(ToolResult)({
+        ok: true,
+        code: "large_result",
+        message: "Large result.",
+        data: { text: "x".repeat(MAX_TOOL_RESULT_BYTES) }
+      })
+    ).toThrow()
+  })
+
   it("accepts only the current durable Agent loop version", () => {
     const operation = {
       protocolVersion: 1,

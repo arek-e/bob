@@ -1180,6 +1180,20 @@ export async function processInbound(
         result = unknownMutationAgentResult(agentRequest, composition.config.BOB_MODEL)
       }
       if (mutationActivity.status === "none" && isRetryableAgentResult(result)) {
+        if (
+          conversationTurn !== undefined &&
+          (yield* promiseEffect(() =>
+            composition.services.turns.currentRevision(conversationTurn.turnId)
+          )) !== conversationTurn.revision
+        ) {
+          yield* suppressStaleAgentAttempt(bindings, composition, {
+            result,
+            attemptId: runAttemptId,
+            turn: conversationTurn,
+            feature
+          })
+          return
+        }
         const retry = yield* promiseEffect(() =>
           composition.services.runs.releaseForRetry(
             result,
