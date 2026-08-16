@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   makeOwnerWakeJobProcessor,
   makeQueuedOwnerRunCoordinator
-} from "../src/runtime/owner-run-coordinator.ts"
+} from "../src/runtime/run-coordinator.ts"
 
 const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
 const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"

@@ -1,6 +1,5 @@
+import { authorizeCoreRequest, authorizeSetupRequest } from "@bob/core-service/policy/access"
 import { describe, expect, it } from "vitest"
-
-import { authorizeCoreRequest, authorizeSetupRequest } from "../src/modules/policy/access.ts"
 
 const configuration = {
   ingressSecret: "i".repeat(64),

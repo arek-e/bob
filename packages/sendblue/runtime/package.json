@@ -1,0 +1,21 @@
+{
+  "name": "@bob/sendblue-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./account": "./src/account.ts",
+    "./client": "./src/client.ts",
+    "./history": "./src/history.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/core-capabilities-types": "workspace:*",
+    "@bob/core-types": "workspace:*",
+    "@bob/sendblue-types": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  }
+}

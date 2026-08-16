@@ -1,8 +1,8 @@
+import type { CoreBindings } from "@bob/core-types/bindings"
+
 import { withBobSpan } from "@bob/observability/effect"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
-
-import type { CoreBindings } from "../src/bindings.ts"
 
 import { makeCoreTelemetryInvocation } from "../src/telemetry.ts"
 import { testFixture } from "./test-fixture.ts"

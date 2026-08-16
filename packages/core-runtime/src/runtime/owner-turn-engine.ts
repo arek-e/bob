@@ -1,10 +1,9 @@
-import type { InboundJob } from "@bob/contracts/jobs"
-
 import type {
   ConversationTurnSnapshot,
   ConversationTurnStore,
   OfferedConversationTurn
-} from "../modules/conversations/turn-store.ts"
+} from "@bob/core-service/conversations/turn-store"
+import type { InboundJob } from "@bob/core-types/jobs"
 
 export interface OwnerTurnEngineDependencies {
   readonly turns: ConversationTurnStore

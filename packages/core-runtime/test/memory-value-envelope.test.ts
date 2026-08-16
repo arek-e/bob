@@ -1,5 +1,3 @@
-import { describe, expect, it } from "vitest"
-
 import {
   decodeLegacyMemoryValue,
   decodeMemoryValue,
@@ -8,8 +6,9 @@ import {
   encryptedMemoryValue,
   plainMemoryValue,
   readMemoryValue
-} from "../src/modules/memory/value-envelope.ts"
-import { createDataProtection } from "../src/modules/policy/data-protection.ts"
+} from "@bob/core-service/memory/value-envelope"
+import { createDataProtection } from "@bob/core-service/policy/data-protection"
+import { describe, expect, it } from "vitest"
 
 function key(byte: number): string {
   return Buffer.from(new Uint8Array(32).fill(byte)).toString("hex")

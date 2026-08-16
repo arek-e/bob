@@ -1,8 +1,7 @@
+import { makeAgentExperienceRegistry } from "@bob/core-service/memory/agent-experience"
+import { makeEvidenceSourceRegistry } from "@bob/core-service/memory/evidence"
+import { makeReviewedSkillRegistry } from "@bob/core-service/skills/registry"
 import { describe, expect, it } from "vitest"
-
-import { makeAgentExperienceRegistry } from "../src/modules/memory/agent-experience.ts"
-import { makeEvidenceSourceRegistry } from "../src/modules/memory/evidence.ts"
-import { makeReviewedSkillRegistry } from "../src/modules/skills/registry.ts"
 
 describe("Memory class Modules", () => {
   it("rejects duplicate evidence ownership and unsupported sources", async () => {

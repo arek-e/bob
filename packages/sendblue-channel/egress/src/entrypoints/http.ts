@@ -1,7 +1,7 @@
-import { DeliveryReconciliationRequest } from "@bob/contracts/delivery"
-import { MessageInteractionCommand } from "@bob/contracts/interactions"
-import { createSendblueHistoryClient } from "@bob/sendblue/history"
-import { timingSafeEqual } from "@bob/sendblue/webhooks"
+import { DeliveryReconciliationRequest } from "@bob/core-types/delivery"
+import { MessageInteractionCommand } from "@bob/core-types/interactions"
+import { createSendblueHistoryClient } from "@bob/sendblue-runtime/history"
+import { timingSafeEqual } from "@bob/sendblue-types/webhooks"
 import { Schema } from "effect"
 
 import type { EgressBindings } from "../bindings.ts"

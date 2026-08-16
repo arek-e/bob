@@ -1,4 +1,4 @@
-import { InboundAcceptance, type NormalizedInboundEvent } from "@bob/contracts/channel"
+import { InboundAcceptance, type NormalizedInboundEvent } from "@bob/core-types/channel"
 import { recordDecision, withBobSpan } from "@bob/observability/effect"
 import { observeHealth } from "@bob/observability/events"
 import { flushInvocationTelemetry } from "@bob/observability/invocation"
@@ -6,13 +6,13 @@ import {
   externalParentFromTraceparent,
   injectCurrentTraceparent
 } from "@bob/observability/propagation"
-import { readSendblueStatusCallback } from "@bob/sendblue/status-callback"
+import { readSendblueStatusCallback } from "@bob/sendblue-types/status-callback"
 import {
   decodeWebhookPayload,
   normalizeInbound,
   normalizeStatus,
   timingSafeEqual
-} from "@bob/sendblue/webhooks"
+} from "@bob/sendblue-types/webhooks"
 import { Effect, Schema, type Tracer } from "effect"
 
 import type { RuntimeLifecycle } from "../../../src/runtime.ts"

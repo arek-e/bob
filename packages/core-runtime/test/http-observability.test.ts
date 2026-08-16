@@ -1,8 +1,9 @@
+import type { CoreBindings } from "@bob/core-types/bindings"
+
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import { Effect } from "effect"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
 import { handleHttp } from "../src/entrypoints/http.ts"

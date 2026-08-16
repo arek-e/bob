@@ -1,0 +1,19 @@
+{
+  "name": "@bob/core-capabilities-types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./catalogue": "./src/catalogue.ts",
+    "./definitions": "./src/definitions.ts",
+    "./shared": "./src/shared.ts",
+    "./tools": "./src/tools.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "effect": "4.0.0-beta.107"
+  }
+}

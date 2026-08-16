@@ -1,0 +1,18 @@
+{
+  "name": "@bob/journal-types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./capability": "./src/capability.ts",
+    "./ui": "./src/ui.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/core-capabilities-types": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  }
+}

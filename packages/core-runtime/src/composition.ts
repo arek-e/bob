@@ -1,4 +1,5 @@
-import type { CoreBindings } from "./bindings.ts"
+import type { CoreBindings } from "@bob/core-types/bindings"
+
 import type { CoreRuntimeAdapters } from "./runtime/core-runtime.ts"
 
 import { composeGeneralCore } from "./core-composition.ts"

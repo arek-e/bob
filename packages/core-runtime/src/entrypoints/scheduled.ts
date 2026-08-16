@@ -1,4 +1,7 @@
-import { outboxMessages } from "@bob/db/schema/delivery"
+import type { CoreBindings } from "@bob/core-types/bindings"
+
+import { recoverablePendingOutbox } from "@bob/core-service/delivery/store"
+import { outboxMessages } from "@bob/db-service/schema/delivery"
 import { withBobRootSpan, withBobSpan, type BobSpan } from "@bob/observability/effect"
 import {
   externalParentFromTraceparent,
@@ -6,10 +9,7 @@ import {
 } from "@bob/observability/propagation"
 import { Effect } from "effect"
 
-import type { CoreBindings } from "../bindings.ts"
 import type { CoreComposer } from "../composition.ts"
-
-import { recoverablePendingOutbox } from "../modules/delivery/store.ts"
 
 export interface ScheduledTraceContext {
   readonly correlationId: string

@@ -1,10 +1,25 @@
-import type { InboundJob, OutboundJob } from "@bob/contracts/jobs"
-import type { JobPublisher } from "@bob/job-queue"
-import type { PrivateObjectStore } from "@bob/object-store"
+import type { CoreDatabase } from "@bob/core-types/database"
+import type { InboundJob, OutboundJob } from "@bob/core-types/jobs"
+import type { JobPublisher } from "@bob/job-queue-types"
+import type { PrivateObjectStore } from "@bob/object-store-types"
 import type { EventSink } from "@bob/observability/events"
 
-import type { CoreDatabase } from "../database.ts"
-import type { OwnerRunCoordinator } from "./owner-run-coordinator.ts"
+export interface OwnerRunRequest {
+  readonly ownerId: string
+  readonly job: InboundJob
+  readonly correlationId: string
+  readonly traceparent?: string
+}
+
+export interface OwnerWakeRequest {
+  readonly ownerId: string
+  readonly wakeAt?: string
+}
+
+export interface OwnerRunCoordinator {
+  readonly run: (request: OwnerRunRequest) => Promise<Response>
+  readonly wake: (request: OwnerWakeRequest) => Promise<void>
+}
 
 export interface CoreJobQueue {
   readonly inbound: JobPublisher<InboundJob>

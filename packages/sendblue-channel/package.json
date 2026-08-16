@@ -1,5 +1,5 @@
 {
-  "name": "@bob/sendblue-runtime",
+  "name": "@bob/sendblue-channel-runtime",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,10 +16,13 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@bob/contracts": "workspace:*",
-    "@bob/job-queue": "workspace:*",
+    "@bob/core-capabilities-types": "workspace:*",
+    "@bob/core-types": "workspace:*",
+    "@bob/job-queue-runtime": "workspace:*",
+    "@bob/job-queue-types": "workspace:*",
     "@bob/observability": "workspace:*",
-    "@bob/sendblue": "workspace:*",
+    "@bob/sendblue-runtime": "workspace:*",
+    "@bob/sendblue-types": "workspace:*",
     "effect": "4.0.0-beta.107"
   }
 }

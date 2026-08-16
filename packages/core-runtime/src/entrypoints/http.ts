@@ -1,13 +1,18 @@
+import type { CoreBindings } from "@bob/core-types/bindings"
+
+import { ToolCommand } from "@bob/core-capabilities-types/tools"
+import { createOwnerAuth, ownerSession } from "@bob/core-service/auth/service"
+import { publishDeliveryFollowups } from "@bob/core-service/delivery/followups"
+import { authorizeCoreRequest, authorizeSetupRequest } from "@bob/core-service/policy/access"
 import {
   AgentRunOperationAppendRequest,
   AgentRunOperationsLoadRequest,
   AgentRunResult
-} from "@bob/contracts/agent"
-import { NormalizedInboundEvent, NormalizedStatusEvent } from "@bob/contracts/channel"
-import { DeliveryReconciliationResponse, DeliveryResult } from "@bob/contracts/delivery"
-import { OwnerSettingsUpdate } from "@bob/contracts/settings"
-import { ToolCommand } from "@bob/contracts/tools"
-import { MemoryCandidateCorrection } from "@bob/contracts/ui/core"
+} from "@bob/core-types/agent"
+import { NormalizedInboundEvent, NormalizedStatusEvent } from "@bob/core-types/channel"
+import { DeliveryReconciliationResponse, DeliveryResult } from "@bob/core-types/delivery"
+import { OwnerSettingsUpdate } from "@bob/core-types/settings"
+import { MemoryCandidateCorrection } from "@bob/core-types/ui/core"
 import { featureForToolName } from "@bob/observability/attribution"
 import { recordDecision, withBobSpan, type BobSpan } from "@bob/observability/effect"
 import { observeHealth } from "@bob/observability/events"
@@ -15,12 +20,7 @@ import { externalParentFromTraceparent } from "@bob/observability/propagation"
 import { sql } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 
-import type { CoreBindings } from "../bindings.ts"
 import type { CoreComposer, CoreComposition } from "../composition.ts"
-
-import { createOwnerAuth, ownerSession } from "../modules/auth/service.ts"
-import { publishDeliveryFollowups } from "../modules/delivery/followups.ts"
-import { authorizeCoreRequest, authorizeSetupRequest } from "../modules/policy/access.ts"
 
 async function wakeSettledConversationRun(
   composition: CoreComposition,

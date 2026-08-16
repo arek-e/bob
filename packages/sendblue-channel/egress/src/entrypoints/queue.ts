@@ -1,7 +1,7 @@
-import type { SendOutcome } from "@bob/sendblue/client"
+import type { SendOutcome } from "@bob/sendblue-runtime/client"
 
-import { OutboxClaim, type DeliveryResult } from "@bob/contracts/delivery"
-import { OutboundJob, type OutboundJob as OutboundJobValue } from "@bob/contracts/jobs"
+import { OutboxClaim, type DeliveryResult } from "@bob/core-types/delivery"
+import { OutboundJob, type OutboundJob as OutboundJobValue } from "@bob/core-types/jobs"
 import { recordDecision, withBobSpan } from "@bob/observability/effect"
 import { observeHealth } from "@bob/observability/events"
 import { flushInvocationTelemetry } from "@bob/observability/invocation"
@@ -9,7 +9,7 @@ import {
   externalParentFromTraceparent,
   injectCurrentTraceparent
 } from "@bob/observability/propagation"
-import { buildSendblueStatusCallback } from "@bob/sendblue/status-callback"
+import { buildSendblueStatusCallback } from "@bob/sendblue-types/status-callback"
 import { Effect, Schema } from "effect"
 
 import type { RuntimeLifecycle } from "../../../src/runtime.ts"

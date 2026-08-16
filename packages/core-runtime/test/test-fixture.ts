@@ -1,11 +1,10 @@
-import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
+import type { ConversationTurnSnapshot } from "@bob/core-service/conversations/turn-store"
 
-import type { ConversationTurnSnapshot } from "../src/modules/conversations/turn-store.ts"
-
-import { makeJournalConversationWorkflow } from "../src/modules/journal/conversation-workflow.ts"
-import { makeReminderConversationWorkflow } from "../src/modules/reminders/conversation-workflow.ts"
-import { makeRuntimeModules } from "../src/modules/runtime/module.ts"
-import { makeTrainingConversationWorkflow } from "../src/modules/training/conversation-workflow.ts"
+import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
+import { makeRuntimeModules } from "@bob/core-types/runtime-module"
+import { makeJournalConversationWorkflow } from "@bob/journal-service/conversation-workflow"
+import { makeReminderConversationWorkflow } from "@bob/reminders-service/conversation-workflow"
+import { makeTrainingConversationWorkflow } from "@bob/training-service/conversation-workflow"
 
 export type TestFixture<T> = {
   readonly [Key in keyof T]?: T[Key] extends object ? TestFixture<T[Key]> : T[Key]

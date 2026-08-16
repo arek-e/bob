@@ -25,7 +25,7 @@
     "dist",
     ".alchemy",
     "pnpm-lock.yaml",
-    "packages/db/migrations/*.sql",
+    "packages/db/service/migrations/*.sql",
     "**/environment.generated.ts",
     "**/routeTree.gen.ts"
   ]

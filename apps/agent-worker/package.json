@@ -1,0 +1,28 @@
+{
+  "name": "@bob/agent-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=cjs --platform=node --target=node22 --outfile=dist/index.cjs",
+    "env:check": "varlock load --agent --path . --skip-cache",
+    "start": "varlock run --inject vars --skip-cache -- node dist/index.cjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/agent-service": "workspace:*",
+    "@bob/agent-types": "workspace:*",
+    "@bob/core-capabilities-types": "workspace:*",
+    "@bob/core-types": "workspace:*",
+    "@bob/observability": "workspace:*",
+    "@effect/platform-node": "4.0.0-beta.107",
+    "effect": "4.0.0-beta.107",
+    "varlock": "1.16.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9"
+  }
+}

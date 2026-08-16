@@ -1,4 +1,4 @@
-import type { SendblueWebhookPayload } from "@bob/sendblue/webhooks"
+import type { SendblueWebhookPayload } from "@bob/sendblue-types/webhooks"
 
 const HISTORY_LOOKBACK_MS = 15 * 60 * 1_000
 const HISTORY_FUTURE_SKEW_MS = 60 * 1_000

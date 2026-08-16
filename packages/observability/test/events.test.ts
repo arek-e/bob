@@ -1,4 +1,4 @@
-import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
+import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
 import { describe, expect, it, vi } from "vitest"
 
 import { agentRunSpanCode, featureForTools, tokenBudgetState } from "../src/attribution.ts"

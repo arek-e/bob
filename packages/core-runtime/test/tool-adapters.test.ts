@@ -1,39 +1,35 @@
-import type { AgentRunRequest } from "@bob/contracts/agent"
+import type { ConnectionStore } from "@bob/connections-service/store"
+import type {
+  ToolCommandAdapter,
+  ToolCommandAdapterContext,
+  ToolRunContext
+} from "@bob/core-service/conversations/tool-adapter"
+import type { MemoryStore } from "@bob/core-service/memory/store"
+import type { RetrievalPipeline } from "@bob/core-service/retrieval/pipeline"
+import type { OwnerSettingsStore } from "@bob/core-service/settings/store"
+import type { AgentRunRequest } from "@bob/core-types/agent"
+import type { JournalStore } from "@bob/journal-service/store"
+import type { ReminderStore } from "@bob/reminders-service/store"
+import type { TrainingModule } from "@bob/training-service/module"
 
-import {
-  coreDeploymentProfile,
-  transitionalDeploymentProfile
-} from "@bob/contracts/deployment-profiles"
+import { makeConnectionsToolAdapter } from "@bob/connections-service/tool-adapter"
 import {
   capabilityToolNames,
   type CapabilityModule,
   type ToolCommand,
   type ToolName
-} from "@bob/contracts/tools"
+} from "@bob/core-capabilities-types/tools"
+import { makeToolAdapterRegistry } from "@bob/core-service/conversations/tool-adapter"
+import { expiredToolCallOutcome } from "@bob/core-service/conversations/tool-executor"
+import { makeMemoryToolAdapter } from "@bob/core-service/memory/tool-adapter"
+import { makeSettingsToolAdapter } from "@bob/core-service/settings/tool-adapter"
+import { coreDeploymentProfile, transitionalDeploymentProfile } from "@bob/core-types/profiles"
+import { makeJournalToolAdapter } from "@bob/journal-service/tool-adapter"
+import { makeReminderToolAdapter } from "@bob/reminders-service/tool-adapter"
+import { makeTrainingToolAdapter } from "@bob/training-service/tool-adapter"
 import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
-import type { ConnectionStore } from "../src/modules/connections/store.ts"
-import type {
-  ToolCommandAdapter,
-  ToolCommandAdapterContext,
-  ToolRunContext
-} from "../src/modules/conversations/tool-adapter.ts"
-import type { JournalStore } from "../src/modules/journal/store.ts"
-import type { MemoryStore } from "../src/modules/memory/store.ts"
-import type { ReminderStore } from "../src/modules/reminders/store.ts"
-import type { RetrievalPipeline } from "../src/modules/retrieval/pipeline.ts"
-import type { OwnerSettingsStore } from "../src/modules/settings/store.ts"
-import type { TrainingModule } from "../src/modules/training/module.ts"
-
-import { makeConnectionsToolAdapter } from "../src/modules/connections/tool-adapter.ts"
-import { makeToolAdapterRegistry } from "../src/modules/conversations/tool-adapter.ts"
-import { expiredToolCallOutcome } from "../src/modules/conversations/tool-executor.ts"
-import { makeJournalToolAdapter } from "../src/modules/journal/tool-adapter.ts"
-import { makeMemoryToolAdapter } from "../src/modules/memory/tool-adapter.ts"
-import { makeReminderToolAdapter } from "../src/modules/reminders/tool-adapter.ts"
-import { makeSettingsToolAdapter } from "../src/modules/settings/tool-adapter.ts"
-import { makeTrainingToolAdapter } from "../src/modules/training/tool-adapter.ts"
 import { testFixture } from "./test-fixture.ts"
 
 const ownerId = "00000000-0000-4000-8000-000000000001"

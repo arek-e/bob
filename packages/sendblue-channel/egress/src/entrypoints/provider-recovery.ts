@@ -1,4 +1,4 @@
-import { createSendblueHistoryClient } from "@bob/sendblue/history"
+import { createSendblueHistoryClient } from "@bob/sendblue-runtime/history"
 import { Schema } from "effect"
 
 import type { EgressBindings } from "../bindings.ts"

@@ -1,61 +1,69 @@
-import { Effect, Layer, Schema } from "effect"
+import type { GeneralCoreBindings } from "@bob/core-types/bindings"
 
-import type { GeneralCoreBindings } from "./bindings.ts"
-import type { DeploymentRuntimeProfile } from "./profiles/types.ts"
-import type { CoreRuntimeAdapters } from "./runtime/core-runtime.ts"
-
-import { AlertStore, alertStoreLayer, makeAlertStore } from "./modules/alerts/store.ts"
-import { ArtifactStore, artifactStoreLayer, makeArtifactStore } from "./modules/artifacts/store.ts"
-import { makeApplicationContextStore } from "./modules/context/composition.ts"
-import { makePrivateTextReader } from "./modules/context/private-text.ts"
-import { ContextStore, contextStoreLayer } from "./modules/context/store.ts"
-import { makeConversationEvidenceSource } from "./modules/conversations/evidence-source.ts"
+import { AlertStore, alertStoreLayer, makeAlertStore } from "@bob/core-service/alerts/store"
+import {
+  ArtifactStore,
+  artifactStoreLayer,
+  makeArtifactStore
+} from "@bob/core-service/artifacts/store"
+import { makeApplicationContextStore } from "@bob/core-service/context/composition"
+import { makePrivateTextReader } from "@bob/core-service/context/private-text"
+import { ContextStore, contextStoreLayer } from "@bob/core-service/context/store"
+import { makeConversationEvidenceSource } from "@bob/core-service/conversations/evidence-source"
 import {
   AgentRunStore,
   agentRunStoreLayer,
   makeAgentRunStore
-} from "./modules/conversations/run-store.ts"
+} from "@bob/core-service/conversations/run-store"
 import {
   ConversationStore,
   conversationStoreLayer,
   makeConversationStore
-} from "./modules/conversations/store.ts"
-import { conversationTiming } from "./modules/conversations/timing.ts"
-import { makeToolAdapterRegistry } from "./modules/conversations/tool-adapter.ts"
+} from "@bob/core-service/conversations/store"
+import { conversationTiming } from "@bob/core-service/conversations/timing"
+import { makeToolAdapterRegistry } from "@bob/core-service/conversations/tool-adapter"
 import {
   ToolExecutor,
   makeToolExecutor,
   toolExecutorLayer
-} from "./modules/conversations/tool-executor.ts"
+} from "@bob/core-service/conversations/tool-executor"
 import {
   ConversationTurnStore,
   conversationTurnStoreLayer,
   makeConversationTurnStore
-} from "./modules/conversations/turn-store.ts"
-import { DeliveryStore, deliveryStoreLayer, makeDeliveryStore } from "./modules/delivery/store.ts"
-import { makeAgentExperienceRegistry } from "./modules/memory/agent-experience.ts"
-import { makeFactEvidenceSource } from "./modules/memory/evidence-source.ts"
-import { makeEvidenceSourceRegistry } from "./modules/memory/evidence.ts"
-import { MemoryStore, makeMemoryStore, memoryStoreLayer } from "./modules/memory/store.ts"
-import { makeMemoryToolAdapter } from "./modules/memory/tool-adapter.ts"
-import { createDataProtection } from "./modules/policy/data-protection.ts"
+} from "@bob/core-service/conversations/turn-store"
+import {
+  DeliveryStore,
+  deliveryStoreLayer,
+  makeDeliveryStore
+} from "@bob/core-service/delivery/store"
+import { makeAgentExperienceRegistry } from "@bob/core-service/memory/agent-experience"
+import { makeEvidenceSourceRegistry } from "@bob/core-service/memory/evidence"
+import { makeFactEvidenceSource } from "@bob/core-service/memory/evidence-source"
+import { MemoryStore, makeMemoryStore, memoryStoreLayer } from "@bob/core-service/memory/store"
+import { makeMemoryToolAdapter } from "@bob/core-service/memory/tool-adapter"
+import { createDataProtection } from "@bob/core-service/policy/data-protection"
 import {
   OwnerDataKeyStore,
   makeOwnerDataKeyStore,
   ownerDataKeyStoreLayer
-} from "./modules/policy/owner-data-key.ts"
+} from "@bob/core-service/policy/owner-data-key"
 import {
   RetrievalPipeline,
   makeRetrievalPipeline,
   retrievalPipelineLayer
-} from "./modules/retrieval/pipeline.ts"
+} from "@bob/core-service/retrieval/pipeline"
 import {
   OwnerSettingsStore,
   makeOwnerSettingsStore,
   ownerSettingsStoreLayer
-} from "./modules/settings/store.ts"
-import { makeSettingsToolAdapter } from "./modules/settings/tool-adapter.ts"
-import { makeReviewedSkillRegistry } from "./modules/skills/registry.ts"
+} from "@bob/core-service/settings/store"
+import { makeSettingsToolAdapter } from "@bob/core-service/settings/tool-adapter"
+import { makeReviewedSkillRegistry } from "@bob/core-service/skills/registry"
+import { Effect, Layer, Schema } from "effect"
+
+import type { DeploymentRuntimeProfile } from "./profiles/types.ts"
+import type { CoreRuntimeAdapters } from "./runtime/core-runtime.ts"
 
 const Configuration = Schema.Struct({
   OWNER_ID: Schema.String.check(Schema.isUUID()),

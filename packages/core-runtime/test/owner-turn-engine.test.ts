@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from "vitest"
-
 import type {
   ConversationTurnSnapshot,
   ConversationTurnStore
-} from "../src/modules/conversations/turn-store.ts"
+} from "@bob/core-service/conversations/turn-store"
+
+import { describe, expect, it, vi } from "vitest"
 
 import { makeOwnerTurnEngine } from "../src/runtime/owner-turn-engine.ts"
 import { testFixture } from "./test-fixture.ts"

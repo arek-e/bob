@@ -1,0 +1,19 @@
+{
+  "name": "@bob/job-queue-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./bullmq": "./src/bullmq.ts",
+    "./bullmq-host": "./src/bullmq-host.ts",
+    "./queue-binding": "./src/queue-binding.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/job-queue-types": "workspace:*",
+    "bullmq": "6.1.2"
+  }
+}

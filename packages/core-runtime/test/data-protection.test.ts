@@ -1,6 +1,5 @@
+import { createDataProtection } from "@bob/core-service/policy/data-protection"
 import { describe, expect, it } from "vitest"
-
-import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 
 describe("user data protection", () => {
   it("wraps one user key and encrypts private text", async () => {
