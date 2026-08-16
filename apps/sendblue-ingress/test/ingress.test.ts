@@ -302,6 +302,56 @@ describe("Sendblue ingress", () => {
     expect(target.coreFetch).not.toHaveBeenCalled()
   })
 
+  it("acknowledges an uncorrelated account status without calling Core", async () => {
+    const target = bindings()
+    const result = await handleIngressHttp(
+      new Request("https://bob.example/webhooks/outbound", {
+        method: "POST",
+        headers: { "sb-signing-secret": "s".repeat(64) },
+        body: JSON.stringify({
+          ...payload,
+          is_outbound: true,
+          status: "DELIVERED",
+          from_number: "+46711111111",
+          to_number: "+46700000000"
+        })
+      }),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+      target.value as never
+    )
+
+    expect(result.status).toBe(202)
+    await expect(result.json()).resolves.toEqual({ code: "ignored" })
+    expect(target.coreFetch).not.toHaveBeenCalled()
+  })
+
+  it("forwards an uncorrelated opt-out status to Core", async () => {
+    const target = bindings()
+    const result = await handleIngressHttp(
+      new Request("https://bob.example/webhooks/outbound", {
+        method: "POST",
+        headers: { "sb-signing-secret": "s".repeat(64) },
+        body: JSON.stringify({
+          ...payload,
+          is_outbound: true,
+          status: "OPTED_OUT",
+          opted_out: true,
+          from_number: "+46711111111",
+          to_number: "+46700000000"
+        })
+      }),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+      target.value as never
+    )
+
+    expect(result.status).toBe(202)
+    expect(target.coreFetch).toHaveBeenCalledOnce()
+    expect(JSON.parse(String(target.coreFetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+      providerOptedOut: true,
+      status: "opted_out"
+    })
+  })
+
   it("continues the provider trace through a status callback", async () => {
     const exports: RequestInit[] = []
     vi.stubGlobal(

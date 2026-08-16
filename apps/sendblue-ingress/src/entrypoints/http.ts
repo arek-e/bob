@@ -240,6 +240,10 @@ export async function handleIngressHttp(
         return response("unknown_line", 403)
       }
       const callback = readSendblueStatusCallback(url)
+      const isOptOut = payload.opted_out || payload.status === "OPTED_OUT"
+      if (!isOptOut && (callback.outboxId === undefined || callback.attemptId === undefined)) {
+        return response("ignored", 202)
+      }
       const event = normalizeStatus(payload, {
         accountId: composition.config.SENDBLUE_ACCOUNT_ID,
         lineId: composition.config.SENDBLUE_LINE_ID,
