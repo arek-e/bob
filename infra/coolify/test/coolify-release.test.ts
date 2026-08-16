@@ -53,11 +53,8 @@ describe("Coolify release", () => {
     })
   })
 
-  it("reads and updates the exact Coolify source revision", async () => {
-    const fetchImplementation = vi
-      .fn()
-      .mockResolvedValueOnce(Response.json({ git_commit_sha: "a".repeat(40) }))
-      .mockResolvedValueOnce(Response.json({ message: "updated" }))
+  it("updates the exact Coolify source revision", async () => {
+    const fetchImplementation = vi.fn().mockResolvedValue(Response.json({ message: "updated" }))
     const client = new CoolifyReleaseClient({
       baseUrl: "https://coolify.example.test",
       token: "token",
@@ -65,29 +62,15 @@ describe("Coolify release", () => {
       fetchImplementation
     })
 
-    await expect(client.currentSourceRevision("b".repeat(40))).resolves.toBe("a".repeat(40))
     await client.updateSourceRevision("c".repeat(40))
 
-    expect(fetchImplementation).toHaveBeenNthCalledWith(
-      2,
+    expect(fetchImplementation).toHaveBeenCalledWith(
       new URL("https://coolify.example.test/api/v1/applications/runtime"),
       expect.objectContaining({
         method: "PATCH",
         body: JSON.stringify({ git_commit_sha: "c".repeat(40) })
       })
     )
-  })
-
-  it("uses the last release revision when the application followed its branch", async () => {
-    const fetchImplementation = vi.fn().mockResolvedValue(Response.json({ git_commit_sha: null }))
-    const client = new CoolifyReleaseClient({
-      baseUrl: "https://coolify.example.test",
-      token: "token",
-      applicationId: "runtime",
-      fetchImplementation
-    })
-
-    await expect(client.currentSourceRevision("b".repeat(40))).resolves.toBe("b".repeat(40))
   })
 
   it("restores the prior pins and deploys them after a failed release", async () => {
@@ -100,7 +83,6 @@ describe("Coolify release", () => {
     }
     const client = {
       currentEnvironment: vi.fn().mockResolvedValue(previous),
-      currentSourceRevision: vi.fn().mockResolvedValue("b".repeat(40)),
       updateSourceRevision: vi.fn().mockResolvedValue(undefined),
       updateEnvironment: vi.fn().mockResolvedValue(undefined),
       deploy: vi.fn().mockResolvedValueOnce("release").mockResolvedValueOnce("rollback"),
@@ -119,5 +101,25 @@ describe("Coolify release", () => {
       previous.BOB_RELEASE_SHA,
       undefined
     )
+  })
+
+  it("rejects an invalid prior release identity before changing Coolify", async () => {
+    const client = {
+      currentEnvironment: vi.fn().mockResolvedValue({
+        BOB_RELEASE_SHA: "moving-branch",
+        BOB_AGENT_IMAGE_DIGEST: digest("5"),
+        BOB_BACKUP_IMAGE_DIGEST: digest("6"),
+        CLOUDFLARED_IMAGE_DIGEST: digest("7"),
+        BOB_OBSERVER_IMAGE_DIGEST: digest("8")
+      }),
+      updateSourceRevision: vi.fn(),
+      updateEnvironment: vi.fn()
+    }
+
+    await expect(releaseToCoolify({ client, bundle })).rejects.toThrow(
+      "Prior release source revision is invalid"
+    )
+    expect(client.updateSourceRevision).not.toHaveBeenCalled()
+    expect(client.updateEnvironment).not.toHaveBeenCalled()
   })
 })
