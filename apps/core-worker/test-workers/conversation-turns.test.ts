@@ -1,5 +1,6 @@
 import { applyD1Migrations, reset } from "cloudflare:test"
 import { env } from "cloudflare:workers"
+import { eq } from "drizzle-orm"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createCoreDatabase } from "../src/database.ts"
@@ -214,6 +215,9 @@ describe("durable conversation turns", () => {
 
     await expect(runs.appendOperation(operation, attemptId)).resolves.toBe("appended")
     await expect(runs.appendOperation(operation, attemptId)).resolves.toBe("duplicate")
+    await expect(
+      runs.appendOperation(operation, "00000000-0000-4000-8000-000000000599")
+    ).rejects.toThrow("not active")
     await expect(runs.loadOperations(runId, attemptId)).resolves.toEqual([operation])
 
     const [stored] = await database.select().from(agentRunOperations)
@@ -230,6 +234,126 @@ describe("durable conversation turns", () => {
     await expect(
       runs.appendOperation({ ...operation, payload: { privateText: "conflict" } }, attemptId)
     ).rejects.toThrow("sequence conflict")
+  })
+
+  it("releases a retryable Agent attempt without changing its run input or revision", async () => {
+    const { database, protection } = await seedInbound()
+    let at = new Date("2026-08-12T08:00:00.000Z")
+    const turns = makeConversationTurnStore(database, protection, {
+      ownerId,
+      now: () => at,
+      randomUuid: uuidSequence(520)
+    })
+    const offered = await turns.offer(firstEventId)
+    at = new Date("2026-08-12T08:00:02.000Z")
+    const snapshot = await turns.claimReady(offered.turnId)
+    const runId = "00000000-0000-4000-8000-000000000530"
+    const attemptId = "00000000-0000-4000-8000-000000000531"
+    await insertExecutingConversationRun(database, {
+      turnId: offered.turnId,
+      runId,
+      attemptId,
+      revision: snapshot!.revision,
+      at: at.toISOString()
+    })
+    await turns.markRunning(offered.turnId, snapshot!.revision, runId)
+    const runs = makeAgentRunStore(database, protection, { now: () => at })
+    const operation = {
+      protocolVersion: 1 as const,
+      loopVersion: 1 as const,
+      runId,
+      sequence: 1,
+      kind: "model" as const,
+      payload: { responseText: "Checkpointed response" }
+    }
+    await runs.appendOperation(operation, attemptId)
+
+    await expect(
+      runs.releaseForRetry(
+        {
+          protocolVersion: 1,
+          runId,
+          correlationId: "00000000-0000-4000-8000-000000000405",
+          status: "failed",
+          errorCode: "provider",
+          model: "gpt-test",
+          durationMs: 60_000,
+          inputTokens: 5,
+          outputTokens: 2,
+          toolCalls: 0
+        },
+        attemptId,
+        3,
+        30_000,
+        { conversationTurnId: offered.turnId, conversationTurnRevision: snapshot!.revision }
+      )
+    ).resolves.toEqual({ status: "released", wakeAt: "2026-08-12T08:00:32.000Z" })
+
+    const [run] = await database.select().from(agentRuns)
+    const [attempt] = await database.select().from(agentRunAttempts)
+    const [turn] = await database.select().from(conversationTurns)
+    expect(run).toMatchObject({ status: "pending", activeAttemptId: null, claimExpiresAt: null })
+    expect(attempt).toMatchObject({ status: "retryable", errorCode: "provider" })
+    expect(turn).toMatchObject({
+      status: "collecting",
+      revision: snapshot!.revision,
+      activeRunId: null,
+      claimedRevision: null
+    })
+
+    at = new Date("2026-08-12T08:00:32.000Z")
+    const retried = await turns.claimReady(offered.turnId)
+    expect(retried?.revision).toBe(snapshot!.revision)
+    await turns.markRunning(offered.turnId, retried!.revision, runId)
+    const retryAttemptId = await runs.claim(runId, 140_000)
+    expect(retryAttemptId).toBeDefined()
+    expect(retryAttemptId).not.toBe(attemptId)
+    await expect(runs.loadOperations(runId, retryAttemptId!)).resolves.toEqual([operation])
+  })
+
+  it("keeps the final retryable Agent attempt active for terminal completion", async () => {
+    const { database, protection } = await seedInbound()
+    const runId = "00000000-0000-4000-8000-000000000540"
+    const attemptId = "00000000-0000-4000-8000-000000000541"
+    await insertExecutingConversationRun(database, {
+      turnId: "00000000-0000-4000-8000-000000000542",
+      runId,
+      attemptId,
+      revision: 1,
+      at: "2026-08-12T08:00:00.000Z"
+    })
+    await database
+      .update(agentRunAttempts)
+      .set({ attemptNumber: 3 })
+      .where(eq(agentRunAttempts.id, attemptId))
+    const runs = makeAgentRunStore(database, protection, {
+      now: () => new Date("2026-08-12T08:00:01.000Z")
+    })
+
+    await expect(
+      runs.releaseForRetry(
+        {
+          protocolVersion: 1,
+          runId,
+          correlationId: "00000000-0000-4000-8000-000000000405",
+          status: "failed",
+          errorCode: "provider",
+          model: "gpt-test",
+          durationMs: 60_000,
+          inputTokens: 0,
+          outputTokens: 0,
+          toolCalls: 0
+        },
+        attemptId,
+        3,
+        30_000
+      )
+    ).resolves.toEqual({ status: "exhausted" })
+
+    const [run] = await database.select().from(agentRuns)
+    const [attempt] = await database.select().from(agentRunAttempts)
+    expect(run).toMatchObject({ status: "executing", activeAttemptId: attemptId })
+    expect(attempt).toMatchObject({ status: "executing", finishedAt: null })
   })
 
   it("offers the first inbound as revision one with a bounded collection window", async () => {

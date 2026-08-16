@@ -55,6 +55,10 @@ export type ConversationReflectionTransition =
       readonly wakeAt: string
     }
 
+export type AgentRunRetryTransition =
+  | { readonly status: "lost" | "exhausted" }
+  | { readonly status: "released"; readonly wakeAt?: string }
+
 export interface AgentRunStore {
   create(
     request: AgentRunRequest,
@@ -68,6 +72,13 @@ export interface AgentRunStore {
     operation: AgentRunOperation,
     attemptId: string
   ): Promise<"appended" | "duplicate">
+  releaseForRetry(
+    result: AgentRunResult,
+    attemptId: string,
+    maxAttempts: number,
+    retryDelayMs: number,
+    conversation?: ConversationRunCompletion
+  ): Promise<AgentRunRetryTransition>
   completeWithResponse(
     result: AgentRunResult,
     response: {
@@ -312,6 +323,18 @@ export function makeAgentRunStore(
       const decoded = Schema.decodeUnknownSync(AgentRunOperation)(operation)
       const serializedOperation = JSON.stringify(decoded)
       const payloadHash = await protection.contentHash(serializedOperation)
+      const [run] = await database
+        .select({ ownerId: agentRuns.userId })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, decoded.runId),
+            eq(agentRuns.status, "executing"),
+            eq(agentRuns.activeAttemptId, attemptId)
+          )
+        )
+        .limit(1)
+      if (run === undefined) throw new Error("Agent run attempt is not active")
       const [existing] = await database
         .select({
           kind: agentRunOperations.kind,
@@ -336,19 +359,6 @@ export function makeAgentRunStore(
         }
         throw new Error("Agent run operation sequence conflict")
       }
-
-      const [run] = await database
-        .select({ ownerId: agentRuns.userId })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.id, decoded.runId),
-            eq(agentRuns.status, "executing"),
-            eq(agentRuns.activeAttemptId, attemptId)
-          )
-        )
-        .limit(1)
-      if (run === undefined) throw new Error("Agent run attempt is not active")
       const owner = await ownerKey(run.ownerId)
       const encrypted = await protection.encryptText(owner.key, JSON.stringify(decoded.payload))
       const id = randomUuid()
@@ -407,6 +417,144 @@ export function makeAgentRunStore(
         return "duplicate"
       }
       throw new Error("Agent run operation append was fenced")
+    },
+
+    async releaseForRetry(result, attemptId, maxAttempts, retryDelayMs, conversation) {
+      const [active] = await database
+        .select({
+          attemptNumber: agentRunAttempts.attemptNumber,
+          inboundEventId: agentRuns.inboundEventId
+        })
+        .from(agentRunAttempts)
+        .innerJoin(agentRuns, eq(agentRunAttempts.runId, agentRuns.id))
+        .where(
+          and(
+            eq(agentRunAttempts.id, attemptId),
+            eq(agentRunAttempts.runId, result.runId),
+            isNull(agentRunAttempts.finishedAt),
+            eq(agentRuns.status, "executing"),
+            eq(agentRuns.activeAttemptId, attemptId)
+          )
+        )
+        .limit(1)
+      if (active === undefined) return { status: "lost" }
+      if (active.attemptNumber >= maxAttempts) return { status: "exhausted" }
+
+      const currentTime = now()
+      const at = currentTime.toISOString()
+      const retryAt = new Date(currentTime.getTime() + retryDelayMs).toISOString()
+      const conversationAuthority =
+        conversation === undefined
+          ? undefined
+          : sql`EXISTS (
+              SELECT 1
+              FROM ${conversationTurns}
+              WHERE ${conversationTurns.id} = ${conversation.conversationTurnId}
+                AND ${conversationTurns.revision} = ${conversation.conversationTurnRevision}
+                AND ${conversationTurns.status} = 'running'
+                AND ${conversationTurns.activeRunId} = ${result.runId}
+                AND ${conversationTurns.activeRunRevision} = ${conversation.conversationTurnRevision}
+                AND ${conversationTurns.replyOutboxId} IS NULL
+            )`
+      const activeAttempt = and(
+        eq(agentRuns.id, result.runId),
+        eq(agentRuns.status, "executing"),
+        eq(agentRuns.activeAttemptId, attemptId),
+        ...(conversationAuthority === undefined ? [] : [conversationAuthority])
+      )
+      const releaseRun = database
+        .update(agentRuns)
+        .set({
+          status: "pending",
+          claimedAt: null,
+          claimExpiresAt: null,
+          activeAttemptId: null,
+          model: result.model
+        })
+        .where(activeAttempt)
+        .returning({ id: agentRuns.id })
+      const finishAttempt = database
+        .update(agentRunAttempts)
+        .set({ status: "retryable", errorCode: result.errorCode, finishedAt: at })
+        .where(
+          and(
+            eq(agentRunAttempts.id, attemptId),
+            eq(agentRunAttempts.runId, result.runId),
+            isNull(agentRunAttempts.finishedAt),
+            sql`EXISTS (
+              SELECT 1 FROM ${agentRuns}
+              WHERE ${agentRuns.id} = ${result.runId}
+                AND ${agentRuns.status} = 'pending'
+                AND ${agentRuns.activeAttemptId} IS NULL
+            )`
+          )
+        )
+
+      if (conversation !== undefined) {
+        const releaseTurn = database
+          .update(conversationTurns)
+          .set({
+            status: "collecting",
+            activeRunId: null,
+            activeRunRevision: null,
+            claimedRevision: null,
+            claimedAt: null,
+            claimExpiresAt: null,
+            quietUntil: sql`max(${conversationTurns.quietUntil}, ${retryAt})`,
+            updatedAt: at
+          })
+          .where(
+            and(
+              eq(conversationTurns.id, conversation.conversationTurnId),
+              eq(conversationTurns.revision, conversation.conversationTurnRevision),
+              eq(conversationTurns.status, "running"),
+              eq(conversationTurns.activeRunId, result.runId),
+              eq(conversationTurns.activeRunRevision, conversation.conversationTurnRevision),
+              isNull(conversationTurns.replyOutboxId),
+              sql`EXISTS (
+                SELECT 1 FROM ${agentRuns}
+                WHERE ${agentRuns.id} = ${result.runId}
+                  AND ${agentRuns.status} = 'pending'
+                  AND ${agentRuns.activeAttemptId} IS NULL
+              )`
+            )
+          )
+          .returning({ wakeAt: conversationTurns.quietUntil })
+        const [releasedRun, releasedTurn] = await database.batch([
+          releaseRun,
+          releaseTurn,
+          finishAttempt
+        ])
+        const wakeAt = releasedTurn[0]?.wakeAt
+        return releasedRun[0] === undefined || wakeAt === undefined
+          ? { status: "lost" }
+          : { status: "released", wakeAt }
+      }
+
+      const releaseInbound = database
+        .update(inboundEvents)
+        .set({ claimedAt: null, claimExpiresAt: null })
+        .where(
+          and(
+            eq(inboundEvents.id, active.inboundEventId),
+            isNull(inboundEvents.processedAt),
+            sql`EXISTS (
+              SELECT 1 FROM ${agentRuns}
+              WHERE ${agentRuns.id} = ${result.runId}
+                AND ${agentRuns.status} = 'pending'
+                AND ${agentRuns.activeAttemptId} IS NULL
+            )`
+          )
+        )
+        .returning({ id: inboundEvents.id })
+      const [releasedRun, releasedInbound] = await database.batch([
+        releaseRun,
+        releaseInbound,
+        finishAttempt
+      ])
+      return releasedRun[0] === undefined || releasedInbound[0] === undefined
+        ? { status: "lost" }
+        : { status: "released" }
     },
 
     async completeWithResponse(result, response, conversation, attemptId) {
