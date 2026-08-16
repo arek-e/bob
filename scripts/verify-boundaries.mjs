@@ -124,8 +124,7 @@ for (const sourceRoot of sourceRoots) {
       }
 
       const sendblueConsumer =
-        workspace === "apps/sendblue-ingress" ||
-        workspace === "apps/sendblue-egress" ||
+        workspace === "apps/sendblue-channel" ||
         workspace === "apps/channel-runtime" ||
         workspace === "apps/managed-channel-router" ||
         workspace === "tools/sendblue-reconcile"

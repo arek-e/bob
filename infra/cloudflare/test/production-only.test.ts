@@ -9,8 +9,8 @@ describe("production-only deployment contract", () => {
     const files = await Promise.all([
       repositoryFile(".env.schema"),
       repositoryFile("apps/core-worker/.env.schema"),
-      repositoryFile("apps/sendblue-ingress/.env.schema"),
-      repositoryFile("apps/sendblue-egress/.env.schema"),
+      repositoryFile("apps/sendblue-channel/ingress/.env.schema"),
+      repositoryFile("apps/sendblue-channel/egress/.env.schema"),
       repositoryFile("apps/agent/.env.schema"),
       repositoryFile("infra/cloudflare/.env.schema")
     ])

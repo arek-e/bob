@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-08-10
 - Scope: Agent implementation and repository structure
+- App entrypoints: Amended by ADR 0022
 
 ## Context
 
@@ -290,8 +291,7 @@ apps/
   core-worker/            Owner data and domain workflow authority
   eval-worker/            Isolated synthetic evaluation runner
   managed-channel-router/ Managed sender routing and staged events
-  sendblue-egress/        Outbound Sendblue delivery
-  sendblue-ingress/       Public Sendblue webhook
+  sendblue-channel/       Sendblue ingress and egress Workers
   ui/                     Private owner interface
 
 packages/
@@ -318,7 +318,7 @@ Add a deployable only when its privilege or runtime isolation justifies a new se
 
 ### Application composition
 
-Each app has one visible `composition.ts` module.
+Each deployed entrypoint has one visible `composition.ts` module.
 
 That module wires configuration, adapters, domain modules, and telemetry.
 
@@ -408,14 +408,14 @@ Those names split one feature across technical layers or add shallow pass-throug
 - Apps never import another app's source.
 - Apps communicate through validated HTTP, Job Queue, or service-binding contracts.
 - Only `@bob/pi-agent` imports Pi packages.
-- Only Sendblue ingress, egress, managed routing, and reconciliation import `@bob/sendblue`.
+- Only the Sendblue channel, managed routing, and reconciliation import `@bob/sendblue`.
 - Platform binding types stay within the deployable that owns each binding.
 - Drizzle schemas and queries stay with their owning domain Module.
 - Cloudflare app entrypoints do not import `@effect/platform-node`.
 - Application code does not import `effect/unstable/*`.
 - The agent host imports no Sendblue or Cloudflare binding types.
-- The ingress app receives no outbound Sendblue credential.
-- The egress app receives no Pi OAuth credential.
+- The ingress Worker receives no outbound Sendblue credential.
+- The egress Worker receives no Pi OAuth credential.
 - The UI imports read-only browser contracts only.
 
 Use explicit package subpath exports.

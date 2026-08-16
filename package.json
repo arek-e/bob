@@ -38,7 +38,7 @@
     "coolify:check": "node scripts/validate-coolify-compose.mjs",
     "compose:check": "node scripts/validate-portable-compose.mjs",
     "compose:smoke": "node scripts/smoke-portable-compose.mjs",
-    "secrets:scan:staged": "varlock scan --staged --path apps/core-worker --path apps/connections-gateway --path apps/sendblue-ingress --path apps/sendblue-egress --path apps/managed-channel-router --path apps/agent --path tools/sendblue-reconcile --path tools/pi-smoke --path tools/data-backup --path infra/cloudflare",
+    "secrets:scan:staged": "varlock scan --staged --path apps/core-worker --path apps/connections-gateway --path apps/sendblue-channel/ingress --path apps/sendblue-channel/egress --path apps/managed-channel-router --path apps/agent --path tools/sendblue-reconcile --path tools/pi-smoke --path tools/data-backup --path infra/cloudflare",
     "secrets:scan:trusted": "node scripts/scan-trusted-secrets.mjs",
     "ui:safety": "node scripts/verify-ui-safety.mjs"
   },

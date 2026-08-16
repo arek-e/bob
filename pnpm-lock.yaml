@@ -94,12 +94,9 @@ importers:
       '@bob/job-queue':
         specifier: workspace:*
         version: link:../../packages/job-queue
-      '@bob/sendblue-egress':
+      '@bob/sendblue-channel':
         specifier: workspace:*
-        version: link:../sendblue-egress
-      '@bob/sendblue-ingress':
-        specifier: workspace:*
-        version: link:../sendblue-ingress
+        version: link:../sendblue-channel
       bullmq:
         specifier: 6.1.2
         version: 6.1.2(ioredis@5.11.1)
@@ -251,32 +248,7 @@ importers:
         specifier: 0.25.9
         version: 0.25.9
 
-  apps/sendblue-egress:
-    dependencies:
-      '@bob/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-      '@bob/job-queue':
-        specifier: workspace:*
-        version: link:../../packages/job-queue
-      '@bob/observability':
-        specifier: workspace:*
-        version: link:../../packages/observability
-      '@bob/sendblue':
-        specifier: workspace:*
-        version: link:../../packages/sendblue
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-    devDependencies:
-      '@cloudflare/workers-types':
-        specifier: 5.20260810.1
-        version: 5.20260810.1
-      esbuild:
-        specifier: 0.25.9
-        version: 0.25.9
-
-  apps/sendblue-ingress:
+  apps/sendblue-channel:
     dependencies:
       '@bob/contracts':
         specifier: workspace:*

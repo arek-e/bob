@@ -5,8 +5,8 @@ import { join } from "node:path"
 const schemaPaths = [
   "apps/core-worker",
   "apps/connections-gateway",
-  "apps/sendblue-ingress",
-  "apps/sendblue-egress",
+  "apps/sendblue-channel/ingress",
+  "apps/sendblue-channel/egress",
   "apps/agent",
   "tools/sendblue-reconcile",
   "tools/pi-smoke",
@@ -18,8 +18,7 @@ const artifactPaths = [
   "apps/agent/dist",
   "apps/connections-gateway/dist",
   "apps/core-worker/dist",
-  "apps/sendblue-egress/dist",
-  "apps/sendblue-ingress/dist",
+  "apps/sendblue-channel/dist",
   "apps/ui/dist",
   "tools/data-backup/dist"
 ]
