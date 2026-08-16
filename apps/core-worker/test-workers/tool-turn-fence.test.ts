@@ -284,8 +284,7 @@ function reminderArguments(sourceMessageId: string) {
     localTime: "13:00",
     timeZone: "Europe/Stockholm",
     dueAt: "2026-08-12T11:00:00.000Z",
-    sourceMessageId,
-    requiresAcknowledgment: true
+    sourceMessageId
   } as const
 }
 
@@ -1271,8 +1270,7 @@ describe("conversation tool claim fence", () => {
       localDate: "2026-08-12",
       localTime: "13:00",
       timeZone: "Europe/Stockholm",
-      dueAt: "2026-08-12T11:00:00.000Z",
-      requiresAcknowledgment: true
+      dueAt: "2026-08-12T11:00:00.000Z"
     } as const
     const firstArguments = { ...semanticArguments, sourceMessageId: messageId }
     const idempotencyKey = await conversationMutationIdempotencyKey({

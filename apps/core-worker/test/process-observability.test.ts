@@ -13,8 +13,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
-import { processInbound } from "../src/process-inbound.ts"
-import { testFixture } from "./test-fixture.ts"
+import { processConversationTurn } from "../src/process-inbound.ts"
+import { conversationTurnFixture, testFixture } from "./test-fixture.ts"
 
 const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
 const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
@@ -23,6 +23,7 @@ const messageId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db93"
 const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db94"
 const outboxId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db95"
 const attemptId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db99"
+const turnId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db89"
 const inboundTraceId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const inboundParentSpanId = "1111111111111111"
 const inboundTraceparent = `00-${inboundTraceId}-${inboundParentSpanId}-01`
@@ -93,15 +94,12 @@ describe("core workflow telemetry", () => {
       database: {},
       services: {
         events,
-        conversations: {
-          claimInbound: vi.fn(async () => ({
-            eventId,
-            ownerId,
-            channelId,
-            messageId,
-            text: privateUserText,
-            correlationId
-          }))
+        conversations: { claimReaction: vi.fn(async () => false) },
+        turns: {
+          markRunning: vi.fn(async () => true),
+          currentRevision: vi.fn(async () => 1),
+          commitReply: vi.fn(async () => "committed" as const),
+          markEventsProcessed: vi.fn(async () => 1)
         },
         training: { stopActiveForSafety: vi.fn() },
         journal: { createHandoff: vi.fn() },
@@ -115,7 +113,7 @@ describe("core workflow telemetry", () => {
         },
         context: { build: contextBuild },
         runs: {
-          loadForInbound: vi.fn(async () => undefined),
+          loadForTurn: vi.fn(async () => undefined),
           create: vi.fn(async (request: { runId: string }) => ({
             runId: request.runId,
             duplicate: false
@@ -151,13 +149,20 @@ describe("core workflow telemetry", () => {
         inboundParent
       )
     )
-    await processInbound(
-      eventId,
+    await processConversationTurn(
+      conversationTurnFixture({
+        eventId,
+        ownerId,
+        channelId,
+        messageId,
+        text: privateUserText,
+        correlationId,
+        turnId,
+        traceparent: processTraceparent
+      }),
       bindings,
       composition,
-      processTraceparent,
-      telemetryRunner,
-      correlationId
+      telemetryRunner
     )
 
     expect(contextBuild).toHaveBeenCalledWith(
@@ -172,6 +177,7 @@ describe("core workflow telemetry", () => {
     expect(sent).toEqual([
       {
         outboxId,
+        dispatchGeneration: 0,
         correlationId,
         traceparent: expect.stringMatching(new RegExp(`^00-${inboundTraceId}-[0-9a-f]{16}-01$`))
       }
@@ -183,27 +189,27 @@ describe("core workflow telemetry", () => {
         text: privateResponse,
         reasonCode: "agent_reply"
       },
-      undefined,
+      { conversationTurnId: turnId, conversationTurnRevision: 1 },
       attemptId
     )
 
     const spans = telemetry.finishedSpans()
     const consume = spans.find((span) => span.name === "bob.inbound.consume")
     const process = spans.find((span) => span.name === "bob.inbound.process")
-    const claim = spans.find((span) => span.name === "bob.inbound.claim")
+    const turn = spans.find((span) => span.name === "bob.turn.reflect")
     const context = spans.find((span) => span.name === "bob.context.build")
     const retrieve = spans.find((span) => span.name === "bob.context.retrieve")
     const invoke = spans.find((span) => span.name === "bob.agent.invoke")
     const create = spans.find((span) => span.name === "bob.outbox.create")
     const publish = spans.find((span) => span.name === "bob.outbox.publish")
     expect(consume?.parentSpanId).toBe(inboundParentSpanId)
-    expect(process?.parentSpanId).toBe(consume?.spanId)
-    expect(claim?.parentSpanId).toBe(process?.spanId)
+    expect(turn?.parentSpanId).toBe(consume?.spanId)
+    expect(process?.parentSpanId).toBe(turn?.spanId)
     expect(context?.parentSpanId).toBe(process?.spanId)
     expect(retrieve?.parentSpanId).toBe(context?.spanId)
     expect(invoke?.parentSpanId).toBe(process?.spanId)
     expect(create?.parentSpanId).toBe(process?.spanId)
-    expect(publish?.parentSpanId).toBe(create?.spanId)
+    expect(publish?.parentSpanId).toBe(process?.spanId)
     expect(new Set(spans.map((span) => span.traceId))).toEqual(new Set([inboundTraceId]))
     expect(new Set(spans.map((span) => span.attributes["bob.correlation.id"]))).toEqual(
       new Set([correlationId])

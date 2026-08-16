@@ -10,6 +10,7 @@ import type { DeliveryTargetAdapter } from "../modules/delivery/target-adapter.t
 import type { EvidenceSourceAdapter } from "../modules/memory/evidence.ts"
 import type { MemoryStore } from "../modules/memory/store.ts"
 import type { DataProtection } from "../modules/policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../modules/policy/owner-data-key.ts"
 import type { RetrievalPipeline } from "../modules/retrieval/pipeline.ts"
 import type { RuntimeModules } from "../modules/runtime/module.ts"
 import type { OwnerSettingsStore } from "../modules/settings/store.ts"
@@ -18,6 +19,7 @@ export interface RuntimeProfileContext {
   readonly bindings: GeneralCoreBindings
   readonly database: CoreDatabase
   readonly protection: DataProtection
+  readonly ownerDataKeys: OwnerDataKeyStore
   readonly conversations: ConversationStore
   readonly turns: ConversationTurnStore
   readonly settings: OwnerSettingsStore

@@ -4,6 +4,7 @@ import {
   type AgentRunOperation,
   type AgentRunRequest,
   type AgentRunResult,
+  type AgentSmokeResult,
   type AgentSteerResult,
   type DeviceLoginEvent
 } from "@bob/contracts/agent"
@@ -75,8 +76,7 @@ export interface BobPiAgentOptions {
   readonly provider: "openai-codex"
   readonly model: string
   readonly allowedModels: readonly string[]
-  readonly executeTool: (command: ToolCommand, signal?: AbortSignal) => Promise<ToolResult>
-  readonly executeToolEffect?: (
+  readonly executeTool: (
     command: ToolCommand,
     signal?: AbortSignal
   ) => Effect.Effect<ToolResult, unknown>
@@ -124,6 +124,7 @@ export interface BobPiAgent {
     signal?: AbortSignal,
     durability?: AgentRunDurability
   ): Promise<AgentRunResult>
+  runSmoke(signal?: AbortSignal): Promise<AgentSmokeResult>
   requestSteer(runId: AgentRunRequest["runId"]): AgentSteerResult
   getAuthStatus(): Promise<AuthStatus>
   startDeviceLogin(): Promise<DeviceLoginEvent>
@@ -167,6 +168,27 @@ interface ActiveRunState {
   modelCall?: ActiveModelCall
   toolCall?: ActiveToolCall
 }
+
+interface ReplayContinuation {
+  readonly assistant: AssistantMessage
+  readonly turnIndex: number
+  readonly turnPhase: BobTurnPhase
+  readonly completed: ReadonlyMap<string, ToolResult>
+}
+
+type ReplayState =
+  | { readonly type: "initial" }
+  | {
+      readonly type: "awaiting_tools"
+      readonly continuation: ReplayContinuation
+      readonly calls: readonly ToolCall[]
+      readonly nextToolIndex: number
+    }
+  | {
+      readonly type: "awaiting_model"
+      readonly continuation: ReplayContinuation
+    }
+  | { readonly type: "final"; readonly result: AgentRunResult }
 
 const CheckpointTextContent = Schema.Struct({
   type: Schema.Literal("text"),
@@ -520,17 +542,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
 
       const tools = createTools({
         catalogue: options.catalogue,
-        request,
-        execute: async (command) => {
-          try {
-            return await options.executeTool(
-              command,
-              options.catalogue.isReadOnly(command.name) ? runSignal : undefined
-            )
-          } catch {
-            return safeToolFailure()
-          }
-        }
+        request
       })
       const modelTools: Tool[] = tools.map((tool) => ({
         name: tool.name,
@@ -747,15 +759,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
           readOnly,
           abort: () => toolController?.abort("newer_turn_revision")
         }
-        const fallbackExecution = Effect.tryPromise({
-          try: () => options.executeTool(command, toolSignal),
-          catch: (error) => error
-        })
-        const executeToolEffect = options.executeToolEffect
-        const executionEffect =
-          executeToolEffect === undefined
-            ? fallbackExecution
-            : Effect.suspend(() => executeToolEffect(command, toolSignal))
+        const executionEffect = Effect.suspend(() => options.executeTool(command, toolSignal))
         const completed = (toolResult: ToolResult) => {
           recordCompletedToolResult(call.name, toolResult)
           return {
@@ -826,52 +830,76 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         })
       }
 
-      let restoredFinal: AgentRunResult | undefined
-      let restoredContinuation:
-        | {
-            readonly assistant: AssistantMessage
-            readonly turnIndex: number
-            readonly turnPhase: BobTurnPhase
-            readonly completed: ReadonlyMap<string, ToolResult>
-          }
-        | undefined
-      let mutableRestoredContinuation:
-        | {
-            assistant: AssistantMessage
-            turnIndex: number
-            turnPhase: BobTurnPhase
-            completed: Map<string, ToolResult>
-          }
-        | undefined
+      let replayState: ReplayState = { type: "initial" }
 
       for (const operation of storedOperations) {
-        if (restoredFinal !== undefined) throw new Error("Stored final operation is not terminal")
+        if (replayState.type === "final") {
+          throw new Error("Stored final operation is not terminal")
+        }
         if (operation.kind === "model") {
+          if (replayState.type === "awaiting_tools") {
+            throw new Error("Stored model operation precedes its pending Tool results")
+          }
           const stored = Schema.decodeUnknownSync(ModelOperationPayload)(operation.payload)
+          const priorContinuation =
+            replayState.type === "awaiting_model" ? replayState.continuation : undefined
+          if (priorContinuation === undefined) {
+            if (stored.turnIndex !== 1 || stored.turnPhase !== "primary") {
+              throw new Error("Stored first model operation has an invalid turn")
+            }
+          } else {
+            const priorCalls = toolCallsFromAssistant(priorContinuation.assistant)
+            const afterCompletedTools =
+              priorCalls.length > 0 && priorContinuation.completed.size === priorCalls.length
+            const startsRepair =
+              priorCalls.length === 0 && priorContinuation.turnPhase === "primary"
+            const expectedPhase = startsRepair ? "repair" : "primary"
+            if (
+              (!afterCompletedTools && !startsRepair) ||
+              stored.turnIndex !== priorContinuation.turnIndex + 1 ||
+              stored.turnPhase !== expectedPhase
+            ) {
+              throw new Error("Stored model operation does not match the next Agent turn")
+            }
+          }
           const storedMessage = mutableAssistantMessage(stored.message)
-          turns = Math.max(turns, stored.turnIndex)
+          const calls = toolCallsFromAssistant(storedMessage)
+          if (stored.turnPhase === "repair" && calls.length > 0) {
+            throw new Error("Stored repair model operation contains Tool calls")
+          }
+          if (new Set(calls.map((call) => call.id)).size !== calls.length) {
+            throw new Error("Stored model operation contains duplicate Tool call IDs")
+          }
+          turns = stored.turnIndex
           inputTokens += storedMessage.usage.input
           outputTokens += storedMessage.usage.output
           context.messages.push(storedMessage)
-          mutableRestoredContinuation = {
+          const continuation: ReplayContinuation = {
             assistant: storedMessage,
             turnIndex: stored.turnIndex,
             turnPhase: stored.turnPhase,
             completed: new Map()
           }
+          replayState =
+            calls.length === 0
+              ? { type: "awaiting_model", continuation }
+              : { type: "awaiting_tools", continuation, calls, nextToolIndex: 0 }
           continue
         }
         if (operation.kind === "tool") {
-          const stored = Schema.decodeUnknownSync(ToolOperationPayload)(operation.payload)
-          const continuation = mutableRestoredContinuation
-          if (continuation === undefined || continuation.turnIndex !== stored.turnIndex) {
-            throw new Error("Stored Tool operation has no matching model operation")
+          if (replayState.type !== "awaiting_tools") {
+            throw new Error("Stored Tool operation has no pending Tool call")
           }
-          const call = toolCallsFromAssistant(continuation.assistant).find(
-            (candidate) => candidate.id === stored.toolCallId
-          )
-          if (call === undefined || continuation.completed.has(call.id)) {
-            throw new Error("Stored Tool operation does not match one pending Tool call")
+          const stored = Schema.decodeUnknownSync(ToolOperationPayload)(operation.payload)
+          const continuation: ReplayContinuation = replayState.continuation
+          const calls: readonly ToolCall[] = replayState.calls
+          const nextToolIndex: number = replayState.nextToolIndex
+          if (continuation.turnIndex !== stored.turnIndex) {
+            throw new Error("Stored Tool operation does not match its model turn")
+          }
+          const call = calls[nextToolIndex]
+          if (call === undefined || call.id !== stored.toolCallId) {
+            throw new Error("Stored Tool operation is not the next pending Tool call")
           }
           toolCalls += 1
           if (stored.toolCallIndex !== toolCalls) {
@@ -879,20 +907,45 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
           }
           executedToolNames.add(call.name)
           recordCompletedToolResult(call.name, stored.result)
-          continuation.completed.set(call.id, stored.result)
+          const completed = new Map(continuation.completed)
+          completed.set(call.id, stored.result)
+          const updatedContinuation: ReplayContinuation = { ...continuation, completed }
           context.messages.push(toolResultMessage(call, stored.result, () => stored.timestamp))
           if (!stored.result.ok && toolResultNeedsReflection(stored.result)) context.tools = []
+          replayState =
+            nextToolIndex + 1 === calls.length
+              ? { type: "awaiting_model", continuation: updatedContinuation }
+              : {
+                  type: "awaiting_tools",
+                  continuation: updatedContinuation,
+                  calls,
+                  nextToolIndex: nextToolIndex + 1
+                }
           continue
         }
-        restoredFinal = Schema.decodeUnknownSync(AgentRunResultSchema)(operation.payload)
+        if (replayState.type === "awaiting_tools") {
+          throw new Error("Stored final operation precedes its pending Tool results")
+        }
+        if (
+          replayState.type === "awaiting_model" &&
+          toolCallsFromAssistant(replayState.continuation.assistant).length > 0
+        ) {
+          throw new Error("Stored final operation has no final model response")
+        }
+        const restoredFinal = Schema.decodeUnknownSync(AgentRunResultSchema)(operation.payload)
         if (
           restoredFinal.runId !== request.runId ||
           restoredFinal.correlationId !== request.correlationId
         ) {
           throw new Error("Stored final operation identity does not match the Agent run")
         }
+        replayState = { type: "final", result: restoredFinal }
       }
-      restoredContinuation = mutableRestoredContinuation
+      let restoredContinuation =
+        replayState.type === "awaiting_tools" || replayState.type === "awaiting_model"
+          ? replayState.continuation
+          : undefined
+      const restoredFinal = replayState.type === "final" ? replayState.result : undefined
 
       const continueAssistant = (
         assistant: AssistantMessage,
@@ -1451,6 +1504,54 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
           accountIdRedacted: `…${accountId.slice(Math.max(0, accountId.length - 4))}`
         })
       return status
+    },
+
+    async runSmoke(externalSignal) {
+      const startedAt = now()
+      const timeoutSignal = AbortSignal.timeout(30_000)
+      const signal =
+        externalSignal === undefined
+          ? timeoutSignal
+          : AbortSignal.any([externalSignal, timeoutSignal])
+      const result = (
+        status: AgentSmokeResult["status"],
+        errorCode?: AgentSmokeResult["errorCode"]
+      ): AgentSmokeResult => {
+        const output: AgentSmokeResult = {
+          protocolVersion: 1,
+          status,
+          model: options.model,
+          durationMs: Math.max(0, now() - startedAt)
+        }
+        if (errorCode !== undefined) Object.assign(output, { errorCode })
+        return output
+      }
+      try {
+        const message = await models.completeSimple(
+          model,
+          {
+            systemPrompt: "This is an operational availability check. Reply with exactly READY.",
+            messages: [{ role: "user", content: "Reply only READY.", timestamp: now() }],
+            tools: []
+          },
+          { maxRetries: 0, reasoning: "medium", signal, timeoutMs: 30_000 }
+        )
+        if (message.stopReason === "error") return result("failed", "provider")
+        return contentText(message.content).trim() === "READY"
+          ? result("completed")
+          : result("failed", "invalid_output")
+      } catch (error) {
+        const classified = classifyProviderError(error instanceof Error ? error.message : undefined)
+        const errorCode: AgentSmokeResult["errorCode"] =
+          error instanceof Error && error.name === "AbortError"
+            ? externalSignal?.aborted === true
+              ? "cancelled"
+              : "timeout"
+            : classified === "policy" || classified === "invalid_output"
+              ? "provider"
+              : classified
+        return result("failed", errorCode)
+      }
     },
 
     async startDeviceLogin() {

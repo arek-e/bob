@@ -156,7 +156,7 @@ describe("delivery conversation turn fence", () => {
     })
   })
 
-  it("recovers an exhausted pending outbox but never a claimed delivery", async () => {
+  it("fences each exhausted dispatch generation and enforces the recovery limit", async () => {
     const { database, delivery } = await seedOwnerChannelAndTurn()
     const outboxId = await delivery.createOutbox({
       ownerId,
@@ -168,21 +168,60 @@ describe("delivery conversation turn fence", () => {
     })
     await delivery.markEnqueued(outboxId, "2026-08-12T10:00:00.500Z")
 
-    await expect(delivery.prepareOutboundRecovery(outboxId, 3)).resolves.toBe("recover")
+    await expect(delivery.prepareOutboundRecovery(outboxId, 3, 0)).resolves.toEqual({
+      status: "recover",
+      dispatchGeneration: 1
+    })
     const [recovered] = await database
       .select({
         state: outboxMessages.state,
         enqueuedAt: outboxMessages.enqueuedAt,
+        dispatchGeneration: outboxMessages.dispatchGeneration,
         recoveryCount: outboxMessages.recoveryCount
       })
       .from(outboxMessages)
       .where(eq(outboxMessages.id, outboxId))
-    expect(recovered).toEqual({ state: "pending", enqueuedAt: null, recoveryCount: 1 })
+    expect(recovered).toEqual({
+      state: "pending",
+      enqueuedAt: null,
+      dispatchGeneration: 1,
+      recoveryCount: 1
+    })
 
-    await delivery.markEnqueued(outboxId, "2026-08-12T10:00:02.000Z")
-    await expect(delivery.prepareOutboundRecovery(outboxId, 3)).resolves.toBe("active")
-    await expect(delivery.claimOutbox(outboxId, 60_000)).resolves.toBeDefined()
-    await expect(delivery.prepareOutboundRecovery(outboxId, 3)).resolves.toBe("unsafe")
+    await expect(delivery.prepareOutboundRecovery(outboxId, 3, 0)).resolves.toEqual({
+      status: "recover",
+      dispatchGeneration: 1
+    })
+    await delivery.markEnqueued(outboxId, "2026-08-12T10:00:01.500Z", 0)
+    const [afterStalePublish] = await database
+      .select({ enqueuedAt: outboxMessages.enqueuedAt })
+      .from(outboxMessages)
+      .where(eq(outboxMessages.id, outboxId))
+    expect(afterStalePublish?.enqueuedAt).toBeNull()
+    await expect(delivery.outboxDisposition(outboxId, 0)).resolves.toBe("complete")
+    await delivery.markEnqueued(outboxId, "2026-08-12T10:00:02.000Z", 1)
+    await expect(delivery.prepareOutboundRecovery(outboxId, 3, 0)).resolves.toEqual({
+      status: "active"
+    })
+
+    await expect(delivery.prepareOutboundRecovery(outboxId, 3, 1)).resolves.toEqual({
+      status: "recover",
+      dispatchGeneration: 2
+    })
+    await delivery.markEnqueued(outboxId, "2026-08-12T10:00:03.000Z", 2)
+    await expect(delivery.prepareOutboundRecovery(outboxId, 3, 2)).resolves.toEqual({
+      status: "recover",
+      dispatchGeneration: 3
+    })
+    await delivery.markEnqueued(outboxId, "2026-08-12T10:00:04.000Z", 3)
+    await expect(delivery.prepareOutboundRecovery(outboxId, 3, 3)).resolves.toEqual({
+      status: "limit"
+    })
+    await expect(delivery.claimOutbox(outboxId, 60_000, 2)).resolves.toBeUndefined()
+    await expect(delivery.claimOutbox(outboxId, 60_000, 3)).resolves.toBeDefined()
+    await expect(delivery.prepareOutboundRecovery(outboxId, 3, 3)).resolves.toEqual({
+      status: "unsafe"
+    })
   })
 
   it("releases an artifact follow-up only after the reply is accepted", async () => {

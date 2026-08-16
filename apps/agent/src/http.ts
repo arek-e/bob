@@ -1,6 +1,7 @@
 import {
   AgentRunRequest,
   AgentRunResult,
+  AgentSmokeResult,
   AgentSteerRequest,
   AgentSteerResult,
   DeviceLoginEvent
@@ -110,6 +111,12 @@ export async function handleAgentHttp(
         credentialsReady && coreReady ? 200 : 503
       )
     }
+    if (request.method === "POST" && url.pathname === "/v1/admin/smoke") {
+      const output = Schema.decodeUnknownSync(AgentSmokeResult)(
+        await composition.services.agent.runSmoke(request.signal)
+      )
+      return json(output, output.status === "completed" ? 200 : 503)
+    }
     if (request.method === "POST" && url.pathname === "/v1/run") {
       const input = Schema.decodeUnknownSync(AgentRunRequest)(await readJson(request))
       const attemptHeader = request.headers.get("x-bob-run-attempt-id")
@@ -132,34 +139,25 @@ export async function handleAgentHttp(
       ) {
         return json({ code: "capability_catalogue_mismatch" }, 409)
       }
-      if (input.legacySnapshotReplay !== true && attemptHeader === null) {
+      if (attemptHeader === null) {
         return json({ code: "agent_run_attempt_required" }, 409)
       }
-      const attemptId =
-        attemptHeader === null
-          ? undefined
-          : Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(attemptHeader)
+      const attemptId = Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
+        attemptHeader
+      )
       let operations: Awaited<
         ReturnType<AgentComposition["services"]["coreTools"]["loadRunOperations"]>
-      > = []
-      if (attemptId !== undefined) {
-        try {
-          operations = await composition.services.coreTools.loadRunOperations(
-            input.runId,
-            attemptId
-          )
-        } catch {
-          return json({ code: "agent_run_checkpoint_unavailable" }, 503)
-        }
+      >
+      try {
+        operations = await composition.services.coreTools.loadRunOperations(input.runId, attemptId)
+      } catch {
+        return json({ code: "agent_run_checkpoint_unavailable" }, 503)
       }
-      const durability =
-        attemptId === undefined
-          ? undefined
-          : {
-              operations,
-              append: (operation: (typeof operations)[number]) =>
-                composition.services.coreTools.appendRunOperation(operation, attemptId)
-            }
+      const durability = {
+        operations,
+        append: (operation: (typeof operations)[number]) =>
+          composition.services.coreTools.appendRunOperation(operation, attemptId)
+      }
       const feature = featureForTools(composition.profile, input.allowedTools)
       const parent = externalParentFromTraceparent(request.headers.get("traceparent"))
       const run = withBobSpan(

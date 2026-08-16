@@ -307,6 +307,6 @@ describe("Core scheduled telemetry", () => {
     expect(commandCount).toBe(2)
     expect(clock.fetch).toHaveBeenCalledWith("https://clock.internal/reconcile", expect.any(Object))
     expect(send).toHaveBeenCalledOnce()
-    expect(markEnqueued).toHaveBeenCalledWith(firstOutboxId, expect.any(String))
+    expect(markEnqueued).toHaveBeenCalledWith(firstOutboxId, expect.any(String), 0)
   })
 })

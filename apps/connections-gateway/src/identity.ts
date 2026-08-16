@@ -1,5 +1,7 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey, type KeyInput } from "jose"
 
+import { gatewayFailure } from "./failure.ts"
+
 export interface InstanceIdentity {
   readonly instanceId: string
 }
@@ -13,18 +15,23 @@ export async function verifyInstanceAssertion(
   key: KeyInput | JWTVerifyGetKey,
   policy: { readonly issuer: string; readonly audience: string }
 ): Promise<string> {
-  const result = await jwtVerify(assertion, key, {
-    audience: policy.audience,
-    issuer: policy.issuer,
-    clockTolerance: 5
-  })
+  let result
+  try {
+    result = await jwtVerify(assertion, key, {
+      audience: policy.audience,
+      issuer: policy.issuer,
+      clockTolerance: 5
+    })
+  } catch {
+    throw gatewayFailure("access_denied")
+  }
   if (
     result.payload.sub !== "" ||
     Object.prototype.toString.call(result.payload.common_name) !== "[object String]" ||
     String(result.payload.common_name).length === 0 ||
     result.payload.email !== undefined
   ) {
-    throw new Error("access_denied")
+    throw gatewayFailure("access_denied")
   }
   return String(result.payload.common_name)
 }
@@ -41,7 +48,9 @@ export function createInstanceAuthenticator(options: {
   return {
     async authenticate(request) {
       const assertion = request.headers.get("cf-access-jwt-assertion")
-      if (assertion === null || assertion.length > 16_384) throw new Error("access_denied")
+      if (assertion === null || assertion.length > 16_384) {
+        throw gatewayFailure("access_denied")
+      }
       const commonName = await verifyInstanceAssertion(assertion, keys, {
         issuer,
         audience: options.audience
@@ -52,7 +61,9 @@ export function createInstanceAuthenticator(options: {
         )
         .bind(commonName)
         .first<{ instance_id: string }>()
-      if (caller === null || caller.instance_id.length === 0) throw new Error("access_denied")
+      if (caller === null || caller.instance_id.length === 0) {
+        throw gatewayFailure("access_denied")
+      }
       return { instanceId: caller.instance_id }
     }
   }

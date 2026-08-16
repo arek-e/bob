@@ -181,6 +181,7 @@ async function runLive(args: readonly string[]): Promise<void> {
   const adapterExecutable = option(args, "--adapter")
   if (adapterExecutable === undefined) throw new Error("live_adapter_missing")
   const suite = await loadEvaluationSuite(option(args, "--suite") ?? defaultSuite)
+  if (suite.schemaVersion !== 1) throw new Error("live_evaluation_schema_version_unsupported")
   const report = await runBoundedLiveEvaluation({
     approved: true,
     suite,

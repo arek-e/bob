@@ -9,11 +9,10 @@ import { injectCurrentTraceparent } from "@bob/observability/propagation"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 
 export interface CoreToolClient {
-  executeEffect(
+  execute(
     command: ToolCommand,
     signal?: AbortSignal
   ): Effect.Effect<typeof ToolResult.Type, unknown>
-  execute(command: ToolCommand, signal?: AbortSignal): Promise<typeof ToolResult.Type>
   loadRunOperations(runId: string, attemptId: string): Promise<readonly AgentRunOperation[]>
   appendRunOperation(operation: AgentRunOperation, attemptId: string): Promise<void>
   checkReadiness(signal?: AbortSignal): Promise<boolean>
@@ -31,7 +30,7 @@ export function createCoreToolClient(options: {
 }): CoreToolClient {
   const request = options.fetch ?? fetch
   const now = options.now ?? Date.now
-  const executeEffect = (
+  const execute = (
     command: ToolCommand,
     signal?: AbortSignal
   ): Effect.Effect<typeof ToolResult.Type, unknown> =>
@@ -85,8 +84,7 @@ export function createCoreToolClient(options: {
     })
 
   return {
-    executeEffect,
-    execute: (command, signal) => Effect.runPromise(executeEffect(command, signal)),
+    execute,
     async loadRunOperations(runId, attemptId) {
       const response = await request(`${options.coreUrl}/internal/agent/operations/load`, {
         method: "POST",

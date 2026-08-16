@@ -2,15 +2,7 @@ import { ContextItem, PriorToolReceipt } from "@bob/contracts/agent"
 import { ToolName } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
-import {
-  metricNames,
-  strictThreshold,
-  version1MetricNames,
-  type CandidateSet,
-  type EvaluationSuite,
-  type MetricName,
-  type Threshold
-} from "./gate.ts"
+import { metricNames, strictThreshold, version1MetricNames, type MetricName } from "./metrics.ts"
 
 const NonEmptyString = Schema.String.check(Schema.isMinLength(1))
 const BoundedText = NonEmptyString.check(Schema.isMaxLength(4_000))
@@ -26,38 +18,38 @@ const Locale = Schema.String.check(
   Schema.isPattern(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/)
 )
 
-const Threshold = Schema.Struct({
+const ThresholdSchema = Schema.Struct({
   comparison: Schema.Literals(["min", "max"]),
   value: Rate
 })
 
 const Version1ThresholdFields = {
-  casePassRate: Threshold,
-  safetyPassRate: Threshold,
-  toolSelectionAccuracy: Threshold,
-  toolArgumentAccuracy: Threshold,
-  retrievalRecallAtK: Threshold,
-  retrievalPrecisionAtK: Threshold,
-  groundingRate: Threshold,
-  citationCoverage: Threshold,
-  conflictDisclosureRate: Threshold,
-  promptInjectionResistanceRate: Threshold,
-  structuredOutputRejectionRate: Threshold,
-  staleLeakRate: Threshold
+  casePassRate: ThresholdSchema,
+  safetyPassRate: ThresholdSchema,
+  toolSelectionAccuracy: ThresholdSchema,
+  toolArgumentAccuracy: ThresholdSchema,
+  retrievalRecallAtK: ThresholdSchema,
+  retrievalPrecisionAtK: ThresholdSchema,
+  groundingRate: ThresholdSchema,
+  citationCoverage: ThresholdSchema,
+  conflictDisclosureRate: ThresholdSchema,
+  promptInjectionResistanceRate: ThresholdSchema,
+  structuredOutputRejectionRate: ThresholdSchema,
+  staleLeakRate: ThresholdSchema
 } as const
 
 const InteractionThresholdFields = {
-  clarificationPrecision: Threshold,
-  clarificationRecall: Threshold,
-  correctionRecoveryTurns: Threshold,
-  preferenceChangeRecoveryRate: Threshold,
-  stalePreferenceUseRate: Threshold,
-  proactivePrecision: Threshold,
-  proactiveRecall: Threshold,
-  unnecessaryInterruptionRate: Threshold,
-  externalGroundingRate: Threshold,
-  unknownOutcomeDisclosureRate: Threshold,
-  reversibleActionSuccessRate: Threshold
+  clarificationPrecision: ThresholdSchema,
+  clarificationRecall: ThresholdSchema,
+  correctionRecoveryTurns: ThresholdSchema,
+  preferenceChangeRecoveryRate: ThresholdSchema,
+  stalePreferenceUseRate: ThresholdSchema,
+  proactivePrecision: ThresholdSchema,
+  proactiveRecall: ThresholdSchema,
+  unnecessaryInterruptionRate: ThresholdSchema,
+  externalGroundingRate: ThresholdSchema,
+  unknownOutcomeDisclosureRate: ThresholdSchema,
+  reversibleActionSuccessRate: ThresholdSchema
 } as const
 
 const Version1Thresholds = Schema.Struct(Version1ThresholdFields)
@@ -66,7 +58,7 @@ const Version2Thresholds = Schema.Struct({
   ...InteractionThresholdFields
 })
 
-const Request = Schema.Struct({
+const EvaluationRequestSchema = Schema.Struct({
   sourceMessageId: Schema.String.check(Schema.isUUID()),
   localTime: IsoDateTime,
   timeZone: TimeZone,
@@ -136,43 +128,46 @@ const Version2Expectation = Schema.Struct({
   interaction: Schema.optionalKey(InteractionExpectation)
 })
 
-const Version1GoldenCase = Schema.Struct({
+const Version1GoldenCaseSchema = Schema.Struct({
   id: NonEmptyString,
   category: NonEmptyString,
   safetyCritical: Schema.Boolean,
   liveEligible: Schema.Boolean,
-  request: Request,
+  request: EvaluationRequestSchema,
   expected: Version1Expectation
 })
 
-const Version2GoldenCase = Schema.Struct({
+const Version2GoldenCaseSchema = Schema.Struct({
   id: NonEmptyString,
   category: NonEmptyString,
   safetyCritical: Schema.Boolean,
   liveEligible: Schema.Boolean,
-  request: Request,
+  request: EvaluationRequestSchema,
   expected: Version2Expectation
 })
 
-const Version1EvaluationSuite = Schema.Struct({
+export const Version1EvaluationSuiteSchema = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   suiteId: NonEmptyString,
   dataClass: Schema.Literal("synthetic"),
   thresholds: Version1Thresholds,
-  requiredMetrics: Schema.optionalKey(Schema.Array(Schema.Literals(metricNames))),
-  cases: Schema.Array(Version1GoldenCase)
+  requiredMetrics: Schema.optionalKey(Schema.Array(Schema.Literals(version1MetricNames))),
+  cases: Schema.Array(Version1GoldenCaseSchema)
 })
 
-const Version2EvaluationSuite = Schema.Struct({
+export const Version2EvaluationSuiteSchema = Schema.Struct({
   schemaVersion: Schema.Literal(2),
   suiteId: NonEmptyString,
   dataClass: Schema.Literal("synthetic"),
   thresholds: Version2Thresholds,
   requiredMetrics: Schema.optionalKey(Schema.Array(Schema.Literals(metricNames))),
-  cases: Schema.Array(Version2GoldenCase)
+  cases: Schema.Array(Version2GoldenCaseSchema)
 })
 
-const EvaluationSuiteSchema = Schema.Union([Version1EvaluationSuite, Version2EvaluationSuite])
+export const EvaluationSuiteSchema = Schema.Union([
+  Version1EvaluationSuiteSchema,
+  Version2EvaluationSuiteSchema
+])
 
 const ToolCall = Schema.Struct({
   name: ToolName,
@@ -201,27 +196,55 @@ const InteractionObservation = Schema.Struct({
   reversibleActionSucceeded: Schema.optionalKey(Schema.Boolean)
 })
 
-const Version1Candidate = Schema.Struct(Version1CandidateFields)
-const Version2Candidate = Schema.Struct({
+const Version1CandidateSchema = Schema.Struct(Version1CandidateFields)
+const Version2CandidateSchema = Schema.Struct({
   ...Version1CandidateFields,
   interaction: Schema.optionalKey(InteractionObservation)
 })
 
-const Version1CandidateSet = Schema.Struct({
+export const Version1CandidateSetSchema = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   suiteId: NonEmptyString,
   dataClass: Schema.Literal("synthetic"),
-  candidates: Schema.Array(Version1Candidate)
+  candidates: Schema.Array(Version1CandidateSchema)
 })
 
-const Version2CandidateSet = Schema.Struct({
+export const Version2CandidateSetSchema = Schema.Struct({
   schemaVersion: Schema.Literal(2),
   suiteId: NonEmptyString,
   dataClass: Schema.Literal("synthetic"),
-  candidates: Schema.Array(Version2Candidate)
+  candidates: Schema.Array(Version2CandidateSchema)
 })
 
-const CandidateSetSchema = Schema.Union([Version1CandidateSet, Version2CandidateSet])
+export const CandidateSetSchema = Schema.Union([
+  Version1CandidateSetSchema,
+  Version2CandidateSetSchema
+])
+
+export type Threshold = typeof ThresholdSchema.Type
+export type EvaluationRequest = typeof EvaluationRequestSchema.Type
+export type ToolArgumentExpectation = typeof ToolArgumentExpectation.Type
+export type ClaimExpectation = typeof Claim.Type
+export type RetrievalExpectation = typeof Retrieval.Type
+export type InteractionExpectation = typeof InteractionExpectation.Type
+export type Version1CaseExpectation = typeof Version1Expectation.Type
+export type Version2CaseExpectation = typeof Version2Expectation.Type
+export type CaseExpectation = Version1CaseExpectation | Version2CaseExpectation
+export type Version1GoldenCase = typeof Version1GoldenCaseSchema.Type
+export type Version2GoldenCase = typeof Version2GoldenCaseSchema.Type
+export type GoldenCase = Version1GoldenCase | Version2GoldenCase
+export type Version1EvaluationSuite = typeof Version1EvaluationSuiteSchema.Type
+export type Version2EvaluationSuite = typeof Version2EvaluationSuiteSchema.Type
+export type EvaluationSuite = typeof EvaluationSuiteSchema.Type
+export type ToolCallObservation = typeof ToolCall.Type
+export type ClaimObservation = typeof Claim.Type
+export type InteractionObservation = typeof InteractionObservation.Type
+export type Version1CandidateObservation = typeof Version1CandidateSchema.Type
+export type Version2CandidateObservation = typeof Version2CandidateSchema.Type
+export type CandidateObservation = Version1CandidateObservation | Version2CandidateObservation
+export type Version1CandidateSet = typeof Version1CandidateSetSchema.Type
+export type Version2CandidateSet = typeof Version2CandidateSetSchema.Type
+export type CandidateSet = typeof CandidateSetSchema.Type
 
 function hasDuplicates(values: readonly string[]): boolean {
   return new Set(values).size !== values.length
@@ -258,13 +281,7 @@ export function decodeEvaluationSuite<Input>(input: Input): EvaluationSuite {
     if (suite.requiredMetrics !== undefined && hasDuplicates(suite.requiredMetrics)) {
       throw new Error("duplicate_required_metric")
     }
-    // SAFETY: The versioned suite schema validates every threshold key and value above.
-    const suiteThresholds = suite.thresholds as Readonly<Partial<Record<MetricName, Threshold>>>
-    const thresholds = Object.fromEntries(
-      metricNames.map((name) => [name, suiteThresholds[name] ?? strictThreshold(name)])
-    )
-    // SAFETY: Normalization adds every metric threshold required by EvaluationSuite.
-    return { ...suite, thresholds } as EvaluationSuite
+    return suite
   } catch {
     throw new Error("invalid_evaluation_suite")
   }
@@ -276,8 +293,7 @@ export function decodeCandidateSet<Input>(input: Input): CandidateSet {
     if (hasDuplicates(candidates.candidates.map((candidate) => candidate.caseId))) {
       throw new Error("duplicate_candidate")
     }
-    // SAFETY: CandidateSetSchema validates the complete versioned candidate contract.
-    return candidates as CandidateSet
+    return candidates
   } catch {
     throw new Error("invalid_candidate_set")
   }

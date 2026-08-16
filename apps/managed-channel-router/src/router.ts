@@ -47,22 +47,28 @@ export function createManagedChannelRouter(
             event.route.provisioningSubject,
             `channel-route:${event.route.id}`
           )
-          await store.assignInstance(event.route.id, instanceId, clock())
+          instanceId = await store.assignInstance(event.route.id, instanceId, clock())
         }
         if ((await instances.lifecycle(instanceId)) !== "ready") {
-          await store.release(event.id, "instance_not_ready", clock())
-          return "retry"
+          const released = await store.release(
+            event.id,
+            event.claimVersion,
+            "instance_not_ready",
+            clock()
+          )
+          return released ? "retry" : "ignored"
         }
         await ingress.deliver(instanceId, event.payload)
-        await store.complete(event.id, clock())
-        return "delivered"
+        const completed = await store.complete(event.id, event.claimVersion, clock())
+        return completed ? "delivered" : "ignored"
       } catch (error) {
-        await store.release(
+        const released = await store.release(
           event.id,
+          event.claimVersion,
           error instanceof Error ? error.message : "delivery_failed",
           clock()
         )
-        return "retry"
+        return released ? "retry" : "ignored"
       }
     }
   }

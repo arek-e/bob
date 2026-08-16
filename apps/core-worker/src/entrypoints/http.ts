@@ -122,7 +122,8 @@ async function authUserExists(bindings: CoreBindings): Promise<boolean> {
 async function handleSetup(
   request: Request,
   bindings: CoreBindings,
-  verifyAccess?: AccessTokenVerifier
+  verifyAccess: AccessTokenVerifier | undefined,
+  compose: typeof composeCore
 ): Promise<Response> {
   try {
     await authorizeSetupRequest(
@@ -159,6 +160,7 @@ async function handleSetup(
     return json({ code: "invalid_password" }, 400)
   }
   const password = passwordResult.value.password
+  await compose(bindings).services.ownerDataKeys.ensure(bindings.OWNER_ID)
 
   const headers = new Headers(request.headers)
   headers.delete("content-length")
@@ -193,7 +195,7 @@ export async function handleHttp(
   }
 
   if (url.pathname === "/setup/api") {
-    return handleSetup(request, bindings, verifyAccess)
+    return handleSetup(request, bindings, verifyAccess, compose)
   }
 
   if (url.pathname.startsWith("/api/")) {
@@ -313,6 +315,9 @@ export async function handleHttp(
         suppliedCorrelation === null
           ? outboxId
           : Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(suppliedCorrelation)
+      const dispatchGeneration = Schema.decodeUnknownSync(
+        Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+      )(Number(request.headers.get("x-bob-dispatch-generation") ?? "0"))
       const claim = await runTelemetry(
         withRequestParent(
           request,
@@ -323,7 +328,9 @@ export async function handleHttp(
               outboxId,
               feature: "delivery"
             },
-            promiseEffect(() => composition.services.delivery.claimOutbox(outboxId, 60_000))
+            promiseEffect(() =>
+              composition.services.delivery.claimOutbox(outboxId, 60_000, dispatchGeneration)
+            )
           )
         )
       )
@@ -331,7 +338,10 @@ export async function handleHttp(
         ? json(
             {
               claim: null,
-              disposition: await composition.services.delivery.outboxDisposition(outboxId)
+              disposition: await composition.services.delivery.outboxDisposition(
+                outboxId,
+                dispatchGeneration
+              )
             },
             409
           )
@@ -524,22 +534,29 @@ export async function handleHttp(
           alert.objectId,
           4
         )
-        if (decision === "recover") {
-          await bindings.OUTBOUND_QUEUE.send({ outboxId: alert.objectId })
-          await composition.services.delivery.markEnqueued(alert.objectId, new Date().toISOString())
+        if (decision.status === "recover") {
+          await bindings.OUTBOUND_QUEUE.send({
+            outboxId: alert.objectId,
+            dispatchGeneration: decision.dispatchGeneration
+          })
+          await composition.services.delivery.markEnqueued(
+            alert.objectId,
+            new Date().toISOString(),
+            decision.dispatchGeneration
+          )
           await composition.services.alerts.setState(
             composition.config.OWNER_ID,
             alert.id,
             "resolved"
           )
-        } else if (decision === "resolved") {
+        } else if (decision.status === "resolved") {
           await composition.services.alerts.setState(
             composition.config.OWNER_ID,
             alert.id,
             "resolved"
           )
         }
-        return json({ status: decision })
+        return json({ status: decision.status })
       }
       if (alert.code === "delivery_uncertain" || alert.code === "delivery_result_exhausted") {
         let status = await composition.services.delivery.reconcileOutbox(alert.objectId)

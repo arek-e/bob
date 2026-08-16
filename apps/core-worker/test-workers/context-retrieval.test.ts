@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createCoreDatabase } from "../src/database.ts"
 import { users } from "../src/modules/conversations/schema.ts"
 import { factRevisions, facts } from "../src/modules/memory/schema.ts"
+import { encodeMemoryValue, plainMemoryValue } from "../src/modules/memory/value-envelope.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { reminderOccurrences, reminders } from "../src/modules/reminders/schema.ts"
 import { searchDocuments } from "../src/modules/retrieval/schema.ts"
@@ -85,7 +86,7 @@ describe("general context retrieval", () => {
       database.insert(factRevisions).values({
         id: revisionId,
         factId,
-        valueJson: JSON.stringify("hidden"),
+        valueEnvelope: encodeMemoryValue(plainMemoryValue("hidden")),
         canonicalTextCiphertext: canonical.ciphertext,
         canonicalTextIv: canonical.iv,
         dataKeyVersion: 1,

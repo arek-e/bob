@@ -64,14 +64,13 @@ describe("evaluation packs", () => {
     expect(profile.packs.map((pack) => pack.id)).toEqual(["core", "reminders", "connections"])
   })
 
-  it("fails when a pack declares a metric without evidence", async () => {
+  it("rejects a metric from a later schema version", async () => {
     const shard = coreEvaluationPack.shards[0]!
-    const report = await evaluatePack({
-      id: "invalid-coverage",
-      shards: [{ ...shard, requiredMetrics: ["casePassRate", "proactiveRecall"] }]
-    })
-
-    expect(report.passed).toBe(false)
-    expect(report.failures).toContain("bob-agent-retrieval-v1:metric_unobserved:proactiveRecall")
+    await expect(
+      evaluatePack({
+        id: "invalid-coverage",
+        shards: [{ ...shard, requiredMetrics: ["casePassRate", "proactiveRecall"] }]
+      })
+    ).rejects.toThrow("evaluation_pack_metric_not_supported")
   })
 })

@@ -5,11 +5,12 @@ import type {
   SettingsConnection
 } from "@bob/contracts/settings"
 
-import { and, eq, isNull } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { Context, Layer } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../policy/owner-data-key.ts"
 
 import { channels, users } from "../conversations/schema.ts"
 import {
@@ -18,6 +19,7 @@ import {
   completedEffectAfterConflict,
   type EffectIdentity
 } from "../policy/effect-outcome.ts"
+import { makeOwnerDataKeyStore } from "../policy/owner-data-key.ts"
 
 export interface OwnerSettingsStore {
   get(ownerId: string): Promise<OwnerSettings>
@@ -35,6 +37,7 @@ export interface OwnerSettingsStoreOptions {
   readonly defaultTimeZone: string
   readonly defaultLocale?: string
   readonly defaultHourCycle?: HourCycle
+  readonly ownerDataKeys?: OwnerDataKeyStore
   readonly now?: () => Date
   readonly randomUuid?: () => string
 }
@@ -74,66 +77,29 @@ export function makeOwnerSettingsStore(
   const defaultTimeZone = canonicalTimeZone(options.defaultTimeZone)
   const defaultLocale = canonicalLocale(options.defaultLocale ?? "en")
   const defaultHourCycle = options.defaultHourCycle ?? "auto"
+  const ownerDataKeys =
+    options.ownerDataKeys ??
+    makeOwnerDataKeyStore(database, protection, {
+      defaultTimeZone,
+      defaultLocale,
+      defaultHourCycle,
+      now
+    })
 
-  async function ensureOwner(ownerId: string): Promise<typeof users.$inferSelect> {
-    let [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
-    if (
-      owner !== undefined &&
-      owner.wrappedDataKey !== null &&
-      owner.wrappedDataKeyIv !== null &&
-      owner.dataKeyVersion !== null
-    ) {
-      return owner
-    }
-
-    const created = await protection.createWrappedDataKey()
-    const at = now().toISOString()
-    if (owner === undefined) {
-      await database
-        .insert(users)
-        .values({
-          id: ownerId,
-          timeZone: defaultTimeZone,
-          locale: defaultLocale,
-          hourCycle: defaultHourCycle,
-          wrappedDataKey: created.wrapped.ciphertext,
-          wrappedDataKeyIv: created.wrapped.iv,
-          dataKeyVersion: created.wrapped.version,
-          createdAt: at,
-          updatedAt: at
-        })
-        .onConflictDoNothing()
-    } else {
-      await database
-        .update(users)
-        .set({
-          wrappedDataKey: created.wrapped.ciphertext,
-          wrappedDataKeyIv: created.wrapped.iv,
-          dataKeyVersion: created.wrapped.version,
-          updatedAt: at
-        })
-        .where(and(eq(users.id, ownerId), isNull(users.wrappedDataKey)))
-    }
-
-    ;[owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
-    if (
-      owner === undefined ||
-      owner.wrappedDataKey === null ||
-      owner.wrappedDataKeyIv === null ||
-      owner.dataKeyVersion === null
-    ) {
-      throw new Error("Owner settings are unavailable")
-    }
-    return owner
+  async function owner(ownerId: string): Promise<typeof users.$inferSelect> {
+    const [result] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
+    if (result === undefined) throw new Error("Owner settings are unavailable")
+    return result
   }
 
   async function get(ownerId: string): Promise<OwnerSettings> {
-    const owner = await ensureOwner(ownerId)
+    await ownerDataKeys.load(ownerId)
+    const storedOwner = await owner(ownerId)
     return {
-      timeZone: owner.timeZone,
-      locale: owner.locale,
-      hourCycle: owner.hourCycle,
-      updatedAt: owner.updatedAt
+      timeZone: storedOwner.timeZone,
+      locale: storedOwner.locale,
+      hourCycle: storedOwner.hourCycle,
+      updatedAt: storedOwner.updatedAt
     }
   }
 
@@ -148,7 +114,7 @@ export function makeOwnerSettingsStore(
       ) {
         throw new Error("At least one owner setting is required")
       }
-      await ensureOwner(ownerId)
+      await ownerDataKeys.ensure(ownerId)
       const effect: EffectIdentity = {
         ownerId,
         kind: "owner_settings_update",

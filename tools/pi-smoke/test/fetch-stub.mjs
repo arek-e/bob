@@ -1,49 +1,37 @@
 globalThis.fetch = async (input, init) => {
   const url = input instanceof URL ? input.href : input instanceof Request ? input.url : input
+  const headers = new Headers(input instanceof Request ? input.headers : init?.headers)
 
   if (url === "https://agent-admin.example.test/v1/admin/auth/status") {
     if ((init?.method ?? "GET") !== "GET") {
       return Response.json({ error: "unexpected_write" }, { status: 405 })
     }
 
+    if (
+      headers.get("CF-Access-Client-Id") !== "test-admin-client" ||
+      headers.get("CF-Access-Client-Secret") !== "test-admin-secret"
+    ) {
+      return Response.json({ code: "unauthorized" }, { status: 401 })
+    }
+
     return Response.json({ configured: true, provider: "openai-codex" })
   }
 
-  if (url === "https://agent.example.test/v1/run") {
-    const request = JSON.parse(String(init?.body))
+  if (url === "https://agent-admin.example.test/v1/admin/smoke") {
     if (
-      request.deploymentProfileId !== "core" ||
-      !String(request.capabilityCatalogueGeneration).startsWith("capability-v2:")
+      headers.get("CF-Access-Client-Id") !== "test-admin-client" ||
+      headers.get("CF-Access-Client-Secret") !== "test-admin-secret"
     ) {
-      return Response.json({ code: "deployment_profile_required" }, { status: 409 })
+      return Response.json({ code: "unauthorized" }, { status: 401 })
     }
-    if (request.userText.includes("Reply only READY")) {
-      return Response.json({
-        protocolVersion: 1,
-        runId: request.runId,
-        correlationId: request.correlationId,
-        status: "failed",
-        errorCode: "invalid_output",
-        model: "gpt-5.6-luna",
-        durationMs: 25,
-        inputTokens: 12,
-        outputTokens: 1,
-        toolCalls: 0
-      })
+    if (init?.method !== "POST" || init.body !== undefined) {
+      return Response.json({ code: "invalid_request" }, { status: 400 })
     }
     return Response.json({
       protocolVersion: 1,
-      runId: request.runId,
-      correlationId: request.correlationId,
       status: "completed",
-      responseText: "READY",
-      sourceIds: [],
-      conflict: "none",
       model: "gpt-5.6-luna",
-      durationMs: 25,
-      inputTokens: 12,
-      outputTokens: 9,
-      toolCalls: 0
+      durationMs: 25
     })
   }
 

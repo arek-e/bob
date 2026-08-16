@@ -3,14 +3,15 @@ import { Context, Layer } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../policy/owner-data-key.ts"
 
+import { makeOwnerDataKeyStore } from "../policy/owner-data-key.ts"
 import {
   channels,
   conversationTurnMessages,
   conversationTurns,
   inboundEvents,
-  messages,
-  users
+  messages
 } from "./schema.ts"
 import { conversationTiming } from "./timing.ts"
 
@@ -95,6 +96,7 @@ export interface ConversationTurnStoreOptions {
   readonly settleLeaseMs?: number
   readonly now?: () => Date
   readonly randomUuid?: () => string
+  readonly ownerDataKeys?: OwnerDataKeyStore
 }
 
 export function makeConversationTurnStore(
@@ -108,25 +110,9 @@ export function makeConversationTurnStore(
   const settleLeaseMs = options.settleLeaseMs ?? conversationTiming.mutationSettleLeaseMs
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
-
-  async function ownerKey(ownerId: string): Promise<CryptoKey> {
-    const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
-    if (
-      owner?.wrappedDataKey === null ||
-      owner?.wrappedDataKey === undefined ||
-      owner.wrappedDataKeyIv === null ||
-      owner.wrappedDataKeyIv === undefined ||
-      owner.dataKeyVersion === null ||
-      owner.dataKeyVersion === undefined
-    ) {
-      throw new Error("Owner data key is unavailable")
-    }
-    return protection.unwrapDataKey({
-      ciphertext: owner.wrappedDataKey,
-      iv: owner.wrappedDataKeyIv,
-      version: owner.dataKeyVersion
-    })
-  }
+  const ownerDataKeys =
+    options.ownerDataKeys ??
+    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
 
   return {
     async offer(inboundEventId, traceparent) {
@@ -371,7 +357,7 @@ export function makeConversationTurnStore(
           )
         )
         .orderBy(asc(messages.occurredAt), asc(messages.createdAt), asc(messages.id))
-      const key = await ownerKey(claimed.userId)
+      const key = (await ownerDataKeys.load(claimed.userId)).key
       const [channel] = await database
         .select({
           senderCiphertext: channels.senderCiphertext,

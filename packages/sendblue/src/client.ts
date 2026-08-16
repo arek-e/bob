@@ -46,6 +46,21 @@ export interface SendblueClientOptions extends SendblueCredentials {
   readonly fetch?: typeof fetch
 }
 
+type HttpFailureOutcome =
+  | { readonly state: "failed"; readonly code: string }
+  | { readonly state: "uncertain"; readonly code: string }
+
+function classifyHttpFailure(status: number): HttpFailureOutcome {
+  const code = `http_${status}`
+  return status === 408 || status === 429 || status >= 500
+    ? { state: "uncertain", code }
+    : { state: "failed", code }
+}
+
+function isSafeInlineReplyRejection(status: number): boolean {
+  return status >= 400 && status < 500 && status !== 408 && status !== 429
+}
+
 export function createSendblueClient(options: SendblueClientOptions) {
   const request = options.fetch ?? fetch
   const baseUrl = options.baseUrl ?? "https://api.sendblue.com"
@@ -71,10 +86,7 @@ export function createSendblueClient(options: SendblueClientOptions) {
         signal: controller.signal
       })
       if (response.ok) return { state: "accepted" }
-      if (response.status === 408 || response.status === 429 || response.status >= 500) {
-        return { state: "uncertain", code: `http_${response.status}` }
-      }
-      return { state: "failed", code: `http_${response.status}` }
+      return classifyHttpFailure(response.status)
     } catch (error) {
       return {
         state: "uncertain",
@@ -108,11 +120,7 @@ export function createSendblueClient(options: SendblueClientOptions) {
           })
         let response = await send(messageBody)
         const canSafelyFallback =
-          claim.replyToMessageHandle !== undefined &&
-          response.status >= 400 &&
-          response.status < 500 &&
-          response.status !== 408 &&
-          response.status !== 429
+          claim.replyToMessageHandle !== undefined && isSafeInlineReplyRejection(response.status)
         if (canSafelyFallback) {
           const fallbackBody = {
             number: claim.number,
@@ -125,7 +133,7 @@ export function createSendblueClient(options: SendblueClientOptions) {
         }
 
         if (!response.ok) {
-          return { state: "failed", code: `http_${response.status}` }
+          return classifyHttpFailure(response.status)
         }
 
         try {

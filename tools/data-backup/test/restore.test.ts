@@ -70,6 +70,7 @@ describe("isolated D1 restore drill", () => {
       "fact_evidence",
       "fact_relations",
       "memory_candidates",
+      "memory_review_claim_guards",
       "gyms",
       "exercises",
       "equipment",
@@ -88,7 +89,7 @@ describe("isolated D1 restore drill", () => {
       "operational_alerts"
     ]
 
-    expect(schemaTables).toHaveLength(48)
+    expect(schemaTables).toHaveLength(49)
     expect(new Set(expectedOrder)).toEqual(new Set(schemaTables))
     expect(ordered).toEqual(expectedOrder)
     expect(ordered.indexOf("auth_user")).toBeLessThan(ordered.indexOf("auth_account"))

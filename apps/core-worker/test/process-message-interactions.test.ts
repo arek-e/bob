@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
-import { processInbound } from "../src/process-inbound.ts"
-import { testFixture } from "./test-fixture.ts"
+import { processConversationTurn } from "../src/process-inbound.ts"
+import { conversationTurnFixture, testFixture } from "./test-fixture.ts"
 
 const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
 const messageHandle = "inbound-provider-handle"
@@ -15,11 +15,7 @@ afterEach(() => {
 })
 
 function interactionComposition(
-  createOutbox: CoreComposition["services"]["delivery"]["createOutbox"],
-  message: { readonly service: "imessage" | "sms" | "rcs"; readonly isGroup: boolean } = {
-    service: "imessage",
-    isGroup: false
-  }
+  createOutbox: CoreComposition["services"]["delivery"]["createOutbox"]
 ) {
   // SAFETY: This controlled test fixture matches the asserted contract used by this test.
   return testFixture<CoreComposition>({
@@ -31,21 +27,13 @@ function interactionComposition(
     services: {
       events: captureEvents(),
       conversations: {
-        claimInbound: vi.fn(async () => ({
-          eventId,
-          ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db91",
-          channelId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db92",
-          messageId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db93",
-          text: "HELP",
-          providerMessageHandle: messageHandle,
-          service: message.service,
-          isGroup: message.isGroup,
-          number: "+46700000000",
-          fromNumber: "+46711111111",
-          correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db94"
-        })),
-        claimReaction: vi.fn(async () => true),
-        completeInbound: vi.fn(async () => undefined)
+        claimReaction: vi.fn(async () => true)
+      },
+      turns: {
+        markRunning: vi.fn(async () => true),
+        currentRevision: vi.fn(async () => 1),
+        commitReply: vi.fn(async () => "committed" as const),
+        markEventsProcessed: vi.fn(async () => 1)
       },
       training: { stopActiveForSafety: vi.fn() },
       journal: { createHandoff: vi.fn() },
@@ -55,6 +43,25 @@ function interactionComposition(
         markEnqueued: vi.fn(async () => undefined)
       }
     }
+  })
+}
+
+function snapshot(
+  message: { readonly service: "imessage" | "sms" | "rcs"; readonly isGroup: boolean } = {
+    service: "imessage",
+    isGroup: false
+  }
+) {
+  return conversationTurnFixture({
+    eventId,
+    ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db91",
+    channelId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db92",
+    messageId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db93",
+    text: "HELP",
+    providerMessageHandle: messageHandle,
+    service: message.service,
+    isGroup: message.isGroup,
+    correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db94"
   })
 }
 
@@ -83,7 +90,7 @@ describe("inbound native message interactions", () => {
     })
     const composition = interactionComposition(createOutbox)
 
-    await processInbound(eventId, bindings, composition)
+    await processConversationTurn(snapshot(), bindings, composition)
 
     expect(order).toEqual(["start", "action", "stop"])
     expect(interactionBodies).toEqual([
@@ -120,7 +127,7 @@ describe("inbound native message interactions", () => {
       throw new Error("outbox unavailable")
     })
 
-    await expect(processInbound(eventId, bindings, composition)).rejects.toThrow()
+    await expect(processConversationTurn(snapshot(), bindings, composition)).rejects.toThrow()
     expect(actions).toEqual(["start", "stop"])
   })
 
@@ -132,9 +139,9 @@ describe("inbound native message interactions", () => {
     const request = vi.fn<typeof fetch>()
     vi.stubGlobal("fetch", request)
     const createOutbox = vi.fn(async () => "018e6f65-4d55-7a1b-8df4-4ee15ea1db95")
-    const composition = interactionComposition(createOutbox, { service, isGroup })
+    const composition = interactionComposition(createOutbox)
 
-    await processInbound(eventId, bindings, composition)
+    await processConversationTurn(snapshot({ service, isGroup }), bindings, composition)
 
     expect(request).not.toHaveBeenCalled()
     expect(createOutbox).toHaveBeenCalledWith(

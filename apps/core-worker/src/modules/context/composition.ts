@@ -3,6 +3,7 @@ import type { CapabilityCatalogue } from "@bob/contracts/tools"
 import type { CoreDatabase } from "../../database.ts"
 import type { ArtifactStore } from "../artifacts/store.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../policy/owner-data-key.ts"
 import type { RetrievalPipeline } from "../retrieval/pipeline.ts"
 
 import { makeArtifactContextSource } from "../artifacts/context-source.ts"
@@ -17,9 +18,13 @@ export function makeApplicationContextStore(
   database: CoreDatabase,
   protection: DataProtection,
   catalogue: CapabilityCatalogue,
-  modules: { readonly artifacts: ArtifactStore; readonly retrieval: RetrievalPipeline }
+  modules: {
+    readonly artifacts: ArtifactStore
+    readonly retrieval: RetrievalPipeline
+    readonly ownerDataKeys: OwnerDataKeyStore
+  }
 ) {
-  const text = makePrivateTextReader(database, protection)
+  const text = makePrivateTextReader(database, protection, modules.ownerDataKeys)
   const [inlineReply, conversation] = makeConversationContextSources(database, text)
   if (inlineReply === undefined || conversation === undefined) {
     throw new Error("The Context source profile is incomplete")

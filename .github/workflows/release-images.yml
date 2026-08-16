@@ -280,8 +280,8 @@ jobs:
           bundle_digest="$(node scripts/release-bundle.mjs create release-bundle.json)"
           bundle_tag="ghcr.io/arek-e/bob-release:sha-${SOURCE_SHA}"
           oras push "$bundle_tag" \
-            --artifact-type application/vnd.bob.runtime.release.v1+json \
-            release-bundle.json:application/vnd.bob.runtime.release.v1+json
+            --artifact-type application/vnd.bob.runtime.release.v2+json \
+            release-bundle.json:application/vnd.bob.runtime.release.v2+json
           artifact_digest="$(oras resolve "$bundle_tag")"
           [[ "$bundle_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           [[ "$artifact_digest" =~ ^sha256:[0-9a-f]{64}$ ]]

@@ -29,6 +29,10 @@ Add one append-only Agent run operation log to the General Agent Core.
 
 The core Worker owns the log. The Agent host remains stateless.
 
+The fixed, admin-only operational model smoke is not an Agent run.
+
+It accepts no owner data or Tools and does not use the Agent run operation log.
+
 Checkpoint these completed Agent run operations:
 
 1. Each successful model response.

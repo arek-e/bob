@@ -1,10 +1,12 @@
 import type { AgentRunRequest } from "@bob/contracts/agent"
-import type {
-  CapabilityCatalogue,
-  CapabilityId,
-  ToolCommand,
-  ToolName,
-  ToolResult
+
+import {
+  capabilityToolNames,
+  type CapabilityCatalogue,
+  type CapabilityId,
+  type ToolCommand,
+  type ToolName,
+  type ToolResult
 } from "@bob/contracts/tools"
 
 /**
@@ -54,8 +56,8 @@ export function makeToolAdapterRegistry(
       throw new Error(`Adapter ${adapter.capabilityId} is not in profile ${catalogue.profileId}`)
     }
     if (
-      adapter.names.length !== capability.names.length ||
-      adapter.names.some((name) => !capability.names.includes(name))
+      adapter.names.length !== capabilityToolNames(capability).length ||
+      adapter.names.some((name) => !capabilityToolNames(capability).includes(name))
     ) {
       throw new Error(`Adapter ${adapter.capabilityId} does not match its Capability Module`)
     }

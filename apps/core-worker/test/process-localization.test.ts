@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vitest"
 import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
-import { processInbound } from "../src/process-inbound.ts"
-import { testFixture } from "./test-fixture.ts"
+import { processConversationTurn } from "../src/process-inbound.ts"
+import { conversationTurnFixture, testFixture } from "./test-fixture.ts"
 
 const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
 const channelId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db92"
@@ -25,14 +25,6 @@ function localizedComposition(text: string) {
       events: captureEvents(),
       artifacts: { latest: latestArtifact },
       conversations: {
-        claimInbound: vi.fn(async () => ({
-          eventId,
-          ownerId,
-          channelId,
-          messageId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db93",
-          text,
-          correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db94"
-        })),
         pendingBindings: vi.fn(async () => [
           {
             id: "binding",
@@ -41,11 +33,16 @@ function localizedComposition(text: string) {
             targetId: "reminder",
             expiresAt: "2099-01-01T00:00:00.000Z"
           }
-        ]),
-        completeInbound: vi.fn(async () => undefined)
+        ])
       },
       training: { stopActiveForSafety },
-      turns: { excludeMessageFromContext: vi.fn(async () => true) },
+      turns: {
+        excludeMessageFromContext: vi.fn(async () => true),
+        markRunning: vi.fn(async () => true),
+        currentRevision: vi.fn(async () => 1),
+        commitReply: vi.fn(async () => "committed" as const),
+        markEventsProcessed: vi.fn(async () => 1)
+      },
       journal: {
         createHandoff: vi.fn(async () => ({ id: "private-link" }))
       },
@@ -59,6 +56,17 @@ function localizedComposition(text: string) {
   return { composition, createOutbox, latestArtifact, stopActiveForSafety }
 }
 
+function snapshot(text: string) {
+  return conversationTurnFixture({
+    eventId,
+    ownerId,
+    channelId,
+    messageId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db93",
+    text,
+    correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db94"
+  })
+}
+
 describe("deterministic Swedish replies", () => {
   it("returns the fixed Swedish response after a Swedish training safety stop", async () => {
     const { composition, createOutbox, stopActiveForSafety } = localizedComposition(
@@ -69,7 +77,7 @@ describe("deterministic Swedish replies", () => {
       OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) }
     })
 
-    await processInbound(eventId, bindings, composition)
+    await processConversationTurn(snapshot("Mitt knä gör ont efter setet."), bindings, composition)
 
     expect(stopActiveForSafety).toHaveBeenCalledWith(ownerId, "pain_or_injury", expect.any(String))
     expect(createOutbox).toHaveBeenCalledWith(
@@ -95,7 +103,7 @@ describe("deterministic Swedish replies", () => {
       OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) }
     })
 
-    await processInbound(eventId, bindings, composition)
+    await processConversationTurn(snapshot(text), bindings, composition)
 
     expect(createOutbox).toHaveBeenCalledWith(
       expect.objectContaining({ text: expect.stringContaining(expectedText) })
@@ -122,7 +130,7 @@ describe("deterministic Swedish replies", () => {
       OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) }
     })
 
-    await processInbound(eventId, bindings, composition)
+    await processConversationTurn(snapshot("Send the plan again"), bindings, composition)
 
     expect(createOutbox).toHaveBeenCalledWith(expect.objectContaining({ text: renderedText }))
     expect(latestArtifact).toHaveBeenCalledWith(ownerId, channelId)

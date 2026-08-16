@@ -164,6 +164,22 @@ export function makeTrainingStore(
 ): TrainingStore {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
+
+  async function activeWorkoutId(ownerId: string): Promise<string | undefined> {
+    const [active] = await database
+      .select({ id: workoutSessions.id })
+      .from(workoutSessions)
+      .where(and(eq(workoutSessions.userId, ownerId), eq(workoutSessions.status, "active")))
+      .limit(1)
+    return active?.id
+  }
+
+  async function rejectActiveWorkout(ownerId: string): Promise<void> {
+    if ((await activeWorkoutId(ownerId)) !== undefined) {
+      throw new Error("An active workout already exists for the owner")
+    }
+  }
+
   return {
     async createGym(ownerId, name, idempotencyKey) {
       const effect: EffectIdentity = { ownerId, kind: "gym_create", idempotencyKey }
@@ -404,6 +420,7 @@ export function makeTrainingStore(
       const effect: EffectIdentity = { ownerId, kind: "workout_start", idempotencyKey }
       const previous = await completedEffect(database, effect)
       if (previous !== undefined) return previous
+      await rejectActiveWorkout(ownerId)
       const [routine] = await database
         .select({
           id: routines.id,
@@ -466,7 +483,10 @@ export function makeTrainingStore(
           completeEffect(database, effect, id, randomUuid(), at)
         ])
       } catch (error) {
-        return completedEffectAfterConflict(database, effect, error)
+        const winner = await completedEffect(database, effect)
+        if (winner !== undefined) return winner
+        await rejectActiveWorkout(ownerId)
+        throw error
       }
       return id
     },

@@ -18,6 +18,7 @@ import { makeConversationTurnStore } from "../src/modules/conversations/turn-sto
 import { deliveryAttempts, outboxMessages } from "../src/modules/delivery/schema.ts"
 import { makeDeliveryStore } from "../src/modules/delivery/store.ts"
 import { factRevisions, facts } from "../src/modules/memory/schema.ts"
+import { encodeMemoryValue, plainMemoryValue } from "../src/modules/memory/value-envelope.ts"
 import { createDataProtection } from "../src/modules/policy/data-protection.ts"
 import { makeTestContextStore } from "./context-store-fixture.ts"
 import { decodeTestMigrations } from "./migrations.ts"
@@ -1083,7 +1084,7 @@ describe("recent conversation context", () => {
         fixture.database.insert(factRevisions).values({
           id: revisionId,
           factId,
-          valueJson: JSON.stringify(text),
+          valueEnvelope: encodeMemoryValue(plainMemoryValue(text)),
           canonicalTextCiphertext: encrypted.ciphertext,
           canonicalTextIv: encrypted.iv,
           dataKeyVersion: 1,

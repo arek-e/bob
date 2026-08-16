@@ -1,3 +1,4 @@
+import { gatewayFailure } from "./failure.ts"
 import { isJsonObject, type JsonObject, type JsonValue } from "./json.ts"
 
 export type ConnectionProvider = "google_calendar" | "microsoft_calendar"
@@ -32,7 +33,7 @@ function record(value: JsonValue | undefined): JsonObject | undefined {
 
 function requiredString(value: JsonValue | undefined): string {
   if (Object.prototype.toString.call(value) !== "[object String]" || String(value).length === 0) {
-    throw new Error("connections_provider_invalid_response")
+    throw gatewayFailure("provider_unavailable")
   }
   return String(value)
 }
@@ -43,7 +44,7 @@ function requiredHttpsUrl(value: JsonValue | undefined): URL {
     if (url.protocol !== "https:") throw new Error("invalid_protocol")
     return url
   } catch {
-    throw new Error("connections_provider_invalid_response")
+    throw gatewayFailure("provider_unavailable")
   }
 }
 
@@ -84,14 +85,14 @@ export function createNangoProvider(options: {
         signal: AbortSignal.timeout(timeoutMs)
       })
     } catch {
-      throw new Error("connections_provider_unavailable")
+      throw gatewayFailure("provider_unavailable")
     }
-    if (!response.ok) throw new Error("connections_provider_failed")
+    if (!response.ok) throw gatewayFailure("provider_unavailable")
     if (response.status === 204) return undefined
     try {
       return await response.json()
     } catch {
-      throw new Error("connections_provider_invalid_response")
+      throw gatewayFailure("provider_unavailable")
     }
   }
 
@@ -108,7 +109,7 @@ export function createNangoProvider(options: {
         })
       )
       const data = record(response?.data)
-      if (data === undefined) throw new Error("connections_provider_invalid_response")
+      if (data === undefined) throw gatewayFailure("provider_unavailable")
       const connectUrl = requiredHttpsUrl(data.connect_link)
       connectUrl.searchParams.set("apiURL", baseUrl.toString().replace(/\/$/u, ""))
       return {
@@ -123,7 +124,7 @@ export function createNangoProvider(options: {
       query.set("tags[end_user_id]", ownerReference)
       const response = record(await call(`/connections?${query.toString()}`))
       const connections = response?.connections
-      if (!Array.isArray(connections)) throw new Error("connections_provider_invalid_response")
+      if (!Array.isArray(connections)) throw gatewayFailure("provider_unavailable")
       return connections.flatMap((value): ReadonlyArray<GatewayConnection> => {
         const connection = record(value)
         if (connection === undefined) return []

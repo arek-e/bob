@@ -49,6 +49,7 @@ export async function handleInboundQueue(
       }
       try {
         const correlationId = job.correlationId ?? job.outboxId
+        const exhaustedGeneration = job.dispatchGeneration ?? 0
         const program = withTraceparentParent(
           job.traceparent,
           withBobSpan(
@@ -78,25 +79,38 @@ export async function handleInboundQueue(
                 )
               }
               const decision = yield* promiseEffect(() =>
-                composition.services.delivery.prepareOutboundRecovery(job.outboxId, 3)
+                composition.services.delivery.prepareOutboundRecovery(
+                  job.outboxId,
+                  3,
+                  exhaustedGeneration
+                )
               )
               yield* recordDecision({
                 name: "bob.decision.idempotency",
-                code: decision === "recover" ? "allowed" : "limit",
-                outcome: decision === "recover" ? "allowed" : "skipped"
+                code: decision.status === "recover" ? "allowed" : "limit",
+                outcome: decision.status === "recover" ? "allowed" : "skipped"
               })
-              if (decision !== "recover") return
+              if (decision.status !== "recover") return
               const headers = yield* injectCurrentTraceparent()
               const traceparent = headers.get("traceparent")
               const retryJob =
                 traceparent === null
-                  ? { ...job, correlationId }
-                  : { ...job, correlationId, traceparent }
+                  ? { ...job, correlationId, dispatchGeneration: decision.dispatchGeneration }
+                  : {
+                      ...job,
+                      correlationId,
+                      dispatchGeneration: decision.dispatchGeneration,
+                      traceparent
+                    }
               yield* promiseEffect(() =>
                 bindings.OUTBOUND_QUEUE.send(retryJob, { delaySeconds: 300 })
               )
               yield* promiseEffect(() =>
-                composition.services.delivery.markEnqueued(job.outboxId, new Date().toISOString())
+                composition.services.delivery.markEnqueued(
+                  job.outboxId,
+                  new Date().toISOString(),
+                  decision.dispatchGeneration
+                )
               )
             })
           )

@@ -69,8 +69,7 @@ function composition(
     })
   }
   const coreTools = {
-    executeEffect: vi.fn(() => Effect.die("not implemented in HTTP boundary test")),
-    execute: vi.fn(),
+    execute: vi.fn(() => Effect.die("not implemented in HTTP boundary test")),
     loadRunOperations: vi.fn(async () => []),
     appendRunOperation: vi.fn(async () => undefined),
     checkReadiness: vi.fn(async () => true)
@@ -100,6 +99,12 @@ function composition(
           )
         ),
         runTurn: vi.fn(async () => runResult),
+        runSmoke: vi.fn(async () => ({
+          protocolVersion: 1 as const,
+          status: "completed" as const,
+          model: "gpt-5.6-luna",
+          durationMs: 12
+        })),
         requestSteer: vi.fn(() => ({ status: "missing" as const })),
         getAuthStatus: vi.fn(async () => ({
           configured: false,
@@ -156,6 +161,63 @@ describe("agent HTTP boundary", () => {
     expect(await response.json()).toMatchObject({
       ready: false,
       checks: { credentials: "unavailable", core: "ready" }
+    })
+  })
+
+  it("runs a content-free model smoke through the admin scope", async () => {
+    const target = composition(true)
+
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/admin/smoke", { method: "POST" }),
+      target
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      protocolVersion: 1,
+      status: "completed",
+      model: "gpt-5.6-luna",
+      durationMs: 12
+    })
+    expect(target.services.access.verify).toHaveBeenCalledWith(expect.any(Request), "admin")
+    expect(target.services.agent.runSmoke).toHaveBeenCalledWith(expect.any(AbortSignal))
+    expect(target.services.coreTools.loadRunOperations).not.toHaveBeenCalled()
+  })
+
+  it("does not let the run identity use model smoke administration", async () => {
+    const target = composition(true, "run")
+
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/admin/smoke", { method: "POST" }),
+      target
+    )
+
+    expect(response.status).toBe(401)
+    expect(target.services.agent.runSmoke).not.toHaveBeenCalled()
+  })
+
+  it("reports a failed model smoke without model output", async () => {
+    const target = composition(true)
+    target.services.agent.runSmoke = vi.fn(async () => ({
+      protocolVersion: 1 as const,
+      status: "failed" as const,
+      model: "gpt-5.6-luna",
+      durationMs: 12,
+      errorCode: "invalid_output" as const
+    }))
+
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/admin/smoke", { method: "POST" }),
+      target
+    )
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({
+      protocolVersion: 1,
+      status: "failed",
+      model: "gpt-5.6-luna",
+      durationMs: 12,
+      errorCode: "invalid_output"
     })
   })
 
@@ -275,6 +337,80 @@ describe("agent HTTP boundary", () => {
     expect(response.status).toBe(409)
     expect(await response.json()).toEqual({ code: "agent_run_attempt_required" })
     expect(target.services.agent.runTurnEffect).not.toHaveBeenCalled()
+  })
+
+  it("requires an active attempt identity for a legacy snapshot replay", async () => {
+    const target = composition(true)
+    const {
+      deploymentProfileId: _profile,
+      capabilityCatalogueGeneration: _generation,
+      ...legacyRequest
+    } = runRequest
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...legacyRequest, legacySnapshotReplay: true })
+      }),
+      target
+    )
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ code: "agent_run_attempt_required" })
+    expect(target.services.coreTools.loadRunOperations).not.toHaveBeenCalled()
+    expect(target.services.agent.runTurnEffect).not.toHaveBeenCalled()
+  })
+
+  it("replays a legacy snapshot through durable operations", async () => {
+    const target = composition(true)
+    const operation = {
+      protocolVersion: 1 as const,
+      loopVersion: 1 as const,
+      runId: runRequest.runId,
+      sequence: 1,
+      kind: "final" as const,
+      payload: runResult
+    }
+    target.services.coreTools.loadRunOperations = vi.fn(async () => [operation])
+    target.services.agent.runTurnEffect = vi.fn((_input, _signal, durability) =>
+      Effect.promise(async () => {
+        expect(durability).toBeDefined()
+        await durability!.append(operation)
+        return runResult
+      })
+    )
+    const {
+      deploymentProfileId: _profile,
+      capabilityCatalogueGeneration: _generation,
+      ...legacyRequest
+    } = runRequest
+
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/run", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-bob-run-attempt-id": runAttemptId
+        },
+        body: JSON.stringify({ ...legacyRequest, legacySnapshotReplay: true })
+      }),
+      target
+    )
+
+    expect(response.status).toBe(200)
+    expect(target.services.coreTools.loadRunOperations).toHaveBeenCalledWith(
+      runRequest.runId,
+      runAttemptId
+    )
+    expect(target.services.agent.runTurnEffect).toHaveBeenCalledWith(
+      expect.objectContaining({ legacySnapshotReplay: true }),
+      expect.any(AbortSignal),
+      expect.objectContaining({ operations: [operation] })
+    )
+    expect(target.services.coreTools.appendRunOperation).toHaveBeenCalledWith(
+      operation,
+      runAttemptId
+    )
   })
 
   it("fails closed when durable operations cannot load", async () => {

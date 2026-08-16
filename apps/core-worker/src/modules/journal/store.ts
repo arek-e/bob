@@ -1,21 +1,22 @@
 import type { JournalEntry, JournalMetadata } from "@bob/contracts/ui/journal"
 import type { BatchItem } from "drizzle-orm/batch"
 
-import { and, desc, eq, gt, inArray, isNull, like } from "drizzle-orm"
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../policy/owner-data-key.ts"
 import type { RetrievalProjectionInput } from "../retrieval/projection.ts"
 
-import { users } from "../conversations/schema.ts"
-import { factEvidence, factRevisions, facts, memoryCandidates } from "../memory/schema.ts"
+import { prepareMemorySourceWithdrawal } from "../memory/source-withdrawal.ts"
 import {
   completeEffect,
   completedEffect,
   completedEffectAfterConflict,
   type EffectIdentity
 } from "../policy/effect-outcome.ts"
+import { makeOwnerDataKeyStore } from "../policy/owner-data-key.ts"
 import { retrievalProjection } from "../retrieval/projection.ts"
 import { searchDocuments } from "../retrieval/schema.ts"
 import { journalEntries, journalHandoffs } from "./schema.ts"
@@ -56,35 +57,58 @@ export const JournalStore = Context.Service<JournalStore>("bob/JournalStore")
 const journalSourceTypes = ["journal", "journal_entry", "journal_summary"] as const
 const JournalTags = Schema.Array(Schema.String)
 
+interface NormalizedJournalEntry {
+  readonly text: string
+  readonly tags: readonly string[]
+  readonly approvedSummary?: string
+}
+
+function normalizeJournalEntry(input: {
+  readonly text: string
+  readonly tags: readonly string[]
+  readonly approvedSummary?: string
+}): NormalizedJournalEntry {
+  const text = input.text.trim()
+  if (text.length === 0 || text.length > 8_000) throw new Error("Journal text is invalid")
+
+  const tags = [...new Set(input.tags.map((tag) => tag.trim()).filter((tag) => tag.length > 0))]
+  if (tags.length > 25 || tags.some((tag) => tag.length > 1_200)) {
+    throw new Error("Journal tags are invalid")
+  }
+
+  const approvedSummary = input.approvedSummary?.trim()
+  if (
+    approvedSummary !== undefined &&
+    (approvedSummary.length === 0 || approvedSummary.length > 1_200)
+  ) {
+    throw new Error("Approved summary is invalid")
+  }
+
+  return approvedSummary === undefined ? { text, tags } : { text, tags, approvedSummary }
+}
+
+function normalizeJournalTag(tag: string): string {
+  const normalized = tag.trim()
+  if (normalized.length === 0 || normalized.length > 1_200) {
+    throw new Error("Journal tag is invalid")
+  }
+  return normalized
+}
+
 export function makeJournalStore(
   database: CoreDatabase,
   protection: DataProtection,
-  options: { readonly now?: () => Date; readonly randomUuid?: () => string }
+  options: {
+    readonly now?: () => Date
+    readonly randomUuid?: () => string
+    readonly ownerDataKeys?: OwnerDataKeyStore
+  }
 ): JournalStore {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
-
-  async function ownerKey(ownerId: string): Promise<{ key: CryptoKey; version: number }> {
-    const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
-    if (
-      owner?.wrappedDataKey === null ||
-      owner?.wrappedDataKey === undefined ||
-      owner.wrappedDataKeyIv === null ||
-      owner.wrappedDataKeyIv === undefined ||
-      owner.dataKeyVersion === null ||
-      owner.dataKeyVersion === undefined
-    ) {
-      throw new Error("Owner data key is unavailable")
-    }
-    return {
-      key: await protection.unwrapDataKey({
-        ciphertext: owner.wrappedDataKey,
-        iv: owner.wrappedDataKeyIv,
-        version: owner.dataKeyVersion
-      }),
-      version: owner.dataKeyVersion
-    }
-  }
+  const ownerDataKeys =
+    options.ownerDataKeys ??
+    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
 
   return {
     async createHandoff(ownerId, ttlMs, idempotencyKey) {
@@ -133,6 +157,7 @@ export function makeJournalStore(
       }
       const previous = await completedEffect(database, effect)
       if (previous !== undefined) return previous
+      const normalized = normalizeJournalEntry(input)
       const at = now().toISOString()
       const [handoff] = await database
         .select({ id: journalHandoffs.id })
@@ -147,14 +172,14 @@ export function makeJournalStore(
         )
         .limit(1)
       if (handoff === undefined) throw new Error("Journal handoff is invalid or expired")
-      const owner = await ownerKey(input.ownerId)
-      const encrypted = await protection.encryptText(owner.key, input.text)
+      const owner = await ownerDataKeys.load(input.ownerId)
+      const encrypted = await protection.encryptText(owner.key, normalized.text)
       const entryId = randomUuid()
-      const contentHash = await protection.contentHash(input.text)
+      const contentHash = await protection.contentHash(normalized.text)
       const summaryContentHash =
-        input.approvedSummary === undefined
+        normalized.approvedSummary === undefined
           ? undefined
-          : await protection.contentHash(input.approvedSummary)
+          : await protection.contentHash(normalized.approvedSummary)
       const statements = [
         database.insert(journalEntries).values({
           id: entryId,
@@ -163,8 +188,8 @@ export function makeJournalStore(
           textCiphertext: encrypted.ciphertext,
           textIv: encrypted.iv,
           dataKeyVersion: owner.version,
-          tagsJson: JSON.stringify(input.tags),
-          approvedSummary: input.approvedSummary,
+          tagsJson: JSON.stringify(normalized.tags),
+          approvedSummary: normalized.approvedSummary,
           contentHash,
           createdAt: at
         })
@@ -180,15 +205,15 @@ export function makeJournalStore(
             gt(journalHandoffs.expiresAt, at)
           )
         )
-      if (input.approvedSummary !== undefined) {
+      if (normalized.approvedSummary !== undefined) {
         const projectionInput: RetrievalProjectionInput = {
           id: randomUuid(),
           ownerId: input.ownerId,
           sourceType: "journal_summary",
           sourceId: entryId,
           memoryClass: "owner_episode",
-          text: input.approvedSummary,
-          searchText: `${input.tags.join(" ")} ${input.approvedSummary}`,
+          text: normalized.approvedSummary,
+          searchText: `${normalized.tags.join(" ")} ${normalized.approvedSummary}`,
           sourceLabel: `journal ${at.slice(0, 10)}`,
           occurredAt: at,
           validFrom: at,
@@ -226,6 +251,7 @@ export function makeJournalStore(
     },
 
     async searchMetadata(ownerId, tag) {
+      const normalizedTag = tag === undefined ? undefined : normalizeJournalTag(tag)
       const rows = await database
         .select({
           id: journalEntries.id,
@@ -238,9 +264,15 @@ export function makeJournalStore(
           and(
             eq(journalEntries.userId, ownerId),
             isNull(journalEntries.redactedAt),
-            ...(tag === undefined
+            ...(normalizedTag === undefined
               ? []
-              : [like(journalEntries.tagsJson, `%"${tag.replaceAll('"', "")}"%`)])
+              : [
+                  sql<boolean>`exists (
+                    select 1
+                    from json_each(${journalEntries.tagsJson}) as journal_tag
+                    where journal_tag.value = ${normalizedTag}
+                  )`
+                ])
           )
         )
         .orderBy(desc(journalEntries.createdAt))
@@ -270,7 +302,7 @@ export function makeJournalStore(
         )
         .limit(1)
       if (row === undefined) return undefined
-      const key = (await ownerKey(ownerId)).key
+      const key = (await ownerDataKeys.load(ownerId)).key
       const entry = {
         id: row.id,
         createdAt: row.createdAt,
@@ -300,21 +332,9 @@ export function makeJournalStore(
         )
         .limit(1)
       if (entry === undefined) throw new Error("Journal entry not found")
-      const text = input.text.trim()
-      if (text.length === 0 || text.length > 8_000) throw new Error("Journal text is invalid")
-      const approvedSummary = input.approvedSummary?.trim()
-      if (
-        approvedSummary !== undefined &&
-        (approvedSummary.length === 0 || approvedSummary.length > 1_200)
-      ) {
-        throw new Error("Approved summary is invalid")
-      }
-      const tags = [...new Set(input.tags.map((tag) => tag.trim()))]
-      if (tags.length > 25 || tags.some((tag) => tag.length === 0 || tag.length > 1_200)) {
-        throw new Error("Journal tags are invalid")
-      }
+      const { text, tags, approvedSummary } = normalizeJournalEntry(input)
       const at = now().toISOString()
-      const owner = await ownerKey(ownerId)
+      const owner = await ownerDataKeys.load(ownerId)
       const [encrypted, contentHash, summaryContentHash, existingProjection] = await Promise.all([
         protection.encryptText(owner.key, text),
         protection.contentHash(text),
@@ -332,36 +352,13 @@ export function makeJournalStore(
           )
           .limit(1)
       ])
-      const sourcedRevisions = await database
-        .select({ revisionId: factEvidence.revisionId, factId: factRevisions.factId })
-        .from(factEvidence)
-        .innerJoin(factRevisions, eq(factEvidence.revisionId, factRevisions.id))
-        .innerJoin(facts, eq(factRevisions.factId, facts.id))
-        .where(
-          and(
-            inArray(factEvidence.sourceType, journalSourceTypes),
-            eq(factEvidence.sourceId, entryId),
-            eq(facts.userId, ownerId)
-          )
-        )
-      const unsupported: { revisionId: string; factId: string }[] = []
-      for (const sourced of sourcedRevisions) {
-        const evidence = await database
-          .select({
-            sourceType: factEvidence.sourceType,
-            sourceId: factEvidence.sourceId,
-            evidenceRole: factEvidence.evidenceRole
-          })
-          .from(factEvidence)
-          .where(eq(factEvidence.revisionId, sourced.revisionId))
-        const hasOtherEvidence = evidence.some(
-          (item) =>
-            item.evidenceRole === "supports" &&
-            (!journalSourceTypes.some((sourceType) => sourceType === item.sourceType) ||
-              item.sourceId !== entryId)
-        )
-        if (!hasOtherEvidence) unsupported.push(sourced)
-      }
+      const memoryStatements = await prepareMemorySourceWithdrawal(database, {
+        ownerId,
+        sourceTypes: journalSourceTypes,
+        sourceId: entryId,
+        reason: "source_changed",
+        at
+      })
       const statements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
         database
           .update(journalEntries)
@@ -380,25 +377,7 @@ export function makeJournalStore(
               isNull(journalEntries.redactedAt)
             )
           ),
-        database
-          .update(memoryCandidates)
-          .set({ status: "rejected", reviewedAt: at })
-          .where(
-            and(
-              eq(memoryCandidates.userId, ownerId),
-              inArray(memoryCandidates.sourceType, journalSourceTypes),
-              eq(memoryCandidates.sourceId, entryId),
-              inArray(memoryCandidates.status, ["proposed", "disputed"])
-            )
-          ),
-        database
-          .delete(factEvidence)
-          .where(
-            and(
-              inArray(factEvidence.sourceType, journalSourceTypes),
-              eq(factEvidence.sourceId, entryId)
-            )
-          )
+        ...memoryStatements
       ]
       if (approvedSummary === undefined) {
         statements.push(
@@ -452,35 +431,6 @@ export function makeJournalStore(
             .where(eq(searchDocuments.id, existingProjection[0].id))
         )
       }
-      for (const item of unsupported) {
-        statements.push(
-          database
-            .update(factRevisions)
-            .set({ verificationStatus: "disputed", modelEligible: false, channelEligible: false })
-            .where(eq(factRevisions.id, item.revisionId)),
-          database
-            .update(facts)
-            .set({ currentRevisionId: null })
-            .where(and(eq(facts.id, item.factId), eq(facts.currentRevisionId, item.revisionId))),
-          database
-            .update(searchDocuments)
-            .set({
-              text: "",
-              searchText: "",
-              contentHash: null,
-              modelEligible: false,
-              channelEligible: false,
-              deletedAt: at,
-              updatedAt: at
-            })
-            .where(
-              and(
-                eq(searchDocuments.sourceType, "fact_revision"),
-                eq(searchDocuments.sourceId, item.revisionId)
-              )
-            )
-        )
-      }
       statements.push(completeEffect(database, effect, entryId, randomUuid(), at))
       try {
         await database.batch(statements)
@@ -502,37 +452,16 @@ export function makeJournalStore(
         await database.batch([completeEffect(database, effect, entryId, randomUuid(), at)])
         return
       }
-      const sourcedRevisions = await database
-        .select({ revisionId: factEvidence.revisionId, factId: factRevisions.factId })
-        .from(factEvidence)
-        .innerJoin(factRevisions, eq(factEvidence.revisionId, factRevisions.id))
-        .innerJoin(facts, eq(factRevisions.factId, facts.id))
-        .where(
-          and(
-            inArray(factEvidence.sourceType, journalSourceTypes),
-            eq(factEvidence.sourceId, entryId),
-            eq(facts.userId, ownerId)
-          )
-        )
-      const unsupported: { revisionId: string; factId: string }[] = []
-      for (const sourced of sourcedRevisions) {
-        const evidence = await database
-          .select({
-            sourceType: factEvidence.sourceType,
-            sourceId: factEvidence.sourceId,
-            evidenceRole: factEvidence.evidenceRole
-          })
-          .from(factEvidence)
-          .where(eq(factEvidence.revisionId, sourced.revisionId))
-        const hasOtherEvidence = evidence.some(
-          (item) =>
-            item.evidenceRole === "supports" &&
-            (!journalSourceTypes.some((sourceType) => sourceType === item.sourceType) ||
-              item.sourceId !== entryId)
-        )
-        if (!hasOtherEvidence) unsupported.push(sourced)
-      }
-      const tombstone = await protection.encryptText((await ownerKey(ownerId)).key, "[deleted]")
+      const [tombstone, memoryStatements] = await Promise.all([
+        ownerDataKeys.load(ownerId).then(({ key }) => protection.encryptText(key, "[deleted]")),
+        prepareMemorySourceWithdrawal(database, {
+          ownerId,
+          sourceTypes: journalSourceTypes,
+          sourceId: entryId,
+          reason: "source_deleted",
+          at
+        })
+      ])
       const statements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
         database
           .update(journalEntries)
@@ -553,53 +482,8 @@ export function makeJournalStore(
               eq(searchDocuments.sourceId, entryId)
             )
           ),
-        database
-          .delete(memoryCandidates)
-          .where(
-            and(
-              eq(memoryCandidates.userId, ownerId),
-              inArray(memoryCandidates.sourceType, journalSourceTypes),
-              eq(memoryCandidates.sourceId, entryId)
-            )
-          ),
-        database
-          .delete(factEvidence)
-          .where(
-            and(
-              inArray(factEvidence.sourceType, journalSourceTypes),
-              eq(factEvidence.sourceId, entryId)
-            )
-          )
+        ...memoryStatements
       ]
-      for (const item of unsupported) {
-        statements.push(
-          database
-            .update(factRevisions)
-            .set({ verificationStatus: "disputed", modelEligible: false, channelEligible: false })
-            .where(eq(factRevisions.id, item.revisionId)),
-          database
-            .update(facts)
-            .set({ currentRevisionId: null })
-            .where(and(eq(facts.id, item.factId), eq(facts.currentRevisionId, item.revisionId))),
-          database
-            .update(searchDocuments)
-            .set({
-              text: "",
-              searchText: "",
-              contentHash: null,
-              modelEligible: false,
-              channelEligible: false,
-              deletedAt: at,
-              updatedAt: at
-            })
-            .where(
-              and(
-                eq(searchDocuments.sourceType, "fact_revision"),
-                eq(searchDocuments.sourceId, item.revisionId)
-              )
-            )
-        )
-      }
       statements.push(completeEffect(database, effect, entryId, randomUuid(), at))
       try {
         await database.batch(statements)

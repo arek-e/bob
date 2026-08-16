@@ -250,7 +250,6 @@ describe("conversation turn processing", () => {
         },
         context: { build: buildContext, priorToolReceipts },
         runs: {
-          loadForInbound: vi.fn(async () => undefined),
           loadForTurn: vi.fn(async () => undefined),
           create: vi.fn(async (request: { runId: string }) => ({
             runId: request.runId,
@@ -432,7 +431,6 @@ describe("conversation turn processing", () => {
         },
         context: { build: vi.fn(async () => []) },
         runs: {
-          loadForInbound: vi.fn(async () => undefined),
           loadForTurn: vi.fn(async () => undefined),
           create: vi.fn(async (request: { runId: string }) => ({
             runId: request.runId,
@@ -538,7 +536,6 @@ describe("conversation turn processing", () => {
         context: { build: vi.fn(async () => []) },
         tools: { mutationActivity: vi.fn(async () => ({ status: "none" as const })) },
         runs: {
-          loadForInbound: vi.fn(async () => undefined),
           loadForTurn: vi.fn(async () => undefined),
           create: vi.fn(async (request: { runId: string }) => ({
             runId: request.runId,
@@ -624,7 +621,6 @@ describe("conversation turn processing", () => {
         },
         context: { build: vi.fn(async () => []) },
         runs: {
-          loadForInbound: vi.fn(async () => undefined),
           loadForTurn: vi.fn(async () => undefined),
           create: vi.fn(async (request: { runId: string }) => ({
             runId: request.runId,
@@ -751,7 +747,6 @@ describe("conversation turn processing", () => {
         },
         context: { build },
         runs: {
-          loadForInbound: vi.fn(async () => undefined),
           loadForTurn: vi.fn(async () => undefined),
           create: vi.fn(async (request: { runId: string }) => ({
             runId: request.runId,
@@ -867,7 +862,6 @@ describe("conversation turn processing", () => {
         },
         context: { build: vi.fn(async () => []) },
         runs: {
-          loadForInbound: vi.fn(async () => undefined),
           loadForTurn: vi.fn(async () => undefined),
           create: vi.fn(async (request: { runId: string }) => ({
             runId: request.runId,
@@ -987,7 +981,6 @@ describe("conversation turn processing", () => {
         },
         context: { build: vi.fn(async () => []) },
         runs: {
-          loadForInbound: vi.fn(async () => undefined),
           loadForTurn: vi.fn(async () => undefined),
           create: vi.fn(async (request: { runId: string }) => ({
             runId: request.runId,
@@ -1223,7 +1216,6 @@ describe("conversation turn processing", () => {
             )
           },
           runs: {
-            loadForInbound: vi.fn(async () => undefined),
             loadForTurn: vi.fn(async () => undefined),
             create: vi.fn(async (request: { runId: string }) => ({
               runId: request.runId,
@@ -1406,7 +1398,6 @@ describe("conversation turn processing", () => {
         },
         context: { build: vi.fn(async () => []) },
         runs: {
-          loadForInbound: vi.fn(async () => undefined),
           loadForTurn: vi.fn(async () => undefined),
           create: vi.fn(async (request: { runId: string }) => ({
             runId: request.runId,
@@ -1516,7 +1507,6 @@ describe("conversation turn processing", () => {
         },
         context: { build: vi.fn(async () => []) },
         runs: {
-          loadForInbound: vi.fn(async () => undefined),
           loadForTurn: vi.fn(async () => ({
             request: {
               protocolVersion: 1,
@@ -1586,7 +1576,7 @@ describe("conversation turn processing", () => {
 
     expect(commitReply).toHaveBeenCalledWith(turnId, 2, runId, existingOutboxId)
     expect(markEventsProcessed).toHaveBeenCalledWith(turnId, 2)
-    expect(markEnqueued).toHaveBeenCalledWith(existingOutboxId, expect.any(String))
+    expect(markEnqueued).toHaveBeenCalledWith(existingOutboxId, expect.any(String), 0)
     expect(publish).toHaveBeenCalledOnce()
     expect(composition.services.runs.claim).not.toHaveBeenCalled()
     expect(composition.services.runs.completeWithResponse).not.toHaveBeenCalled()
@@ -1608,7 +1598,6 @@ describe("conversation turn processing", () => {
         journal: { createHandoff: vi.fn() },
         reminders: { applyBoundReply: vi.fn() },
         runs: {
-          loadForInbound: vi.fn(async () => undefined),
           loadForTurn: vi.fn(async () => ({
             request: {
               protocolVersion: 1,

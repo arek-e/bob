@@ -99,7 +99,7 @@ describe("Sendblue egress", () => {
     const parent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
 
     const outcome = await processOutboundJob(
-      { outboxId, correlationId, traceparent: parent },
+      { outboxId, dispatchGeneration: 3, correlationId, traceparent: parent },
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       {
         CORE: core,
@@ -122,6 +122,7 @@ describe("Sendblue egress", () => {
       /^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/
     )
     expect(claimHeaders[0]?.get("x-bob-correlation-id")).toBe(correlationId)
+    expect(claimHeaders[0]?.get("x-bob-dispatch-generation")).toBe("3")
     expect(deliveryResults).toEqual([
       expect.objectContaining({
         correlationId,

@@ -35,8 +35,18 @@ export interface RetrievalItem {
   readonly sourceLabel: string
   readonly occurredAt?: string
   readonly conflictKey?: string
-  readonly conflict: boolean
 }
+
+export type RetrievalUnit =
+  | {
+      readonly kind: "candidate"
+      readonly item: RetrievalItem
+    }
+  | {
+      readonly kind: "conflict_group"
+      readonly conflictKey: string
+      readonly items: readonly [RetrievalItem, RetrievalItem, ...RetrievalItem[]]
+    }
 
 export type RetrievalAbstentionReason =
   | "no_query_terms"
@@ -48,7 +58,7 @@ export type RetrievalAbstentionReason =
 export type RetrievalResult =
   | {
       readonly status: "supported"
-      readonly items: readonly RetrievalItem[]
+      readonly items: readonly RetrievalUnit[]
       readonly candidateCount: number
       readonly relevantCount: number
       readonly temporal: TemporalConstraint
@@ -102,6 +112,40 @@ function rowCandidate(row: CandidateRow, lexicalPosition: number): RetrievalCand
   if (row.valid_from !== null) Object.assign(candidate, { validFrom: row.valid_from })
   if (row.valid_to !== null) Object.assign(candidate, { validTo: row.valid_to })
   return candidate
+}
+
+function retrievalItem(candidate: RetrievalCandidate, includeConflictKey = true): RetrievalItem {
+  const item: RetrievalItem = {
+    id: candidate.id,
+    sourceId: candidate.sourceId,
+    sourceType: candidate.sourceType,
+    memoryClass: candidate.memoryClass,
+    text: candidate.text,
+    sourceLabel: candidate.sourceLabel
+  }
+  if (candidate.occurredAt !== undefined) Object.assign(item, { occurredAt: candidate.occurredAt })
+  if (includeConflictKey && candidate.conflictKey !== undefined) {
+    Object.assign(item, { conflictKey: candidate.conflictKey })
+  }
+  return item
+}
+
+function retrievalConflictItems(
+  candidates: readonly [RetrievalCandidate, RetrievalCandidate, ...RetrievalCandidate[]]
+): readonly [RetrievalItem, RetrievalItem, ...RetrievalItem[]] {
+  const [first, second, ...rest] = candidates
+  return [
+    retrievalItem(first, false),
+    retrievalItem(second, false),
+    ...rest.map((candidate) => retrievalItem(candidate, false))
+  ]
+}
+
+function retrievalUnitCount(units: ReturnType<typeof selectRelevantCandidates>): number {
+  return units.reduce(
+    (count, unit) => count + (unit.kind === "conflict_group" ? unit.candidates.length : 1),
+    0
+  )
 }
 
 export function makeRetrievalPipeline(
@@ -239,46 +283,30 @@ export function makeRetrievalPipeline(
         totalCharacters: input.totalCharacterBudget ?? totalCharacterBudget,
         itemCharacters: input.itemCharacterBudget ?? itemCharacterBudget
       })
+      const relevantCount = retrievalUnitCount(relevant)
       if (bounded.length === 0) {
         return {
           status: "abstain",
           reason: "reading_budget_exhausted",
           items: [],
           candidateCount: rows.length,
-          relevantCount: relevant.length,
+          relevantCount,
           temporal: analyzed.temporal
         }
       }
       return {
         status: "supported",
-        items: bounded.map(
-          ({
-            id,
-            sourceId,
-            sourceType,
-            memoryClass,
-            text,
-            sourceLabel,
-            occurredAt,
-            conflictKey,
-            conflict
-          }) => {
-            const item: RetrievalItem = {
-              id,
-              sourceId,
-              sourceType,
-              memoryClass,
-              text,
-              sourceLabel,
-              conflict
-            }
-            if (occurredAt !== undefined) Object.assign(item, { occurredAt })
-            if (conflictKey !== undefined) Object.assign(item, { conflictKey })
-            return item
-          }
+        items: bounded.map((unit): RetrievalUnit =>
+          unit.kind === "candidate"
+            ? { kind: "candidate", item: retrievalItem(unit.candidate) }
+            : {
+                kind: "conflict_group",
+                conflictKey: unit.conflictKey,
+                items: retrievalConflictItems(unit.candidates)
+              }
         ),
         candidateCount: rows.length,
-        relevantCount: relevant.length,
+        relevantCount,
         temporal: analyzed.temporal
       }
     }

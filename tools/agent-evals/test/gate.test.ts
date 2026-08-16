@@ -74,6 +74,56 @@ describe("deterministic evaluation gate", () => {
     })
   })
 
+  it("rejects a candidate set from a different schema version", async () => {
+    const repositoryRoot = new URL("../../../", import.meta.url)
+    const [version1, version2] = await Promise.all([
+      loadEvaluationInputs(
+        new URL("evals/scenarios/v1/golden-cases.json", repositoryRoot),
+        new URL("evals/fixtures/v1/offline-candidates.json", repositoryRoot)
+      ),
+      loadEvaluationInputs(
+        new URL("evals/scenarios/v2/interaction-cases.json", repositoryRoot),
+        new URL("evals/fixtures/v2/offline-candidates.json", repositoryRoot)
+      )
+    ])
+    const evaluateUntrustedPair: (
+      suite: EvaluationSuite,
+      candidates: CandidateSet
+    ) => ReturnType<typeof evaluateSuite> = evaluateSuite
+
+    expect(() => evaluateUntrustedPair(version1.suite, version2.candidates)).toThrowError(
+      "evaluation_schema_version_mismatch"
+    )
+  })
+
+  it("rejects interaction metrics in a version 1 suite", () => {
+    expect(() =>
+      decodeEvaluationSuite({
+        schemaVersion: 1,
+        suiteId: "version-1-with-version-2-metric",
+        dataClass: "synthetic",
+        thresholds,
+        requiredMetrics: ["clarificationRecall"],
+        cases: [
+          {
+            id: "case-v1",
+            category: "versioning",
+            safetyCritical: false,
+            liveEligible: false,
+            request: {
+              sourceMessageId,
+              localTime: "2026-08-11T10:00:00.000Z",
+              timeZone: "UTC",
+              userText: "Synthetic version test.",
+              contextItems: []
+            },
+            expected: {}
+          }
+        ]
+      })
+    ).toThrowError("invalid_evaluation_suite")
+  })
+
   it("fails stale preferences, needless interruptions, and hidden outcomes", async () => {
     const repositoryRoot = new URL("../../../", import.meta.url)
     const { suite, candidates } = await loadEvaluationInputs(

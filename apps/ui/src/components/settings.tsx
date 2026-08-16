@@ -1,9 +1,15 @@
 import {
+  DeviceLoginEvent,
+  type DeviceLoginEvent as DeviceLoginEventType
+} from "@bob/contracts/agent"
+import {
+  HourCycle,
   OwnerSettingsUpdate,
   OwnerSettingsView,
-  type HourCycle,
+  type HourCycle as HourCycleValue,
   type SettingsConnection
 } from "@bob/contracts/settings"
+import { AdminStatus } from "@bob/contracts/ui/core"
 import { Schema } from "effect"
 import {
   createEffect,
@@ -38,35 +44,6 @@ const settingsSections = [
 ] as const
 
 type SettingsSectionId = (typeof settingsSections)[number]["id"]
-
-const DeviceLoginEvent = Schema.Union([
-  Schema.Struct({
-    type: Schema.Literal("device_code"),
-    verificationUri: Schema.String,
-    userCode: Schema.String,
-    expiresAt: Schema.String
-  }),
-  Schema.Struct({
-    type: Schema.Literal("completed"),
-    accountIdRedacted: Schema.String,
-    expiresAt: Schema.String
-  }),
-  Schema.Struct({
-    type: Schema.Literal("failed"),
-    code: Schema.String
-  })
-])
-
-type DeviceLoginEventType = typeof DeviceLoginEvent.Type
-
-const AdminStatus = Schema.Struct({
-  configured: Schema.Boolean,
-  provider: Schema.String,
-  expiresAt: Schema.optionalKey(Schema.String),
-  accountIdRedacted: Schema.optionalKey(Schema.String)
-})
-
-const HourCycleInput = Schema.Literals(["auto", "h12", "h23"])
 
 function SectionHeader(props: {
   title: string
@@ -168,7 +145,7 @@ function LocalitySection(props: ClientProps) {
     Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
   )
   const [locale, setLocale] = createSignal(navigator.language || "en")
-  const [hourCycle, setHourCycle] = createSignal<HourCycle>("auto")
+  const [hourCycle, setHourCycle] = createSignal<HourCycleValue>("auto")
   const [timeZoneError, setTimeZoneError] = createSignal("")
   const [localeError, setLocaleError] = createSignal("")
   const [saving, setSaving] = createSignal(false)
@@ -349,7 +326,7 @@ function LocalitySection(props: ClientProps) {
                 name="hourCycle"
                 value={hourCycle()}
                 onChange={(event) => {
-                  setHourCycle(Schema.decodeUnknownSync(HourCycleInput)(event.currentTarget.value))
+                  setHourCycle(Schema.decodeUnknownSync(HourCycle)(event.currentTarget.value))
                   setDirty(true)
                 }}
               >

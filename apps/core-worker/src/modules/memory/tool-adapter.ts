@@ -3,7 +3,7 @@ import {
   MemoryProposeArguments,
   MemorySearchArguments
 } from "@bob/contracts/capabilities/memory"
-import { type ToolResult } from "@bob/contracts/tools"
+import { capabilityToolNames, type ToolResult } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
 import type {
@@ -19,7 +19,7 @@ export function makeMemoryToolAdapter(
 ): ToolCommandAdapter {
   return {
     capabilityId: memoryCapability.id,
-    names: memoryCapability.names,
+    names: capabilityToolNames(memoryCapability),
     async execute({ command, run }: ToolCommandAdapterContext): Promise<ToolResult> {
       switch (command.name) {
         case "memory_search": {
@@ -34,7 +34,18 @@ export function makeMemoryToolAdapter(
             totalCharacterBudget: 6_000,
             itemCharacterBudget: 1_200
           })
-          const matches = result.status === "supported" ? result.items : []
+          const matches =
+            result.status === "supported"
+              ? result.items.flatMap((unit) =>
+                  unit.kind === "candidate"
+                    ? [{ ...unit.item, conflict: false }]
+                    : unit.items.map((item) => ({
+                        ...item,
+                        conflictKey: unit.conflictKey,
+                        conflict: true
+                      }))
+                )
+              : []
           return {
             ok: true,
             code: "memory_results",

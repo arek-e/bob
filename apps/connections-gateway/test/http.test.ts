@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { ConnectionsProvider } from "../src/nango.ts"
 
+import { gatewayFailure, type GatewayFailureCode } from "../src/failure.ts"
 import { createConnectionsGateway } from "../src/http.ts"
 
 function provider(): ConnectionsProvider {
@@ -62,7 +63,7 @@ describe("Connections Gateway HTTP Interface", () => {
     const handle = createConnectionsGateway({
       authenticator: {
         authenticate: async () => {
-          throw new Error("access_denied")
+          throw gatewayFailure("access_denied")
         }
       },
       connections: provider()
@@ -73,5 +74,52 @@ describe("Connections Gateway HTTP Interface", () => {
 
     expect(response.status).toBe(401)
     await expect(response.json()).resolves.toEqual({ code: "access_denied" })
+  })
+
+  it.each([
+    ["access_denied", 401],
+    ["invalid_request", 400],
+    ["body_too_large", 413],
+    ["provider_unavailable", 502],
+    ["internal_error", 500]
+  ] satisfies ReadonlyArray<readonly [GatewayFailureCode, number]>)(
+    "maps %s to HTTP %i",
+    async (code, status) => {
+      const handle = createConnectionsGateway({
+        authenticator: { authenticate: async () => ({ instanceId: "instance-a" }) },
+        connections: {
+          ...provider(),
+          list: async () => {
+            throw gatewayFailure(code)
+          }
+        }
+      })
+
+      const response = await handle(
+        new Request("https://connections.example/v1/connections?ownerId=owner-1")
+      )
+
+      expect(response.status).toBe(status)
+      await expect(response.json()).resolves.toEqual({ code })
+    }
+  )
+
+  it("does not classify or return an incidental provider error message", async () => {
+    const handle = createConnectionsGateway({
+      authenticator: { authenticate: async () => ({ instanceId: "instance-a" }) },
+      connections: {
+        ...provider(),
+        list: async () => {
+          throw new Error("connections_provider_unavailable: upstream secret")
+        }
+      }
+    })
+
+    const response = await handle(
+      new Request("https://connections.example/v1/connections?ownerId=owner-1")
+    )
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toEqual({ code: "internal_error" })
   })
 })

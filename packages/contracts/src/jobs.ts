@@ -12,6 +12,7 @@ export const InboundJob = Schema.Struct({
 
 export const OutboundJob = Schema.Struct({
   outboxId: Uuid,
+  dispatchGeneration: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   correlationId: Schema.optionalKey(Uuid),
   traceparent: Schema.optionalKey(Traceparent)
 })

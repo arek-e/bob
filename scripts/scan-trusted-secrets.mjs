@@ -2,34 +2,19 @@ import { spawnSync } from "node:child_process"
 import { readdir } from "node:fs/promises"
 import { join } from "node:path"
 
-const schemaPaths = [
-  "apps/core-worker",
-  "apps/connections-gateway",
-  "apps/sendblue-ingress",
-  "apps/sendblue-egress",
-  "apps/agent",
-  "tools/sendblue-reconcile",
-  "tools/pi-smoke",
-  "tools/data-backup",
-  "infra/cloudflare"
-]
+import { environmentSchemaDirectories, readTrackedFiles } from "./environment-schema-inventory.mjs"
 
 const artifactPaths = [
   "apps/agent/dist",
   "apps/connections-gateway/dist",
   "apps/core-worker/dist",
+  "apps/eval-worker/dist",
+  "apps/managed-channel-router/dist",
   "apps/sendblue-egress/dist",
   "apps/sendblue-ingress/dist",
   "apps/ui/dist",
   "tools/data-backup/dist"
 ]
-
-function trackedFiles() {
-  const result = spawnSync("git", ["ls-files", "-z"], { encoding: "utf8" })
-  if (result.error !== undefined) throw result.error
-  if (result.status !== 0) throw new Error("git ls-files failed")
-  return result.stdout.split("\0").filter((path) => path.length > 0)
-}
 
 async function filesIn(directory) {
   let entries
@@ -49,8 +34,10 @@ async function filesIn(directory) {
   return files
 }
 
+const trackedFiles = readTrackedFiles()
+const schemaPaths = environmentSchemaDirectories(trackedFiles)
 const artifacts = (await Promise.all(artifactPaths.map(filesIn))).flat()
-const targets = [...new Set([...trackedFiles(), ...artifacts])]
+const targets = [...new Set([...trackedFiles, ...artifacts])]
   .map((path) => (path.startsWith("./") ? path : `./${path}`))
   .sort()
 const schemaArguments = schemaPaths.flatMap((path) => ["--path", path])

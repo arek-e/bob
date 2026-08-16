@@ -2,6 +2,7 @@ import {
   journalCapability,
   JournalSearchMetadataArguments
 } from "@bob/contracts/capabilities/journal"
+import { capabilityToolNames } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
 import type {
@@ -20,7 +21,7 @@ export function makeJournalToolAdapter(
 ): ToolCommandAdapter {
   return {
     capabilityId: journalCapability.id,
-    names: journalCapability.names,
+    names: capabilityToolNames(journalCapability),
     async execute({ command, run }: ToolCommandAdapterContext) {
       const turnId = run.request.conversationTurnId
       const revision = run.request.conversationTurnRevision

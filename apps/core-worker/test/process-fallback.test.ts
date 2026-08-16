@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import type { CoreBindings } from "../src/bindings.ts"
 import type { CoreComposition } from "../src/composition.ts"
 
-import { processInbound } from "../src/process-inbound.ts"
-import { testFixture } from "./test-fixture.ts"
+import { processConversationTurn } from "../src/process-inbound.ts"
+import { conversationTurnFixture, testFixture } from "./test-fixture.ts"
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -13,6 +13,12 @@ afterEach(() => {
 
 describe("core model failure fallback", () => {
   it("uses approved context without another tool action", async () => {
+    const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
+    const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
+    const channelId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db92"
+    const messageId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db93"
+    const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db94"
+    const turnId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db89"
     const attemptId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db96"
     const completeWithResponse = vi.fn(async () => "018e6f65-4d55-7a1b-8df4-4ee15ea1db95")
     const toolExecute = vi.fn()
@@ -33,15 +39,12 @@ describe("core model failure fallback", () => {
       database: {},
       services: {
         events: captureEvents(),
-        conversations: {
-          claimInbound: vi.fn(async () => ({
-            eventId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db90",
-            ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db91",
-            channelId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db92",
-            messageId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db93",
-            text: "What is my training routine?",
-            correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db94"
-          }))
+        conversations: { claimReaction: vi.fn(async () => false) },
+        turns: {
+          markRunning: vi.fn(async () => true),
+          currentRevision: vi.fn(async () => 1),
+          commitReply: vi.fn(async () => "committed" as const),
+          markEventsProcessed: vi.fn(async () => 1)
         },
         training: { stopActiveForSafety: vi.fn() },
         journal: { createHandoff: vi.fn() },
@@ -70,7 +73,7 @@ describe("core model failure fallback", () => {
           ])
         },
         runs: {
-          loadForInbound: vi.fn(async () => undefined),
+          loadForTurn: vi.fn(async () => undefined),
           create: vi.fn(async (request: { runId: string }) => ({
             runId: request.runId,
             duplicate: false
@@ -89,16 +92,28 @@ describe("core model failure fallback", () => {
       OUTBOUND_QUEUE: { send: vi.fn(async () => undefined) }
     })
 
-    await processInbound("018e6f65-4d55-7a1b-8df4-4ee15ea1db90", bindings, composition)
+    await processConversationTurn(
+      conversationTurnFixture({
+        eventId,
+        ownerId,
+        channelId,
+        messageId,
+        text: "What is my training routine?",
+        correlationId,
+        turnId
+      }),
+      bindings,
+      composition
+    )
 
     expect(completeWithResponse).toHaveBeenCalledWith(
       expect.objectContaining({ status: "failed", errorCode: "provider", toolCalls: 0 }),
       {
-        channelId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db92",
+        channelId,
         text: "I could not use the assistant. From your saved records: Routine Full Body A: 1. Leg press (3 sets × 10 reps).",
         reasonCode: "agent_degraded_recall"
       },
-      undefined,
+      { conversationTurnId: turnId, conversationTurnRevision: 1 },
       attemptId
     )
     expect(toolExecute).not.toHaveBeenCalled()

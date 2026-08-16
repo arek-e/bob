@@ -36,16 +36,18 @@ describe("agent tool telemetry", () => {
       fetch: request as typeof fetch
     })
     const controller = new AbortController()
-    const execution = client.execute(
-      {
-        runId,
-        toolCallId: "slow-mutation",
-        idempotencyKey: "tool:test:slow-mutation",
-        ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
-        name: "settings_update",
-        arguments: { timeZone: "Europe/Stockholm" }
-      },
-      controller.signal
+    const execution = Effect.runPromise(
+      client.execute(
+        {
+          runId,
+          toolCallId: "slow-mutation",
+          idempotencyKey: "tool:test:slow-mutation",
+          ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
+          name: "settings_update",
+          arguments: { timeZone: "Europe/Stockholm" }
+        },
+        controller.signal
+      )
     )
 
     await started
@@ -85,14 +87,16 @@ describe("agent tool telemetry", () => {
     })
 
     try {
-      await client.execute({
-        runId,
-        toolCallId: "bounded-mutation",
-        idempotencyKey: "tool:test:bounded-mutation",
-        ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
-        name: "settings_update",
-        arguments: { timeZone: "Europe/Stockholm" }
-      })
+      await Effect.runPromise(
+        client.execute({
+          runId,
+          toolCallId: "bounded-mutation",
+          idempotencyKey: "tool:test:bounded-mutation",
+          ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
+          name: "settings_update",
+          arguments: { timeZone: "Europe/Stockholm" }
+        })
+      )
       expect(timeoutMs).toBe(65_000)
     } finally {
       timeout.mockRestore()
@@ -122,16 +126,18 @@ describe("agent tool telemetry", () => {
       fetch: request as typeof fetch
     })
     const controller = new AbortController()
-    const execution = client.execute(
-      {
-        runId,
-        toolCallId: "tool-abort",
-        idempotencyKey: "tool:test:abort",
-        ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
-        name: "reminder_list",
-        arguments: {}
-      },
-      controller.signal
+    const execution = Effect.runPromise(
+      client.execute(
+        {
+          runId,
+          toolCallId: "tool-abort",
+          idempotencyKey: "tool:test:abort",
+          ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
+          name: "reminder_list",
+          arguments: {}
+        },
+        controller.signal
+      )
     )
 
     controller.abort("agent_run_timeout")
@@ -178,7 +184,7 @@ describe("agent tool telemetry", () => {
             feature: "reminders",
             toolName: "reminder_list"
           },
-          client.executeEffect({
+          client.execute({
             runId,
             toolCallId: "tool-1",
             idempotencyKey: "tool:test:1",

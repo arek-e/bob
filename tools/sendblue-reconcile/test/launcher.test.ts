@@ -32,7 +32,36 @@ describe("Sendblue reconciler launcher", () => {
 
     expect(result.stderr).not.toContain("varlock ENV not initialized")
     expect(result.stdout).toContain(
-      '{"mode":"check","valid":true,"secretMatches":true,"receiveCount":1,"outboundCount":1,"additions":[]}'
+      '{"mode":"check","state":"converged","receiveCount":1,"outboundCount":1,"additions":[]}'
     )
+  })
+
+  it("fails check mode when configuration changes are required", { timeout: 30_000 }, async () => {
+    const repositoryRoot = new URL("../../../", import.meta.url)
+    const fetchStub = new URL("./fetch-stub.mjs", import.meta.url)
+    const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm"
+
+    await expect(
+      execFileAsync(pnpm, ["--filter", "@bob/sendblue-reconcile", "reconcile", "--", "--check"], {
+        cwd: repositoryRoot,
+        env: {
+          ...process.env,
+          NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${fetchStub.href}`]
+            .filter(Boolean)
+            .join(" "),
+          SENDBLUE_API_KEY_ID: "test-api-key-id",
+          SENDBLUE_API_SECRET_KEY: "test-api-secret-key",
+          SENDBLUE_WEBHOOK_SIGNING_SECRET: "test-signing-secret",
+          SENDBLUE_RECEIVE_WEBHOOK_URL: "https://sendblue.example.test/webhooks/receive",
+          SENDBLUE_OUTBOUND_WEBHOOK_URL: "https://sendblue.example.test/webhooks/outbound-changed"
+        },
+        timeout: 30_000
+      })
+    ).rejects.toMatchObject({
+      code: 1,
+      stdout: expect.stringContaining(
+        '{"mode":"check","state":"changes_required","receiveCount":1,"outboundCount":0,"additions":[{"type":"outbound","url":"https://sendblue.example.test/webhooks/outbound-changed"}]}'
+      )
+    })
   })
 })

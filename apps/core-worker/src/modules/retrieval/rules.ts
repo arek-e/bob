@@ -208,11 +208,27 @@ function recencyScore(candidate: RetrievalCandidate, nowMs: number): number {
 
 export interface RankedRetrievalCandidate extends RetrievalCandidate {
   readonly relevance: number
-  readonly conflict: boolean
 }
 
+type RankedConflictGroup = readonly [
+  RankedRetrievalCandidate,
+  RankedRetrievalCandidate,
+  ...RankedRetrievalCandidate[]
+]
+
+export type RankedRetrievalUnit =
+  | {
+      readonly kind: "candidate"
+      readonly candidate: RankedRetrievalCandidate
+    }
+  | {
+      readonly kind: "conflict_group"
+      readonly conflictKey: string
+      readonly candidates: RankedConflictGroup
+    }
+
 /**
- * Filter and rank candidates, then mark simultaneous values for one key as a conflict.
+ * Filter and rank candidates, then keep simultaneous values in one conflict unit.
  */
 export function selectRelevantCandidates(
   candidates: readonly RetrievalCandidate[],
@@ -224,7 +240,7 @@ export function selectRelevantCandidates(
     readonly perMemoryClass?: number
     readonly minimumRelevance?: number
   } = {}
-): readonly RankedRetrievalCandidate[] {
+): readonly RankedRetrievalUnit[] {
   const nowMs = options.nowMs ?? Date.now()
   const limit = options.limit ?? 12
   const perMemoryClass = options.perMemoryClass ?? 8
@@ -249,37 +265,47 @@ export function selectRelevantCandidates(
         left.candidate.id.localeCompare(right.candidate.id)
     )
 
+  const rankedCandidates = ranked.map(({ candidate, relevance: score }) => ({
+    ...candidate,
+    relevance: score
+  }))
+  const keyedCandidates = new Map<string, RankedRetrievalCandidate[]>()
   const valuesByKey = new Map<string, Set<string>>()
-  for (const { candidate } of ranked) {
+  for (const candidate of rankedCandidates) {
     if (candidate.conflictKey === undefined) continue
+    const keyed = keyedCandidates.get(candidate.conflictKey) ?? []
+    keyed.push(candidate)
+    keyedCandidates.set(candidate.conflictKey, keyed)
     const values = valuesByKey.get(candidate.conflictKey) ?? new Set<string>()
     values.add(
       candidate.contentHash ?? candidate.text.normalize("NFKC").trim().toLocaleLowerCase("en")
     )
     valuesByKey.set(candidate.conflictKey, values)
   }
-  const marked = ranked.map(({ candidate, relevance: score }) => ({
-    ...candidate,
-    relevance: score,
-    conflict:
-      candidate.conflictKey !== undefined && (valuesByKey.get(candidate.conflictKey)?.size ?? 0) > 1
-  }))
-  const selected: RankedRetrievalCandidate[] = []
+  const conflictGroups = new Map<string, RankedConflictGroup>()
+  for (const [conflictKey, values] of valuesByKey) {
+    if (values.size <= 1) continue
+    const matching = [...(keyedCandidates.get(conflictKey) ?? [])].sort(
+      (left, right) =>
+        Date.parse(left.occurredAt ?? left.validFrom ?? "") -
+          Date.parse(right.occurredAt ?? right.validFrom ?? "") || left.id.localeCompare(right.id)
+    )
+    const first = matching[0]
+    const second = matching[1]
+    if (first === undefined || second === undefined) {
+      throw new Error("A retrieval conflict group requires at least two candidates")
+    }
+    conflictGroups.set(conflictKey, [first, second, ...matching.slice(2)])
+  }
+  const selected: RankedRetrievalUnit[] = []
   const selectedIds = new Set<string>()
   const counts = new Map<MemoryClass, number>()
-  for (const candidate of marked) {
+  let selectedCount = 0
+  for (const candidate of rankedCandidates) {
     if (selectedIds.has(candidate.id)) continue
-    const group =
-      candidate.conflict && candidate.conflictKey !== undefined
-        ? marked
-            .filter((item) => item.conflictKey === candidate.conflictKey)
-            .sort(
-              (left, right) =>
-                Date.parse(left.occurredAt ?? left.validFrom ?? "") -
-                  Date.parse(right.occurredAt ?? right.validFrom ?? "") ||
-                left.id.localeCompare(right.id)
-            )
-        : [candidate]
+    const conflictKey = candidate.conflictKey
+    const grouped = conflictKey === undefined ? undefined : conflictGroups.get(conflictKey)
+    const group = grouped ?? [candidate]
     const groupCounts = new Map<MemoryClass, number>()
     for (const item of group) {
       groupCounts.set(item.memoryClass, (groupCounts.get(item.memoryClass) ?? 0) + 1)
@@ -291,38 +317,41 @@ export function selectRelevantCandidates(
     ) {
       continue
     }
-    if (group.length > limit || selected.length + group.length > limit) continue
+    if (group.length > limit || selectedCount + group.length > limit) continue
     for (const item of group) {
-      selected.push(item)
       selectedIds.add(item.id)
       counts.set(item.memoryClass, (counts.get(item.memoryClass) ?? 0) + 1)
     }
-    if (selected.length >= limit) break
+    if (grouped === undefined || conflictKey === undefined) {
+      selected.push({ kind: "candidate", candidate })
+    } else {
+      selected.push({ kind: "conflict_group", conflictKey, candidates: grouped })
+    }
+    selectedCount += group.length
+    if (selectedCount >= limit) break
   }
   return selected
 }
 
 export function boundRetrievalReading(
-  candidates: readonly RankedRetrievalCandidate[],
+  units: readonly RankedRetrievalUnit[],
   options: { readonly totalCharacters: number; readonly itemCharacters: number }
-): readonly RankedRetrievalCandidate[] {
-  const selected: RankedRetrievalCandidate[] = []
+): readonly RankedRetrievalUnit[] {
+  const selected: RankedRetrievalUnit[] = []
   const visitedConflictKeys = new Set<string>()
   let remaining = options.totalCharacters
-  for (const candidate of candidates) {
+  for (const unit of units) {
     if (remaining <= 0) break
-    if (candidate.conflictKey !== undefined && visitedConflictKeys.has(candidate.conflictKey)) {
-      continue
-    }
-    const group =
-      candidate.conflict && candidate.conflictKey !== undefined
-        ? candidates.filter((item) => item.conflictKey === candidate.conflictKey)
-        : [candidate]
-    if (candidate.conflictKey !== undefined) visitedConflictKeys.add(candidate.conflictKey)
+    const conflictKey =
+      unit.kind === "conflict_group" ? unit.conflictKey : unit.candidate.conflictKey
+    if (conflictKey !== undefined && visitedConflictKeys.has(conflictKey)) continue
+    if (conflictKey !== undefined) visitedConflictKeys.add(conflictKey)
+    const group: readonly RankedRetrievalCandidate[] =
+      unit.kind === "conflict_group" ? unit.candidates : [unit.candidate]
     const groupCharacters =
       group.reduce((sum, item) => sum + item.text.length, 0) + Math.max(0, group.length - 1)
     if (groupCharacters > options.itemCharacters || groupCharacters > remaining) continue
-    selected.push(...group)
+    selected.push(unit)
     remaining -= groupCharacters
   }
   return Object.freeze(selected)

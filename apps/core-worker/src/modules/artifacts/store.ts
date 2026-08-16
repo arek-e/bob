@@ -4,8 +4,9 @@ import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../policy/owner-data-key.ts"
 
-import { users } from "../conversations/schema.ts"
+import { makeOwnerDataKeyStore } from "../policy/owner-data-key.ts"
 import { artifactRevisions, artifacts } from "./schema.ts"
 
 export interface StoredArtifact {
@@ -28,8 +29,13 @@ export interface LegacyArtifactReader {
 export function makeArtifactStore(
   database: CoreDatabase,
   protection: DataProtection,
-  options: { readonly legacyReaders?: readonly LegacyArtifactReader[] } = {}
+  options: {
+    readonly legacyReaders?: readonly LegacyArtifactReader[]
+    readonly ownerDataKeys?: OwnerDataKeyStore
+  } = {}
 ): ArtifactStore {
+  const ownerDataKeys =
+    options.ownerDataKeys ?? makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC" })
   function decodeArtifact(value: typeof Schema.Json.Type): AgentArtifactValue {
     try {
       return Schema.decodeUnknownSync(AgentArtifact)(value)
@@ -41,25 +47,6 @@ export function makeArtifactStore(
       throw error
     }
   }
-  async function ownerKey(ownerId: string): Promise<CryptoKey> {
-    const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
-    if (
-      owner?.wrappedDataKey === null ||
-      owner?.wrappedDataKey === undefined ||
-      owner.wrappedDataKeyIv === null ||
-      owner.wrappedDataKeyIv === undefined ||
-      owner.dataKeyVersion === null ||
-      owner.dataKeyVersion === undefined
-    ) {
-      throw new Error("Owner data key is unavailable")
-    }
-    return protection.unwrapDataKey({
-      ciphertext: owner.wrappedDataKey,
-      iv: owner.wrappedDataKeyIv,
-      version: owner.dataKeyVersion
-    })
-  }
-
   return {
     async latest(ownerId, channelId) {
       const [row] = await database
@@ -76,7 +63,7 @@ export function makeArtifactStore(
         .orderBy(desc(artifacts.updatedAt))
         .limit(1)
       if (row === undefined) return undefined
-      const key = await ownerKey(ownerId)
+      const key = (await ownerDataKeys.load(ownerId)).key
       const [content, renderedText] = await Promise.all([
         protection.decryptText(key, {
           ciphertext: row.revision.contentCiphertext,

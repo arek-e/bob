@@ -24,7 +24,7 @@ Check access again. Run the required, owner-approved production smoke command.
 pnpm --filter @bob/pi-smoke smoke -- --completion
 ```
 
-The command must report a completed run.
+The command must report a completed admin model smoke.
 
 Restart the agent pod. Run the same command again.
 

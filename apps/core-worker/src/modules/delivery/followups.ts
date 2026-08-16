@@ -10,7 +10,11 @@ export async function publishDeliveryFollowups(
   correlationId: string
 ): Promise<void> {
   for (const outboxId of outboxIds) {
-    await bindings.OUTBOUND_QUEUE.send({ outboxId, correlationId } satisfies OutboundJob)
-    await delivery.markEnqueued(outboxId, new Date().toISOString())
+    await bindings.OUTBOUND_QUEUE.send({
+      outboxId,
+      dispatchGeneration: 0,
+      correlationId
+    } satisfies OutboundJob)
+    await delivery.markEnqueued(outboxId, new Date().toISOString(), 0)
   }
 }

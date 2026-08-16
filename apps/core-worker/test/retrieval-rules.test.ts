@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import type { RetrievalCandidate } from "../src/modules/retrieval/rules.ts"
+import type {
+  RankedRetrievalCandidate,
+  RankedRetrievalUnit,
+  RetrievalCandidate
+} from "../src/modules/retrieval/rules.ts"
 
 import { retrievalProjection } from "../src/modules/retrieval/projection.ts"
 import {
@@ -29,6 +33,16 @@ function candidate(
     lexicalPosition: 0,
     ...overrides
   }
+}
+
+function selectedCandidates(units: readonly RankedRetrievalUnit[]) {
+  return units.flatMap((unit) =>
+    unit.kind === "conflict_group" ? [...unit.candidates] : [unit.candidate]
+  )
+}
+
+function rankedCandidate(id: string, text: string): RankedRetrievalCandidate {
+  return { ...candidate(id, text), relevance: 1 }
 }
 
 describe("Retrieval pipeline rules", () => {
@@ -127,7 +141,7 @@ describe("Retrieval pipeline rules", () => {
       ["desk"],
       { mode: "as_of", at: "2025-06-01T23:59:59.999Z" }
     )
-    expect(selected.map(({ id }) => id)).toEqual(["old"])
+    expect(selectedCandidates(selected).map(({ id }) => id)).toEqual(["old"])
   })
 
   it("marks all simultaneous values for one claim as a conflict", () => {
@@ -143,8 +157,12 @@ describe("Retrieval pipeline rules", () => {
       ["desk"],
       current
     )
-    expect(selected).toHaveLength(2)
-    expect(selected.every(({ conflict }) => conflict)).toBe(true)
+    expect(selected).toHaveLength(1)
+    expect(selected[0]).toMatchObject({
+      kind: "conflict_group",
+      conflictKey: "desk",
+      candidates: [{ id: "a" }, { id: "b" }]
+    })
   })
 
   it("keeps whole conflict groups and never slices an indexed claim", () => {
@@ -157,12 +175,34 @@ describe("Retrieval pipeline rules", () => {
       current
     )
     expect(boundRetrievalReading(group, { totalCharacters: 7, itemCharacters: 4 })).toEqual([])
-    expect(boundRetrievalReading(group, { totalCharacters: 9, itemCharacters: 9 })).toHaveLength(2)
+    expect(boundRetrievalReading(group, { totalCharacters: 9, itemCharacters: 9 })).toMatchObject([
+      { kind: "conflict_group", candidates: [{ id: "a" }, { id: "b" }] }
+    ])
     expect(
-      boundRetrievalReading([{ ...candidate("large", "12345"), relevance: 1, conflict: false }], {
+      boundRetrievalReading([{ kind: "candidate", candidate: rankedCandidate("large", "12345") }], {
         totalCharacters: 10,
         itemCharacters: 4
       })
     ).toEqual([])
+  })
+
+  it("reads one copy when matching records contain the same claim value", () => {
+    const units = selectRelevantCandidates(
+      [
+        candidate("first", "Desk is upstairs", { conflictKey: "desk", contentHash: "same" }),
+        candidate("second", "Desk is upstairs", {
+          conflictKey: "desk",
+          contentHash: "same",
+          lexicalPosition: 1
+        })
+      ],
+      ["desk"],
+      current
+    )
+
+    expect(units).toHaveLength(2)
+    expect(
+      boundRetrievalReading(units, { totalCharacters: 100, itemCharacters: 100 })
+    ).toMatchObject([{ kind: "candidate", candidate: { id: "first" } }])
   })
 })

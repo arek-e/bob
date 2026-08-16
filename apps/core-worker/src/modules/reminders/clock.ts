@@ -135,6 +135,7 @@ export class ReminderClock implements DurableObject {
       const [outbox] = await composition.database
         .select({
           correlationId: outboxMessages.correlationId,
+          dispatchGeneration: outboxMessages.dispatchGeneration,
           actionTargetType: outboxMessages.actionTargetType,
           actionTargetId: outboxMessages.actionTargetId
         })
@@ -163,12 +164,21 @@ export class ReminderClock implements DurableObject {
             yield* promiseEffect(() =>
               outboundQueue.send(
                 traceparent === null
-                  ? { outboxId, correlationId }
-                  : { outboxId, correlationId, traceparent }
+                  ? { outboxId, dispatchGeneration: outbox?.dispatchGeneration ?? 0, correlationId }
+                  : {
+                      outboxId,
+                      dispatchGeneration: outbox?.dispatchGeneration ?? 0,
+                      correlationId,
+                      traceparent
+                    }
               )
             )
             yield* promiseEffect(() =>
-              composition.services.delivery.markEnqueued(outboxId, new Date().toISOString())
+              composition.services.delivery.markEnqueued(
+                outboxId,
+                new Date().toISOString(),
+                outbox?.dispatchGeneration ?? 0
+              )
             )
           })
         )
