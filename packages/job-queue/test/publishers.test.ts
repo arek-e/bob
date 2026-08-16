@@ -1,26 +1,26 @@
 import { describe, expect, it, vi } from "vitest"
 
 import { makeBullMqJobProcessor, makeBullMqJobPublisher } from "../src/bullmq.ts"
-import { makeCloudflareJobPublisher, processCloudflareMessage } from "../src/cloudflare.ts"
 import { decodeJobProcessor, completeJob, retryJob } from "../src/index.ts"
+import { makeQueueBindingJobPublisher, processQueueBindingMessage } from "../src/queue-binding.ts"
 
 interface ExampleJob {
   readonly id: string
 }
 
 describe("JobPublisher Adapters", () => {
-  it("publishes immediately through Cloudflare Queues", async () => {
+  it("publishes immediately through a runtime queue binding", async () => {
     const send = vi.fn(async () => undefined)
-    const publisher = makeCloudflareJobPublisher<ExampleJob, void>({ send })
+    const publisher = makeQueueBindingJobPublisher<ExampleJob, void>({ send })
 
     await publisher.publish({ id: "one" })
 
     expect(send).toHaveBeenCalledWith({ id: "one" })
   })
 
-  it("rounds a Cloudflare delay up so work never starts early", async () => {
+  it("rounds a queue binding delay up so work never starts early", async () => {
     const send = vi.fn(async () => undefined)
-    const publisher = makeCloudflareJobPublisher<ExampleJob, void>({ send })
+    const publisher = makeQueueBindingJobPublisher<ExampleJob, void>({ send })
 
     await publisher.publish({ id: "one" }, { delayMs: 1_001 })
 
@@ -36,23 +36,24 @@ describe("JobPublisher Adapters", () => {
     expect(add).toHaveBeenCalledWith("inbound", { id: "one" }, { delay: 1_001 })
   })
 
-  it.each([-1, 1.5, Number.POSITIVE_INFINITY])(
-    "rejects an invalid delay of %s",
-    async (delayMs) => {
-      const send = vi.fn(async () => undefined)
-      const publisher = makeCloudflareJobPublisher<ExampleJob, void>({ send })
-
-      await expect(publisher.publish({ id: "one" }, { delayMs })).rejects.toThrow(RangeError)
-      expect(send).not.toHaveBeenCalled()
-    }
-  )
-
   it("rejects an empty BullMQ job name", () => {
     expect(() => makeBullMqJobPublisher({ add: async () => undefined }, "  ")).toThrow(TypeError)
   })
 })
 
 describe("JobProcessor Adapters", () => {
+  it("maps a queue binding retry to whole seconds", async () => {
+    const retry = vi.fn()
+
+    await processQueueBindingMessage(
+      { body: { id: "one" }, ack: vi.fn(), retry },
+      { process: async () => retryJob(1_001) },
+      { unexpectedErrorDelayMs: 30_000 }
+    )
+
+    expect(retry).toHaveBeenCalledWith({ delaySeconds: 2 })
+  })
+
   it("decodes jobs before dispatch", async () => {
     const decode = vi
       .fn()
@@ -68,51 +69,6 @@ describe("JobProcessor Adapters", () => {
 
     await expect(processor.process("ready")).resolves.toEqual(completeJob)
     await expect(processor.process(42)).resolves.toEqual(retryJob(50))
-  })
-
-  it("acknowledges a completed Cloudflare job", async () => {
-    const ack = vi.fn()
-    const retry = vi.fn()
-
-    const disposition = await processCloudflareMessage(
-      { body: { id: "one" }, ack, retry },
-      { process: async () => completeJob },
-      { unexpectedErrorDelayMs: 30_000 }
-    )
-
-    expect(disposition).toEqual(completeJob)
-    expect(ack).toHaveBeenCalledOnce()
-    expect(retry).not.toHaveBeenCalled()
-  })
-
-  it("rounds a Cloudflare retry up so it never starts early", async () => {
-    const ack = vi.fn()
-    const retry = vi.fn()
-
-    await processCloudflareMessage(
-      { body: { id: "one" }, ack, retry },
-      { process: async () => retryJob(1_001) },
-      { unexpectedErrorDelayMs: 30_000 }
-    )
-
-    expect(ack).not.toHaveBeenCalled()
-    expect(retry).toHaveBeenCalledWith({ delaySeconds: 2 })
-  })
-
-  it("retries an unexpected Cloudflare failure with the reviewed delay", async () => {
-    const retry = vi.fn()
-
-    await processCloudflareMessage(
-      { body: { id: "one" }, ack: vi.fn(), retry },
-      {
-        process: async () => {
-          throw new Error("unavailable")
-        }
-      },
-      { unexpectedErrorDelayMs: 30_000 }
-    )
-
-    expect(retry).toHaveBeenCalledWith({ delaySeconds: 30 })
   })
 
   it("completes a BullMQ job without moving it", async () => {

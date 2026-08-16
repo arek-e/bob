@@ -7,7 +7,6 @@
 **/dist/
 **/coverage/
 **/.alchemy/
-**/.wrangler/
 **/.dev.vars
 *.log
 .DS_Store

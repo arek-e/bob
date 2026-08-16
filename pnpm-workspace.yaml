@@ -1,9 +1,7 @@
 packages:
   - apps/*
   - packages/*
-  - packages/cloudflare/*
 
 onlyBuiltDependencies:
   - esbuild
   - lefthook
-  - workerd

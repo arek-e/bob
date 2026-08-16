@@ -24,8 +24,7 @@ export interface ConnectionsGatewayClient {
 
 interface ConnectionsGatewayClientOptions {
   readonly url: string
-  readonly accessClientId: string
-  readonly accessClientSecret: string
+  readonly callerSecret: string
   readonly fetch?: typeof fetch
   readonly timeoutMs?: number
 }
@@ -64,8 +63,7 @@ export function makeConnectionsGatewayClient(
   ): Promise<S["Type"]> {
     const headers = new Headers({
       accept: "application/json",
-      "cf-access-client-id": options.accessClientId,
-      "cf-access-client-secret": options.accessClientSecret
+      "x-bob-caller-token": options.callerSecret
     })
     if (init?.body !== undefined) headers.set("content-type", "application/json")
     const response = await request(new URL(path, baseUrl), {

@@ -16,16 +16,9 @@ const Environment = Schema.Struct({
   BOB_ALLOWED_MODELS: Schema.String.check(Schema.isMinLength(1)),
   BOB_RELEASE_SHA: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/)),
   OTEL_EXPORTER_OTLP_ENDPOINT: Schema.URLFromString,
-  BOB_RUNTIME_DRIVER: Schema.optionalKey(Schema.Literals(["cloudflare", "compose"])),
-  RUNTIME_SHARED_SECRET: Schema.optionalKey(Schema.String.check(Schema.isMinLength(32))),
+  RUNTIME_SHARED_SECRET: Schema.String.check(Schema.isMinLength(32)),
   CORE_URL: Schema.URLFromString,
-  CORE_ACCESS_CLIENT_ID: Schema.String.check(Schema.isMinLength(1)),
-  CORE_ACCESS_CLIENT_SECRET: Schema.String.check(Schema.isMinLength(1)),
-  ACCESS_TEAM_DOMAIN: Schema.String.check(Schema.isPattern(/^[a-z0-9-]+\.cloudflareaccess\.com$/)),
-  RUN_ACCESS_AUDIENCE: Schema.String.check(Schema.isMinLength(1)),
-  RUN_ACCESS_SUBJECT: Schema.String.check(Schema.isMinLength(1)),
-  ADMIN_ACCESS_AUDIENCE: Schema.String.check(Schema.isMinLength(1)),
-  ADMIN_ACCESS_SUBJECT: Schema.String.check(Schema.isMinLength(1))
+  CORE_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32))
 })
 
 export interface AgentConfiguration {
@@ -54,16 +47,9 @@ export interface AgentConfiguration {
   readonly allowedModels: readonly string[]
   readonly releaseSha: string
   readonly otlpEndpoint: string
-  readonly runtimeDriver: "cloudflare" | "compose"
-  readonly runtimeSharedSecret: string | undefined
+  readonly runtimeSharedSecret: string
   readonly coreUrl: string
-  readonly coreAccessClientId: string
-  readonly coreAccessClientSecret: string
-  readonly accessTeamDomain: string
-  readonly runAccessAudience: string
-  readonly runAccessSubject: string
-  readonly adminAccessAudience: string
-  readonly adminAccessSubject: string
+  readonly coreCallerSecret: string
 }
 
 export function readAgentConfiguration(environment: NodeJS.ProcessEnv): AgentConfiguration {
@@ -80,10 +66,6 @@ export function readAgentConfiguration(environment: NodeJS.ProcessEnv): AgentCon
           jwtPath: requireValue("BAO_KUBERNETES_JWT_PATH", decoded.BAO_KUBERNETES_JWT_PATH)
         }
       : readAppRoleAuthentication(decoded)
-  const runtimeDriver = decoded.BOB_RUNTIME_DRIVER ?? "cloudflare"
-  if (runtimeDriver === "compose" && decoded.RUNTIME_SHARED_SECRET === undefined) {
-    throw new Error("RUNTIME_SHARED_SECRET is required for the Compose Runtime")
-  }
   return {
     port: decoded.PORT,
     baoAddress: decoded.BAO_ADDR.toString().replace(/\/$/, ""),
@@ -93,16 +75,9 @@ export function readAgentConfiguration(environment: NodeJS.ProcessEnv): AgentCon
     allowedModels,
     releaseSha: decoded.BOB_RELEASE_SHA,
     otlpEndpoint: decoded.OTEL_EXPORTER_OTLP_ENDPOINT.toString().replace(/\/$/, ""),
-    runtimeDriver,
     runtimeSharedSecret: decoded.RUNTIME_SHARED_SECRET,
     coreUrl: decoded.CORE_URL.toString().replace(/\/$/, ""),
-    coreAccessClientId: decoded.CORE_ACCESS_CLIENT_ID,
-    coreAccessClientSecret: decoded.CORE_ACCESS_CLIENT_SECRET,
-    accessTeamDomain: decoded.ACCESS_TEAM_DOMAIN,
-    runAccessAudience: decoded.RUN_ACCESS_AUDIENCE,
-    runAccessSubject: decoded.RUN_ACCESS_SUBJECT,
-    adminAccessAudience: decoded.ADMIN_ACCESS_AUDIENCE,
-    adminAccessSubject: decoded.ADMIN_ACCESS_SUBJECT
+    coreCallerSecret: decoded.CORE_CALLER_SECRET
   }
 }
 

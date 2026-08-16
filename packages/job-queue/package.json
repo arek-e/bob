@@ -7,7 +7,7 @@
     ".": "./src/index.ts",
     "./bullmq": "./src/bullmq.ts",
     "./bullmq-host": "./src/bullmq-host.ts",
-    "./cloudflare": "./src/cloudflare.ts"
+    "./queue-binding": "./src/queue-binding.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

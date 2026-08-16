@@ -222,8 +222,7 @@ describe("conversation turn processing", () => {
     const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret",
+        AGENT_CALLER_SECRET: "secret",
         BOB_MODEL: "gpt-test",
         BOB_RUN_TOKEN_BUDGET: 32_000,
         BOB_DAILY_TOKEN_BUDGET: 250_000
@@ -406,8 +405,7 @@ describe("conversation turn processing", () => {
     const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret",
+        AGENT_CALLER_SECRET: "secret",
         BOB_MODEL: "gpt-test",
         BOB_RUN_TOKEN_BUDGET: 32_000,
         BOB_DAILY_TOKEN_BUDGET: 250_000
@@ -504,8 +502,7 @@ describe("conversation turn processing", () => {
     const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret",
+        AGENT_CALLER_SECRET: "secret",
         BOB_MODEL: "gpt-test"
       },
       database: {},
@@ -586,8 +583,7 @@ describe("conversation turn processing", () => {
     const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret",
+        AGENT_CALLER_SECRET: "secret",
         BOB_MODEL: "gpt-test",
         BOB_RUN_TOKEN_BUDGET: 32_000,
         BOB_DAILY_TOKEN_BUDGET: 250_000
@@ -713,8 +709,7 @@ describe("conversation turn processing", () => {
     const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret",
+        AGENT_CALLER_SECRET: "secret",
         BOB_MODEL: "gpt-test",
         BOB_RUN_TOKEN_BUDGET: 32_000,
         BOB_DAILY_TOKEN_BUDGET: 250_000
@@ -827,8 +822,7 @@ describe("conversation turn processing", () => {
     const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret",
+        AGENT_CALLER_SECRET: "secret",
         BOB_MODEL: "gpt-test",
         BOB_RUN_TOKEN_BUDGET: 32_000,
         BOB_DAILY_TOKEN_BUDGET: 250_000
@@ -947,8 +941,7 @@ describe("conversation turn processing", () => {
     const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret",
+        AGENT_CALLER_SECRET: "secret",
         BOB_MODEL: "gpt-test",
         BOB_RUN_TOKEN_BUDGET: 32_000,
         BOB_DAILY_TOKEN_BUDGET: 250_000
@@ -1162,8 +1155,7 @@ describe("conversation turn processing", () => {
       const composition = testFixture<CoreComposition>({
         config: {
           AGENT_URL: "https://agent.example.invalid",
-          AGENT_ACCESS_CLIENT_ID: "client",
-          AGENT_ACCESS_CLIENT_SECRET: "secret",
+          AGENT_CALLER_SECRET: "secret",
           BOB_MODEL: "gpt-test",
           BOB_RUN_TOKEN_BUDGET: 32_000,
           BOB_DAILY_TOKEN_BUDGET: 250_000
@@ -1348,8 +1340,7 @@ describe("conversation turn processing", () => {
     const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret",
+        AGENT_CALLER_SECRET: "secret",
         BOB_MODEL: "gpt-test",
         BOB_RUN_TOKEN_BUDGET: 32_000,
         BOB_DAILY_TOKEN_BUDGET: 250_000
@@ -1457,8 +1448,7 @@ describe("conversation turn processing", () => {
     const composition = testFixture<CoreComposition>({
       config: {
         AGENT_URL: "https://agent.example.invalid",
-        AGENT_ACCESS_CLIENT_ID: "client",
-        AGENT_ACCESS_CLIENT_SECRET: "secret",
+        AGENT_CALLER_SECRET: "secret",
         BOB_MODEL: "gpt-test",
         BOB_RUN_TOKEN_BUDGET: 32_000,
         BOB_DAILY_TOKEN_BUDGET: 250_000

@@ -1,7 +1,7 @@
 import { InboundAcceptance, type NormalizedInboundEvent } from "@bob/contracts/channel"
-import { flushCloudflareTelemetry } from "@bob/observability/cloudflare"
 import { recordDecision, withBobSpan } from "@bob/observability/effect"
 import { observeHealth } from "@bob/observability/events"
+import { flushInvocationTelemetry } from "@bob/observability/invocation"
 import {
   externalParentFromTraceparent,
   injectCurrentTraceparent
@@ -15,6 +15,7 @@ import {
 } from "@bob/sendblue/webhooks"
 import { Effect, Schema, type Tracer } from "effect"
 
+import type { RuntimeLifecycle } from "../../../src/runtime.ts"
 import type { IngressBindings } from "../bindings.ts"
 
 import { composeIngress } from "../composition.ts"
@@ -138,7 +139,7 @@ async function runTraced<A, E>(
   effect: Effect.Effect<A, E>,
   parent: Tracer.ExternalSpan | undefined,
   composition: ReturnType<typeof composeIngress>,
-  context: ExecutionContext | undefined
+  context: RuntimeLifecycle | undefined
 ): Promise<A> {
   const continued = parent === undefined ? effect : effect.pipe(Effect.withParentSpan(parent))
   try {
@@ -146,7 +147,7 @@ async function runTraced<A, E>(
   } finally {
     if (context !== undefined) {
       try {
-        context.waitUntil(Effect.runPromise(flushCloudflareTelemetry(composition.processor)))
+        context.waitUntil(Effect.runPromise(flushInvocationTelemetry(composition.processor)))
       } catch {
         // Telemetry must not change webhook acceptance.
       }
@@ -157,7 +158,7 @@ async function runTraced<A, E>(
 export async function handleIngressHttp(
   request: Request,
   bindings: IngressBindings,
-  context?: ExecutionContext
+  context?: RuntimeLifecycle
 ): Promise<Response> {
   const url = new URL(request.url)
   if (request.method === "GET" && url.pathname === "/health") {

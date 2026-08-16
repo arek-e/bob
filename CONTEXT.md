@@ -54,24 +54,23 @@ The authority model follows these rules:
 These names describe responsibilities. They are stable across deployment providers.
 Provider names appear only in Runtime Adapter details, configuration, and implementation notes.
 
-| System              | Responsibility                                                         | Runtime Adapter examples                                                |
-| ------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Core Runtime        | Serves the API and UI. Owns core conversation and workflow invariants. | Node process                                                            |
-| Agent Runtime       | Runs the bounded model and Tool loop.                                  | Compose Adapter: Node process                                           |
-| Channel Runtime     | Receives normalized events and sends replies.                          | Sendblue Adapter; Compose Adapter: HTTP host                            |
-| Job Queue           | Publishes durable work and tracks attempts.                            | Cloudflare Adapter: Queues; Compose Adapter: BullMQ over Redis          |
-| Application Storage | Stores durable relational records and atomic changes.                  | PostgreSQL with Drizzle ORM                                             |
-| Object Storage      | Stores private objects outside relational records.                     | Cloudflare Adapter: R2; Compose Adapter: filesystem or S3               |
-| Run Coordinator     | Serializes owner runs and schedules delayed wakes.                     | Cloudflare Adapter: Durable Objects; Compose Adapter: delayed jobs      |
-| Scheduler           | Starts periodic maintenance and recovery work.                         | Cloudflare Adapter: Cron; Compose Adapter: Node interval                |
-| Observability       | Exports content-free health, metrics, logs, and traces.                | Cloudflare Adapter: telemetry; Compose Adapter: OpenTelemetry Collector |
+| System              | Responsibility                                                         | Runtime Adapter examples                     |
+| ------------------- | ---------------------------------------------------------------------- | -------------------------------------------- |
+| Core Runtime        | Serves the API and UI. Owns core conversation and workflow invariants. | Node process                                 |
+| Agent Runtime       | Runs the bounded model and Tool loop.                                  | Compose Adapter: Node process                |
+| Channel Runtime     | Receives normalized events and sends replies.                          | Sendblue Adapter; Compose Adapter: HTTP host |
+| Job Queue           | Publishes durable work and tracks attempts.                            | BullMQ over Redis                            |
+| Application Storage | Stores durable relational records and atomic changes.                  | PostgreSQL with Drizzle ORM                  |
+| Object Storage      | Stores private objects outside relational records.                     | Filesystem or S3                             |
+| Run Coordinator     | Serializes owner runs and schedules delayed wakes.                     | Redis-backed delayed jobs                    |
+| Scheduler           | Starts periodic maintenance and recovery work.                         | Node interval                                |
+| Observability       | Exports content-free health, metrics, logs, and traces.                | OpenTelemetry Collector                      |
 
 The Core Runtime composes these systems through provider-neutral Interfaces.
 One deployment selects one Adapter for each system.
 
-The primary app catalogue uses the portable Node Runtime with PostgreSQL, BullMQ, and filesystem or
-S3 Adapters. Cloudflare compatibility Implementations live in `packages/cloudflare` during
-migration. The UI remains a separate browser app.
+The app catalogue uses the Node Runtime with PostgreSQL, BullMQ, and filesystem or S3 Adapters. The
+UI remains a separate browser app.
 
 The root `compose.yaml` is the primary portable deployment profile.
 
@@ -193,7 +192,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - The Managed Channel Router stores sender mappings and Staged channel events outside the Control Plane.
 - Unknown or unauthorized senders do not start provisioning.
 - A managed Warm Sandbox contains no Owner state, credentials, storage, messages, or Secret Projection.
-- Managed production Cloudflare changes belong to `teampitch-ops`.
+- Managed production infrastructure changes belong to `teampitch-ops`.
 - Managed production release identities and GitHub environments belong to the private Control Plane.
 - Each Runtime Adapter passes the same conformance tests before promotion.
 - One Bob Instance uses one authoritative Runtime Adapter set at a time.
@@ -206,7 +205,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Every Bob production record uses the `ops/apps/prod/bob` prefix.
 - Local checks use explicit fixtures. They do not define a deployable environment.
 - Secret values never enter committed environment files.
-- No Cloudflare resource has two infrastructure owners.
+- No runtime resource has two infrastructure owners.
 - Health observation is read-only, content-free, validated, and fail-open.
 - Effect composes I/O. Pure domain rules stay as normal TypeScript.
 - Drizzle owns application schemas and queries. Better Auth uses the selected Application Storage Adapter for auth tables.

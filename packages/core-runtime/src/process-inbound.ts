@@ -3,7 +3,7 @@ import type { JobPublisher } from "@bob/job-queue"
 
 import { AgentRunResult, type AgentArtifact, type AgentRunRequest } from "@bob/contracts/agent"
 import { requiresPersonalGrounding } from "@bob/contracts/output-safety"
-import { makeCloudflareJobPublisher } from "@bob/job-queue/cloudflare"
+import { makeQueueBindingJobPublisher } from "@bob/job-queue/queue-binding"
 import { featureForTools } from "@bob/observability/attribution"
 import {
   recordDecision,
@@ -556,8 +556,7 @@ function invokeAgent(
     Effect.gen(function* () {
       const headers = yield* injectCurrentTraceparent({
         "content-type": "application/json",
-        "CF-Access-Client-Id": composition.config.AGENT_ACCESS_CLIENT_ID,
-        "CF-Access-Client-Secret": composition.config.AGENT_ACCESS_CLIENT_SECRET,
+        "x-bob-caller-token": composition.config.AGENT_CALLER_SECRET,
         "x-bob-correlation-id": request.correlationId,
         "x-bob-run-attempt-id": attemptId
       })
@@ -621,7 +620,13 @@ export async function processConversationTurn(
   const outboundPublisher =
     composition.jobQueue?.outbound ??
     composition.jobs?.outbound ??
-    makeCloudflareJobPublisher(bindings.OUTBOUND_QUEUE)
+    (bindings.OUTBOUND_QUEUE === undefined
+      ? {
+          publish: async () => {
+            throw new Error("Outbound Job Queue is required")
+          }
+        }
+      : makeQueueBindingJobPublisher(bindings.OUTBOUND_QUEUE))
   let interactionStop: Effect.Effect<void> = Effect.void
   const process = withBobSpan(
     {

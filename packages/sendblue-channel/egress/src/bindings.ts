@@ -1,9 +1,11 @@
 import type { DeliveryResult } from "@bob/contracts/delivery"
 
+import type { RuntimeFetcher, RuntimeQueue } from "../../src/runtime.ts"
+
 export interface EgressBindings {
-  CORE: Fetcher
-  INGRESS: Fetcher
-  DELIVERY_RESULT_QUEUE: Queue<DeliveryResult>
+  CORE: RuntimeFetcher
+  INGRESS: RuntimeFetcher
+  DELIVERY_RESULT_QUEUE: RuntimeQueue<DeliveryResult>
   SENDBLUE_API_KEY_ID: string
   SENDBLUE_API_SECRET_KEY: string
   SENDBLUE_WEBHOOK_SIGNING_SECRET: string
@@ -12,7 +14,5 @@ export interface EgressBindings {
   SENDBLUE_STATUS_CALLBACK_URL: string
   CORE_CALLER_SECRET: string
   OTEL_EXPORTER_OTLP_ENDPOINT: string
-  OTEL_ACCESS_CLIENT_ID: string
-  OTEL_ACCESS_CLIENT_SECRET: string
   BOB_RELEASE_SHA: string
 }

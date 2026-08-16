@@ -5,9 +5,9 @@
   "type": "module",
   "exports": {
     "./attribution": "./src/attribution.ts",
-    "./cloudflare": "./src/cloudflare.ts",
     "./effect": "./src/effect.ts",
     "./events": "./src/events.ts",
+    "./invocation": "./src/invocation.ts",
     "./node": "./src/node.ts",
     "./otlp": "./src/otlp.ts",
     "./propagation": "./src/propagation.ts",

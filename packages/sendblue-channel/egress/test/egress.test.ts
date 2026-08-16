@@ -4,7 +4,7 @@ import { parseTraceparent } from "@bob/observability/propagation"
 import { Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { handleOutboundQueue, processOutboundJob } from "../src/entrypoints/queue.ts"
+import { processOutboundJob } from "../src/entrypoints/queue.ts"
 
 const outboxId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
 const attemptId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0"
@@ -12,8 +12,6 @@ const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1"
 const releaseSha = "0123456789abcdef0123456789abcdef01234567"
 const telemetryBindings = {
   OTEL_EXPORTER_OTLP_ENDPOINT: "https://otel.example.test",
-  OTEL_ACCESS_CLIENT_ID: "otel-client",
-  OTEL_ACCESS_CLIENT_SECRET: "otel-secret",
   BOB_RELEASE_SHA: releaseSha
 }
 
@@ -57,7 +55,7 @@ function executionContext() {
         pending.push(promise)
       },
       passThroughOnException() {}
-    } as ExecutionContext,
+    } as never,
     drain: () => Promise.all(pending)
   }
 }
@@ -109,8 +107,6 @@ describe("Sendblue egress", () => {
         SENDBLUE_STATUS_CALLBACK_URL: "https://bob.example/webhooks/outbound",
         CORE_CALLER_SECRET: "c".repeat(64),
         OTEL_EXPORTER_OTLP_ENDPOINT: "https://otel.example.test",
-        OTEL_ACCESS_CLIENT_ID: "otel-client",
-        OTEL_ACCESS_CLIENT_SECRET: "otel-secret",
         BOB_RELEASE_SHA: releaseSha
       } as never,
       context.value
@@ -143,9 +139,6 @@ describe("Sendblue egress", () => {
       /^00-4bf92f3577b34da6a3ce929d0e0e4736-[0-9a-f]{16}-01$/
     )
     expect(exports).toHaveLength(1)
-    const exportHeaders = new Headers(exports[0]?.headers)
-    expect(exportHeaders.get("cf-access-client-id")).toBe("otel-client")
-    expect(exportHeaders.get("cf-access-client-secret")).toBe("otel-secret")
     const exportBody = String(exports[0]?.body)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(exportBody).resourceSpans[0].scopeSpans[0].spans as ExportedSpan[]
@@ -214,14 +207,8 @@ describe("Sendblue egress", () => {
     }
     const deliveryResults: unknown[] = []
     const context = executionContext()
-    const ack = vi.fn()
-    const retry = vi.fn()
-
-    await handleOutboundQueue(
-      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-      {
-        messages: [{ body: { outboxId, correlationId }, ack, retry }]
-      } as never,
+    const outcome = await processOutboundJob(
+      { outboxId, correlationId },
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       {
         CORE: core,
@@ -239,8 +226,7 @@ describe("Sendblue egress", () => {
     )
     await context.drain()
 
-    expect(ack).toHaveBeenCalledOnce()
-    expect(retry).not.toHaveBeenCalled()
+    expect(outcome).toBe("done")
     expect(core.fetch).toHaveBeenCalledOnce()
     expect(deliveryResults).toHaveLength(1)
     expect(providerFetch).toHaveBeenCalledOnce()
@@ -249,9 +235,7 @@ describe("Sendblue egress", () => {
 
   it.each([
     ["OTLP endpoint", { OTEL_EXPORTER_OTLP_ENDPOINT: "not a URL" }],
-    ["release SHA", { BOB_RELEASE_SHA: "not-a-release" }],
-    ["OTLP Access client ID", { OTEL_ACCESS_CLIENT_ID: "" }],
-    ["OTLP Access client secret", { OTEL_ACCESS_CLIENT_SECRET: "" }]
+    ["release SHA", { BOB_RELEASE_SHA: "not-a-release" }]
   ])("delivers a valid outbound job when the %s is malformed", async (_name, override) => {
     const providerFetch = vi.fn(async (_input: RequestInfo | URL) =>
       Response.json({ message_handle: "sendblue-handle", status: "ACCEPTED" })

@@ -68,7 +68,7 @@ function executionContext() {
         pending.push(promise)
       },
       passThroughOnException() {}
-    } as ExecutionContext,
+    } as never,
     drain: () => Promise.all(pending)
   }
 }
@@ -96,8 +96,6 @@ function bindings(queueSend = vi.fn().mockResolvedValue(undefined)) {
       SENDBLUE_ALLOWED_USER_NUMBER: "+46700000000",
       CORE_CALLER_SECRET: "c".repeat(64),
       OTEL_EXPORTER_OTLP_ENDPOINT: "https://otel.example.test",
-      OTEL_ACCESS_CLIENT_ID: "otel-client",
-      OTEL_ACCESS_CLIENT_SECRET: "otel-secret",
       BOB_RELEASE_SHA: releaseSha
     },
     coreFetch,
@@ -153,9 +151,6 @@ describe("Sendblue ingress", () => {
       })
     )
     expect(exports).toHaveLength(1)
-    const exportHeaders = new Headers(exports[0]?.headers)
-    expect(exportHeaders.get("cf-access-client-id")).toBe("otel-client")
-    expect(exportHeaders.get("cf-access-client-secret")).toBe("otel-secret")
     const body = String(exports[0]?.body)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const spans = JSON.parse(body).resourceSpans[0].scopeSpans[0].spans as ExportedSpan[]
@@ -204,8 +199,6 @@ describe("Sendblue ingress", () => {
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const value: Partial<typeof target.value> = { ...target.value }
     delete value.OTEL_EXPORTER_OTLP_ENDPOINT
-    delete value.OTEL_ACCESS_CLIENT_ID
-    delete value.OTEL_ACCESS_CLIENT_SECRET
     delete value.BOB_RELEASE_SHA
     const context = executionContext()
 
@@ -221,9 +214,7 @@ describe("Sendblue ingress", () => {
 
   it.each([
     ["OTLP endpoint", { OTEL_EXPORTER_OTLP_ENDPOINT: "not a URL" }],
-    ["release SHA", { BOB_RELEASE_SHA: "not-a-release" }],
-    ["OTLP Access client ID", { OTEL_ACCESS_CLIENT_ID: "" }],
-    ["OTLP Access client secret", { OTEL_ACCESS_CLIENT_SECRET: "" }]
+    ["release SHA", { BOB_RELEASE_SHA: "not-a-release" }]
   ])("accepts a valid webhook when the %s is malformed", async (_name, override) => {
     const telemetryFetch = vi.fn(async () => new Response(null, { status: 200 }))
     vi.stubGlobal("fetch", telemetryFetch)
@@ -486,7 +477,7 @@ describe("Sendblue ingress", () => {
     })
   })
 
-  it("returns 503 after the D1 write when Queue publication fails", async () => {
+  it("returns 503 after the durable write when Queue publication fails", async () => {
     const exports: RequestInit[] = []
     vi.stubGlobal(
       "fetch",

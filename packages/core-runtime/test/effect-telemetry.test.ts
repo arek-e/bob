@@ -19,7 +19,7 @@ afterEach(() => {
 })
 
 describe("Core Effect telemetry", () => {
-  it("exports one content-free Worker span on invocation flush", async () => {
+  it("exports one content-free span on invocation flush", async () => {
     const requests: CapturedRequest[] = []
     vi.stubGlobal(
       "fetch",
@@ -34,9 +34,7 @@ describe("Core Effect telemetry", () => {
     const telemetry = makeCoreTelemetryInvocation(
       testFixture<CoreBindings>({
         BOB_RELEASE_SHA: "0123456789abcdef0123456789abcdef01234567",
-        OTEL_EXPORTER_OTLP_ENDPOINT: "https://otel.example.invalid",
-        OTEL_ACCESS_CLIENT_ID: "otel-client",
-        OTEL_ACCESS_CLIENT_SECRET: "otel-secret"
+        OTEL_EXPORTER_OTLP_ENDPOINT: "https://otel.example.invalid"
       })
     )
 
@@ -54,8 +52,6 @@ describe("Core Effect telemetry", () => {
 
     expect(requests).toHaveLength(1)
     expect(requests[0]?.url).toBe("https://otel.example.invalid/v1/traces")
-    const headers = new Headers(requests[0]?.init?.headers)
-    expect(headers.get("CF-Access-Client-Id")).toBe("otel-client")
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const payload = JSON.parse(String(requests[0]?.init?.body)) as unknown
     expect(payload).toEqual(
@@ -63,7 +59,6 @@ describe("Core Effect telemetry", () => {
         resourceSpans: expect.any(Array)
       })
     )
-    expect(JSON.stringify(payload)).not.toContain("otel-secret")
   })
 
   it("keeps telemetry disabled when production export values are absent", async () => {

@@ -6,7 +6,7 @@ import { OutboundJob, type InboundJob } from "@bob/contracts/jobs"
 import { completeJob, decodeJobProcessor, retryJob, type JobPublisher } from "@bob/job-queue"
 import { makeBullMqJobPublisher } from "@bob/job-queue/bullmq"
 import { startBullMqWorkerHost } from "@bob/job-queue/bullmq-host"
-import egressWorker from "@bob/sendblue-runtime/egress"
+import { handleEgressHttp } from "@bob/sendblue-runtime/egress"
 import { processOutboundJob } from "@bob/sendblue-runtime/egress/queue"
 import { handleIngressHttp } from "@bob/sendblue-runtime/ingress/http"
 import { Queue as BullQueue, type ConnectionOptions } from "bullmq"
@@ -92,8 +92,6 @@ async function main(): Promise<void> {
   )
   const commonTelemetry = {
     OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:4318",
-    OTEL_ACCESS_CLIENT_ID: "disabled",
-    OTEL_ACCESS_CLIENT_SECRET: "disabled",
     BOB_RELEASE_SHA: config.BOB_RELEASE_SHA
   }
   const ingressBindings: IngressBindings = {
@@ -148,7 +146,7 @@ async function main(): Promise<void> {
         url.pathname === "/health"
           ? Response.json({ healthy: true, service: "channel-runtime", version: 1 })
           : url.pathname.startsWith("/internal/")
-            ? await egressWorker.fetch(request, egressBindings)
+            ? await handleEgressHttp(request, egressBindings)
             : await handleIngressHttp(request, ingressBindings)
       await writeWebResponse(response, outgoing)
     } catch {

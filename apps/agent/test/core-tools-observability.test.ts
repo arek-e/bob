@@ -30,8 +30,8 @@ describe("agent tool telemetry", () => {
     const client = createCoreToolClient({
       catalogue: transitionalDeploymentProfile,
       coreUrl: "https://core.example.invalid",
-      accessClientId: "client",
-      accessClientSecret: "secret",
+
+      callerSecret: "caller-secret",
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: request as typeof fetch
     })
@@ -78,8 +78,8 @@ describe("agent tool telemetry", () => {
     const client = createCoreToolClient({
       catalogue: transitionalDeploymentProfile,
       coreUrl: "https://core.example.invalid",
-      accessClientId: "client",
-      accessClientSecret: "secret",
+
+      callerSecret: "caller-secret",
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: vi.fn(async () =>
         Response.json({ ok: true, code: "owner_settings_updated", message: "Done" })
@@ -120,8 +120,8 @@ describe("agent tool telemetry", () => {
     const client = createCoreToolClient({
       catalogue: transitionalDeploymentProfile,
       coreUrl: "https://core.example.invalid",
-      accessClientId: "client",
-      accessClientSecret: "secret",
+
+      callerSecret: "caller-secret",
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: request as typeof fetch
     })
@@ -162,8 +162,8 @@ describe("agent tool telemetry", () => {
     const client = createCoreToolClient({
       catalogue: transitionalDeploymentProfile,
       coreUrl: "https://core.example.invalid",
-      accessClientId: "client",
-      accessClientSecret: "secret",
+
+      callerSecret: "caller-secret",
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       fetch: request as typeof fetch
     })

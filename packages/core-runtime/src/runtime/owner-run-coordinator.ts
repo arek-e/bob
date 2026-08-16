@@ -20,41 +20,6 @@ export interface OwnerRunCoordinator {
   readonly wake: (request: OwnerWakeRequest) => Promise<void>
 }
 
-export function makeCloudflareOwnerRunCoordinator(
-  namespace: DurableObjectNamespace
-): OwnerRunCoordinator {
-  return {
-    run(request: OwnerRunRequest): Promise<Response> {
-      const euNamespace = namespace.jurisdiction("eu")
-      const coordinator = euNamespace.get(euNamespace.idFromName(request.ownerId))
-      const headers = new Headers({
-        "content-type": "application/json",
-        "x-bob-correlation-id": request.correlationId
-      })
-      if (request.traceparent !== undefined) headers.set("traceparent", request.traceparent)
-      const body =
-        request.traceparent === undefined
-          ? { ...request.job, correlationId: request.correlationId }
-          : {
-              ...request.job,
-              correlationId: request.correlationId,
-              traceparent: request.traceparent
-            }
-      return coordinator.fetch("https://coordinator.internal/run", {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body)
-      })
-    },
-    async wake(request: OwnerWakeRequest): Promise<void> {
-      const euNamespace = namespace.jurisdiction("eu")
-      const url = new URL("https://coordinator.internal/wake")
-      if (request.wakeAt !== undefined) url.searchParams.set("at", request.wakeAt)
-      await euNamespace.get(euNamespace.idFromName(request.ownerId)).fetch(url, { method: "POST" })
-    }
-  }
-}
-
 export function makeHandlerOwnerRunCoordinator(input: {
   readonly run: (request: OwnerRunRequest) => Promise<Response>
   readonly wake: (request: OwnerWakeRequest) => Promise<void>

@@ -34,8 +34,8 @@ export function makeReminderScheduledWorkflow(input: {
         await input.reminders.markExpiredResponseDeadlines(startedAt)
       })
 
-      const clocks = input.bindings.REMINDER_CLOCK.jurisdiction("eu")
-      const clock = clocks.get(clocks.idFromName(input.ownerId))
+      const clock = input.bindings.REMINDER_CLOCK
+      const clockBaseUrl = `https://reminder-clock.internal/owners/${encodeURIComponent(input.ownerId)}`
       const pending = await input.database
         .select()
         .from(schedulerOutbox)
@@ -57,7 +57,7 @@ export function makeReminderScheduledWorkflow(input: {
                   "x-bob-correlation-id": context.correlationId
                 })
                 return yield* Effect.promise(() =>
-                  clock.fetch("https://clock.internal/command", {
+                  clock.fetch(`${clockBaseUrl}/command`, {
                     method: "POST",
                     headers,
                     body: JSON.stringify({
@@ -92,7 +92,7 @@ export function makeReminderScheduledWorkflow(input: {
                 "x-bob-correlation-id": context.correlationId
               })
               return yield* Effect.promise(() =>
-                clock.fetch("https://clock.internal/reconcile", { method: "POST", headers })
+                clock.fetch(`${clockBaseUrl}/reconcile`, { method: "POST", headers })
               )
             })
           )

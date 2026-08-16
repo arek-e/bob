@@ -22,7 +22,6 @@
     "agent:start": "pnpm --filter @bob/agent start"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "5.20260810.1",
     "@effect/vitest": "4.0.0-beta.107",
     "@tanstack/router-generator": "1.167.27",
     "@types/node": "22.18.0",

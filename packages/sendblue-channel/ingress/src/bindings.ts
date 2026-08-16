@@ -1,8 +1,10 @@
 import type { InboundJob } from "@bob/contracts/jobs"
 
+import type { RuntimeFetcher, RuntimeQueue } from "../../src/runtime.ts"
+
 export interface IngressBindings {
-  CORE: Fetcher
-  INBOUND_QUEUE: Queue<InboundJob>
+  CORE: RuntimeFetcher
+  INBOUND_QUEUE: RuntimeQueue<InboundJob>
   SENDBLUE_ACCOUNT_ID: string
   SENDBLUE_LINE_ID: string
   SENDBLUE_WEBHOOK_SIGNING_SECRET: string
@@ -10,7 +12,5 @@ export interface IngressBindings {
   SENDBLUE_ALLOWED_USER_NUMBER: string
   CORE_CALLER_SECRET: string
   OTEL_EXPORTER_OTLP_ENDPOINT: string
-  OTEL_ACCESS_CLIENT_ID: string
-  OTEL_ACCESS_CLIENT_SECRET: string
   BOB_RELEASE_SHA: string
 }

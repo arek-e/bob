@@ -2,22 +2,22 @@ import type { JobDisposition, JobProcessor, JobPublisher, PublishJobOptions } fr
 
 import { validatedDelayMs } from "./index.ts"
 
-export interface CloudflareQueueAdapterInput<Job, Result> {
+export interface QueueBinding<Job, Result = void> {
   readonly send: (job: Job, options?: { readonly delaySeconds?: number }) => Promise<Result>
 }
 
-export interface CloudflareMessageAdapterInput<Job> {
+export interface QueueMessage<Job> {
   readonly body: Job
   readonly ack: () => void
   readonly retry: (options?: { readonly delaySeconds?: number }) => void
 }
 
-export interface CloudflareJobConsumerOptions {
+export interface QueueConsumerOptions {
   readonly unexpectedErrorDelayMs: number
 }
 
-export function makeCloudflareJobPublisher<Job, Result>(
-  queue: CloudflareQueueAdapterInput<Job, Result>
+export function makeQueueBindingJobPublisher<Job, Result>(
+  queue: QueueBinding<Job, Result>
 ): JobPublisher<Job> {
   return {
     async publish(job: Job, options?: PublishJobOptions): Promise<void> {
@@ -31,14 +31,10 @@ export function makeCloudflareJobPublisher<Job, Result>(
   }
 }
 
-function retryDelaySeconds(disposition: Extract<JobDisposition, { readonly state: "retry" }>) {
-  return Math.ceil(disposition.delayMs / 1_000)
-}
-
-export async function processCloudflareMessage<Job>(
-  message: CloudflareMessageAdapterInput<Job>,
+export async function processQueueBindingMessage<Job>(
+  message: QueueMessage<Job>,
   processor: JobProcessor<Job>,
-  options: CloudflareJobConsumerOptions
+  options: QueueConsumerOptions
 ): Promise<JobDisposition> {
   let disposition: JobDisposition
   try {
@@ -50,6 +46,6 @@ export async function processCloudflareMessage<Job>(
     }
   }
   if (disposition.state === "complete") message.ack()
-  else message.retry({ delaySeconds: retryDelaySeconds(disposition) })
+  else message.retry({ delaySeconds: Math.ceil(disposition.delayMs / 1_000) })
   return disposition
 }
