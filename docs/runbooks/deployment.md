@@ -26,6 +26,9 @@ stores immutable release identity.
 Set `BOB_AUTO_RELEASE_ENABLED` to `true` to release each green `main` commit. Leave it unset to stop
 automatic production releases.
 
+Set `AGENT_ADMIN_ORIGIN_URL` on the protected `production` environment. Use the Cloudflare Access
+host for the Agent administration route. Do not use the internal Compose hostname.
+
 ## Promotion boundary
 
 The workflow changes only these Coolify values:
