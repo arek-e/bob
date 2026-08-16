@@ -90,6 +90,7 @@ jobs:
     env:
       BAO_ADDR: ${{ vars.BAO_ADDR }}
       BAO_JWT_ROLE: ${{ vars.BAO_JWT_ROLE_AUTO_RELEASE }}
+      AGENT_ADMIN_ORIGIN_URL: ${{ vars.AGENT_ADMIN_ORIGIN_URL }}
       COOLIFY_BASE_URL: ${{ vars.COOLIFY_BASE_URL }}
       COOLIFY_HOST_ADDRESS: ${{ vars.COOLIFY_HOST_ADDRESS }}
       COOLIFY_RUNTIME_APPLICATION_UUID: ${{ vars.COOLIFY_RUNTIME_APPLICATION_UUID }}
@@ -134,7 +135,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for name in BAO_ADDR BAO_JWT_ROLE COOLIFY_BASE_URL COOLIFY_HOST_ADDRESS COOLIFY_RUNTIME_APPLICATION_UUID; do
+          for name in BAO_ADDR BAO_JWT_ROLE AGENT_ADMIN_ORIGIN_URL COOLIFY_BASE_URL COOLIFY_HOST_ADDRESS COOLIFY_RUNTIME_APPLICATION_UUID; do
             test -n "${!name}" || { echo "Missing production variable: ${name}" >&2; exit 1; }
           done
           coolify_host="$(node -e 'process.stdout.write(new URL(process.env.COOLIFY_BASE_URL).hostname)')"
@@ -169,14 +170,9 @@ jobs:
           admin_record="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
             --header "X-Vault-Token: ${bao_token}" \
             "${BAO_ADDR%/}/v1/ops/data/apps/prod/bob/access/core-to-agent-admin")"
-          config_record="$(curl --fail-with-body --silent --show-error --connect-timeout 10 --max-time 30 \
-            --header "X-Vault-Token: ${bao_token}" \
-            "${BAO_ADDR%/}/v1/ops/data/apps/prod/bob/config")"
-
           export COOLIFY_API_TOKEN="$(jq -er '.data.data.COOLIFY_API_TOKEN' <<<"$coolify_record")"
           export AGENT_ADMIN_ACCESS_CLIENT_ID="$(jq -er '.data.data.AGENT_ADMIN_ACCESS_CLIENT_ID' <<<"$admin_record")"
           export AGENT_ADMIN_ACCESS_CLIENT_SECRET="$(jq -er '.data.data.AGENT_ADMIN_ACCESS_CLIENT_SECRET' <<<"$admin_record")"
-          agent_origin_url="$(jq -er '.data.data.AGENT_ORIGIN_URL' <<<"$config_record")"
           echo "::add-mask::${COOLIFY_API_TOKEN}"
           echo "::add-mask::${AGENT_ADMIN_ACCESS_CLIENT_ID}"
           echo "::add-mask::${AGENT_ADMIN_ACCESS_CLIENT_SECRET}"
@@ -187,7 +183,7 @@ jobs:
             --header "Authorization: Bearer ${AGENT_ADMIN_ACCESS_CLIENT_SECRET}" \
             --header "CF-Access-Client-Id: ${AGENT_ADMIN_ACCESS_CLIENT_ID}" \
             --header "CF-Access-Client-Secret: ${AGENT_ADMIN_ACCESS_CLIENT_SECRET}" \
-            "${agent_origin_url%/}/v1/admin/readiness")"
+            "${AGENT_ADMIN_ORIGIN_URL%/}/v1/admin/readiness")"
           jq -e '
             .ready == true and
             .checks.credentials == "ready" and

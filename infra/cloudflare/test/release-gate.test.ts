@@ -27,6 +27,9 @@ describe("Runtime release boundary", () => {
     expect(release).toContain("COOLIFY_HOST_ADDRESS")
     expect(release).toContain("sudo tee -a /etc/hosts")
     expect(release).toContain("COOLIFY_RUNTIME_APPLICATION_UUID")
+    expect(release).toContain("AGENT_ADMIN_ORIGIN_URL")
+    expect(release).not.toContain("AGENT_ORIGIN_URL")
+    expect(release).not.toContain("apps/prod/bob/config")
     expect(release).not.toContain("CONTROL_PLANE_URL")
   })
 
