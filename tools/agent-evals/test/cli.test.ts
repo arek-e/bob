@@ -138,6 +138,37 @@ describe("agent evaluation command", () => {
     })
   })
 
+  it("rejects a version 2 suite before it starts a live adapter", { timeout: 30_000 }, async () => {
+    const repositoryRoot = new URL("../../../", import.meta.url)
+    const suite = new URL("evals/scenarios/v2/interaction-cases.json", repositoryRoot)
+    const adapter = new URL("./fixtures/live-adapter.mjs", import.meta.url)
+    const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm"
+
+    await expect(
+      execFileAsync(
+        pnpm,
+        [
+          "--silent",
+          "--filter",
+          "@bob/agent-evals",
+          "eval:live",
+          "--",
+          "--approve-live",
+          "--suite",
+          suite.pathname,
+          "--adapter",
+          process.execPath,
+          "--adapter-arg",
+          adapter.pathname
+        ],
+        { cwd: repositoryRoot, timeout: 30_000 }
+      )
+    ).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("live_evaluation_schema_version_unsupported")
+    })
+  })
+
   it(
     "runs three safe live cases through an explicitly approved adapter",
     { timeout: 30_000 },

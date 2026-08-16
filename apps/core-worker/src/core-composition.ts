@@ -40,6 +40,11 @@ import { MemoryStore, makeMemoryStore, memoryStoreLayer } from "./modules/memory
 import { makeMemoryToolAdapter } from "./modules/memory/tool-adapter.ts"
 import { createDataProtection } from "./modules/policy/data-protection.ts"
 import {
+  OwnerDataKeyStore,
+  makeOwnerDataKeyStore,
+  ownerDataKeyStoreLayer
+} from "./modules/policy/owner-data-key.ts"
+import {
   RetrievalPipeline,
   makeRetrievalPipeline,
   retrievalPipelineLayer
@@ -105,23 +110,29 @@ export function composeGeneralCore<Extensions extends object>(
   )
   if (keyring[activeKekVersion] === undefined) throw new Error("Active KEK is missing")
   const protection = createDataProtection(keyring, activeKekVersion, config.DATA_LOOKUP_KEY)
+  const ownerDataKeys = makeOwnerDataKeyStore(applicationStorage, protection, {
+    defaultTimeZone: config.OWNER_TIME_ZONE
+  })
   const settings = makeOwnerSettingsStore(applicationStorage, protection, {
     defaultTimeZone: config.OWNER_TIME_ZONE,
+    ownerDataKeys,
     channelProviderId
   })
   const conversations = makeConversationStore(applicationStorage, protection, {
     ownerId: config.OWNER_ID,
     ownerTimeZone: config.OWNER_TIME_ZONE,
-    dataKeyVersion: activeKekVersion,
+    ownerDataKeys,
     channelProviderId
   })
   const turns = makeConversationTurnStore(applicationStorage, protection, {
-    ownerId: config.OWNER_ID
+    ownerId: config.OWNER_ID,
+    ownerDataKeys
   })
   const prepared = runtimeProfile.prepare({
     bindings,
     database: applicationStorage,
     protection,
+    ownerDataKeys,
     conversations,
     turns,
     settings,
@@ -130,19 +141,23 @@ export function composeGeneralCore<Extensions extends object>(
   })
   const alerts = makeAlertStore(applicationStorage, {})
   const artifacts = makeArtifactStore(applicationStorage, protection, {
-    legacyReaders: prepared.legacyArtifactReaders
+    legacyReaders: prepared.legacyArtifactReaders,
+    ownerDataKeys
   })
   const delivery = makeDeliveryStore(applicationStorage, protection, {
     channelProviderId,
-    targetAdapters: prepared.deliveryTargets
+    targetAdapters: prepared.deliveryTargets,
+    ownerDataKeys
   })
-  const privateText = makePrivateTextReader(applicationStorage, protection)
+  const privateText = makePrivateTextReader(applicationStorage, protection, ownerDataKeys)
   const evidenceSources = makeEvidenceSourceRegistry(runtimeProfile.catalogue.profileId, [
     makeConversationEvidenceSource(applicationStorage, privateText, protection),
     makeFactEvidenceSource(applicationStorage, privateText, protection),
     ...prepared.evidenceSources
   ])
-  const memory = makeMemoryStore(applicationStorage, protection, evidenceSources, {})
+  const memory = makeMemoryStore(applicationStorage, protection, evidenceSources, {
+    ownerDataKeys
+  })
   const retrieval = makeRetrievalPipeline(applicationStorage)
   const context = makeApplicationContextStore(
     applicationStorage,
@@ -150,23 +165,26 @@ export function composeGeneralCore<Extensions extends object>(
     runtimeProfile.catalogue,
     {
       artifacts,
-      retrieval
+      retrieval,
+      ownerDataKeys
     }
   )
-  const runs = makeAgentRunStore(applicationStorage, protection, {})
+  const runs = makeAgentRunStore(applicationStorage, protection, { ownerDataKeys })
   const toolAdapters = makeToolAdapterRegistry(runtimeProfile.catalogue, [
     makeMemoryToolAdapter(memory, retrieval),
     makeSettingsToolAdapter(settings),
     ...prepared.toolAdapters({ memory, retrieval })
   ])
   const tools = makeToolExecutor(applicationStorage, protection, toolAdapters, {
-    toolLeaseMs: conversationTiming.mutationSettleLeaseMs
+    toolLeaseMs: conversationTiming.mutationSettleLeaseMs,
+    ownerDataKeys
   })
   const agentExperience = makeAgentExperienceRegistry(runtimeProfile.catalogue.profileId, [])
   const reviewedSkills = makeReviewedSkillRegistry(runtimeProfile.catalogue.profileId, [])
   const layer = Layer.mergeAll(
     conversationStoreLayer(conversations),
     conversationTurnStoreLayer(turns),
+    ownerDataKeyStoreLayer(ownerDataKeys),
     alertStoreLayer(alerts),
     artifactStoreLayer(artifacts),
     deliveryStoreLayer(delivery),
@@ -181,6 +199,7 @@ export function composeGeneralCore<Extensions extends object>(
     Effect.gen(function* () {
       return {
         events,
+        ownerDataKeys: yield* OwnerDataKeyStore,
         conversations: yield* ConversationStore,
         turns: yield* ConversationTurnStore,
         alerts: yield* AlertStore,

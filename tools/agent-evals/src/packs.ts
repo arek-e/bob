@@ -1,4 +1,9 @@
-import { evaluateSuite, type EvaluationReport, type MetricName } from "./gate.ts"
+import {
+  evaluateSuite,
+  isVersion1MetricName,
+  type EvaluationReport,
+  type MetricName
+} from "./gate.ts"
 import { loadEvaluationInputs } from "./io.ts"
 
 export interface EvaluationPackShard {
@@ -62,12 +67,21 @@ export async function evaluatePack(pack: EvaluationPack): Promise<EvaluationPack
       if (selected.size !== shard.caseIds.length) throw new Error("evaluation_pack_case_duplicate")
       const cases = suite.cases.filter((item) => selected.has(item.id))
       if (cases.length !== selected.size) throw new Error("evaluation_pack_case_missing")
+      const selectedCandidates = candidates.candidates.filter((item) => selected.has(item.caseId))
+      if (suite.schemaVersion === 1) {
+        if (candidates.schemaVersion !== 1) throw new Error("evaluation_schema_version_mismatch")
+        if (!shard.requiredMetrics.every(isVersion1MetricName)) {
+          throw new Error("evaluation_pack_metric_not_supported")
+        }
+        return evaluateSuite(
+          { ...suite, requiredMetrics: shard.requiredMetrics, cases },
+          { ...candidates, candidates: selectedCandidates }
+        )
+      }
+      if (candidates.schemaVersion !== 2) throw new Error("evaluation_schema_version_mismatch")
       return evaluateSuite(
         { ...suite, requiredMetrics: shard.requiredMetrics, cases },
-        {
-          ...candidates,
-          candidates: candidates.candidates.filter((item) => selected.has(item.caseId))
-        }
+        { ...candidates, candidates: selectedCandidates }
       )
     })
   )

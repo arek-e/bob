@@ -183,6 +183,23 @@ export const AgentRunOperationsLoadResult = Schema.Struct({
   operations: Schema.Array(AgentRunOperation).check(Schema.isMaxLength(32))
 })
 
+export const AgentSmokeResult = Schema.Struct({
+  protocolVersion: Schema.Literal(1),
+  status: Schema.Literals(["completed", "failed"]),
+  model: NonEmptyText,
+  durationMs: Schema.Int,
+  errorCode: Schema.optionalKey(
+    Schema.Literals([
+      "authentication",
+      "quota",
+      "timeout",
+      "cancelled",
+      "provider",
+      "invalid_output"
+    ])
+  )
+})
+
 export const AgentSteerRequest = Schema.Struct({
   runId: Uuid
 })
@@ -223,6 +240,7 @@ export type AgentRunOperationAppendRequest = typeof AgentRunOperationAppendReque
 export type AgentRunOperationAppendResult = typeof AgentRunOperationAppendResult.Type
 export type AgentRunOperationsLoadRequest = typeof AgentRunOperationsLoadRequest.Type
 export type AgentRunOperationsLoadResult = typeof AgentRunOperationsLoadResult.Type
+export type AgentSmokeResult = typeof AgentSmokeResult.Type
 export type AgentSteerRequest = typeof AgentSteerRequest.Type
 export type AgentSteerResult = typeof AgentSteerResult.Type
 export type DeviceLoginEvent = typeof DeviceLoginEvent.Type

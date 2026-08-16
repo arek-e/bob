@@ -1,4 +1,4 @@
-import type { InboundJob, OutboundJob } from "@bob/contracts/jobs"
+import type { InboundJob } from "@bob/contracts/jobs"
 
 import { makeCaptureTelemetry } from "@bob/observability/testing"
 import {
@@ -9,21 +9,22 @@ import {
   reset
 } from "cloudflare:test"
 import { env } from "cloudflare:workers"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import type { CoreBindings } from "../src/bindings.ts"
 
-import { composeCore } from "../src/composition.ts"
 import { createCoreDatabase } from "../src/database.ts"
 import { handleHttp } from "../src/entrypoints/http.ts"
 import { handleInboundQueue } from "../src/entrypoints/queue.ts"
 import { operationalAlerts } from "../src/modules/alerts/schema.ts"
+import { makeArtifactPersistence } from "../src/modules/artifacts/persistence.ts"
 import { artifactRevisions, artifacts } from "../src/modules/artifacts/schema.ts"
 import { makeArtifactStore } from "../src/modules/artifacts/store.ts"
 import { makeAgentRunStore } from "../src/modules/conversations/run-store.ts"
 import {
+  agentRunAttempts,
   agentRuns,
   channels,
   conversationTurns,
@@ -44,9 +45,16 @@ import {
   factEvidence,
   factRevisions,
   facts,
-  memoryCandidates
+  memoryCandidates,
+  memoryReviewClaimGuards
 } from "../src/modules/memory/schema.ts"
-import { createDataProtection } from "../src/modules/policy/data-protection.ts"
+import { prepareMemorySourceWithdrawal } from "../src/modules/memory/source-withdrawal.ts"
+import {
+  decodeMemoryValue,
+  encodeMemoryValue,
+  plainMemoryValue
+} from "../src/modules/memory/value-envelope.ts"
+import { createDataProtection, type DataProtection } from "../src/modules/policy/data-protection.ts"
 import { makeReminderDeliveryTarget } from "../src/modules/reminders/delivery-target.ts"
 import { reminderOccurrences, reminders } from "../src/modules/reminders/schema.ts"
 import { makeReminderStore } from "../src/modules/reminders/store.ts"
@@ -63,7 +71,6 @@ import {
   workoutSets
 } from "../src/modules/training/schema.ts"
 import { makeTrainingStore } from "../src/modules/training/store.ts"
-import { processInbound } from "../src/process-inbound.ts"
 import { makeTestContextStore } from "./context-store-fixture.ts"
 import { makeTestMemoryStore } from "./memory-store-fixture.ts"
 import { decodeTestMigrations } from "./migrations.ts"
@@ -174,6 +181,133 @@ describe("D1 migrations and durability", () => {
     expect(names.has("retrieval_documents_fts_update")).toBe(true)
     expect(names.has("journal_entries_valid_handoff")).toBe(true)
     expect(names.has("external_connections")).toBe(true)
+
+    const reminderColumns = await env.DB.prepare("PRAGMA table_info(reminders)").all<{
+      name: string
+    }>()
+    const reminderColumnNames = reminderColumns.results.map(({ name }) => name)
+    expect(reminderColumnNames).toContain("requires_acknowledgment")
+    expect(reminderColumnNames).toContain("repeat_policy")
+    expect(reminderColumnNames).toContain("max_attempts")
+
+    const candidateColumns = await env.DB.prepare("PRAGMA table_info(memory_candidates)").all<{
+      name: string
+    }>()
+    expect(candidateColumns.results.map(({ name }) => name)).toContain("proposed_value_envelope")
+    const revisionColumns = await env.DB.prepare("PRAGMA table_info(fact_revisions)").all<{
+      name: string
+    }>()
+    expect(revisionColumns.results.map(({ name }) => name)).toContain("value_envelope")
+  })
+
+  it("reads and upgrades memory rows written by the old Worker after expansion", async () => {
+    const { database, protection, ownerKey } = await seedRunData()
+    const candidateId = "00000000-0000-4000-8000-000000000098"
+    const canonical = await protection.encryptText(ownerKey, "A legacy null value")
+    await env.DB.prepare(
+      `INSERT INTO memory_candidates (
+        id, user_id, scope, key, proposed_value_json,
+        canonical_text_ciphertext, canonical_text_iv, origin_class,
+        source_type, source_id, extraction_confidence, sensitivity, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        candidateId,
+        ownerId,
+        "preferences",
+        "legacy-null",
+        "null",
+        canonical.ciphertext,
+        canonical.iv,
+        "owner_input",
+        "message",
+        messageId,
+        1_000,
+        "normal",
+        "proposed",
+        "2026-08-11T10:01:00.000Z"
+      )
+      .run()
+
+    const memory = makeTestMemoryStore(database, protection, {
+      now: () => new Date("2026-08-11T10:02:00.000Z")
+    })
+    await expect(memory.listCandidates(ownerId)).resolves.toEqual([
+      expect.objectContaining({ id: candidateId, value: null })
+    ])
+
+    const revisionId = await memory.confirm(
+      ownerId,
+      candidateId,
+      "owner_ui",
+      "memory:migration-window:confirm"
+    )
+    const [revision] = await database
+      .select({ valueEnvelope: factRevisions.valueEnvelope })
+      .from(factRevisions)
+      .where(eq(factRevisions.id, revisionId))
+    expect(decodeMemoryValue(revision!.valueEnvelope)).toEqual({
+      version: 1,
+      kind: "plain",
+      value: null
+    })
+  })
+
+  it("keeps the newest active workout when the invariant migration repairs duplicates", async () => {
+    await env.DB.exec("DROP INDEX workout_sessions_one_active_uq")
+    await env.DB.prepare(
+      `INSERT INTO workout_sessions
+        (id, user_id, routine_id, status, started_at, created_at)
+      VALUES
+        ('session-oldest', ?, 'routine', 'active',
+         '2026-08-11T08:00:00.000Z', '2026-08-11T08:00:00.000Z'),
+        ('session-middle', ?, 'routine', 'active',
+         '2026-08-11T09:00:00.000Z', '2026-08-11T09:00:00.000Z'),
+        ('session-newest', ?, 'routine', 'active',
+         '2026-08-11T10:00:00.000Z', '2026-08-11T10:00:00.000Z')`
+    )
+      .bind(ownerId, ownerId, ownerId)
+      .run()
+    const migration = decodeTestMigrations(env.TEST_MIGRATIONS).find(
+      ({ name }) => name === "20260816122000_one_active_workout"
+    )
+    expect(migration).toBeDefined()
+    for (const query of migration!.queries) {
+      await env.DB.prepare(query.replace(/^--.*$/gmu, "").trim()).run()
+    }
+
+    const sessions = await env.DB.prepare(
+      "SELECT id, status, started_at, finished_at FROM workout_sessions ORDER BY started_at"
+    ).all<{ id: string; status: string; started_at: string; finished_at: string | null }>()
+    expect(sessions.results).toEqual([
+      {
+        id: "session-oldest",
+        status: "abandoned",
+        started_at: "2026-08-11T08:00:00.000Z",
+        finished_at: "2026-08-11T08:00:00.000Z"
+      },
+      {
+        id: "session-middle",
+        status: "abandoned",
+        started_at: "2026-08-11T09:00:00.000Z",
+        finished_at: "2026-08-11T09:00:00.000Z"
+      },
+      {
+        id: "session-newest",
+        status: "active",
+        started_at: "2026-08-11T10:00:00.000Z",
+        finished_at: null
+      }
+    ])
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO workout_sessions
+          (id, user_id, routine_id, status, started_at, created_at)
+         VALUES ('session-extra', ?, 'routine', 'active', ?, ?)`
+      )
+        .bind(ownerId, "2026-08-11T11:00:00.000Z", "2026-08-11T11:00:00.000Z")
+        .run()
+    ).rejects.toThrow()
   })
 
   it("rolls back a D1 batch after an injected failure", async () => {
@@ -660,6 +794,144 @@ describe("D1 migrations and durability", () => {
     expect((await store.loadForInbound(inboundId))?.request).toEqual(request)
     const [run] = await database.select().from(agentRuns)
     expect(run?.status).toBe("executing")
+    const attempts = await database.select().from(agentRunAttempts)
+    expect(attempts.map(({ attemptNumber }) => attemptNumber).sort()).toEqual([1, 2])
+  })
+
+  it("does not strand a run when its attempt cannot be created", async () => {
+    const { database, protection } = await seedRunData()
+    const attemptId = "00000000-0000-4000-8000-000000000019"
+    const store = makeAgentRunStore(database, protection, {
+      now: () => new Date("2026-08-11T10:00:00.000Z"),
+      randomUuid: () => attemptId
+    })
+    await store.create(
+      {
+        protocolVersion: 1,
+        runId,
+        ownerId,
+        correlationId,
+        sourceMessageId: messageId,
+        localTime: "2026-08-11T10:00:00.000Z",
+        timeZone: "Europe/Stockholm",
+        userText: "Hello",
+        contextItems: [],
+        allowedTools: [],
+        limits: {
+          maxTurns: 4,
+          maxToolCalls: 4,
+          maxDurationMs: 60_000,
+          maxResponseCharacters: 1_200
+        }
+      },
+      inboundId
+    )
+    await database.insert(agentRunAttempts).values({
+      id: attemptId,
+      runId: "00000000-0000-4000-8000-000000000020",
+      attemptNumber: 1,
+      status: "completed",
+      startedAt: "2026-08-11T09:00:00.000Z",
+      finishedAt: "2026-08-11T09:00:01.000Z"
+    })
+
+    await expect(store.claim(runId, 90_000)).rejects.toThrow()
+
+    const [run] = await database.select().from(agentRuns).where(eq(agentRuns.id, runId))
+    expect(run).toMatchObject({
+      status: "pending",
+      claimedAt: null,
+      claimExpiresAt: null,
+      activeAttemptId: null
+    })
+  })
+
+  it("creates one attempt when two workers claim the same run", async () => {
+    const { database, protection } = await seedRunData()
+    let next = 21
+    const store = makeAgentRunStore(database, protection, {
+      now: () => new Date("2026-08-11T10:00:00.000Z"),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    await store.create(
+      {
+        protocolVersion: 1,
+        runId,
+        ownerId,
+        correlationId,
+        sourceMessageId: messageId,
+        localTime: "2026-08-11T10:00:00.000Z",
+        timeZone: "Europe/Stockholm",
+        userText: "Hello",
+        contextItems: [],
+        allowedTools: [],
+        limits: {
+          maxTurns: 4,
+          maxToolCalls: 4,
+          maxDurationMs: 60_000,
+          maxResponseCharacters: 1_200
+        }
+      },
+      inboundId
+    )
+
+    const claims = await Promise.all([store.claim(runId, 90_000), store.claim(runId, 90_000)])
+
+    expect(claims.filter((claim) => claim !== undefined)).toHaveLength(1)
+    const [run] = await database.select().from(agentRuns).where(eq(agentRuns.id, runId))
+    const attempts = await database.select().from(agentRunAttempts)
+    expect(attempts).toHaveLength(1)
+    expect(attempts[0]).toMatchObject({
+      id: run?.activeAttemptId,
+      runId,
+      attemptNumber: 1,
+      status: "executing"
+    })
+  })
+
+  it("recovers an expired legacy claimed run without a migration", async () => {
+    const { database, protection } = await seedRunData()
+    const store = makeAgentRunStore(database, protection, {
+      now: () => new Date("2026-08-11T10:02:00.000Z"),
+      randomUuid: () => "00000000-0000-4000-8000-000000000024"
+    })
+    await store.create(
+      {
+        protocolVersion: 1,
+        runId,
+        ownerId,
+        correlationId,
+        sourceMessageId: messageId,
+        localTime: "2026-08-11T10:00:00.000Z",
+        timeZone: "Europe/Stockholm",
+        userText: "Hello",
+        contextItems: [],
+        allowedTools: [],
+        limits: {
+          maxTurns: 4,
+          maxToolCalls: 4,
+          maxDurationMs: 60_000,
+          maxResponseCharacters: 1_200
+        }
+      },
+      inboundId
+    )
+    await database
+      .update(agentRuns)
+      .set({
+        status: "claimed",
+        claimedAt: "2026-08-11T10:00:00.000Z",
+        claimExpiresAt: "2026-08-11T10:01:00.000Z",
+        activeAttemptId: "00000000-0000-4000-8000-000000000023"
+      })
+      .where(eq(agentRuns.id, runId))
+
+    await expect(store.claim(runId, 90_000)).resolves.toBe("00000000-0000-4000-8000-000000000024")
+
+    const [run] = await database.select().from(agentRuns).where(eq(agentRuns.id, runId))
+    const attempts = await database.select().from(agentRunAttempts)
+    expect(run).toMatchObject({ status: "executing", activeAttemptId: attempts[0]?.id })
+    expect(attempts).toHaveLength(1)
   })
 
   it("keeps versioned runs separate when two revisions use the same response target", async () => {
@@ -779,6 +1051,12 @@ describe("D1 migrations and durability", () => {
       outputTokens: 1,
       toolCalls: 0
     }
+    const staleArtifact = {
+      kind: "plan" as const,
+      title: "Stale plan",
+      durationMinutes: null,
+      sections: [{ heading: "Steps", items: ["Do not persist"] }]
+    }
     await store.create(request, inboundId)
     const expiredAttemptId = await store.claim(runId, 1_000)
     expect(expiredAttemptId).toBeDefined()
@@ -789,12 +1067,19 @@ describe("D1 migrations and durability", () => {
     expect(
       await store.completeWithResponse(
         { ...result, responseText: "Stale response" },
-        { channelId, text: "Stale response", reasonCode: "agent_reply" },
+        {
+          channelId,
+          text: "Stale response",
+          reasonCode: "agent_reply",
+          artifact: staleArtifact
+        },
         undefined,
         expiredAttemptId!
       )
     ).toBeUndefined()
     expect(await database.select().from(outboxMessages)).toHaveLength(0)
+    expect(await database.select().from(artifacts)).toHaveLength(0)
+    expect(await database.select().from(artifactRevisions)).toHaveLength(0)
 
     const outboxId = await store.completeWithResponse(
       result,
@@ -868,7 +1153,73 @@ describe("D1 migrations and durability", () => {
     expect((await store.loadForInbound(inboundId))?.outboxId).toBe(outboxId)
   })
 
-  it("stores a training plan artifact and its dependent follow-up", async () => {
+  it("prepares the unguarded artifact write with the guarded artifact shape", async () => {
+    const { database, protection, ownerKey } = await seedRunData()
+    let next = 280
+    const ownerDataKey = { key: ownerKey, version: 1 }
+    const persistence = makeArtifactPersistence(
+      database,
+      protection,
+      {
+        load: async () => ownerDataKey,
+        ensure: async () => ownerDataKey
+      },
+      {
+        randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+      }
+    )
+    const artifact = {
+      kind: "plan" as const,
+      title: "Saturday errands",
+      durationMinutes: null,
+      sections: [{ heading: "Stops", items: ["Market", "Pharmacy"] }]
+    }
+    const createdAt = "2026-08-11T10:00:00.000Z"
+    const plan = await persistence.prepareRunRevision({
+      ownerId,
+      channelId,
+      artifact,
+      sourceIds: [messageId],
+      runId,
+      correlationId,
+      dependsOnOutboxId: "00000000-0000-4000-8000-000000000279",
+      createdAt
+    })
+
+    await database.batch([...plan.statements])
+
+    expect(await database.select().from(artifacts)).toEqual([
+      expect.objectContaining({ id: plan.artifactId, currentRevision: 1, kind: "plan" })
+    ])
+    expect(await database.select().from(artifactRevisions)).toEqual([
+      expect.objectContaining({
+        artifactId: plan.artifactId,
+        revision: 1,
+        sourceIdsJson: JSON.stringify([messageId]),
+        createdByRunId: runId
+      })
+    ])
+    expect(await database.select().from(outboxMessages)).toEqual([
+      expect.objectContaining({
+        id: plan.outboxId,
+        reasonCode: "agent_artifact",
+        artifactId: plan.artifactId,
+        artifactRevision: 1,
+        dispatchGeneration: 0,
+        recoveryCount: 0
+      })
+    ])
+    await expect(
+      makeArtifactStore(database, protection).latest(ownerId, channelId)
+    ).resolves.toEqual({
+      id: plan.artifactId,
+      revision: 1,
+      artifact,
+      renderedText: "Saturday errands\n\nStops\n1. Market\n2. Pharmacy"
+    })
+  })
+
+  it("stores a training plan artifact through the guarded persistence plan", async () => {
     const { database, protection, ownerKey } = await seedRunData()
     let next = 300
     const store = makeAgentRunStore(database, protection, {
@@ -1080,59 +1431,6 @@ describe("D1 migrations and durability", () => {
       artifact: revisedArtifact,
       renderedText: expect.stringContaining("1. Hammer curl — 3 × 10–12")
     })
-  })
-
-  it("repairs a completed run that has no response outbox", async () => {
-    const { database, protection } = await seedRunData()
-    const request = {
-      protocolVersion: 1 as const,
-      runId,
-      ownerId,
-      correlationId,
-      sourceMessageId: messageId,
-      localTime: "2026-08-11T10:00:00.000Z",
-      timeZone: "Europe/Stockholm",
-      userText: "Hello",
-      contextItems: [],
-      allowedTools: [],
-      limits: {
-        maxTurns: 4,
-        maxToolCalls: 4,
-        maxDurationMs: 60_000,
-        maxResponseCharacters: 1_200
-      }
-    }
-    const runs = makeAgentRunStore(database, protection, {})
-    await runs.create(request, inboundId)
-    await database.update(agentRuns).set({ status: "completed" }).where(eq(agentRuns.id, runId))
-    const sent: unknown[] = []
-    const bindings = {
-      // SAFETY: This focused test double implements every platform member exercised by this test.
-      ...(env as CoreBindings),
-      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-      OUTBOUND_QUEUE: {
-        send: async (body: OutboundJob) => {
-          sent.push(body)
-        }
-      } as Queue
-    } satisfies CoreBindings
-
-    await processInbound(inboundId, bindings, composeCore(bindings))
-
-    const [outbox] = await database.select().from(outboxMessages)
-    const [event] = await database
-      .select()
-      .from(inboundEvents)
-      .where(eq(inboundEvents.id, inboundId))
-    expect(outbox?.reasonCode).toBe("agent_recovery")
-    expect(sent).toEqual([
-      {
-        outboxId: outbox?.id,
-        correlationId,
-        traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
-      }
-    ])
-    expect(event?.processedAt).not.toBeNull()
   })
 
   it("marks a lost channel result uncertain and never resends", async () => {
@@ -1503,8 +1801,7 @@ describe("D1 migrations and durability", () => {
         localTime: "23:00",
         timeZone: "Europe/Stockholm",
         dueAt: "2026-08-11T21:00:00.000Z",
-        sourceMessageId: messageId,
-        requiresAcknowledgment: true
+        sourceMessageId: messageId
       },
       "reminder:test:quiet-create"
     )
@@ -1541,8 +1838,7 @@ describe("D1 migrations and durability", () => {
         localTime: "17:00",
         timeZone: "America/New_York",
         dueAt: "2026-08-11T21:00:00.000Z",
-        sourceMessageId: messageId,
-        requiresAcknowledgment: true
+        sourceMessageId: messageId
       },
       "reminder:test:saved-zone"
     )
@@ -1584,8 +1880,7 @@ describe("D1 migrations and durability", () => {
         localTime: "11:30",
         timeZone: "Europe/Stockholm",
         dueAt: "2026-08-11T09:30:00.000Z",
-        sourceMessageId: messageId,
-        requiresAcknowledgment: true
+        sourceMessageId: messageId
       },
       "reminder:test:daily-create"
     )
@@ -1799,7 +2094,7 @@ describe("D1 migrations and durability", () => {
       database.insert(factRevisions).values({
         id: revisionId,
         factId,
-        valueJson: JSON.stringify("Tuesday"),
+        valueEnvelope: encodeMemoryValue(plainMemoryValue("Tuesday")),
         canonicalTextCiphertext: canonical.ciphertext,
         canonicalTextIv: canonical.iv,
         dataKeyVersion: 1,
@@ -1919,15 +2214,20 @@ describe("D1 migrations and durability", () => {
       .select()
       .from(searchDocuments)
       .where(eq(searchDocuments.sourceId, revisionId))
-    expect(candidate).toMatchObject({ proposedValueJson: "null" })
     expect(candidate?.sensitivity).toBe("high")
-    expect(candidate?.proposedValueCiphertext).not.toBeNull()
+    expect(decodeMemoryValue(candidate!.proposedValueEnvelope)).toMatchObject({
+      version: 1,
+      kind: "encrypted",
+      keyVersion: 1
+    })
+    expect(candidate!.proposedValueEnvelope).not.toContain("sensitive")
     expect(revision).toMatchObject({
-      valueJson: "null",
       modelEligible: false,
       channelEligible: false
     })
-    expect(revision?.valueCiphertext).not.toBeNull()
+    expect(decodeMemoryValue(revision!.valueEnvelope)).toEqual(
+      decodeMemoryValue(candidate!.proposedValueEnvelope)
+    )
     expect(indexed).toHaveLength(0)
   })
 
@@ -2292,6 +2592,418 @@ describe("D1 migrations and durability", () => {
     expect(revisions.length + replacements.length).toBeLessThanOrEqual(1)
   })
 
+  it("recovers an expired memory review with a fresh claim and result identity", async () => {
+    const { database, protection } = await seedRunData()
+    let next = 2_400
+    const memory = makeTestMemoryStore(database, protection, {
+      now: () => new Date("2026-08-11T10:00:00.000Z"),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const proposal = await memory.propose(
+      {
+        ownerId,
+        scope: "preferences",
+        key: "training_time",
+        value: "morning",
+        canonicalText: "I prefer morning training.",
+        assertionKind: "user_stated",
+        originClass: "owner_input",
+        sourceType: "message",
+        sourceId: messageId,
+        extractionConfidence: 0.9,
+        importance: 0.8,
+        explicitRemember: true,
+        authority: "agent"
+      },
+      "memory:expired-review:propose"
+    )
+    const claimId = "00000000-0000-4000-8000-000000002490"
+    const resultId = "00000000-0000-4000-8000-000000002491"
+    await database
+      .update(memoryCandidates)
+      .set({
+        status: "claimed",
+        reviewClaimAction: "confirm",
+        reviewClaimId: claimId,
+        reviewClaimExpiresAt: "2026-08-11T10:01:00.000Z",
+        reviewResultId: resultId
+      })
+      .where(eq(memoryCandidates.id, proposal.candidateId))
+
+    await expect(memory.listCandidates(ownerId)).resolves.toEqual([])
+    await expect(
+      memory.correct(
+        ownerId,
+        proposal.candidateId,
+        "I prefer evening training.",
+        "memory:expired-review:wrong-action"
+      )
+    ).rejects.toThrow("under review")
+
+    const recovered = makeTestMemoryStore(database, protection, {
+      now: () => new Date("2026-08-11T10:02:00.000Z"),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const recoveredResultId = await recovered.confirm(
+      ownerId,
+      proposal.candidateId,
+      "owner_ui",
+      "memory:expired-review:confirm"
+    )
+    expect(recoveredResultId).not.toBe(resultId)
+
+    const [reviewed] = await database
+      .select({
+        status: memoryCandidates.status,
+        claimAction: memoryCandidates.reviewClaimAction,
+        claimId: memoryCandidates.reviewClaimId,
+        claimExpiresAt: memoryCandidates.reviewClaimExpiresAt,
+        resultId: memoryCandidates.reviewResultId
+      })
+      .from(memoryCandidates)
+      .where(eq(memoryCandidates.id, proposal.candidateId))
+    expect(reviewed).toEqual({
+      status: "confirmed",
+      claimAction: null,
+      claimId: null,
+      claimExpiresAt: null,
+      resultId: null
+    })
+    await expect(database.select({ id: factRevisions.id }).from(factRevisions)).resolves.toEqual([
+      { id: recoveredResultId }
+    ])
+  })
+
+  it("keeps a failed memory review claimed and resumes it after expiry", async () => {
+    const { database, protection } = await seedRunData()
+    let currentTime = "2026-08-11T10:00:00.000Z"
+    let next = 2_500
+    const memory = makeTestMemoryStore(database, protection, {
+      now: () => new Date(currentTime),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const proposal = await memory.propose(
+      {
+        ownerId,
+        scope: "preferences",
+        key: "training_time",
+        value: "morning",
+        canonicalText: "I prefer morning training.",
+        assertionKind: "user_stated",
+        originClass: "owner_input",
+        sourceType: "message",
+        sourceId: messageId,
+        extractionConfidence: 0.9,
+        importance: 0.8,
+        explicitRemember: true,
+        authority: "agent"
+      },
+      "memory:failed-review:propose"
+    )
+    const [candidate] = await database
+      .select()
+      .from(memoryCandidates)
+      .where(eq(memoryCandidates.id, proposal.candidateId))
+    if (candidate === undefined) throw new Error("The memory candidate was not created")
+    const originalResultId = "00000000-0000-4000-8000-000000002590"
+    const conflictingResultId = "00000000-0000-4000-8000-000000002503"
+    await database.insert(memoryCandidates).values({
+      ...candidate,
+      id: conflictingResultId,
+      status: "rejected",
+      reviewedAt: currentTime
+    })
+    await database
+      .update(memoryCandidates)
+      .set({
+        status: "claimed",
+        reviewClaimAction: "correct",
+        reviewClaimId: "00000000-0000-4000-8000-000000002591",
+        reviewClaimExpiresAt: "2026-08-11T10:01:00.000Z",
+        reviewResultId: originalResultId
+      })
+      .where(eq(memoryCandidates.id, proposal.candidateId))
+
+    currentTime = "2026-08-11T10:02:00.000Z"
+    await expect(
+      memory.correct(
+        ownerId,
+        proposal.candidateId,
+        "I prefer evening training.",
+        "memory:failed-review:correct"
+      )
+    ).rejects.toThrow()
+    const [failed] = await database
+      .select({
+        status: memoryCandidates.status,
+        action: memoryCandidates.reviewClaimAction,
+        expiresAt: memoryCandidates.reviewClaimExpiresAt,
+        resultId: memoryCandidates.reviewResultId
+      })
+      .from(memoryCandidates)
+      .where(eq(memoryCandidates.id, proposal.candidateId))
+    expect(failed).toEqual({
+      status: "claimed",
+      action: "correct",
+      expiresAt: "2026-08-11T10:03:00.000Z",
+      resultId: conflictingResultId
+    })
+
+    await database.delete(memoryCandidates).where(eq(memoryCandidates.id, conflictingResultId))
+    currentTime = "2026-08-11T10:04:00.000Z"
+    const recoveredResultId = await memory.correct(
+      ownerId,
+      proposal.candidateId,
+      "I prefer evening training.",
+      "memory:failed-review:correct"
+    )
+    expect(recoveredResultId).not.toBe(conflictingResultId)
+    const [reviewed] = await database
+      .select({ status: memoryCandidates.status })
+      .from(memoryCandidates)
+      .where(eq(memoryCandidates.id, proposal.candidateId))
+    expect(reviewed?.status).toBe("rejected")
+  })
+
+  it("rejects a stale Memory worker after an expired claim is replaced", async () => {
+    const { database, protection } = await seedRunData()
+    let next = 2_600
+    const proposalStore = makeTestMemoryStore(database, protection, {
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const proposal = await proposalStore.propose(
+      {
+        ownerId,
+        scope: "preferences",
+        key: "training_time",
+        value: "morning",
+        canonicalText: "I prefer morning training.",
+        sourceType: "message",
+        sourceId: messageId,
+        extractionConfidence: 0.9,
+        importance: 0.8,
+        explicitRemember: true,
+        authority: "agent"
+      },
+      "memory:stale-review:propose"
+    )
+    const [candidate] = await database
+      .select({ canonicalTextCiphertext: memoryCandidates.canonicalTextCiphertext })
+      .from(memoryCandidates)
+      .where(eq(memoryCandidates.id, proposal.candidateId))
+    if (candidate === undefined) throw new Error("The memory candidate was not created")
+
+    let markStarted: () => void = () => undefined
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    let allowFinish: () => void = () => undefined
+    const mayFinish = new Promise<void>((resolve) => {
+      allowFinish = resolve
+    })
+    const staleProtection: DataProtection = {
+      ...protection,
+      async decryptText(key, value) {
+        if (value.ciphertext === candidate.canonicalTextCiphertext) {
+          markStarted()
+          await mayFinish
+        }
+        return protection.decryptText(key, value)
+      }
+    }
+    const staleStore = makeTestMemoryStore(database, staleProtection, {
+      now: () => new Date("2026-08-11T10:00:00.000Z"),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const staleReview = staleStore.confirm(
+      ownerId,
+      proposal.candidateId,
+      "owner_ui",
+      "memory:stale-review:first"
+    )
+    await started
+
+    const replacementStore = makeTestMemoryStore(database, protection, {
+      now: () => new Date("2026-08-11T10:02:00.000Z"),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const replacementResultId = await replacementStore.confirm(
+      ownerId,
+      proposal.candidateId,
+      "owner_ui",
+      "memory:stale-review:replacement"
+    )
+    allowFinish()
+    await expect(staleReview).rejects.toThrow()
+
+    await expect(database.select({ id: factRevisions.id }).from(factRevisions)).resolves.toEqual([
+      { id: replacementResultId }
+    ])
+    await expect(database.select().from(memoryReviewClaimGuards)).resolves.toEqual([])
+  })
+
+  it.each(["source_changed", "source_deleted"] as const)(
+    "fences an in-flight Memory confirmation when its source is %s",
+    async (reason) => {
+      const { database, protection } = await seedRunData()
+      let next = reason === "source_changed" ? 2_700 : 2_800
+      const proposalStore = makeTestMemoryStore(database, protection, {
+        randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+      })
+      const proposal = await proposalStore.propose(
+        {
+          ownerId,
+          scope: "preferences",
+          key: "training_time",
+          value: "morning",
+          canonicalText: "I prefer morning training.",
+          sourceType: "message",
+          sourceId: messageId,
+          extractionConfidence: 0.9,
+          importance: 0.8,
+          explicitRemember: true,
+          authority: "agent"
+        },
+        `memory:source-race:${reason}:propose`
+      )
+      const [candidate] = await database
+        .select({ canonicalTextCiphertext: memoryCandidates.canonicalTextCiphertext })
+        .from(memoryCandidates)
+        .where(eq(memoryCandidates.id, proposal.candidateId))
+      if (candidate === undefined) throw new Error("The memory candidate was not created")
+
+      let markStarted: () => void = () => undefined
+      const started = new Promise<void>((resolve) => {
+        markStarted = resolve
+      })
+      let allowFinish: () => void = () => undefined
+      const mayFinish = new Promise<void>((resolve) => {
+        allowFinish = resolve
+      })
+      const pausedProtection: DataProtection = {
+        ...protection,
+        async decryptText(key, value) {
+          if (value.ciphertext === candidate.canonicalTextCiphertext) {
+            markStarted()
+            await mayFinish
+          }
+          return protection.decryptText(key, value)
+        }
+      }
+      const memory = makeTestMemoryStore(database, pausedProtection, {
+        now: () => new Date("2026-08-11T10:00:00.000Z"),
+        randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+      })
+      const review = memory.confirm(
+        ownerId,
+        proposal.candidateId,
+        "owner_ui",
+        `memory:source-race:${reason}:confirm`
+      )
+      await started
+
+      const statements = await prepareMemorySourceWithdrawal(database, {
+        ownerId,
+        sourceTypes: ["message"],
+        sourceId: messageId,
+        reason,
+        at: "2026-08-11T10:00:30.000Z"
+      })
+      const [first, ...remaining] = statements
+      if (first === undefined) throw new Error("Memory source withdrawal returned no statements")
+      await database.batch([first, ...remaining])
+      allowFinish()
+      await expect(review).rejects.toThrow()
+
+      await expect(database.select().from(factRevisions)).resolves.toEqual([])
+      const [withdrawn] = await database
+        .select({ status: memoryCandidates.status })
+        .from(memoryCandidates)
+        .where(eq(memoryCandidates.id, proposal.candidateId))
+      if (reason === "source_changed") expect(withdrawn?.status).toBe("rejected")
+      else expect(withdrawn).toBeUndefined()
+    }
+  )
+
+  it.each(["source_changed", "source_deleted"] as const)(
+    "withdraws a confirmation that commits after %s planning",
+    async (reason) => {
+      const { database, protection } = await seedRunData()
+      let next = reason === "source_changed" ? 2_900 : 3_000
+      const memory = makeTestMemoryStore(database, protection, {
+        randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+      })
+      const proposal = await memory.propose(
+        {
+          ownerId,
+          scope: "preferences",
+          key: "training_time",
+          value: "morning",
+          canonicalText: "I prefer morning training.",
+          sourceType: "message",
+          sourceId: messageId,
+          extractionConfidence: 0.9,
+          importance: 0.8,
+          explicitRemember: true,
+          authority: "agent"
+        },
+        `memory:planned-source-race:${reason}:propose`
+      )
+      const statements = await prepareMemorySourceWithdrawal(database, {
+        ownerId,
+        sourceTypes: ["message"],
+        sourceId: messageId,
+        reason,
+        at: "2026-08-11T10:01:00.000Z"
+      })
+
+      const revisionId = await memory.confirm(
+        ownerId,
+        proposal.candidateId,
+        "owner_ui",
+        `memory:planned-source-race:${reason}:confirm`
+      )
+      const [first, ...remaining] = statements
+      if (first === undefined) throw new Error("Memory source withdrawal returned no statements")
+      await database.batch([first, ...remaining])
+
+      const [revision] = await database
+        .select({
+          verificationStatus: factRevisions.verificationStatus,
+          modelEligible: factRevisions.modelEligible,
+          channelEligible: factRevisions.channelEligible
+        })
+        .from(factRevisions)
+        .where(eq(factRevisions.id, revisionId))
+      expect(revision).toEqual({
+        verificationStatus: "disputed",
+        modelEligible: false,
+        channelEligible: false
+      })
+      await expect(
+        database.select().from(factEvidence).where(eq(factEvidence.revisionId, revisionId))
+      ).resolves.toEqual([])
+      const [fact] = await database
+        .select({ currentRevisionId: facts.currentRevisionId })
+        .from(facts)
+        .where(eq(facts.userId, ownerId))
+      expect(fact?.currentRevisionId).toBeNull()
+      const [projection] = await database
+        .select({
+          text: searchDocuments.text,
+          modelEligible: searchDocuments.modelEligible,
+          deletedAt: searchDocuments.deletedAt
+        })
+        .from(searchDocuments)
+        .where(eq(searchDocuments.sourceId, revisionId))
+      expect(projection).toEqual({
+        text: "",
+        modelEligible: false,
+        deletedAt: "2026-08-11T10:01:00.000Z"
+      })
+    }
+  )
+
   it("recovers an expired tool lease without losing idempotency", async () => {
     const { database, protection } = await seedRunData()
     const runStore = makeAgentRunStore(database, protection, {
@@ -2573,6 +3285,91 @@ describe("D1 migrations and durability", () => {
         "training:unverified:save"
       )
     ).rejects.toThrow("approval evidence")
+  })
+
+  it("permits one active workout, preserves replay, and permits a new session after finish", async () => {
+    const { database } = await seedRunData()
+    let next = 1300
+    const training = makeTrainingStore(database, {
+      now: () => new Date("2026-08-11T10:00:00.000Z"),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const exerciseId = await training.createExercise(
+      ownerId,
+      "Squat",
+      undefined,
+      "training:single-active:exercise"
+    )
+    const routineId = await training.saveRoutine(
+      {
+        ownerId,
+        name: "Single active routine",
+        approvalEvidence: { sourceType: "owner_message", sourceId: messageId },
+        steps: [{ exerciseId, targetSets: 3, targetReps: 5 }]
+      },
+      "training:single-active:routine"
+    )
+    const sessionId = await training.startWorkout(
+      ownerId,
+      routineId,
+      undefined,
+      "training:single-active:first"
+    )
+
+    await expect(
+      training.startWorkout(ownerId, routineId, undefined, "training:single-active:first")
+    ).resolves.toBe(sessionId)
+    await expect(
+      training.startWorkout(ownerId, routineId, undefined, "training:single-active:second")
+    ).rejects.toThrow("An active workout already exists for the owner")
+
+    await training.finishWorkout(ownerId, sessionId, "training:single-active:finish")
+    await expect(
+      training.startWorkout(ownerId, routineId, undefined, "training:single-active:after-finish")
+    ).resolves.not.toBe(sessionId)
+  })
+
+  it("lets only one concurrent workout start succeed", async () => {
+    const { database } = await seedRunData()
+    let next = 1400
+    const training = makeTrainingStore(database, {
+      now: () => new Date("2026-08-11T10:00:00.000Z"),
+      randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
+    })
+    const exerciseId = await training.createExercise(
+      ownerId,
+      "Deadlift",
+      undefined,
+      "training:concurrent:exercise"
+    )
+    const routineId = await training.saveRoutine(
+      {
+        ownerId,
+        name: "Concurrent start routine",
+        approvalEvidence: { sourceType: "owner_message", sourceId: messageId },
+        steps: [{ exerciseId, targetSets: 1, targetReps: 5 }]
+      },
+      "training:concurrent:routine"
+    )
+
+    const results = await Promise.allSettled([
+      training.startWorkout(ownerId, routineId, undefined, "training:concurrent:first"),
+      training.startWorkout(ownerId, routineId, undefined, "training:concurrent:second")
+    ])
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1)
+    expect(results.filter(({ status }) => status === "rejected")).toHaveLength(1)
+    const [rejected] = results.filter(({ status }) => status === "rejected")
+    expect(rejected).toMatchObject({
+      reason: expect.objectContaining({
+        message: "An active workout already exists for the owner"
+      })
+    })
+    await expect(
+      database
+        .select({ id: workoutSessions.id })
+        .from(workoutSessions)
+        .where(and(eq(workoutSessions.userId, ownerId), eq(workoutSessions.status, "active")))
+    ).resolves.toHaveLength(1)
   })
 
   it("lists stable owner training IDs through bounded assistant tools", async () => {

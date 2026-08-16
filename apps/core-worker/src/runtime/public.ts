@@ -3,7 +3,7 @@ export { composeCoreWithRuntime } from "../composition.ts"
 export { createCoreDatabase } from "../database.ts"
 export { handleHttp } from "../entrypoints/http.ts"
 export { handleScheduled } from "../entrypoints/scheduled.ts"
-export { processConversationTurn, processInbound } from "../process-inbound.ts"
+export { processConversationTurn } from "../process-inbound.ts"
 export type { CoreJobQueue, CoreRuntimeAdapters } from "./core-runtime.ts"
 export {
   makeOwnerWakeJobProcessor,

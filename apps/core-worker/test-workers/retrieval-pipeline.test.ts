@@ -105,7 +105,7 @@ describe("Retrieval pipeline", () => {
     const result = await retrieval.retrieve(query("favorite tea"))
     expect(result).toMatchObject({
       status: "supported",
-      items: [{ text: "Favorite tea is mint" }]
+      items: [{ kind: "candidate", item: { text: "Favorite tea is mint" } }]
     })
     await expect(retrieval.retrieve(query("hidden"))).resolves.toMatchObject({
       status: "abstain",
@@ -133,11 +133,11 @@ describe("Retrieval pipeline", () => {
 
     await expect(retrieval.retrieve(query("desk"))).resolves.toMatchObject({
       status: "supported",
-      items: [{ sourceId: "desk-current", conflict: false }]
+      items: [{ kind: "candidate", item: { sourceId: "desk-current" } }]
     })
     await expect(retrieval.retrieve(query("desk as of 2025-06-01"))).resolves.toMatchObject({
       status: "supported",
-      items: [{ sourceId: "desk-old", conflict: false }]
+      items: [{ kind: "candidate", item: { sourceId: "desk-old" } }]
     })
   })
 
@@ -160,8 +160,11 @@ describe("Retrieval pipeline", () => {
     await expect(retrieval.retrieve(query("desk"))).resolves.toMatchObject({
       status: "supported",
       items: [
-        { sourceId: "desk-a", conflict: true },
-        { sourceId: "desk-b", conflict: true }
+        {
+          kind: "conflict_group",
+          conflictKey: "desk",
+          items: [{ sourceId: "desk-a" }, { sourceId: "desk-b" }]
+        }
       ]
     })
     await expect(
@@ -187,7 +190,7 @@ describe("Retrieval pipeline", () => {
 
     await expect(retrieval.retrieve(query("breakfast yesterday"))).resolves.toMatchObject({
       status: "supported",
-      items: [{ text: "Breakfast was oatmeal" }]
+      items: [{ kind: "candidate", item: { text: "Breakfast was oatmeal" } }]
     })
   })
 
@@ -207,7 +210,7 @@ describe("Retrieval pipeline", () => {
     })
     await expect(retrieval.retrieve(query("coffee"))).resolves.toMatchObject({
       status: "supported",
-      items: [{ text: "Favorite drink is coffee" }]
+      items: [{ kind: "candidate", item: { text: "Favorite drink is coffee" } }]
     })
   })
 })

@@ -12,9 +12,11 @@ import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../policy/owner-data-key.ts"
 
 import { JsonObject } from "../../json.ts"
-import { agentRuns, conversationTurns, inboundEvents, toolCalls, users } from "./schema.ts"
+import { makeOwnerDataKeyStore } from "../policy/owner-data-key.ts"
+import { agentRuns, conversationTurns, inboundEvents, toolCalls } from "./schema.ts"
 import {
   type ToolCommandAdapterContext,
   type ToolAdapterRegistry,
@@ -216,19 +218,11 @@ function latestFragmentBlocksMutation(request: typeof AgentRunRequest.Type): boo
   return mutationReviewQuestion.test(normalized) && !directMutationRequestQuestion.test(normalized)
 }
 
-function capabilityOwns(
-  catalogue: CapabilityCatalogue,
-  name: ToolName,
-  policy: "readOnly" | "externalOutcomeUnknown"
-): boolean {
-  return catalogue.modules.some((module) => module[policy].includes(name))
-}
-
 export function expiredToolCallOutcome(
   name: ToolName,
   catalogue: CapabilityCatalogue
 ): ToolResult | undefined {
-  if (!capabilityOwns(catalogue, name, "externalOutcomeUnknown")) return undefined
+  if (!catalogue.hasUnknownExternalOutcome(name)) return undefined
   return {
     ok: false,
     code: "external_outcome_unknown",
@@ -245,34 +239,23 @@ export function makeToolExecutor(
     readonly now?: () => Date
     readonly randomUuid?: () => string
     readonly toolLeaseMs?: number
+    readonly ownerDataKeys?: OwnerDataKeyStore
   }
 ): ToolExecutor {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const toolLeaseMs = options.toolLeaseMs ?? 60_000
-  const isReadOnly = (name: ToolName) => capabilityOwns(registry.catalogue, name, "readOnly")
+  const ownerDataKeys =
+    options.ownerDataKeys ??
+    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
+  const isReadOnly = (name: ToolName) => registry.catalogue.isReadOnly(name)
   const mutatingToolNames = registry.catalogue.names.filter((name) => !isReadOnly(name))
-  async function ownerKey(ownerId: string): Promise<CryptoKey> {
-    const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
-    if (
-      owner?.wrappedDataKey === null ||
-      owner?.wrappedDataKey === undefined ||
-      owner.wrappedDataKeyIv === null ||
-      owner.wrappedDataKeyIv === undefined ||
-      owner.dataKeyVersion === null ||
-      owner.dataKeyVersion === undefined
-    ) {
-      throw new Error("Owner data key is unavailable")
-    }
-    return protection.unwrapDataKey({
-      ciphertext: owner.wrappedDataKey,
-      iv: owner.wrappedDataKeyIv,
-      version: owner.dataKeyVersion
-    })
-  }
 
   async function encodePrivate<Input>(ownerId: string, value: Input): Promise<string> {
-    const encrypted = await protection.encryptText(await ownerKey(ownerId), JSON.stringify(value))
+    const encrypted = await protection.encryptText(
+      (await ownerDataKeys.load(ownerId)).key,
+      JSON.stringify(value)
+    )
     return JSON.stringify(encrypted)
   }
 
@@ -280,7 +263,10 @@ export function makeToolExecutor(
     const encrypted = Schema.decodeUnknownSync(
       Schema.Struct({ ciphertext: Schema.String, iv: Schema.String })
     )(JSON.parse(value))
-    const plaintext = await protection.decryptText(await ownerKey(ownerId), encrypted)
+    const plaintext = await protection.decryptText(
+      (await ownerDataKeys.load(ownerId)).key,
+      encrypted
+    )
     return Schema.decodeUnknownSync(ToolResult)(JSON.parse(plaintext))
   }
 
@@ -296,7 +282,9 @@ export function makeToolExecutor(
       Schema.Struct({ ciphertext: Schema.String, iv: Schema.String, keyVersion: Schema.Number })
     )(JSON.parse(row.run.inputSnapshotJson))
     const request = Schema.decodeUnknownSync(AgentRunRequest)(
-      JSON.parse(await protection.decryptText(await ownerKey(row.run.userId), envelope))
+      JSON.parse(
+        await protection.decryptText((await ownerDataKeys.load(row.run.userId)).key, envelope)
+      )
     )
     if (request.sourceMessageId !== row.inbound.messageId) {
       throw new Error("Agent source snapshot does not match the inbound message")

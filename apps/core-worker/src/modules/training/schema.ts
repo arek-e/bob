@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm"
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
 
 export const gyms = sqliteTable("gyms", {
@@ -117,7 +118,12 @@ export const workoutSessions = sqliteTable(
     finishedAt: text("finished_at"),
     createdAt: text("created_at").notNull()
   },
-  (table) => [index("workout_sessions_history_idx").on(table.userId, table.startedAt)]
+  (table) => [
+    index("workout_sessions_history_idx").on(table.userId, table.startedAt),
+    uniqueIndex("workout_sessions_one_active_uq")
+      .on(table.userId)
+      .where(sql`${table.status} = 'active'`)
+  ]
 )
 
 export const workoutSets = sqliteTable(

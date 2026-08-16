@@ -72,13 +72,18 @@ export const transitionalRuntimeProfile: DeploymentRuntimeProfile<TransitionalEx
         end: config.REMINDER_QUIET_HOURS_END,
         timeZone: context.ownerTimeZone
       },
-      dailyLimit: config.REMINDER_DAILY_LIMIT
+      dailyLimit: config.REMINDER_DAILY_LIMIT,
+      ownerDataKeys: context.ownerDataKeys
     })
-    const journal = makeJournalStore(context.database, context.protection, {})
+    const journal = makeJournalStore(context.database, context.protection, {
+      ownerDataKeys: context.ownerDataKeys
+    })
     const trainingStore = makeTrainingStore(context.database, {})
     const training = makeTrainingModule(
       trainingStore,
-      makeTrainingProposalStore(context.database, context.protection, trainingStore, {})
+      makeTrainingProposalStore(context.database, context.protection, trainingStore, {
+        ownerDataKeys: context.ownerDataKeys
+      })
     )
     return {
       evidenceSources: [

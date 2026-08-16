@@ -166,8 +166,7 @@ function createReminder(
       localTime: "13:00",
       timeZone: "Europe/Stockholm",
       dueAt: "2026-08-11T11:00:00.000Z",
-      sourceMessageId: messageId,
-      requiresAcknowledgment: true
+      sourceMessageId: messageId
     },
     idempotencyKey
   )
@@ -294,8 +293,7 @@ describe("reminder tools", () => {
         localTime: "13:00",
         timeZone: "Europe/Stockholm",
         dueAt: "2026-08-11T11:00:00.000Z",
-        sourceMessageId: messageId,
-        requiresAcknowledgment: true
+        sourceMessageId: messageId
       }
     })
     expect(created).toMatchObject({ ok: true, code: "reminder_created" })
@@ -326,6 +324,30 @@ describe("reminder tools", () => {
         ]
       }
     })
+  })
+
+  it("accepts an in-flight command with the retired acknowledgment field", async () => {
+    const { executor } = await reminderToolFixture()
+
+    await expect(
+      executor.execute({
+        runId,
+        toolCallId: "legacy-create-1",
+        idempotencyKey: "reminder-tool:legacy-create-1",
+        ownerId,
+        name: "reminder_create",
+        arguments: {
+          displayText: "Lunch",
+          smsSafeText: "Lunch",
+          localDate: "2026-08-11",
+          localTime: "13:00",
+          timeZone: "Europe/Stockholm",
+          dueAt: "2026-08-11T11:00:00.000Z",
+          sourceMessageId: messageId,
+          requiresAcknowledgment: false
+        }
+      })
+    ).resolves.toMatchObject({ ok: true, code: "reminder_created" })
   })
 
   it("marks one exact delivered occurrence as seen idempotently", async () => {
@@ -633,8 +655,7 @@ describe("reminder tools", () => {
         localTime: "13:00",
         timeZone: "Europe/Stockholm",
         dueAt: "2026-08-11T11:00:00.000Z",
-        sourceMessageId: messageId,
-        requiresAcknowledgment: true
+        sourceMessageId: messageId
       }
     })
 
@@ -648,8 +669,7 @@ describe("reminder tools", () => {
       smsSafeText: "Lunch",
       localDate: "2026-08-11",
       timeZone: "Europe/Stockholm",
-      sourceMessageId: messageId,
-      requiresAcknowledgment: true
+      sourceMessageId: messageId
     }
     const mismatched = await executor.execute({
       runId,
@@ -697,8 +717,7 @@ describe("reminder tools", () => {
           localTime: "13:00",
           timeZone: "Europe/Stockholm",
           dueAt: "2026-08-12T11:00:00.000Z",
-          sourceMessageId: messageId,
-          requiresAcknowledgment: true
+          sourceMessageId: messageId
         }
       })
     ).resolves.toMatchObject({ ok: false, code: "confirmation_required" })
@@ -721,8 +740,7 @@ describe("reminder tools", () => {
           localTime: "13:00",
           timeZone: "Europe/Stockholm",
           dueAt: "2026-08-12T11:00:00.000Z",
-          sourceMessageId: messageId,
-          requiresAcknowledgment: true
+          sourceMessageId: messageId
         }
       })
     ).resolves.toMatchObject({ ok: true, code: "reminder_created" })

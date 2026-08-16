@@ -1,4 +1,5 @@
 import { settingsCapability, SettingsUpdateArguments } from "@bob/contracts/capabilities/settings"
+import { capabilityToolNames } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
 import type {
@@ -15,7 +16,7 @@ export function makeSettingsToolAdapter(
 ): ToolCommandAdapter {
   return {
     capabilityId: settingsCapability.id,
-    names: settingsCapability.names,
+    names: capabilityToolNames(settingsCapability),
     async execute({ command, run }: ToolCommandAdapterContext) {
       switch (command.name) {
         case "settings_get": {

@@ -2,6 +2,7 @@ import {
   connectionsCapability,
   ConnectionProviderArguments
 } from "@bob/contracts/capabilities/connections"
+import { capabilityToolNames } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
 import type {
@@ -17,7 +18,7 @@ export function makeConnectionsToolAdapter(
 ): ToolCommandAdapter {
   return {
     capabilityId: connectionsCapability.id,
-    names: connectionsCapability.names,
+    names: capabilityToolNames(connectionsCapability),
     async execute({ command }: ToolCommandAdapterContext) {
       switch (command.name) {
         case "connection_list":

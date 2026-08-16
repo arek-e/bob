@@ -19,10 +19,7 @@ describe("Pi smoke launcher", () => {
           .join(" "),
         BAO_ADDR: "https://openbao.example.test",
         BAO_JWT_ROLE: "",
-        AGENT_URL: "https://agent.example.test",
         AGENT_ADMIN_URL: "https://agent-admin.example.test",
-        AGENT_ACCESS_CLIENT_ID: "test-run-client",
-        AGENT_ACCESS_CLIENT_SECRET: "test-run-secret",
         AGENT_ADMIN_ACCESS_CLIENT_ID: "test-admin-client",
         AGENT_ADMIN_ACCESS_CLIENT_SECRET: "test-admin-secret"
       },
@@ -50,10 +47,7 @@ describe("Pi smoke launcher", () => {
             .join(" "),
           BAO_ADDR: "https://openbao.example.test",
           BAO_JWT_ROLE: "",
-          AGENT_URL: "https://agent.example.test",
           AGENT_ADMIN_URL: "https://agent-admin.example.test",
-          AGENT_ACCESS_CLIENT_ID: "test-run-client",
-          AGENT_ACCESS_CLIENT_SECRET: "test-run-secret",
           AGENT_ADMIN_ACCESS_CLIENT_ID: "test-admin-client",
           AGENT_ADMIN_ACCESS_CLIENT_SECRET: "test-admin-secret"
         },
@@ -62,7 +56,7 @@ describe("Pi smoke launcher", () => {
 
       expect(result.stderr).not.toContain("varlock ENV not initialized")
       expect(result.stdout).toContain('"predeploy":"completed"')
-      expect(result.stdout).toContain('"structured-completion"')
+      expect(result.stdout).toContain('"model-completion"')
       expect(result.stdout).not.toContain("training")
     }
   )

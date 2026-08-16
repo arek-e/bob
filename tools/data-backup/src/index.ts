@@ -3,56 +3,51 @@ import { join } from "node:path"
 
 import { decryptArchive, encryptArchive } from "./archive.ts"
 import { makeCloudflareBackupSource } from "./cloudflare.ts"
+import {
+  decodeBackupCommandConfiguration,
+  parseBackupCommand,
+  type BackupConfiguration,
+  type RestoreDrillConfiguration,
+  type VerifyConfiguration
+} from "./config.ts"
 import { ENV } from "./environment.generated.ts"
 import { uploadEncryptedBackup, writeEncryptedBackup } from "./persistence.ts"
 import { makeRestoreDrill } from "./restore.ts"
 import { expiredBackupNames } from "./retention.ts"
 
-async function backup(): Promise<void> {
+async function backup(configuration: BackupConfiguration): Promise<void> {
   const source = makeCloudflareBackupSource({
-    accountId: ENV.CLOUDFLARE_ACCOUNT_ID,
-    databaseId: ENV.CLOUDFLARE_D1_DATABASE_ID,
-    apiToken: ENV.CLOUDFLARE_API_TOKEN,
-    r2Bucket: ENV.R2_BUCKET,
-    r2Endpoint: ENV.R2_ENDPOINT,
-    r2AccessKeyId: ENV.R2_ACCESS_KEY_ID,
-    r2SecretAccessKey: ENV.R2_SECRET_ACCESS_KEY
+    accountId: configuration.source.accountId,
+    databaseId: configuration.source.databaseId,
+    apiToken: configuration.source.apiToken,
+    r2Bucket: configuration.source.r2Bucket,
+    r2Endpoint: configuration.source.r2Endpoint,
+    r2AccessKeyId: configuration.source.r2AccessKeyId,
+    r2SecretAccessKey: configuration.source.r2SecretAccessKey
   })
   const archive = await source.export()
-  const ciphertext = await encryptArchive(archive, ENV.BACKUP_AGE_RECIPIENT, ENV.BACKUP_MAX_BYTES)
+  const ciphertext = await encryptArchive(archive, configuration.recipient, configuration.maxBytes)
   const filename = `bob-${archive.createdAt.replaceAll(":", "-")}.json.gz.age`
   await writeEncryptedBackup({
-    outputDirectory: ENV.BACKUP_OUTPUT_DIRECTORY,
+    outputDirectory: configuration.outputDirectory,
     filename,
     ciphertext
   })
-  const copyConfiguration = [
-    ENV.BACKUP_COPY_ENDPOINT,
-    ENV.BACKUP_COPY_REGION,
-    ENV.BACKUP_COPY_BUCKET,
-    ENV.BACKUP_COPY_ACCESS_KEY_ID,
-    ENV.BACKUP_COPY_SECRET_ACCESS_KEY
-  ]
-  const configuredCopyFields = copyConfiguration.filter((value) => value !== undefined).length
-  if (configuredCopyFields !== 0 && configuredCopyFields !== copyConfiguration.length) {
-    throw new Error("Set all independent backup copy fields together")
-  }
-  const independentCopy = configuredCopyFields === copyConfiguration.length
-  if (independentCopy) {
+  if (configuration.independentCopy.state === "configured") {
     await uploadEncryptedBackup({
-      endpoint: ENV.BACKUP_COPY_ENDPOINT!,
-      region: ENV.BACKUP_COPY_REGION!,
-      bucket: ENV.BACKUP_COPY_BUCKET!,
-      prefix: ENV.BACKUP_COPY_PREFIX,
+      endpoint: configuration.independentCopy.endpoint,
+      region: configuration.independentCopy.region,
+      bucket: configuration.independentCopy.bucket,
+      prefix: configuration.independentCopy.prefix,
       filename,
       ciphertext,
-      accessKeyId: ENV.BACKUP_COPY_ACCESS_KEY_ID!,
-      secretAccessKey: ENV.BACKUP_COPY_SECRET_ACCESS_KEY!
+      accessKeyId: configuration.independentCopy.accessKeyId,
+      secretAccessKey: configuration.independentCopy.secretAccessKey
     })
   }
-  const backups = await readdir(ENV.BACKUP_OUTPUT_DIRECTORY)
-  for (const expired of expiredBackupNames(backups, ENV.BACKUP_RETENTION_COUNT)) {
-    await unlink(join(ENV.BACKUP_OUTPUT_DIRECTORY, expired))
+  const backups = await readdir(configuration.outputDirectory)
+  for (const expired of expiredBackupNames(backups, configuration.retentionCount)) {
+    await unlink(join(configuration.outputDirectory, expired))
   }
   console.log(
     JSON.stringify({
@@ -60,20 +55,18 @@ async function backup(): Promise<void> {
       filename,
       tableCount: archive.tables.length,
       objectCount: archive.objects.length,
-      independentCopy: independentCopy ? "completed" : "disabled",
+      independentCopy:
+        configuration.independentCopy.state === "configured" ? "completed" : "disabled",
       startedAt: archive.cutoffStartedAt,
       finishedAt: archive.cutoffFinishedAt
     })
   )
 }
 
-async function verify(): Promise<void> {
-  if (ENV.BACKUP_INPUT_FILE === undefined || ENV.BACKUP_AGE_IDENTITY_FILE === undefined) {
-    throw new Error("Backup input and identity files are required for verification")
-  }
+async function verify(configuration: VerifyConfiguration): Promise<void> {
   const [ciphertext, identity] = await Promise.all([
-    readFile(ENV.BACKUP_INPUT_FILE),
-    readFile(ENV.BACKUP_AGE_IDENTITY_FILE, "utf8")
+    readFile(configuration.inputFile),
+    readFile(configuration.identityFile, "utf8")
   ])
   const archive = await decryptArchive(ciphertext, identity)
   console.log(
@@ -87,38 +80,27 @@ async function verify(): Promise<void> {
   )
 }
 
-async function restoreDrill(): Promise<void> {
-  if (
-    ENV.BACKUP_INPUT_FILE === undefined ||
-    ENV.BACKUP_AGE_IDENTITY_FILE === undefined ||
-    ENV.CLOUDFLARE_RESTORE_API_TOKEN === undefined ||
-    ENV.R2_RESTORE_ACCESS_KEY_ID === undefined ||
-    ENV.R2_RESTORE_SECRET_ACCESS_KEY === undefined
-  ) {
-    throw new Error(
-      "Backup input, identity, and recovery credentials are required for a restore drill"
-    )
-  }
+async function restoreDrill(configuration: RestoreDrillConfiguration): Promise<void> {
   const [ciphertext, identity] = await Promise.all([
-    readFile(ENV.BACKUP_INPUT_FILE),
-    readFile(ENV.BACKUP_AGE_IDENTITY_FILE, "utf8")
+    readFile(configuration.inputFile),
+    readFile(configuration.identityFile, "utf8")
   ])
   const archive = await decryptArchive(ciphertext, identity)
   const drill = makeRestoreDrill({
-    accountId: ENV.CLOUDFLARE_ACCOUNT_ID,
-    apiToken: ENV.CLOUDFLARE_RESTORE_API_TOKEN,
-    migrationsDirectory: ENV.BACKUP_MIGRATIONS_DIRECTORY,
-    databasePrefix: ENV.BACKUP_RESTORE_DATABASE_PREFIX,
-    r2BucketPrefix: ENV.BACKUP_RESTORE_BUCKET_PREFIX,
-    r2Endpoint: ENV.R2_ENDPOINT,
-    r2AccessKeyId: ENV.R2_RESTORE_ACCESS_KEY_ID,
-    r2SecretAccessKey: ENV.R2_RESTORE_SECRET_ACCESS_KEY
+    accountId: configuration.recovery.accountId,
+    apiToken: configuration.recovery.apiToken,
+    migrationsDirectory: configuration.recovery.migrationsDirectory,
+    databasePrefix: configuration.recovery.databasePrefix,
+    r2BucketPrefix: configuration.recovery.r2BucketPrefix,
+    r2Endpoint: configuration.recovery.r2Endpoint,
+    r2AccessKeyId: configuration.recovery.r2AccessKeyId,
+    r2SecretAccessKey: configuration.recovery.r2SecretAccessKey
   })
   console.log(JSON.stringify(await drill.run(archive)))
 }
 
-const command = process.argv[2]
-if (command === "backup") await backup()
-else if (command === "verify") await verify()
-else if (command === "restore-drill") await restoreDrill()
-else throw new Error("Use backup, verify, or restore-drill")
+const command = parseBackupCommand(process.argv[2])
+const configuration = decodeBackupCommandConfiguration(command, ENV)
+if (configuration.command === "backup") await backup(configuration)
+else if (configuration.command === "verify") await verify(configuration)
+else await restoreDrill(configuration)

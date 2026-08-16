@@ -107,24 +107,28 @@ describe("Context source Modules", () => {
         temporal: { mode: "current", at: request.localTime },
         items: [
           {
-            id: "a",
-            sourceId: "source-a",
-            sourceType: "record",
-            memoryClass: "owner_fact",
-            text: "Desk is upstairs.",
-            sourceLabel: "Owner correction A",
+            kind: "conflict_group",
             conflictKey: "desk",
-            conflict: true
-          },
-          {
-            id: "b",
-            sourceId: "source-b",
-            sourceType: "record",
-            memoryClass: "owner_fact",
-            text: "Desk is downstairs.",
-            sourceLabel: "Owner correction B",
-            conflictKey: "desk",
-            conflict: true
+            items: [
+              {
+                id: "a",
+                sourceId: "source-a",
+                sourceType: "record",
+                memoryClass: "owner_fact",
+                text: "Desk is upstairs.",
+                sourceLabel: "Owner correction A",
+                conflictKey: "desk"
+              },
+              {
+                id: "b",
+                sourceId: "source-b",
+                sourceType: "record",
+                memoryClass: "owner_fact",
+                text: "Desk is downstairs.",
+                sourceLabel: "Owner correction B",
+                conflictKey: "desk"
+              }
+            ]
           }
         ]
       })

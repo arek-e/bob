@@ -26,6 +26,7 @@ export const outboxMessages = sqliteTable(
     claimToken: text("claim_token"),
     claimExpiresAt: text("claim_expires_at"),
     deadLetteredAt: text("dead_lettered_at"),
+    dispatchGeneration: integer("dispatch_generation").notNull().default(0),
     recoveryCount: integer("recovery_count").notNull().default(0),
     completedAt: text("completed_at"),
     createdAt: text("created_at").notNull()

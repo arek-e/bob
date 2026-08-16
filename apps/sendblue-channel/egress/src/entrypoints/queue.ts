@@ -34,6 +34,7 @@ class CoreResponseFailure {
 
 function processOutboundJobEffect(job: OutboundJobValue, composition: EgressComposition) {
   const correlationId = job.correlationId ?? job.outboxId
+  const dispatchGeneration = job.dispatchGeneration ?? 0
   return withBobSpan(
     { name: "bob.outbox.consume", correlationId, feature: "delivery" },
     Effect.gen(function* () {
@@ -42,7 +43,8 @@ function processOutboundJobEffect(job: OutboundJobValue, composition: EgressComp
         Effect.gen(function* () {
           const headers = yield* injectCurrentTraceparent({
             "x-bob-caller-token": composition.config.CORE_CALLER_SECRET,
-            "x-bob-correlation-id": correlationId
+            "x-bob-correlation-id": correlationId,
+            "x-bob-dispatch-generation": String(dispatchGeneration)
           })
           const response = yield* Effect.tryPromise(() =>
             composition.ports.core.fetch(

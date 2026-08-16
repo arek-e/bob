@@ -1,20 +1,16 @@
 import { spawnSync } from "node:child_process"
 
-const audits = [
-  ["apps/core-worker", ".", "."],
-  ["apps/connections-gateway", ".", "."],
-  ["apps/sendblue-channel", "ingress", "ingress"],
-  ["apps/sendblue-channel", "egress", "egress"],
-  ["apps/agent", ".", "."],
-  ["apps/ui", ".", "."],
-  ["tools/sendblue-reconcile", ".", "."],
-  ["tools/pi-smoke", ".", "."],
-  ["tools/data-backup", ".", "."],
-  ["infra/cloudflare", ".", "."]
-]
+import { discoverEnvironmentSchemaDirectories } from "./environment-schema-inventory.mjs"
 
-for (const [workingDirectory, schemaPath, sourcePath] of audits) {
-  const result = spawnSync("pnpm", ["exec", "varlock", "audit", "--path", schemaPath, sourcePath], {
+const paths = discoverEnvironmentSchemaDirectories()
+
+for (const path of paths) {
+  const parts = path.split("/")
+  const nestedWorkspace =
+    (parts[0] === "apps" || parts[0] === "packages" || parts[0] === "tools") && parts.length > 2
+  const workingDirectory = nestedWorkspace ? parts.slice(0, 2).join("/") : path
+  const schemaPath = nestedWorkspace ? parts.slice(2).join("/") : "."
+  const result = spawnSync("pnpm", ["exec", "varlock", "audit", "--path", schemaPath, schemaPath], {
     cwd: workingDirectory,
     stdio: "inherit"
   })

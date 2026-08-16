@@ -154,8 +154,7 @@ describe("unselected reminder records", () => {
         localTime: "10:00",
         timeZone: "Europe/Stockholm",
         dueAt: "2099-08-12T08:00:00.000Z",
-        sourceMessageId: messageId,
-        requiresAcknowledgment: true
+        sourceMessageId: messageId
       },
       "reminder:create:first"
     )
@@ -273,11 +272,14 @@ describe("owner memory review", () => {
       ).resolves.toMatchObject({
         status: "supported",
         items: [
-          expect.objectContaining({
-            sourceId: revisionId,
-            text: "I prefer to train in the morning.",
-            sourceLabel: "Owner message linked on 11 Aug 2026"
-          })
+          {
+            kind: "candidate",
+            item: expect.objectContaining({
+              sourceId: revisionId,
+              text: "I prefer to train in the morning.",
+              sourceLabel: "Owner message linked on 11 Aug 2026"
+            })
+          }
         ]
       })
     }
@@ -361,7 +363,12 @@ describe("owner memory review", () => {
       })
     ).resolves.toMatchObject({
       status: "supported",
-      items: [{ sourceId: secondRevisionId, text: expect.stringContaining("afternoon") }]
+      items: [
+        {
+          kind: "candidate",
+          item: { sourceId: secondRevisionId, text: expect.stringContaining("afternoon") }
+        }
+      ]
     })
     await expect(
       retrieval.retrieve({
@@ -373,7 +380,12 @@ describe("owner memory review", () => {
       })
     ).resolves.toMatchObject({
       status: "supported",
-      items: [{ sourceId: firstRevisionId, text: expect.stringContaining("morning") }]
+      items: [
+        {
+          kind: "candidate",
+          item: { sourceId: firstRevisionId, text: expect.stringContaining("morning") }
+        }
+      ]
     })
     const indexed = await database.select().from(searchDocuments)
     expect(indexed).toEqual(
@@ -534,6 +546,78 @@ describe("owner memory review", () => {
 })
 
 describe("owner journal changes", () => {
+  it("normalizes writes and searches tags by exact JSON membership", async () => {
+    const { database, protection } = await seedOwner()
+    const journal = makeJournalStore(database, protection, {
+      now: () => new Date("2026-08-11T10:10:00.000Z"),
+      randomUuid: uuidSequence(250)
+    })
+    const firstHandoff = await journal.createHandoff(
+      ownerId,
+      60_000,
+      "journal:handoff:normalized:first"
+    )
+    const firstId = await journal.createEntry(
+      {
+        ownerId,
+        handoffId: firstHandoff.id,
+        text: "  First private text  ",
+        tags: [" 100% ", "", "under_score", 'say "yes"', "100%"],
+        approvedSummary: "  First summary  "
+      },
+      "journal:create:normalized:first"
+    )
+    const secondHandoff = await journal.createHandoff(
+      ownerId,
+      60_000,
+      "journal:handoff:normalized:second"
+    )
+    const secondId = await journal.createEntry(
+      {
+        ownerId,
+        handoffId: secondHandoff.id,
+        text: "Second private text",
+        tags: ["100x", "underXscore", "say yes"]
+      },
+      "journal:create:normalized:second"
+    )
+
+    await expect(journal.readEntry(ownerId, firstId)).resolves.toEqual({
+      id: firstId,
+      createdAt: "2026-08-11T10:10:00.000Z",
+      text: "First private text",
+      tags: ["100%", "under_score", 'say "yes"'],
+      approvedSummary: "First summary"
+    })
+    await expect(journal.searchMetadata(ownerId, " 100% ")).resolves.toEqual([
+      expect.objectContaining({ id: firstId })
+    ])
+    await expect(journal.searchMetadata(ownerId, "under_score")).resolves.toEqual([
+      expect.objectContaining({ id: firstId })
+    ])
+    await expect(journal.searchMetadata(ownerId, 'say "yes"')).resolves.toEqual([
+      expect.objectContaining({ id: firstId })
+    ])
+
+    await journal.updateEntry(
+      ownerId,
+      secondId,
+      {
+        text: "  Updated private text  ",
+        tags: [" duplicate ", "", "duplicate", " quote' "],
+        approvedSummary: "  Updated summary  "
+      },
+      "journal:update:normalized:second"
+    )
+    await expect(journal.readEntry(ownerId, secondId)).resolves.toEqual({
+      id: secondId,
+      createdAt: "2026-08-11T10:10:00.000Z",
+      text: "Updated private text",
+      tags: ["duplicate", "quote'"],
+      approvedSummary: "Updated summary"
+    })
+  })
+
   it("edits encrypted text and maintains a private approved-summary projection", async () => {
     const { database, protection } = await seedOwner()
     const journal = makeJournalStore(database, protection, {

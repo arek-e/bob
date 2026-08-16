@@ -1,10 +1,15 @@
 import type { AgentRunRequest } from "@bob/contracts/agent"
-import type { CapabilityModule, ToolCommand, ToolName } from "@bob/contracts/tools"
 
 import {
   coreDeploymentProfile,
   transitionalDeploymentProfile
 } from "@bob/contracts/deployment-profiles"
+import {
+  capabilityToolNames,
+  type CapabilityModule,
+  type ToolCommand,
+  type ToolName
+} from "@bob/contracts/tools"
 import { Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
@@ -85,7 +90,7 @@ describe("domain-owned Tool command Adapters", () => {
   function adapterFor(module: CapabilityModule): ToolCommandAdapter {
     return {
       capabilityId: module.id,
-      names: module.names,
+      names: capabilityToolNames(module),
       execute: vi.fn().mockResolvedValue({ ok: true, code: "ok", message: "Done." })
     }
   }
@@ -209,6 +214,49 @@ describe("domain-owned Tool command Adapters", () => {
     expect(retrieve).toHaveBeenCalledWith(
       expect.objectContaining({ ownerId, query: "gym", channel: true })
     )
+  })
+
+  it("keeps the Memory Tool result flat across retrieval units", async () => {
+    const memory = testFixture<MemoryStore>({})
+    const item = (id: string, text: string) => ({
+      id,
+      sourceId: `source-${id}`,
+      sourceType: "fact_revision",
+      memoryClass: "owner_fact" as const,
+      text,
+      sourceLabel: `Source ${id}`
+    })
+    const retrieval = testFixture<RetrievalPipeline>({
+      retrieve: vi.fn().mockResolvedValue({
+        status: "supported",
+        candidateCount: 3,
+        relevantCount: 3,
+        temporal: { mode: "current", at: "2026-08-11T10:00:00.000Z" },
+        items: [
+          { kind: "candidate", item: item("single", "One value") },
+          {
+            kind: "conflict_group",
+            conflictKey: "desk",
+            items: [item("upstairs", "Desk is upstairs"), item("downstairs", "Desk is downstairs")]
+          }
+        ]
+      })
+    })
+
+    const result = await makeMemoryToolAdapter(memory, retrieval).execute(
+      commandContext("memory_search", { query: "desk" })
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        matches: [
+          { id: "single", conflict: false },
+          { id: "upstairs", conflict: true, conflictKey: "desk" },
+          { id: "downstairs", conflict: true, conflictKey: "desk" }
+        ]
+      }
+    })
   })
 
   it("keeps owner settings and connection commands in their Adapters", async () => {

@@ -26,19 +26,13 @@ export function makeRetrievalContextSource(
         itemCharacterBudget: options.itemCharacterBudget ?? 1_200
       })
       if (result.status === "abstain") return []
-      const groups = new Map<string, typeof result.items>()
-      for (const item of result.items) {
-        const key = item.conflict ? (item.conflictKey ?? item.id) : item.id
-        groups.set(key, Object.freeze([...(groups.get(key) ?? []), item]))
-      }
-      return [...groups.values()].map((items) => {
-        const first = items[0]
-        if (first === undefined) throw new Error("Retrieval returned an empty record group")
+      return result.items.map((unit) => {
+        const items = unit.kind === "conflict_group" ? unit.items : [unit.item]
         return approvedContextItem({
           kind: "record",
           text: items.map((item) => item.text).join("\n"),
           instruction: false,
-          conflict: first.conflict,
+          conflict: unit.kind === "conflict_group",
           sources: items.map((item) =>
             item.occurredAt === undefined
               ? { sourceId: item.sourceId, sourceLabel: item.sourceLabel }

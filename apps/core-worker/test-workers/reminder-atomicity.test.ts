@@ -94,8 +94,7 @@ async function reminderFixture() {
       localTime: "13:00",
       timeZone: "Europe/Stockholm",
       dueAt: "2026-08-11T11:00:00.000Z",
-      sourceMessageId: messageId,
-      requiresAcknowledgment: true
+      sourceMessageId: messageId
     },
     "reminder:create"
   )

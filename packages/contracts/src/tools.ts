@@ -105,9 +105,13 @@ export type {
   CapabilityFeature,
   CapabilityId,
   CapabilityModule,
+  CapabilityToolRegistration,
+  DeterministicCommandRegistration,
+  ModelToolRegistration,
   ModelToolName,
   ToolDefinition,
   ToolDefinitionName,
   ToolInputPropertySchema,
   ToolInputSchema
 } from "./capabilities/definitions.ts"
+export { capabilityToolNames } from "./capabilities/definitions.ts"

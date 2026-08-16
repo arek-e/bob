@@ -30,6 +30,9 @@ importers:
       '@oxlint/plugins':
         specifier: 1.78.0
         version: 1.78.0
+      '@tanstack/router-generator':
+        specifier: 1.167.27
+        version: 1.167.27
       '@types/node':
         specifier: 22.18.0
         version: 22.18.0

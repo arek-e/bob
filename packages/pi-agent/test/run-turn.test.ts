@@ -188,7 +188,11 @@ const makeAgent = (
     provider: "openai-codex",
     model: "gpt-test",
     allowedModels: ["gpt-test"],
-    executeTool,
+    executeTool: (command, signal) =>
+      Effect.tryPromise({
+        try: () => executeTool(command, signal),
+        catch: (error) => error
+      }),
     now,
     dependencies
   })
@@ -204,6 +208,40 @@ const confirmedResult = (code: string, message: string): ToolResult => ({
 describe("Bob's direct pi-ai loop", () => {
   beforeEach(() => {
     modelHarness.reset()
+  })
+
+  it("runs a fixed content-free operational model smoke", async () => {
+    modelHarness.state.responses.push(fauxAssistantMessage("READY", { stopReason: "stop" }))
+    const agent = makeAgent(async () => okResult())
+
+    await expect(agent.runSmoke()).resolves.toEqual({
+      protocolVersion: 1,
+      status: "completed",
+      model: "gpt-test",
+      durationMs: 0
+    })
+    expect(modelHarness.state.contexts).toEqual([
+      {
+        systemPrompt: "This is an operational availability check. Reply with exactly READY.",
+        messages: [{ role: "user", content: "Reply only READY.", timestamp: 1 }],
+        tools: []
+      }
+    ])
+  })
+
+  it("fails model smoke without returning model text", async () => {
+    modelHarness.state.responses.push(
+      fauxAssistantMessage("private unexpected output", { stopReason: "stop" })
+    )
+    const agent = makeAgent(async () => okResult())
+
+    await expect(agent.runSmoke()).resolves.toEqual({
+      protocolVersion: 1,
+      status: "failed",
+      model: "gpt-test",
+      durationMs: 0,
+      errorCode: "invalid_output"
+    })
   })
 
   it("preserves ordered current-turn messages in the model transcript", async () => {
@@ -965,7 +1003,6 @@ describe("Bob's direct pi-ai loop", () => {
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
-    const fallback = vi.fn(async () => okResult("unexpected"))
     const agent = createBobPiAgent({
       catalogue: transitionalDeploymentProfile,
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
@@ -973,8 +1010,7 @@ describe("Bob's direct pi-ai loop", () => {
       provider: "openai-codex",
       model: "gpt-test",
       allowedModels: ["gpt-test"],
-      executeTool: fallback,
-      executeToolEffect: (command) =>
+      executeTool: (command) =>
         withBobSpan(
           {
             name: "bob.tool.domain",
@@ -1001,7 +1037,6 @@ describe("Bob's direct pi-ai loop", () => {
     )
 
     expect(output).toMatchObject({ status: "completed", toolCalls: 1 })
-    expect(fallback).not.toHaveBeenCalled()
     const spans = telemetry.finishedSpans()
     const invoke = spans.find((span) => span.name === "bob.tool.invoke")
     const domain = spans.find((span) => span.name === "bob.tool.domain")
@@ -1051,7 +1086,6 @@ describe("Bob's direct pi-ai loop", () => {
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
-    const fallback = vi.fn(async () => okResult("unexpected"))
     const agent = createBobPiAgent({
       catalogue: transitionalDeploymentProfile,
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
@@ -1059,8 +1093,7 @@ describe("Bob's direct pi-ai loop", () => {
       provider: "openai-codex",
       model: "gpt-test",
       allowedModels: ["gpt-test"],
-      executeTool: fallback,
-      executeToolEffect: () => Effect.fail(new Error(privateCanary)),
+      executeTool: () => Effect.fail(new Error(privateCanary)),
       dependencies,
       now: () => 1
     })
@@ -1077,7 +1110,6 @@ describe("Bob's direct pi-ai loop", () => {
     )
 
     expect(output).toMatchObject({ status: "failed", errorCode: "policy", toolCalls: 1 })
-    expect(fallback).not.toHaveBeenCalled()
     const invoke = telemetry.finishedSpans().find((span) => span.name === "bob.tool.invoke")
     expect(invoke?.outcome).toBe("failed")
     expect(invoke?.events).toContainEqual(
@@ -1360,8 +1392,7 @@ describe("Bob's direct pi-ai loop", () => {
             localTime: "13:00",
             timeZone: "Europe/Stockholm",
             dueAt: "2026-08-12T11:00:00.000Z",
-            sourceMessageId: "00000000-0000-4000-8000-000000000004",
-            requiresAcknowledgment: false
+            sourceMessageId: "00000000-0000-4000-8000-000000000004"
           },
           { id: "ambiguous-reminder" }
         )
@@ -1711,6 +1742,63 @@ describe("Bob's direct pi-ai loop", () => {
       result: { status: "cancelled", errorCode: "cancelled" }
     })
     expect(observedSignal?.aborted).toBe(true)
+  })
+
+  it("settles a cancelled read-only Tool only once when its executor completes late", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("reminder_list", {}, { id: "late-read-call" }))
+    )
+    let markStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    let completeTool!: (result: ToolResult) => void
+    const toolResult = new Promise<ToolResult>((resolve) => {
+      completeTool = resolve
+    })
+    const appended: AgentRunOperation[] = []
+    const agent = createBobPiAgent({
+      catalogue: transitionalDeploymentProfile,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+      credentials: { read: async () => undefined } as never,
+      provider: "openai-codex",
+      model: "gpt-test",
+      allowedModels: ["gpt-test"],
+      executeTool: (_command, signal) =>
+        Effect.promise(() => {
+          markStarted()
+          expect(signal).toBeDefined()
+          return toolResult
+        }),
+      dependencies,
+      now: () => 1
+    })
+    const controller = new AbortController()
+    const run = agent.runTurn(
+      baseRequest({
+        userText: "List my reminders.",
+        allowedTools: ["reminder_list"],
+        limits: { ...baseRequest().limits, maxDurationMs: 500 }
+      }),
+      controller.signal,
+      {
+        operations: [],
+        append: async (operation) => {
+          appended.push(operation)
+        }
+      }
+    )
+
+    await started
+    controller.abort("newer_turn_revision")
+    await expect(run).resolves.toMatchObject({ status: "cancelled", errorCode: "cancelled" })
+
+    completeTool(okResult("reminder_list", "Late result."))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(appended.map((operation) => operation.kind)).toEqual(["model"])
+    expect(modelHarness.completeSimple).toHaveBeenCalledTimes(1)
   })
 
   it("lets an active mutating Tool settle before cancellation", async () => {
@@ -2372,6 +2460,138 @@ describe("Bob's direct pi-ai loop", () => {
       [4, "model"],
       [5, "final"]
     ])
+  })
+
+  it("rejects stored Tool results that are out of model order", async () => {
+    const request = baseRequest({ allowedTools: ["memory_search"] })
+    const firstCall = fauxToolCall("memory_search", { query: "first" }, { id: "call-first" })
+    const secondCall = fauxToolCall("memory_search", { query: "second" }, { id: "call-second" })
+    const assistant = toolResponse(firstCall, secondCall)
+    const agent = makeAgent(async () => okResult())
+
+    await expect(
+      agent.runTurn(request, undefined, {
+        operations: [
+          {
+            protocolVersion: 1,
+            loopVersion: 1,
+            runId: request.runId,
+            sequence: 1,
+            kind: "model",
+            payload: JSON.parse(
+              JSON.stringify({ turnIndex: 1, turnPhase: "primary", message: assistant })
+            )
+          },
+          {
+            protocolVersion: 1,
+            loopVersion: 1,
+            runId: request.runId,
+            sequence: 2,
+            kind: "tool",
+            payload: {
+              turnIndex: 1,
+              toolCallIndex: 1,
+              toolCallId: secondCall.id,
+              result: okResult(),
+              timestamp: 1
+            }
+          }
+        ],
+        append: async () => undefined
+      })
+    ).rejects.toThrow("Stored Tool operation is not the next pending Tool call")
+  })
+
+  it("rejects duplicate stored model output", async () => {
+    const request = baseRequest({ allowedTools: ["memory_search"] })
+    const assistant = toolResponse(
+      fauxToolCall("memory_search", { query: "owner" }, { id: "call-pending" })
+    )
+    const modelOperation: AgentRunOperation = {
+      protocolVersion: 1,
+      loopVersion: 1,
+      runId: request.runId,
+      sequence: 1,
+      kind: "model",
+      payload: JSON.parse(
+        JSON.stringify({ turnIndex: 1, turnPhase: "primary", message: assistant })
+      )
+    }
+    const agent = makeAgent(async () => okResult())
+
+    await expect(
+      agent.runTurn(request, undefined, {
+        operations: [{ ...modelOperation }, { ...modelOperation, sequence: 2 }],
+        append: async () => undefined
+      })
+    ).rejects.toThrow("Stored model operation precedes its pending Tool results")
+  })
+
+  it("rejects stored operations after a final result", async () => {
+    const request = baseRequest({ allowedTools: [] })
+    const finalResult: AgentRunResult = {
+      protocolVersion: 1,
+      runId: request.runId,
+      correlationId: request.correlationId,
+      status: "completed",
+      responseText: "Already complete.",
+      sourceIds: [],
+      conflict: "none",
+      model: "gpt-test",
+      durationMs: 10,
+      inputTokens: 2,
+      outputTokens: 3,
+      toolCalls: 0
+    }
+    const agent = makeAgent(async () => okResult())
+
+    await expect(
+      agent.runTurn(request, undefined, {
+        operations: [
+          {
+            protocolVersion: 1,
+            loopVersion: 1,
+            runId: request.runId,
+            sequence: 1,
+            kind: "final",
+            payload: JSON.parse(JSON.stringify(finalResult))
+          },
+          {
+            protocolVersion: 1,
+            loopVersion: 1,
+            runId: request.runId,
+            sequence: 2,
+            kind: "tool",
+            payload: {}
+          }
+        ],
+        append: async () => undefined
+      })
+    ).rejects.toThrow("Stored final operation is not terminal")
+  })
+
+  it("rejects a stored model operation for the wrong turn", async () => {
+    const request = baseRequest({ allowedTools: [] })
+    const assistant = structuredResponse({ responseText: "Recovered response." })
+    const agent = makeAgent(async () => okResult())
+
+    await expect(
+      agent.runTurn(request, undefined, {
+        operations: [
+          {
+            protocolVersion: 1,
+            loopVersion: 1,
+            runId: request.runId,
+            sequence: 1,
+            kind: "model",
+            payload: JSON.parse(
+              JSON.stringify({ turnIndex: 2, turnPhase: "primary", message: assistant })
+            )
+          }
+        ],
+        append: async () => undefined
+      })
+    ).rejects.toThrow("Stored first model operation has an invalid turn")
   })
 
   it("returns a checkpointed final result without model or Tool execution", async () => {

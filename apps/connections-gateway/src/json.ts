@@ -1,3 +1,5 @@
+import { gatewayFailure } from "./failure.ts"
+
 export type JsonValue = null | boolean | number | string | JsonObject | JsonValue[]
 
 export interface JsonObject {
@@ -9,7 +11,7 @@ export function isJsonObject(value: JsonValue | undefined): value is JsonObject 
 }
 
 export function requiredJsonObject(value: JsonValue | undefined): JsonObject {
-  if (!isJsonObject(value)) throw new Error("invalid_request")
+  if (!isJsonObject(value)) throw gatewayFailure("invalid_request")
   return value
 }
 
@@ -19,7 +21,7 @@ export function requiredText(value: JsonValue | undefined): string {
     String(value).length === 0 ||
     String(value).length > 200
   ) {
-    throw new Error("invalid_request")
+    throw gatewayFailure("invalid_request")
   }
   return String(value)
 }

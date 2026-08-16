@@ -11,18 +11,18 @@ import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../policy/owner-data-key.ts"
 
-import { renderArtifact } from "../artifacts/render.ts"
-import { artifactRevisions, artifacts } from "../artifacts/schema.ts"
+import { makeArtifactPersistence } from "../artifacts/persistence.ts"
 import { outboxMessages } from "../delivery/schema.ts"
+import { makeOwnerDataKeyStore } from "../policy/owner-data-key.ts"
 import {
   agentRunAttempts,
   agentRunOperations,
   agentRuns,
   conversationTurns,
   inboundEvents,
-  messages,
-  users
+  messages
 } from "./schema.ts"
 
 export interface StoredAgentRun {
@@ -111,36 +111,24 @@ const StoredRunEnvelope = Schema.Struct({
 export function makeAgentRunStore(
   database: CoreDatabase,
   protection: DataProtection,
-  options: { readonly now?: () => Date; readonly randomUuid?: () => string }
+  options: {
+    readonly now?: () => Date
+    readonly randomUuid?: () => string
+    readonly ownerDataKeys?: OwnerDataKeyStore
+  }
 ): AgentRunStore {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
-
-  async function ownerKey(ownerId: string): Promise<{ key: CryptoKey; version: number }> {
-    const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
-    if (
-      owner?.wrappedDataKey === null ||
-      owner?.wrappedDataKey === undefined ||
-      owner.wrappedDataKeyIv === null ||
-      owner.wrappedDataKeyIv === undefined ||
-      owner.dataKeyVersion === null ||
-      owner.dataKeyVersion === undefined
-    ) {
-      throw new Error("Owner data key is unavailable")
-    }
-    return {
-      key: await protection.unwrapDataKey({
-        ciphertext: owner.wrappedDataKey,
-        iv: owner.wrappedDataKeyIv,
-        version: owner.dataKeyVersion
-      }),
-      version: owner.dataKeyVersion
-    }
-  }
+  const ownerDataKeys =
+    options.ownerDataKeys ??
+    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
+  const artifactPersistence = makeArtifactPersistence(database, protection, ownerDataKeys, {
+    randomUuid
+  })
 
   async function loadStoredRun(row: typeof agentRuns.$inferSelect): Promise<StoredAgentRun> {
     const envelope = Schema.decodeUnknownSync(StoredRunEnvelope)(JSON.parse(row.inputSnapshotJson))
-    const owner = await ownerKey(row.userId)
+    const owner = await ownerDataKeys.load(row.userId)
     const request = Schema.decodeUnknownSync(AgentRunRequest)(
       JSON.parse(
         await protection.decryptText(owner.key, {
@@ -181,7 +169,7 @@ export function makeAgentRunStore(
         if (existing.inputHash !== hash) throw new Error("Agent run input snapshot changed")
         return { runId: existing.id, duplicate: true }
       }
-      const owner = await ownerKey(request.ownerId)
+      const owner = await ownerDataKeys.load(request.ownerId)
       const encrypted = await protection.encryptText(owner.key, serialized)
       const envelope = JSON.stringify({
         ciphertext: encrypted.ciphertext,
@@ -233,50 +221,59 @@ export function makeAgentRunStore(
     async claim(runId, leaseMs) {
       const at = now()
       const attemptId = randomUuid()
-      const [claimed] = await database
-        .update(agentRuns)
-        .set({
-          status: "claimed",
-          claimedAt: at.toISOString(),
-          claimExpiresAt: new Date(at.getTime() + leaseMs).toISOString(),
-          activeAttemptId: attemptId
-        })
-        .where(
-          and(
-            eq(agentRuns.id, runId),
-            or(
-              eq(agentRuns.status, "pending"),
-              and(eq(agentRuns.status, "claimed"), lt(agentRuns.claimExpiresAt, at.toISOString())),
-              and(eq(agentRuns.status, "executing"), lt(agentRuns.claimExpiresAt, at.toISOString()))
-            )
-          )
+      const atIso = at.toISOString()
+      const claimable = and(
+        eq(agentRuns.id, runId),
+        or(
+          eq(agentRuns.status, "pending"),
+          // Pre-rollout claimed rows recover after their existing lease expires.
+          and(eq(agentRuns.status, "claimed"), lt(agentRuns.claimExpiresAt, atIso)),
+          and(eq(agentRuns.status, "executing"), lt(agentRuns.claimExpiresAt, atIso))
         )
-        .returning({ id: agentRuns.id })
-      if (claimed === undefined) return undefined
-      const attempts = await database
-        .select({ id: agentRunAttempts.id })
-        .from(agentRunAttempts)
-        .where(eq(agentRunAttempts.runId, runId))
-      await database.batch([
+      )
+      const createAttempt = database
+        .insert(agentRunAttempts)
+        .select(
+          database
+            .select({
+              id: sql<string>`${attemptId}`.as("id"),
+              runId: agentRuns.id,
+              attemptNumber:
+                sql<number>`COALESCE((SELECT MAX(${agentRunAttempts.attemptNumber}) + 1 FROM ${agentRunAttempts} WHERE ${agentRunAttempts.runId} = ${runId}), 1)`.as(
+                  "attempt_number"
+                ),
+              status: sql<string>`${"executing"}`.as("status"),
+              errorCode: sql<string | null>`NULL`.as("error_code"),
+              startedAt: sql<string>`${atIso}`.as("started_at"),
+              finishedAt: sql<string | null>`NULL`.as("finished_at")
+            })
+            .from(agentRuns)
+            .where(claimable)
+        )
+        .returning({ id: agentRunAttempts.id })
+      const [created, claimed] = await database.batch([
+        createAttempt,
         database
           .update(agentRuns)
-          .set({ status: "executing" })
+          .set({
+            status: "executing",
+            claimedAt: atIso,
+            claimExpiresAt: new Date(at.getTime() + leaseMs).toISOString(),
+            activeAttemptId: attemptId
+          })
           .where(
             and(
-              eq(agentRuns.id, runId),
-              eq(agentRuns.status, "claimed"),
-              eq(agentRuns.activeAttemptId, attemptId)
+              claimable,
+              sql`EXISTS (
+                SELECT 1 FROM ${agentRunAttempts}
+                WHERE ${agentRunAttempts.id} = ${attemptId}
+                  AND ${agentRunAttempts.runId} = ${runId}
+              )`
             )
-          ),
-        database.insert(agentRunAttempts).values({
-          id: attemptId,
-          runId,
-          attemptNumber: attempts.length + 1,
-          status: "executing",
-          startedAt: at.toISOString()
-        })
+          )
+          .returning({ id: agentRuns.id })
       ])
-      return attemptId
+      return created[0] !== undefined && claimed[0] !== undefined ? attemptId : undefined
     },
 
     async loadOperations(runId, attemptId) {
@@ -297,7 +294,7 @@ export function makeAgentRunStore(
         .from(agentRunOperations)
         .where(eq(agentRunOperations.runId, runId))
         .orderBy(asc(agentRunOperations.sequence))
-      const owner = await ownerKey(run.ownerId)
+      const owner = await ownerDataKeys.load(run.ownerId)
       return Promise.all(
         rows.map(async (row) =>
           Schema.decodeUnknownSync(AgentRunOperation)({
@@ -359,7 +356,7 @@ export function makeAgentRunStore(
         }
         throw new Error("Agent run operation sequence conflict")
       }
-      const owner = await ownerKey(run.ownerId)
+      const owner = await ownerDataKeys.load(run.ownerId)
       const encrypted = await protection.encryptText(owner.key, JSON.stringify(decoded.payload))
       const id = randomUuid()
       const createdAt = now().toISOString()
@@ -586,7 +583,7 @@ export function makeAgentRunStore(
       ) {
         return undefined
       }
-      const owner = await ownerKey(loadedRun.ownerId)
+      const owner = await ownerDataKeys.load(loadedRun.ownerId)
       const encrypted = await protection.encryptText(owner.key, response.text)
       const messageId = randomUuid()
       const outboxId = randomUuid()
@@ -663,174 +660,30 @@ export function makeAgentRunStore(
                 NULL,
                 NULL,
                 NULL,
-                NULL,
-                0,
-                NULL,
+              NULL,
+              0,
+              0,
+              NULL,
               ${at}
               FROM ${agentRuns}
               WHERE ${activeAttempt}
             `)
       const artifactStatements: BatchItem<"sqlite">[] = []
       if (response.artifact !== undefined) {
-        const [currentArtifact] = await database
-          .select({ id: artifacts.id, currentRevision: artifacts.currentRevision })
-          .from(artifacts)
-          .where(
-            and(
-              eq(artifacts.userId, loadedRun.ownerId),
-              eq(artifacts.channelId, response.channelId),
-              eq(artifacts.kind, response.artifact.kind)
-            )
-          )
-          .limit(1)
-        const artifactId = currentArtifact?.id ?? randomUuid()
-        const artifactRevision = (currentArtifact?.currentRevision ?? 0) + 1
-        const artifactMessageId = randomUuid()
-        const artifactOutboxId = randomUuid()
-        const renderedText = renderArtifact(response.artifact)
-        const [encryptedContent, encryptedRenderedText] = await Promise.all([
-          protection.encryptText(owner.key, JSON.stringify(response.artifact)),
-          protection.encryptText(owner.key, renderedText)
-        ])
-        const sourceIdsJson = JSON.stringify(result.sourceIds ?? [])
-        if (activeAttempt === undefined) {
-          artifactStatements.push(
-            currentArtifact === undefined
-              ? database.insert(artifacts).values({
-                  id: artifactId,
-                  userId: loadedRun.ownerId,
-                  channelId: response.channelId,
-                  kind: response.artifact.kind,
-                  currentRevision: artifactRevision,
-                  createdAt: at,
-                  updatedAt: at
-                })
-              : database
-                  .update(artifacts)
-                  .set({ currentRevision: artifactRevision, updatedAt: at })
-                  .where(eq(artifacts.id, artifactId)),
-            database.insert(artifactRevisions).values({
-              artifactId,
-              revision: artifactRevision,
-              contentCiphertext: encryptedContent.ciphertext,
-              contentIv: encryptedContent.iv,
-              renderedTextCiphertext: encryptedRenderedText.ciphertext,
-              renderedTextIv: encryptedRenderedText.iv,
-              dataKeyVersion: owner.version,
-              sourceIdsJson,
-              createdByRunId: result.runId,
-              createdAt: at
-            }),
-            database.insert(messages).values({
-              id: artifactMessageId,
-              userId: loadedRun.ownerId,
-              channelId: response.channelId,
-              direction: "outbound",
-              textCiphertext: encryptedRenderedText.ciphertext,
-              textIv: encryptedRenderedText.iv,
-              dataKeyVersion: owner.version,
-              occurredAt: at,
-              createdAt: at
-            }),
-            database.insert(outboxMessages).values({
-              id: artifactOutboxId,
-              userId: loadedRun.ownerId,
-              channelId: response.channelId,
-              messageId: artifactMessageId,
-              reasonCode: "agent_artifact",
-              correlationId: result.correlationId,
-              idempotencyKey: `run:${result.runId}:artifact:${response.artifact.kind}`,
-              dependsOnOutboxId: outboxId,
-              artifactId,
-              artifactRevision,
-              state: "pending",
-              createdAt: at
-            })
-          )
-        } else {
-          artifactStatements.push(
-            currentArtifact === undefined
-              ? database.insert(artifacts).select(sql`
-                  SELECT
-                    ${artifactId},
-                    ${agentRuns.userId},
-                    ${response.channelId},
-                    ${response.artifact.kind},
-                    ${artifactRevision},
-                    ${at},
-                    ${at}
-                  FROM ${agentRuns}
-                  WHERE ${activeAttempt}
-                `)
-              : database
-                  .update(artifacts)
-                  .set({ currentRevision: artifactRevision, updatedAt: at })
-                  .where(
-                    and(
-                      eq(artifacts.id, artifactId),
-                      sql`EXISTS (SELECT 1 FROM ${agentRuns} WHERE ${activeAttempt})`
-                    )
-                  ),
-            database.insert(artifactRevisions).select(sql`
-              SELECT
-                ${artifactId},
-                ${artifactRevision},
-                ${encryptedContent.ciphertext},
-                ${encryptedContent.iv},
-                ${encryptedRenderedText.ciphertext},
-                ${encryptedRenderedText.iv},
-                ${owner.version},
-                ${sourceIdsJson},
-                ${result.runId},
-                ${at}
-              FROM ${agentRuns}
-              WHERE ${activeAttempt}
-            `),
-            database.insert(messages).select(sql`
-              SELECT
-                ${artifactMessageId},
-                ${agentRuns.userId},
-                ${response.channelId},
-                ${"outbound"},
-                ${encryptedRenderedText.ciphertext},
-                ${encryptedRenderedText.iv},
-                ${owner.version},
-                ${at},
-                ${at}
-              FROM ${agentRuns}
-              WHERE ${activeAttempt}
-            `),
-            database.insert(outboxMessages).select(sql`
-              SELECT
-                ${artifactOutboxId},
-                ${agentRuns.userId},
-                ${response.channelId},
-                ${artifactMessageId},
-                ${"agent_artifact"},
-                ${result.correlationId},
-                ${`run:${result.runId}:artifact:${response.artifact.kind}`},
-                NULL,
-                NULL,
-                NULL,
-                NULL,
-                NULL,
-                ${outboxId},
-                ${artifactId},
-                ${artifactRevision},
-                ${"pending"},
-                NULL,
-                NULL,
-                NULL,
-                NULL,
-                NULL,
-                0,
-                NULL,
-                ${at}
-              FROM ${agentRuns}
-              WHERE ${activeAttempt}
-            `)
-          )
+        const artifactInput = {
+          ownerId: loadedRun.ownerId,
+          channelId: response.channelId,
+          artifact: response.artifact,
+          sourceIds: result.sourceIds ?? [],
+          runId: result.runId,
+          correlationId: result.correlationId,
+          dependsOnOutboxId: outboxId,
+          createdAt: at
         }
+        const plan = await artifactPersistence.prepareRunRevision(
+          attemptId === undefined ? artifactInput : { ...artifactInput, attemptId }
+        )
+        artifactStatements.push(...plan.statements)
       }
       const statements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
         messageInsert,

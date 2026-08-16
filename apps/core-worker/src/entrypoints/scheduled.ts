@@ -25,6 +25,7 @@ export interface ScheduledTelemetryRunner {
 interface PendingOutbox {
   readonly id: string
   readonly correlationId: string
+  readonly dispatchGeneration: number
 }
 
 function promiseEffect<A>(operation: (signal: AbortSignal) => PromiseLike<A>) {
@@ -89,7 +90,8 @@ export async function handleScheduled(
     pendingOutbox = await (composition.applicationStorage ?? composition.database)
       .select({
         id: outboxMessages.id,
-        correlationId: outboxMessages.correlationId
+        correlationId: outboxMessages.correlationId,
+        dispatchGeneration: outboxMessages.dispatchGeneration
       })
       .from(outboxMessages)
       .where(recoverablePendingOutbox)
@@ -109,13 +111,27 @@ export async function handleScheduled(
           Effect.gen(function* () {
             const headers = yield* injectCurrentTraceparent()
             const traceparent = headers.get("traceparent")
+            const dispatchGeneration = item.dispatchGeneration ?? 0
             const message =
               traceparent === null
-                ? { outboxId: item.id, correlationId: item.correlationId }
-                : { outboxId: item.id, correlationId: item.correlationId, traceparent }
+                ? {
+                    outboxId: item.id,
+                    dispatchGeneration,
+                    correlationId: item.correlationId
+                  }
+                : {
+                    outboxId: item.id,
+                    dispatchGeneration,
+                    correlationId: item.correlationId,
+                    traceparent
+                  }
             yield* promiseEffect(() => outboundJobs.publish(message))
             yield* promiseEffect(() =>
-              composition.services.delivery.markEnqueued(item.id, new Date().toISOString())
+              composition.services.delivery.markEnqueued(
+                item.id,
+                new Date().toISOString(),
+                dispatchGeneration
+              )
             )
           })
         )

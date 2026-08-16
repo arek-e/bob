@@ -1,29 +1,49 @@
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
 
-export const memoryCandidates = sqliteTable("memory_candidates", {
-  id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
-  scope: text("scope").notNull(),
-  key: text("key").notNull(),
-  proposedValueJson: text("proposed_value_json").notNull(),
-  proposedValueCiphertext: text("proposed_value_ciphertext"),
-  proposedValueIv: text("proposed_value_iv"),
-  canonicalTextCiphertext: text("canonical_text_ciphertext").notNull(),
-  canonicalTextIv: text("canonical_text_iv").notNull(),
-  memoryClass: text("memory_class", { enum: ["owner_fact"] })
-    .notNull()
-    .default("owner_fact"),
-  originClass: text("origin_class").notNull(),
-  sourceType: text("source_type").notNull(),
-  sourceId: text("source_id").notNull(),
-  sourceLabel: text("source_label"),
-  sourceOccurredAt: text("source_occurred_at"),
-  sourceContentHash: text("source_content_hash"),
-  extractionConfidence: integer("extraction_confidence").notNull(),
-  sensitivity: text("sensitivity").notNull(),
-  status: text("status", { enum: ["proposed", "disputed", "confirmed", "rejected"] }).notNull(),
-  createdAt: text("created_at").notNull(),
-  reviewedAt: text("reviewed_at")
+export const memoryCandidates = sqliteTable(
+  "memory_candidates",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    scope: text("scope").notNull(),
+    key: text("key").notNull(),
+    proposedValueEnvelope: text("proposed_value_envelope").notNull(),
+    // Keep these write-only columns until a later table rebuild removes the legacy constraints.
+    legacyProposedValueJson: text("proposed_value_json").notNull().default("null"),
+    legacyProposedValueCiphertext: text("proposed_value_ciphertext"),
+    legacyProposedValueIv: text("proposed_value_iv"),
+    canonicalTextCiphertext: text("canonical_text_ciphertext").notNull(),
+    canonicalTextIv: text("canonical_text_iv").notNull(),
+    memoryClass: text("memory_class", { enum: ["owner_fact"] })
+      .notNull()
+      .default("owner_fact"),
+    originClass: text("origin_class").notNull(),
+    sourceType: text("source_type").notNull(),
+    sourceId: text("source_id").notNull(),
+    sourceLabel: text("source_label"),
+    sourceOccurredAt: text("source_occurred_at"),
+    sourceContentHash: text("source_content_hash"),
+    extractionConfidence: integer("extraction_confidence").notNull(),
+    sensitivity: text("sensitivity").notNull(),
+    status: text("status", {
+      enum: ["proposed", "disputed", "claimed", "confirmed", "rejected"]
+    }).notNull(),
+    reviewClaimAction: text("review_claim_action", {
+      enum: ["confirm", "correct", "reject"]
+    }),
+    reviewClaimId: text("review_claim_id"),
+    reviewClaimExpiresAt: text("review_claim_expires_at"),
+    reviewResultId: text("review_result_id"),
+    createdAt: text("created_at").notNull(),
+    reviewedAt: text("reviewed_at")
+  },
+  (table) => [
+    index("memory_candidates_review_claim_idx").on(table.status, table.reviewClaimExpiresAt)
+  ]
+)
+
+export const memoryReviewClaimGuards = sqliteTable("memory_review_claim_guards", {
+  claimId: text("claim_id").primaryKey()
 })
 
 export const facts = sqliteTable(
@@ -44,9 +64,11 @@ export const factRevisions = sqliteTable(
   {
     id: text("id").primaryKey(),
     factId: text("fact_id").notNull(),
-    valueJson: text("value_json").notNull(),
-    valueCiphertext: text("value_ciphertext"),
-    valueIv: text("value_iv"),
+    valueEnvelope: text("value_envelope").notNull(),
+    // Keep these write-only columns until a later table rebuild removes the legacy constraints.
+    legacyValueJson: text("value_json").notNull().default("null"),
+    legacyValueCiphertext: text("value_ciphertext"),
+    legacyValueIv: text("value_iv"),
     canonicalTextCiphertext: text("canonical_text_ciphertext").notNull(),
     canonicalTextIv: text("canonical_text_iv").notNull(),
     dataKeyVersion: integer("data_key_version").notNull(),

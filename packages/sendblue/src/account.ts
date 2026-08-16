@@ -34,11 +34,10 @@ export interface RequiredWebhooks {
 }
 
 export interface ReconcilePlan {
-  readonly secretMatches: boolean
+  readonly state: "secret_mismatch" | "duplicate_hooks" | "changes_required" | "converged"
   readonly receiveCount: number
   readonly outboundCount: number
   readonly additions: readonly { type: "receive" | "outbound"; url: string }[]
-  readonly valid: boolean
 }
 
 function urlOf(value: typeof WebhookValue.Type): string {
@@ -61,16 +60,25 @@ export async function planWebhookReconciliation<Input>(
     (item) => urlOf(item) === required.outboundUrl
   ).length
   const additions: { type: "receive" | "outbound"; url: string }[] = []
-  if (secretMatches && receiveCount === 0)
+  const hasDuplicateHooks = receiveCount > 1 || outboundCount > 1
+  if (secretMatches && !hasDuplicateHooks && receiveCount === 0)
     additions.push({ type: "receive", url: required.receiveUrl })
-  if (secretMatches && outboundCount === 0)
+  if (secretMatches && !hasDuplicateHooks && outboundCount === 0)
     additions.push({ type: "outbound", url: required.outboundUrl })
+
+  const state = !secretMatches
+    ? "secret_mismatch"
+    : hasDuplicateHooks
+      ? "duplicate_hooks"
+      : additions.length > 0
+        ? "changes_required"
+        : "converged"
+
   return {
-    secretMatches,
+    state,
     receiveCount,
     outboundCount,
-    additions,
-    valid: secretMatches && receiveCount <= 1 && outboundCount <= 1
+    additions
   }
 }
 
@@ -92,7 +100,7 @@ export function createAccountClient(options: AccountClientOptions) {
     list,
     async reconcile(required: RequiredWebhooks, checkOnly: boolean): Promise<ReconcilePlan> {
       let plan = await planWebhookReconciliation(await list(), required)
-      if (!plan.secretMatches || !plan.valid || checkOnly) return plan
+      if (plan.state !== "changes_required" || checkOnly) return plan
 
       for (const addition of plan.additions) {
         const response = await request(url, {
@@ -104,7 +112,7 @@ export function createAccountClient(options: AccountClientOptions) {
       }
 
       plan = await planWebhookReconciliation(await list(), required)
-      if (!plan.valid || plan.additions.length > 0) {
+      if (plan.state !== "converged") {
         throw new Error("Sendblue webhook verification failed")
       }
       return plan

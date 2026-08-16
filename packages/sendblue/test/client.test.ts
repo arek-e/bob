@@ -34,6 +34,36 @@ describe("Sendblue client", () => {
     })
   })
 
+  it.each([408, 429, 500])(
+    "returns uncertain when a message request receives HTTP %s",
+    async (status) => {
+      const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status }))
+      const client = createSendblueClient({
+        apiKeyId: "id",
+        apiSecretKey: "secret",
+        fetch: request
+      })
+
+      await expect(
+        client.sendMessage({ ...claim, replyToMessageHandle: "inbound-1" })
+      ).resolves.toEqual({
+        state: "uncertain",
+        code: `http_${status}`
+      })
+      expect(request).toHaveBeenCalledOnce()
+    }
+  )
+
+  it("returns failed when a message request receives a definitive client rejection", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 400 }))
+    const client = createSendblueClient({ apiKeyId: "id", apiSecretKey: "secret", fetch: request })
+
+    await expect(client.sendMessage(claim)).resolves.toEqual({
+      state: "failed",
+      code: "http_400"
+    })
+  })
+
   it("validates provider status through a timed request", async () => {
     const request = vi
       .fn<typeof fetch>()
@@ -64,6 +94,24 @@ describe("Sendblue client", () => {
       message_handle: "inbound-1",
       reaction: "like"
     })
+  })
+
+  it.each([
+    { status: 400, state: "failed" },
+    { status: 408, state: "uncertain" },
+    { status: 429, state: "uncertain" },
+    { status: 500, state: "uncertain" }
+  ] as const)("classifies interaction HTTP $status as $state", async ({ status, state }) => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status }))
+    const client = createSendblueClient({ apiKeyId: "id", apiSecretKey: "secret", fetch: request })
+
+    await expect(
+      client.sendReaction({
+        fromNumber: "+46711111111",
+        messageHandle: "inbound-1",
+        reaction: "like"
+      })
+    ).resolves.toEqual({ state, code: `http_${status}` })
   })
 
   it("starts and stops the typing indicator", async () => {
@@ -113,5 +161,18 @@ describe("Sendblue client", () => {
       expect.objectContaining({ reply_to: { message_handle: "inbound-1" } })
     )
     expect(bodies[1]).not.toHaveProperty("reply_to")
+  })
+
+  it.each([408, 429, 500])("classifies fallback HTTP %s as uncertain", async (status) => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 400 }))
+      .mockResolvedValueOnce(new Response(null, { status }))
+    const client = createSendblueClient({ apiKeyId: "id", apiSecretKey: "secret", fetch: request })
+
+    await expect(
+      client.sendMessage({ ...claim, replyToMessageHandle: "inbound-1" })
+    ).resolves.toEqual({ state: "uncertain", code: `http_${status}` })
+    expect(request).toHaveBeenCalledTimes(2)
   })
 })

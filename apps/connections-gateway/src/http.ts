@@ -1,6 +1,7 @@
 import type { InstanceAuthenticator } from "./identity.ts"
 import type { ConnectionProvider, ConnectionsProvider } from "./nango.ts"
 
+import { GatewayFailure, gatewayFailure, type GatewayFailureCode } from "./failure.ts"
 import { requiredJsonObject, requiredText, type JsonObject } from "./json.ts"
 
 const MAX_BODY_BYTES = 16 * 1024
@@ -14,8 +15,27 @@ function json<Body>(body: Body, status = 200): Response {
 
 async function readBody(request: Request): Promise<JsonObject> {
   const text = await request.text()
-  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) throw new Error("body_too_large")
-  return requiredJsonObject(JSON.parse(text))
+  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) {
+    throw gatewayFailure("body_too_large")
+  }
+  try {
+    return requiredJsonObject(JSON.parse(text))
+  } catch (error) {
+    if (error instanceof GatewayFailure) throw error
+    throw gatewayFailure("invalid_request")
+  }
+}
+
+const failureStatus = {
+  access_denied: 401,
+  invalid_request: 400,
+  body_too_large: 413,
+  provider_unavailable: 502,
+  internal_error: 500
+} satisfies Readonly<Record<GatewayFailureCode, number>>
+
+function failureResponse(failure: GatewayFailure): Response {
+  return json({ code: failure.code }, failureStatus[failure.code])
 }
 
 export function createConnectionsGateway(options: {
@@ -34,7 +54,7 @@ export function createConnectionsGateway(options: {
         const ownerId = requiredText(body.ownerId)
         const providerValue = requiredText(body.provider)
         if (providerValue !== "google_calendar" && providerValue !== "microsoft_calendar")
-          throw new Error("invalid_request")
+          throw gatewayFailure("invalid_request")
         const provider: ConnectionProvider =
           providerValue === "google_calendar" ? "google_calendar" : "microsoft_calendar"
         return json(
@@ -57,14 +77,9 @@ export function createConnectionsGateway(options: {
       }
       return json({ code: "not_found" }, 404)
     } catch (error) {
-      const code = error instanceof Error ? error.message : "internal_error"
-      if (code === "access_denied") return json({ code }, 401)
-      if (code === "invalid_request" || error instanceof SyntaxError) {
-        return json({ code: "invalid_request" }, 400)
-      }
-      if (code === "body_too_large") return json({ code }, 413)
-      if (code.startsWith("connections_provider_")) return json({ code }, 502)
-      return json({ code: "internal_error" }, 500)
+      return failureResponse(
+        error instanceof GatewayFailure ? error : gatewayFailure("internal_error")
+      )
     }
   }
 }

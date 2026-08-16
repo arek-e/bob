@@ -5,15 +5,16 @@ import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../policy/owner-data-key.ts"
 import type { EvidenceSourceRegistry } from "./evidence.ts"
 
-import { users } from "../conversations/schema.ts"
 import {
   completeEffect,
   completedEffect,
   completedEffectAfterConflict,
   type EffectIdentity
 } from "../policy/effect-outcome.ts"
+import { makeOwnerDataKeyStore } from "../policy/owner-data-key.ts"
 import { retrievalProjection } from "../retrieval/projection.ts"
 import { searchDocuments } from "../retrieval/schema.ts"
 import {
@@ -23,7 +24,21 @@ import {
   deriveMemoryPolicy,
   type OriginClass
 } from "./rules.ts"
-import { factEvidence, factRelations, factRevisions, facts, memoryCandidates } from "./schema.ts"
+import {
+  factEvidence,
+  factRelations,
+  factRevisions,
+  facts,
+  memoryCandidates,
+  memoryReviewClaimGuards
+} from "./schema.ts"
+import {
+  decodeStoredMemoryValue,
+  encodeMemoryValue,
+  encryptedMemoryValue,
+  plainMemoryValue,
+  readMemoryValue
+} from "./value-envelope.ts"
 
 export interface MemoryProposal {
   readonly ownerId: string
@@ -106,6 +121,14 @@ const OriginClassValue = Schema.Literals([
 const MemorySensitivity = Schema.Literals(["normal", "private", "high"])
 const CandidateStatus = Schema.Literals(["proposed", "disputed"])
 
+type ReviewAction = "confirm" | "correct" | "reject"
+
+interface ReviewClaim {
+  readonly action: ReviewAction
+  readonly id: string
+  readonly resultId: string
+}
+
 function legacyCandidateSourceLabel(createdAt: string): string {
   const [year = "", month = "", day = ""] = createdAt.slice(0, 10).split("-")
   const monthLabel = monthLabels[Number(month) - 1] ?? month
@@ -117,41 +140,40 @@ export function makeMemoryStore(
   database: CoreDatabase,
   protection: DataProtection,
   evidenceSources: EvidenceSourceRegistry,
-  options: { readonly now?: () => Date; readonly randomUuid?: () => string }
+  options: {
+    readonly now?: () => Date
+    readonly randomUuid?: () => string
+    readonly reviewClaimLeaseMs?: number
+    readonly ownerDataKeys?: OwnerDataKeyStore
+  }
 ): MemoryStore {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
-
-  async function ownerKey(ownerId: string): Promise<{ key: CryptoKey; version: number }> {
-    const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
-    if (
-      owner?.wrappedDataKey === null ||
-      owner?.wrappedDataKey === undefined ||
-      owner.wrappedDataKeyIv === null ||
-      owner.wrappedDataKeyIv === undefined ||
-      owner.dataKeyVersion === null ||
-      owner.dataKeyVersion === undefined
-    ) {
-      throw new Error("Owner data key is unavailable")
-    }
-    return {
-      key: await protection.unwrapDataKey({
-        ciphertext: owner.wrappedDataKey,
-        iv: owner.wrappedDataKeyIv,
-        version: owner.dataKeyVersion
-      }),
-      version: owner.dataKeyVersion
-    }
-  }
+  const reviewClaimLeaseMs = options.reviewClaimLeaseMs ?? 60_000
+  const ownerDataKeys =
+    options.ownerDataKeys ??
+    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
 
   async function claimReview(
     candidate: typeof memoryCandidates.$inferSelect,
-    status: "confirmed" | "rejected",
-    reviewedAt: string
-  ): Promise<boolean> {
+    action: ReviewAction,
+    claimedAt: string
+  ): Promise<ReviewClaim | undefined> {
+    const claim: ReviewClaim = {
+      action,
+      id: randomUuid(),
+      resultId: action === "reject" ? candidate.id : randomUuid()
+    }
+    const expiresAt = new Date(Date.parse(claimedAt) + reviewClaimLeaseMs).toISOString()
     const [claimed] = await database
       .update(memoryCandidates)
-      .set({ status, reviewedAt })
+      .set({
+        status: "claimed",
+        reviewClaimAction: claim.action,
+        reviewClaimId: claim.id,
+        reviewClaimExpiresAt: expiresAt,
+        reviewResultId: claim.resultId
+      })
       .where(
         and(
           eq(memoryCandidates.id, candidate.id),
@@ -159,24 +181,106 @@ export function makeMemoryStore(
           sql`${memoryCandidates.status} IN ('proposed', 'disputed')`
         )
       )
-      .returning({ id: memoryCandidates.id })
-    return claimed !== undefined
-  }
+      .returning({
+        action: memoryCandidates.reviewClaimAction,
+        id: memoryCandidates.reviewClaimId,
+        resultId: memoryCandidates.reviewResultId
+      })
+    if (claimed !== undefined) return claim
 
-  async function releaseReview(
-    candidate: typeof memoryCandidates.$inferSelect,
-    status: "confirmed" | "rejected",
-    reviewedAt: string
-  ): Promise<void> {
-    await database
+    const [existing] = await database
+      .select({
+        status: memoryCandidates.status,
+        action: memoryCandidates.reviewClaimAction,
+        id: memoryCandidates.reviewClaimId,
+        expiresAt: memoryCandidates.reviewClaimExpiresAt,
+        resultId: memoryCandidates.reviewResultId
+      })
+      .from(memoryCandidates)
+      .where(
+        and(eq(memoryCandidates.id, candidate.id), eq(memoryCandidates.userId, candidate.userId))
+      )
+      .limit(1)
+    if (
+      existing?.status !== "claimed" ||
+      existing.action !== action ||
+      existing.id === null ||
+      existing.expiresAt === null ||
+      existing.resultId === null ||
+      existing.expiresAt > claimedAt
+    ) {
+      return undefined
+    }
+    const [renewed] = await database
       .update(memoryCandidates)
-      .set({ status: candidate.status, reviewedAt: candidate.reviewedAt })
+      .set({
+        reviewClaimAction: claim.action,
+        reviewClaimId: claim.id,
+        reviewClaimExpiresAt: expiresAt,
+        reviewResultId: claim.resultId
+      })
       .where(
         and(
           eq(memoryCandidates.id, candidate.id),
           eq(memoryCandidates.userId, candidate.userId),
-          eq(memoryCandidates.status, status),
-          eq(memoryCandidates.reviewedAt, reviewedAt)
+          eq(memoryCandidates.status, "claimed"),
+          eq(memoryCandidates.reviewClaimAction, action),
+          eq(memoryCandidates.reviewClaimId, existing.id),
+          sql`${memoryCandidates.reviewClaimExpiresAt} <= ${claimedAt}`
+        )
+      )
+      .returning({ id: memoryCandidates.id })
+    if (renewed === undefined) return undefined
+    return claim
+  }
+
+  function guardReview(
+    candidate: typeof memoryCandidates.$inferSelect,
+    claim: ReviewClaim
+  ): BatchItem<"sqlite"> {
+    return database.insert(memoryReviewClaimGuards).values({
+      claimId: sql`(
+        SELECT ${memoryCandidates.reviewClaimId}
+        FROM ${memoryCandidates}
+        WHERE ${memoryCandidates.id} = ${candidate.id}
+          AND ${memoryCandidates.userId} = ${candidate.userId}
+          AND ${memoryCandidates.status} = 'claimed'
+          AND ${memoryCandidates.reviewClaimAction} = ${claim.action}
+          AND ${memoryCandidates.reviewClaimId} = ${claim.id}
+        LIMIT 1
+      )`
+    })
+  }
+
+  function releaseReviewGuard(claim: ReviewClaim): BatchItem<"sqlite"> {
+    return database
+      .delete(memoryReviewClaimGuards)
+      .where(eq(memoryReviewClaimGuards.claimId, claim.id))
+  }
+
+  function settleReview(
+    candidate: typeof memoryCandidates.$inferSelect,
+    claim: ReviewClaim,
+    status: "confirmed" | "rejected",
+    reviewedAt: string
+  ): BatchItem<"sqlite"> {
+    return database
+      .update(memoryCandidates)
+      .set({
+        status,
+        reviewedAt,
+        reviewClaimAction: null,
+        reviewClaimId: null,
+        reviewClaimExpiresAt: null,
+        reviewResultId: null
+      })
+      .where(
+        and(
+          eq(memoryCandidates.id, candidate.id),
+          eq(memoryCandidates.userId, candidate.userId),
+          eq(memoryCandidates.status, "claimed"),
+          eq(memoryCandidates.reviewClaimAction, claim.action),
+          eq(memoryCandidates.reviewClaimId, claim.id)
         )
       )
   }
@@ -230,7 +334,8 @@ export function makeMemoryStore(
           derivedPolicy.channelEligible &&
           sourceEvidence.disclosure === "model_and_channel"
       }
-      const owner = await ownerKey(input.ownerId)
+      const owner = await ownerDataKeys.load(input.ownerId)
+      const value = Schema.decodeUnknownSync(Schema.Json)(input.value)
       const [current] = await database
         .select({ revisionId: facts.currentRevisionId })
         .from(facts)
@@ -246,23 +351,30 @@ export function makeMemoryStore(
       if (current?.revisionId !== null && current?.revisionId !== undefined) {
         const [revision] = await database
           .select({
-            valueJson: factRevisions.valueJson,
-            valueCiphertext: factRevisions.valueCiphertext,
-            valueIv: factRevisions.valueIv
+            valueEnvelope: factRevisions.valueEnvelope,
+            legacyValueJson: factRevisions.legacyValueJson,
+            legacyValueCiphertext: factRevisions.legacyValueCiphertext,
+            legacyValueIv: factRevisions.legacyValueIv,
+            dataKeyVersion: factRevisions.dataKeyVersion
           })
           .from(factRevisions)
           .where(eq(factRevisions.id, current.revisionId))
           .limit(1)
-        const currentValue =
-          revision?.valueCiphertext !== null &&
-          revision?.valueCiphertext !== undefined &&
-          revision.valueIv !== null
-            ? await protection.decryptText(owner.key, {
-                ciphertext: revision.valueCiphertext,
-                iv: revision.valueIv
-              })
-            : revision?.valueJson
-        conflictsWithConfirmed = currentValue !== JSON.stringify(input.value)
+        if (revision === undefined) throw new Error("Current fact revision is unavailable")
+        const currentValue = await readMemoryValue(
+          decodeStoredMemoryValue({
+            envelope: revision.valueEnvelope,
+            legacy: {
+              valueJson: revision.legacyValueJson,
+              valueCiphertext: revision.legacyValueCiphertext,
+              valueIv: revision.legacyValueIv,
+              keyVersion: revision.dataKeyVersion
+            }
+          }),
+          owner,
+          protection
+        )
+        conflictsWithConfirmed = JSON.stringify(currentValue) !== JSON.stringify(value)
       }
       const status = decideCandidate({
         assertionKind,
@@ -276,11 +388,15 @@ export function makeMemoryStore(
         conflictsWithConfirmed
       })
       const encrypted = await protection.encryptText(owner.key, input.canonicalText)
-      const serializedValue = JSON.stringify(input.value)
+      const serializedValue = JSON.stringify(value)
       const encryptedValue =
         policy.sensitivity === "normal"
           ? undefined
           : await protection.encryptText(owner.key, serializedValue)
+      const valueEnvelope =
+        encryptedValue === undefined
+          ? plainMemoryValue(value)
+          : encryptedMemoryValue(encryptedValue, owner.version)
       const candidateId = randomUuid()
       const createdAt = now().toISOString()
       const initialStatus = status === "confirmed" ? "proposed" : status
@@ -291,9 +407,10 @@ export function makeMemoryStore(
             userId: input.ownerId,
             scope: input.scope,
             key: input.key,
-            proposedValueJson: encryptedValue === undefined ? serializedValue : "null",
-            proposedValueCiphertext: encryptedValue?.ciphertext,
-            proposedValueIv: encryptedValue?.iv,
+            proposedValueEnvelope: encodeMemoryValue(valueEnvelope),
+            legacyProposedValueJson: encryptedValue === undefined ? serializedValue : "null",
+            legacyProposedValueCiphertext: encryptedValue?.ciphertext,
+            legacyProposedValueIv: encryptedValue?.iv,
             canonicalTextCiphertext: encrypted.ciphertext,
             canonicalTextIv: encrypted.iv,
             memoryClass: "owner_fact",
@@ -345,7 +462,11 @@ export function makeMemoryStore(
       }
       const previous = await completedEffect(database, effect)
       if (previous !== undefined) return previous
-      if (candidate.status !== "proposed" && candidate.status !== "disputed") {
+      if (
+        candidate.status !== "proposed" &&
+        candidate.status !== "disputed" &&
+        candidate.status !== "claimed"
+      ) {
         throw new Error("Memory candidate was already reviewed")
       }
       const originClass = Schema.decodeUnknownSync(OriginClassValue)(candidate.originClass)
@@ -373,6 +494,14 @@ export function makeMemoryStore(
       if (sourceEvidence.confirmationAuthority !== authority) {
         throw new Error("This evidence source cannot confirm the memory candidate")
       }
+      const createdAt = now().toISOString()
+      const claim = await claimReview(candidate, "confirm", createdAt)
+      if (claim === undefined) {
+        const settled = await completedEffect(database, effect)
+        if (settled !== undefined) return settled
+        throw new Error("Memory candidate is already under review")
+      }
+      const revisionId = claim.resultId
       let [fact] = await database
         .select()
         .from(facts)
@@ -409,34 +538,36 @@ export function makeMemoryStore(
           .limit(1)
       }
       if (fact === undefined) throw new Error("Fact identity creation failed")
-      const owner = await ownerKey(candidate.userId)
+      const owner = await ownerDataKeys.load(candidate.userId)
       const canonicalText = await protection.decryptText(owner.key, {
         ciphertext: candidate.canonicalTextCiphertext,
         iv: candidate.canonicalTextIv
       })
-      const revisionId = randomUuid()
-      const createdAt = now().toISOString()
       const excerptHash = sourceEvidence.contentHash
       const canonicalContentHash = await protection.contentHash(canonicalText)
-      const sensitiveValue =
-        candidate.proposedValueCiphertext === null || candidate.proposedValueIv === null
-          ? undefined
-          : {
-              ciphertext: candidate.proposedValueCiphertext,
-              iv: candidate.proposedValueIv
-            }
+      const valueEnvelope = decodeStoredMemoryValue({
+        envelope: candidate.proposedValueEnvelope,
+        legacy: {
+          valueJson: candidate.legacyProposedValueJson,
+          valueCiphertext: candidate.legacyProposedValueCiphertext,
+          valueIv: candidate.legacyProposedValueIv,
+          keyVersion: owner.version
+        }
+      })
       const confirmedPolicy = deriveConfirmedMemoryPolicy({
         sensitivity: candidate.sensitivity === "high" ? "high" : sourceEvidence.sensitivity,
         disclosure: sourceEvidence.disclosure
       })
       const previousRevisionId = fact.currentRevisionId
       const statements: [BatchItem<"sqlite">, ...BatchItem<"sqlite">[]] = [
+        guardReview(candidate, claim),
         database.insert(factRevisions).values({
           id: revisionId,
           factId: fact.id,
-          valueJson: sensitiveValue === undefined ? candidate.proposedValueJson : "null",
-          valueCiphertext: sensitiveValue?.ciphertext,
-          valueIv: sensitiveValue?.iv,
+          valueEnvelope: encodeMemoryValue(valueEnvelope),
+          legacyValueJson: candidate.legacyProposedValueJson,
+          legacyValueCiphertext: candidate.legacyProposedValueCiphertext,
+          legacyValueIv: candidate.legacyProposedValueIv,
           canonicalTextCiphertext: candidate.canonicalTextCiphertext,
           canonicalTextIv: candidate.canonicalTextIv,
           dataKeyVersion: owner.version,
@@ -516,21 +647,15 @@ export function makeMemoryStore(
           })
         )
       }
-      statements.push(completeEffect(database, effect, revisionId, randomUuid(), createdAt))
-      if (!(await claimReview(candidate, "confirmed", createdAt))) {
-        const settled = await completedEffect(database, effect)
-        if (settled !== undefined) return settled
-        throw new Error("Memory candidate was already reviewed")
-      }
+      statements.push(
+        settleReview(candidate, claim, "confirmed", createdAt),
+        completeEffect(database, effect, revisionId, randomUuid(), createdAt),
+        releaseReviewGuard(claim)
+      )
       try {
         await database.batch(statements)
       } catch (error) {
-        try {
-          return await completedEffectAfterConflict(database, effect, error)
-        } catch (settlementError) {
-          await releaseReview(candidate, "confirmed", createdAt)
-          throw settlementError
-        }
+        return completedEffectAfterConflict(database, effect, error)
       }
       return revisionId
     },
@@ -545,7 +670,11 @@ export function makeMemoryStore(
         .where(and(eq(memoryCandidates.id, candidateId), eq(memoryCandidates.userId, ownerId)))
         .limit(1)
       if (candidate === undefined) throw new Error("Memory candidate not found")
-      if (candidate.status !== "proposed" && candidate.status !== "disputed") {
+      if (
+        candidate.status !== "proposed" &&
+        candidate.status !== "disputed" &&
+        candidate.status !== "claimed"
+      ) {
         throw new Error("Memory candidate was already reviewed")
       }
       if (candidate.originClass !== "owner_input") {
@@ -567,30 +696,38 @@ export function makeMemoryStore(
       if (trimmed.length === 0 || trimmed.length > 8_000) {
         throw new Error("Corrected memory text is invalid")
       }
-      const owner = await ownerKey(ownerId)
+      const createdAt = now().toISOString()
+      const claim = await claimReview(candidate, "correct", createdAt)
+      if (claim === undefined) {
+        const settled = await completedEffect(database, effect)
+        if (settled !== undefined) return settled
+        throw new Error("Memory candidate is already under review")
+      }
+      const replacementId = claim.resultId
+      const owner = await ownerDataKeys.load(ownerId)
       const [encryptedText, encryptedValue] = await Promise.all([
         protection.encryptText(owner.key, trimmed),
         candidate.sensitivity === "normal"
           ? Promise.resolve(undefined)
           : protection.encryptText(owner.key, JSON.stringify(trimmed))
       ])
-      const replacementId = randomUuid()
-      const createdAt = now().toISOString()
-      if (!(await claimReview(candidate, "rejected", createdAt))) {
-        const settled = await completedEffect(database, effect)
-        if (settled !== undefined) return settled
-        throw new Error("Memory candidate was already reviewed")
-      }
+      const correctedValueEnvelope =
+        encryptedValue === undefined
+          ? plainMemoryValue(trimmed)
+          : encryptedMemoryValue(encryptedValue, owner.version)
       try {
         await database.batch([
+          guardReview(candidate, claim),
           database.insert(memoryCandidates).values({
             id: replacementId,
             userId: ownerId,
             scope: candidate.scope,
             key: candidate.key,
-            proposedValueJson: encryptedValue === undefined ? JSON.stringify(trimmed) : "null",
-            proposedValueCiphertext: encryptedValue?.ciphertext,
-            proposedValueIv: encryptedValue?.iv,
+            proposedValueEnvelope: encodeMemoryValue(correctedValueEnvelope),
+            legacyProposedValueJson:
+              encryptedValue === undefined ? JSON.stringify(trimmed) : "null",
+            legacyProposedValueCiphertext: encryptedValue?.ciphertext,
+            legacyProposedValueIv: encryptedValue?.iv,
             canonicalTextCiphertext: encryptedText.ciphertext,
             canonicalTextIv: encryptedText.iv,
             memoryClass: "owner_fact",
@@ -605,15 +742,12 @@ export function makeMemoryStore(
             status: "proposed",
             createdAt
           }),
-          completeEffect(database, effect, replacementId, randomUuid(), createdAt)
+          settleReview(candidate, claim, "rejected", createdAt),
+          completeEffect(database, effect, replacementId, randomUuid(), createdAt),
+          releaseReviewGuard(claim)
         ])
       } catch (error) {
-        try {
-          return await completedEffectAfterConflict(database, effect, error)
-        } catch (settlementError) {
-          await releaseReview(candidate, "rejected", createdAt)
-          throw settlementError
-        }
+        return completedEffectAfterConflict(database, effect, error)
       }
       return replacementId
     },
@@ -627,25 +761,28 @@ export function makeMemoryStore(
         .where(and(eq(memoryCandidates.id, candidateId), eq(memoryCandidates.userId, ownerId)))
         .limit(1)
       if (candidate === undefined) throw new Error("Memory candidate not found")
-      if (candidate.status !== "proposed" && candidate.status !== "disputed") {
+      if (
+        candidate.status !== "proposed" &&
+        candidate.status !== "disputed" &&
+        candidate.status !== "claimed"
+      ) {
         throw new Error("Memory candidate was already reviewed")
       }
       const reviewedAt = now().toISOString()
-      if (!(await claimReview(candidate, "rejected", reviewedAt))) {
+      const claim = await claimReview(candidate, "reject", reviewedAt)
+      if (claim === undefined) {
         if ((await completedEffect(database, effect)) !== undefined) return
-        throw new Error("Memory candidate was already reviewed")
+        throw new Error("Memory candidate is already under review")
       }
       try {
         await database.batch([
-          completeEffect(database, effect, candidateId, randomUuid(), reviewedAt)
+          guardReview(candidate, claim),
+          settleReview(candidate, claim, "rejected", reviewedAt),
+          completeEffect(database, effect, candidateId, randomUuid(), reviewedAt),
+          releaseReviewGuard(claim)
         ])
       } catch (error) {
-        try {
-          await completedEffectAfterConflict(database, effect, error)
-        } catch (settlementError) {
-          await releaseReview(candidate, "rejected", reviewedAt)
-          throw settlementError
-        }
+        await completedEffectAfterConflict(database, effect, error)
       }
     },
 
@@ -662,26 +799,32 @@ export function makeMemoryStore(
         .orderBy(desc(memoryCandidates.createdAt))
         .limit(50)
       if (rows.length === 0) return []
-      const owner = await ownerKey(ownerId)
+      const owner = await ownerDataKeys.load(ownerId)
       return Promise.all(
         rows.map(async (candidate) => {
           const canonicalText = await protection.decryptText(owner.key, {
             ciphertext: candidate.canonicalTextCiphertext,
             iv: candidate.canonicalTextIv
           })
-          const serializedValue =
-            candidate.proposedValueCiphertext === null || candidate.proposedValueIv === null
-              ? candidate.proposedValueJson
-              : await protection.decryptText(owner.key, {
-                  ciphertext: candidate.proposedValueCiphertext,
-                  iv: candidate.proposedValueIv
-                })
+          const value = await readMemoryValue(
+            decodeStoredMemoryValue({
+              envelope: candidate.proposedValueEnvelope,
+              legacy: {
+                valueJson: candidate.legacyProposedValueJson,
+                valueCiphertext: candidate.legacyProposedValueCiphertext,
+                valueIv: candidate.legacyProposedValueIv,
+                keyVersion: owner.version
+              }
+            }),
+            owner,
+            protection
+          )
           const review = {
             id: candidate.id,
             memoryClass: "owner_fact" as const,
             scope: candidate.scope,
             key: candidate.key,
-            value: Schema.decodeUnknownSync(Schema.Json)(JSON.parse(serializedValue)),
+            value,
             canonicalText,
             originClass: Schema.decodeUnknownSync(OriginClassValue)(candidate.originClass),
             sourceType: candidate.sourceType,

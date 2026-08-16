@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { planWebhookReconciliation } from "../src/account.ts"
+import { createAccountClient, planWebhookReconciliation } from "../src/account.ts"
 import {
   decodeWebhookPayload,
   normalizeInbound,
@@ -140,6 +140,7 @@ describe("Sendblue webhook handling", () => {
       { type: "receive", url: "https://bob.example/webhooks/receive" },
       { type: "outbound", url: "https://bob.example/webhooks/outbound" }
     ])
+    expect(plan.state).toBe("changes_required")
   })
 
   it("does not change hooks when the global secret differs", async () => {
@@ -151,7 +152,143 @@ describe("Sendblue webhook handling", () => {
         globalSecret: "right"
       }
     )
-    expect(plan.secretMatches).toBe(false)
+    expect(plan.state).toBe("secret_mismatch")
     expect(plan.additions).toEqual([])
+  })
+
+  it.each([
+    {
+      state: "duplicate_hooks",
+      webhooks: {
+        receive: ["https://bob.example/webhooks/receive", "https://bob.example/webhooks/receive"],
+        outbound: []
+      }
+    },
+    {
+      state: "changes_required",
+      webhooks: { receive: ["https://bob.example/webhooks/receive"], outbound: [] }
+    },
+    {
+      state: "converged",
+      webhooks: {
+        receive: ["https://bob.example/webhooks/receive"],
+        outbound: ["https://bob.example/webhooks/outbound"]
+      }
+    }
+  ] as const)("reports $state as one authoritative state", async ({ state, webhooks }) => {
+    const plan = await planWebhookReconciliation(
+      { webhooks: { ...webhooks, globalSecret: "secret" } },
+      {
+        receiveUrl: "https://bob.example/webhooks/receive",
+        outboundUrl: "https://bob.example/webhooks/outbound",
+        globalSecret: "secret"
+      }
+    )
+
+    expect(plan.state).toBe(state)
+    if (state === "duplicate_hooks") expect(plan.additions).toEqual([])
+  })
+
+  it("applies missing hooks and requires the reread to converge", async () => {
+    const requests: RequestInit[] = []
+    const reads = [
+      {
+        webhooks: {
+          receive: ["https://bob.example/webhooks/receive"],
+          outbound: [],
+          globalSecret: "secret"
+        }
+      },
+      {
+        webhooks: {
+          receive: ["https://bob.example/webhooks/receive"],
+          outbound: ["https://bob.example/webhooks/outbound"],
+          globalSecret: "secret"
+        }
+      }
+    ]
+    const client = createAccountClient({
+      apiKeyId: "id",
+      apiSecretKey: "key",
+      fetch: async (_input, init) => {
+        requests.push(init ?? {})
+        return init?.method === "POST"
+          ? Response.json({ status: "OK" })
+          : Response.json(reads.shift())
+      }
+    })
+
+    const plan = await client.reconcile(
+      {
+        receiveUrl: "https://bob.example/webhooks/receive",
+        outboundUrl: "https://bob.example/webhooks/outbound",
+        globalSecret: "secret"
+      },
+      false
+    )
+
+    expect(plan.state).toBe("converged")
+    expect(requests.map((request) => request.method ?? "GET")).toEqual(["GET", "POST", "GET"])
+  })
+
+  it("does not mutate a non-repairable webhook state", async () => {
+    const methods: string[] = []
+    const client = createAccountClient({
+      apiKeyId: "id",
+      apiSecretKey: "key",
+      fetch: async (_input, init) => {
+        methods.push(init?.method ?? "GET")
+        return Response.json({
+          webhooks: {
+            receive: [
+              "https://bob.example/webhooks/receive",
+              "https://bob.example/webhooks/receive"
+            ],
+            outbound: [],
+            globalSecret: "secret"
+          }
+        })
+      }
+    })
+
+    const plan = await client.reconcile(
+      {
+        receiveUrl: "https://bob.example/webhooks/receive",
+        outboundUrl: "https://bob.example/webhooks/outbound",
+        globalSecret: "secret"
+      },
+      false
+    )
+
+    expect(plan.state).toBe("duplicate_hooks")
+    expect(methods).toEqual(["GET"])
+  })
+
+  it("fails apply mode when the provider reread does not converge", async () => {
+    const client = createAccountClient({
+      apiKeyId: "id",
+      apiSecretKey: "key",
+      fetch: async (_input, init) =>
+        init?.method === "POST"
+          ? Response.json({ status: "OK" })
+          : Response.json({
+              webhooks: {
+                receive: ["https://bob.example/webhooks/receive"],
+                outbound: [],
+                globalSecret: "secret"
+              }
+            })
+    })
+
+    await expect(
+      client.reconcile(
+        {
+          receiveUrl: "https://bob.example/webhooks/receive",
+          outboundUrl: "https://bob.example/webhooks/outbound",
+          globalSecret: "secret"
+        },
+        false
+      )
+    ).rejects.toThrow("Sendblue webhook verification failed")
   })
 })

@@ -20,12 +20,11 @@ const plan = await client.reconcile(
 console.log(
   JSON.stringify({
     mode: checkOnly ? "check" : "apply",
-    valid: plan.valid,
-    secretMatches: plan.secretMatches,
+    state: plan.state,
     receiveCount: plan.receiveCount,
     outboundCount: plan.outboundCount,
     additions: plan.additions
   })
 )
 
-if (!plan.valid || (!checkOnly && plan.additions.length > 0)) process.exitCode = 1
+if (plan.state !== "converged") process.exitCode = 1

@@ -91,6 +91,7 @@ const RESTORE_ORDER = [
   "fact_evidence",
   "fact_relations",
   "memory_candidates",
+  "memory_review_claim_guards",
   "gyms",
   "exercises",
   "equipment",

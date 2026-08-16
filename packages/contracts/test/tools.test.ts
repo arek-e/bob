@@ -7,6 +7,8 @@ import {
   CapabilityCatalogueGeneration,
   makeCapabilityCatalogue
 } from "../src/capabilities/catalogue.ts"
+import { capabilityToolNames } from "../src/capabilities/definitions.ts"
+import { JournalSearchMetadataArguments } from "../src/capabilities/journal.ts"
 import { memoryCapability } from "../src/capabilities/memory.ts"
 import { coreDeploymentProfile, transitionalDeploymentProfile } from "../src/deployment-profiles.ts"
 
@@ -21,7 +23,7 @@ describe("Bob tool catalogue", () => {
   })
 
   it("assigns every Tool to one reviewed capability Module", () => {
-    const names = transitionalDeploymentProfile.modules.flatMap((capability) => capability.names)
+    const names = transitionalDeploymentProfile.modules.flatMap(capabilityToolNames)
 
     expect(names.toSorted()).toEqual([...transitionalDeploymentProfile.names].toSorted())
     expect(new Set(names).size).toBe(names.length)
@@ -64,12 +66,33 @@ describe("Bob tool catalogue", () => {
     expect(transitionalDeploymentProfile.hasUnknownExternalOutcome("settings_update")).toBe(false)
   })
 
-  it("covers every registered Tool definition except deterministic commands", () => {
-    const names = transitionalDeploymentProfile.modelToolNames.toSorted()
-    const expected = [...transitionalDeploymentProfile.modelToolNames].toSorted()
+  it("derives model Tool names and optional deterministic definitions", () => {
+    const names = transitionalDeploymentProfile.modules
+      .flatMap((module) =>
+        module.tools.flatMap((tool) => (tool.kind === "model" ? [tool.name] : []))
+      )
+      .toSorted()
+    const expected = transitionalDeploymentProfile.modelToolNames.toSorted()
 
     expect(names).toEqual(expected)
+    expect(transitionalDeploymentProfile.definitionFor("memory_confirm")).toMatchObject({
+      name: "memory_confirm"
+    })
     expect(transitionalDeploymentProfile.definitionFor("memory_correct")).toBeUndefined()
+  })
+
+  it("keeps each Tool definition and policy in one registration", () => {
+    const reminderCreate = transitionalDeploymentProfile.modules
+      .find((module) => module.id === "reminders")
+      ?.tools.find((tool) => tool.name === "reminder_create")
+
+    expect(reminderCreate).toMatchObject({
+      kind: "model",
+      sourceBound: true,
+      confirmedActionCodes: ["reminder_created", "reminder_exists"],
+      mutationArgumentExclusions: ["sourceMessageId"],
+      sourceMessageArgument: "sourceMessageId"
+    })
   })
 
   it("exposes every reviewed model capability without an owner-text router", () => {
@@ -94,13 +117,13 @@ describe("Bob tool catalogue", () => {
   })
 
   it("keeps reviewed constraints in the canonical input schema", () => {
-    expect(
-      transitionalDeploymentProfile.definitionFor("reminder_create")?.inputSchema.properties
-        .displayText
-    ).toMatchObject({
+    const reminderCreate = transitionalDeploymentProfile.definitionFor("reminder_create")
+    expect(reminderCreate?.inputSchema.properties.displayText).toMatchObject({
       type: "string",
       maxLength: 1_200
     })
+    expect(reminderCreate?.inputSchema.properties).not.toHaveProperty("requiresAcknowledgment")
+    expect(reminderCreate?.inputSchema.required).not.toContain("requiresAcknowledgment")
     expect(
       transitionalDeploymentProfile.definitionFor("gym_list")?.inputSchema.properties.query
     ).toMatchObject({
@@ -114,5 +137,10 @@ describe("Bob tool catalogue", () => {
       type: "string",
       enum: ["google_calendar", "microsoft_calendar"]
     })
+    expect(
+      transitionalDeploymentProfile.definitionFor("journal_search_metadata")?.inputSchema.properties
+        .tag
+    ).toMatchObject({ type: "string", minLength: 1, maxLength: 1_200, pattern: "\\S" })
+    expect(() => Schema.decodeUnknownSync(JournalSearchMetadataArguments)({ tag: "   " })).toThrow()
   })
 })

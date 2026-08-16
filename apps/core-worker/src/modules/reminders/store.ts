@@ -6,10 +6,12 @@ import { Context, Layer } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../policy/owner-data-key.ts"
 
 import { operationalAlerts } from "../alerts/schema.ts"
 import { messages, shortReplyBindings, users } from "../conversations/schema.ts"
 import { outboxMessages } from "../delivery/schema.ts"
+import { makeOwnerDataKeyStore } from "../policy/owner-data-key.ts"
 import {
   localDisplay,
   localDayBounds,
@@ -22,6 +24,13 @@ import {
   transitionOccurrence
 } from "./rules.ts"
 import { reminderActions, reminderOccurrences, reminders, schedulerOutbox } from "./schema.ts"
+
+const ONE_SHOT_REMINDER_POLICY = {
+  requiresAcknowledgment: true,
+  responseDeadlineMinutes: 1_440,
+  repeatPolicy: "none",
+  maxAttempts: 1
+} as const
 
 export interface ReminderSummary {
   readonly id: string
@@ -92,12 +101,16 @@ export function makeReminderStore(
     readonly randomUuid?: () => string
     readonly quietHours?: QuietHours
     readonly dailyLimit?: number
+    readonly ownerDataKeys?: OwnerDataKeyStore
   }
 ): ReminderStore {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const quietHours = options.quietHours
   const dailyLimit = options.dailyLimit
+  const ownerDataKeys =
+    options.ownerDataKeys ??
+    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
 
   async function ownerQuietHours(ownerId: string): Promise<QuietHours | undefined> {
     if (quietHours === undefined) return undefined
@@ -107,28 +120,6 @@ export function makeReminderStore(
       .where(eq(users.id, ownerId))
       .limit(1)
     return { ...quietHours, timeZone: owner?.timeZone ?? quietHours.timeZone }
-  }
-
-  async function ownerKey(ownerId: string): Promise<{ key: CryptoKey; version: number }> {
-    const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
-    if (
-      owner?.wrappedDataKey === null ||
-      owner?.wrappedDataKey === undefined ||
-      owner.wrappedDataKeyIv === null ||
-      owner.wrappedDataKeyIv === undefined ||
-      owner.dataKeyVersion === null ||
-      owner.dataKeyVersion === undefined
-    ) {
-      throw new Error("Owner data key is unavailable")
-    }
-    return {
-      key: await protection.unwrapDataKey({
-        ciphertext: owner.wrappedDataKey,
-        iv: owner.wrappedDataKeyIv,
-        version: owner.dataKeyVersion
-      }),
-      version: owner.dataKeyVersion
-    }
   }
 
   async function actionExists(idempotencyKey: string): Promise<boolean> {
@@ -285,7 +276,7 @@ export function makeReminderStore(
       if (Date.parse(dueAt) !== Date.parse(input.dueAt)) {
         throw new Error("Reminder due time does not match its local date and time")
       }
-      const owner = await ownerKey(ownerId)
+      const owner = await ownerDataKeys.load(ownerId)
       const [original, display, sms] = await Promise.all([
         protection.encryptText(owner.key, originalWording),
         protection.encryptText(owner.key, input.displayText),
@@ -314,10 +305,7 @@ export function makeReminderStore(
           timeZone: input.timeZone,
           nextDueAt: dueAt,
           quietHoursBehavior: "defer",
-          requiresAcknowledgment: input.requiresAcknowledgment,
-          responseDeadlineMinutes: 1_440,
-          repeatPolicy: "none",
-          maxAttempts: 1,
+          ...ONE_SHOT_REMINDER_POLICY,
           channelId,
           state: "active",
           scheduleRevision: 1,
@@ -401,7 +389,7 @@ export function makeReminderStore(
         })
         targetsByReminder.set(target.reminderId, targets)
       }
-      const key = (await ownerKey(ownerId)).key
+      const key = (await ownerDataKeys.load(ownerId)).key
       return Promise.all(
         rows.map(async (row) => {
           const displayText = await protection.decryptText(key, {

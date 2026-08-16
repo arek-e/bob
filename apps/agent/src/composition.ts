@@ -77,8 +77,7 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
     provider: config.provider,
     model: config.model,
     allowedModels: config.allowedModels,
-    executeTool: coreTools.execute,
-    executeToolEffect: coreTools.executeEffect
+    executeTool: coreTools.execute
   })
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(

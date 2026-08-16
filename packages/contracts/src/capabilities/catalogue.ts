@@ -1,8 +1,13 @@
 import { Schema } from "effect"
 
-import type { CapabilityModule, ModelToolName, ToolDefinition, ToolName } from "./definitions.ts"
+import type {
+  CapabilityModule,
+  CapabilityToolRegistration,
+  ModelToolName,
+  ToolDefinition
+} from "./definitions.ts"
 
-import { CapabilityId } from "./definitions.ts"
+import { CapabilityId, ToolName } from "./definitions.ts"
 
 export const DeploymentProfileId = Schema.String.check(
   Schema.isPattern(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/),
@@ -62,32 +67,53 @@ function fingerprint(value: typeof Schema.Json.Type): string {
 export function validateCapabilityModules(modules: readonly CapabilityModule[]): void {
   const ids = modules.map((module) => module.id)
   if (new Set(ids).size !== ids.length) throw new Error("Duplicate Capability Module ID")
-  const names = modules.flatMap((module) => module.names)
+  const names = modules.flatMap((module) => module.tools.map((tool) => tool.name))
   if (new Set(names).size !== names.length) throw new Error("Duplicate Tool ownership")
 
   for (const module of modules) {
     Schema.decodeUnknownSync(CapabilityId)(module.id)
-    const owned = new Set(module.names)
-    const declaredNames = [
-      ...Object.keys(module.definitions),
-      ...module.modelTools,
-      ...module.readOnly,
-      ...module.sourceBound,
-      ...module.externalOutcomeUnknown,
-      ...Object.keys(module.confirmedActionCodes),
-      ...Object.keys(module.mutationArgumentExclusions),
-      ...Object.keys(module.sourceMessageArguments)
-    ]
-    if (declaredNames.some((name) => !owned.has(name))) {
-      throw new Error(`Capability Module ${module.id} declares an unowned Tool`)
-    }
-    if (Object.values(module.definitions).some((definition) => definition?.name === undefined)) {
-      throw new Error(`Capability Module ${module.id} has an invalid Tool definition`)
-    }
-    if (module.modelTools.some((name) => module.definitions[name] === undefined)) {
-      throw new Error(`Capability Module ${module.id} exposes a Tool without a definition`)
+    for (const tool of module.tools) {
+      Schema.decodeUnknownSync(ToolName)(tool.name)
+      if (tool.kind === "model" && tool.description.length === 0) {
+        throw new Error(`Capability Module ${module.id} has an invalid Tool definition`)
+      }
     }
   }
+}
+
+function capabilityGenerationView(module: CapabilityModule): typeof Schema.Json.Type {
+  const tools = module.tools
+  const policyRecord = <Value>(
+    select: (tool: CapabilityToolRegistration) => Value | undefined
+  ): Record<string, Value> =>
+    Object.fromEntries(
+      tools.flatMap((tool) => {
+        const value = select(tool)
+        return value === undefined ? [] : [[tool.name, value]]
+      })
+    )
+
+  return Schema.decodeUnknownSync(Schema.Json)({
+    id: module.id,
+    version: module.version,
+    feature: module.feature,
+    names: tools.map((tool) => tool.name),
+    modelTools: tools.filter((tool) => tool.kind === "model").map((tool) => tool.name),
+    definitions: policyRecord((tool) => {
+      if (tool.kind === "model") {
+        return { name: tool.name, description: tool.description, inputSchema: tool.inputSchema }
+      }
+      return tool.definition === undefined ? undefined : { name: tool.name, ...tool.definition }
+    }),
+    readOnly: tools.filter((tool) => tool.readOnly === true).map((tool) => tool.name),
+    sourceBound: tools.filter((tool) => tool.sourceBound === true).map((tool) => tool.name),
+    externalOutcomeUnknown: tools
+      .filter((tool) => tool.externalOutcomeUnknown === true)
+      .map((tool) => tool.name),
+    confirmedActionCodes: policyRecord((tool) => tool.confirmedActionCodes),
+    mutationArgumentExclusions: policyRecord((tool) => tool.mutationArgumentExclusions),
+    sourceMessageArguments: policyRecord((tool) => tool.sourceMessageArgument)
+  })
 }
 
 export function makeCapabilityCatalogue(
@@ -97,41 +123,56 @@ export function makeCapabilityCatalogue(
   Schema.decodeUnknownSync(DeploymentProfileId)(profileId)
   validateCapabilityModules(modules)
   const frozenModules = Object.freeze([...modules])
-  const names = Object.freeze(frozenModules.flatMap((module) => module.names))
+  const registrations = frozenModules.flatMap((module) =>
+    module.tools.map((tool) => ({ module, tool }))
+  )
+  const names = Object.freeze(registrations.map(({ tool }) => tool.name))
   const moduleByName = new Map(
-    names.map(
-      (name) => [name, frozenModules.find((module) => module.names.includes(name))!] as const
-    )
+    registrations.map(({ module, tool }) => [tool.name, module] as const)
   )
   const definitions = new Map(
-    frozenModules.flatMap((module) =>
-      Object.values(module.definitions).flatMap((definition) =>
-        definition === undefined ? [] : [[definition.name, definition] as const]
-      )
-    )
+    registrations.flatMap(({ tool }) => {
+      if (tool.kind === "model") {
+        return [
+          [
+            tool.name,
+            { name: tool.name, description: tool.description, inputSchema: tool.inputSchema }
+          ] as const
+        ]
+      }
+      return tool.definition === undefined
+        ? []
+        : [[tool.name, { name: tool.name, ...tool.definition }] as const]
+    })
   )
+  const registrationByName = new Map(registrations.map(({ tool }) => [tool.name, tool] as const))
   const generation = Schema.decodeUnknownSync(CapabilityCatalogueGeneration)(
-    `capability-v2:${fingerprint(Schema.decodeUnknownSync(Schema.Json)({ profileId, modules: frozenModules }))}`
+    `capability-v2:${fingerprint(
+      Schema.decodeUnknownSync(Schema.Json)({
+        profileId,
+        modules: frozenModules.map(capabilityGenerationView)
+      })
+    )}`
   )
-  const policyNames = (
-    name: ToolName,
-    key: "confirmedActionCodes" | "mutationArgumentExclusions"
-  ) => moduleByName.get(name)?.[key][name] ?? []
 
   return Object.freeze({
     profileId,
     modules: frozenModules,
     names,
-    modelToolNames: Object.freeze(frozenModules.flatMap((module) => module.modelTools)),
+    modelToolNames: Object.freeze(
+      registrations.flatMap(({ tool }) => (tool.kind === "model" ? [tool.name] : []))
+    ),
     generation,
     moduleFor: (name: ToolName) => moduleByName.get(name),
     definitionFor: (name: ToolName) => definitions.get(name),
-    isReadOnly: (name: ToolName) => moduleByName.get(name)?.readOnly.includes(name) === true,
-    isSourceBound: (name: ToolName) => moduleByName.get(name)?.sourceBound.includes(name) === true,
+    isReadOnly: (name: ToolName) => registrationByName.get(name)?.readOnly === true,
+    isSourceBound: (name: ToolName) => registrationByName.get(name)?.sourceBound === true,
     hasUnknownExternalOutcome: (name: ToolName) =>
-      moduleByName.get(name)?.externalOutcomeUnknown.includes(name) === true,
-    confirmedActionCodes: (name: ToolName) => policyNames(name, "confirmedActionCodes"),
-    mutationArgumentExclusions: (name: ToolName) => policyNames(name, "mutationArgumentExclusions"),
-    sourceMessageArgument: (name: ToolName) => moduleByName.get(name)?.sourceMessageArguments[name]
+      registrationByName.get(name)?.externalOutcomeUnknown === true,
+    confirmedActionCodes: (name: ToolName) =>
+      registrationByName.get(name)?.confirmedActionCodes ?? [],
+    mutationArgumentExclusions: (name: ToolName) =>
+      registrationByName.get(name)?.mutationArgumentExclusions ?? [],
+    sourceMessageArgument: (name: ToolName) => registrationByName.get(name)?.sourceMessageArgument
   })
 }

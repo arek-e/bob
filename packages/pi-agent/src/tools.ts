@@ -5,8 +5,7 @@ import {
   type CapabilityCatalogue,
   type ToolCommand,
   type ToolInputSchema,
-  type ToolName,
-  type ToolResult
+  type ToolName
 } from "@bob/contracts/tools"
 import { Type, type TSchema, type Tool } from "@earendil-works/pi-ai"
 import { Schema } from "effect"
@@ -14,14 +13,12 @@ import { Schema } from "effect"
 export interface ToolFactoryOptions {
   readonly catalogue: CapabilityCatalogue
   readonly request: AgentRunRequest
-  readonly execute: (command: ToolCommand) => Promise<ToolResult>
 }
 
-/** Bob's executable Pi tool definition. Pi supplies schemas; Bob supplies execution. */
+/** Bob's catalogue-derived Pi tool metadata. The Agent loop owns execution. */
 export interface BobPiTool extends Tool {
   readonly label: ToolName
   readonly executionMode: "sequential"
-  execute<Input>(toolCallId: string, params: Input): Promise<ToolResult>
 }
 
 function toPiParameters(inputSchema: ToolInputSchema): TSchema {
@@ -68,12 +65,7 @@ export function createTools(options: ToolFactoryOptions): BobPiTool[] {
       label: name,
       description: definition.description,
       parameters: toPiParameters(definition.inputSchema),
-      executionMode: "sequential",
-      async execute(toolCallId, params) {
-        return options.execute(
-          await toolCommandForCall(options.catalogue, options.request, name, toolCallId, params)
-        )
-      }
+      executionMode: "sequential"
     }
     return [tool]
   })

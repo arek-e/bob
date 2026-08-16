@@ -2,7 +2,7 @@ import { Schema } from "effect"
 import { readFile, stat } from "node:fs/promises"
 
 import type { BenchmarkCatalog, BenchmarkRunLedger } from "./benchmark-tracking.ts"
-import type { CandidateSet, EvaluationSuite } from "./gate.ts"
+import type { CandidateSet, EvaluationSuite } from "./schemas.ts"
 
 import { decodeBenchmarkCatalog, decodeBenchmarkRunLedger } from "./benchmark-tracking.ts"
 import { decodeCandidateSet, decodeEvaluationSuite } from "./schemas.ts"

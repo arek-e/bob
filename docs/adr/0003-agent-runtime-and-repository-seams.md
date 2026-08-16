@@ -91,6 +91,16 @@ The Pi host does not own durable conversation state.
 
 A retry rebuilds the same run input from stored records.
 
+A private operational model smoke is not an Agent run.
+
+Expose it only through the authenticated admin Interface.
+
+Use one fixed prompt with no owner content, Context, or Tools.
+
+Return status metadata only. Do not return the model output.
+
+Do not send operational smoke traffic through the Agent run Interface or invent run identities.
+
 The model never receives Sendblue credentials or Cloudflare bindings.
 
 ### Context assembly

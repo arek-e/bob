@@ -38,6 +38,32 @@ export interface ToolDefinition<Name extends ToolDefinitionName = ToolDefinition
   readonly inputSchema: ToolInputSchema
 }
 
+interface ToolPolicy {
+  readonly readOnly?: true
+  readonly sourceBound?: true
+  readonly externalOutcomeUnknown?: true
+  readonly confirmedActionCodes?: readonly string[]
+  readonly mutationArgumentExclusions?: readonly string[]
+  readonly sourceMessageArgument?: string
+}
+
+export interface ModelToolRegistration<Name extends ModelToolName = ModelToolName>
+  extends ToolDefinition<Name>, ToolPolicy {
+  readonly kind: "model"
+}
+
+export interface DeterministicCommandRegistration<
+  Name extends ToolName = ToolName
+> extends ToolPolicy {
+  readonly kind: "deterministic"
+  readonly name: Name
+  readonly definition?: Omit<ToolDefinition<Name>, "name">
+}
+
+export type CapabilityToolRegistration<Name extends ToolName = ToolName> =
+  | ModelToolRegistration<Name>
+  | DeterministicCommandRegistration<Name>
+
 export const CapabilityId = Schema.String.check(
   Schema.isPattern(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/),
   Schema.isMaxLength(64)
@@ -50,15 +76,11 @@ export interface CapabilityModule {
   readonly id: CapabilityId
   readonly version: number
   readonly feature: CapabilityFeature
-  readonly names: readonly ToolName[]
-  readonly modelTools: readonly ToolName[]
-  readonly definitions: Readonly<Partial<Record<ToolDefinitionName, ToolDefinition>>>
-  readonly readOnly: readonly ToolName[]
-  readonly sourceBound: readonly ToolName[]
-  readonly externalOutcomeUnknown: readonly ToolName[]
-  readonly confirmedActionCodes: Readonly<Partial<Record<ToolName, readonly string[]>>>
-  readonly mutationArgumentExclusions: Readonly<Partial<Record<ToolName, readonly string[]>>>
-  readonly sourceMessageArguments: Readonly<Partial<Record<ToolName, string>>>
+  readonly tools: readonly CapabilityToolRegistration[]
+}
+
+export function capabilityToolNames(module: CapabilityModule): readonly ToolName[] {
+  return module.tools.map((tool) => tool.name)
 }
 
 export const emptyInputSchema = {

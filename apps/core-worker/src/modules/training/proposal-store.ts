@@ -14,10 +14,12 @@ import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../policy/owner-data-key.ts"
 import type { TrainingStore } from "./store.ts"
 
 import { JsonObject as JsonObjectSchema } from "../../json.ts"
-import { messages, users } from "../conversations/schema.ts"
+import { messages } from "../conversations/schema.ts"
+import { makeOwnerDataKeyStore } from "../policy/owner-data-key.ts"
 import { trainingProposals } from "./schema.ts"
 
 export const trainingMutationToolNames = [
@@ -116,32 +118,23 @@ export function makeTrainingProposalStore(
   database: CoreDatabase,
   protection: DataProtection,
   training: TrainingStore,
-  options: { readonly now?: () => Date; readonly randomUuid?: () => string }
+  options: {
+    readonly now?: () => Date
+    readonly randomUuid?: () => string
+    readonly ownerDataKeys?: OwnerDataKeyStore
+  }
 ): TrainingProposalStore {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
-
-  async function ownerKey(ownerId: string): Promise<CryptoKey> {
-    const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
-    if (
-      owner?.wrappedDataKey === null ||
-      owner?.wrappedDataKey === undefined ||
-      owner.wrappedDataKeyIv === null ||
-      owner.wrappedDataKeyIv === undefined ||
-      owner.dataKeyVersion === null ||
-      owner.dataKeyVersion === undefined
-    ) {
-      throw new Error("Owner data key is unavailable")
-    }
-    return protection.unwrapDataKey({
-      ciphertext: owner.wrappedDataKey,
-      iv: owner.wrappedDataKeyIv,
-      version: owner.dataKeyVersion
-    })
-  }
+  const ownerDataKeys =
+    options.ownerDataKeys ??
+    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
 
   async function encodePrivate<Input>(ownerId: string, value: Input): Promise<string> {
-    const encrypted = await protection.encryptText(await ownerKey(ownerId), JSON.stringify(value))
+    const encrypted = await protection.encryptText(
+      (await ownerDataKeys.load(ownerId)).key,
+      JSON.stringify(value)
+    )
     return JSON.stringify(encrypted)
   }
 
@@ -153,7 +146,10 @@ export function makeTrainingProposalStore(
     const encrypted = Schema.decodeUnknownSync(
       Schema.Struct({ ciphertext: Schema.String, iv: Schema.String })
     )(JSON.parse(value))
-    const plaintext = await protection.decryptText(await ownerKey(ownerId), encrypted)
+    const plaintext = await protection.decryptText(
+      (await ownerDataKeys.load(ownerId)).key,
+      encrypted
+    )
     return Schema.decodeUnknownSync(schema)(JSON.parse(plaintext))
   }
 

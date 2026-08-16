@@ -12,6 +12,7 @@ describe("production release cutover contract", () => {
     expect(workflow.match(/sha-\$\{\{ inputs\.release_sha \}\}/gu)).toHaveLength(2)
     expect(workflow.match(/provenance: mode=max/gu)).toHaveLength(2)
     expect(workflow.match(/sbom: true/gu)).toHaveLength(2)
+    expect(workflow).toContain("application/vnd.bob.runtime.release.v2+json")
   })
 
   it("uses an immutable release bundle as the protected release seam", async () => {
@@ -24,6 +25,8 @@ describe("production release cutover contract", () => {
     expect(workflow).not.toContain("infra/kubernetes")
     expect(workflow).toContain("environment: production")
     expect(workflow).toContain("scripts/coolify-release.mjs")
+    expect(workflow).toContain("EXPECTED_AGENT_DIGEST")
+    expect(workflow).toContain(".bundle.runtimeImages")
     expect(runbook).toContain("/v1/admin/readiness")
     expect(runbook).toContain("Coolify records the deployment")
   })

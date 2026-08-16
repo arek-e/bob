@@ -117,17 +117,18 @@ export function createD1ChannelRouteStore(
     },
     async claim(eventId, now, leaseMs) {
       const timestamp = now.toISOString()
-      const result = await database
+      const claimed = await database
         .prepare(
           `UPDATE staged_channel_events
            SET state = 'processing', lease_until = ?, attempts = attempts + 1, updated_at = ?
            WHERE id = ? AND (
              state = 'staged' OR (state = 'processing' AND lease_until <= ?)
-           )`
+           )
+           RETURNING attempts`
         )
         .bind(new Date(now.getTime() + leaseMs).toISOString(), timestamp, eventId, timestamp)
-        .run()
-      if (result.meta.changes === 0) return null
+        .first<{ readonly attempts: number }>()
+      if (!claimed) return null
       const row = await database
         .prepare(
           `SELECT e.id AS event_id, e.route_id, e.provider_event_key,
@@ -147,6 +148,7 @@ export function createD1ChannelRouteStore(
       } satisfies ProtectedStagedPayload)
       return {
         id: row.event_id,
+        claimVersion: claimed.attempts,
         route: mapRoute(row),
         payload: Schema.decodeUnknownSync(NormalizedInboundEvent)(JSON.parse(plaintext))
       } satisfies StagedChannelEvent
@@ -159,26 +161,35 @@ export function createD1ChannelRouteStore(
         )
         .bind(instanceId, now.toISOString(), routeId, instanceId)
         .run()
+      const route = await database
+        .prepare("SELECT instance_id FROM managed_channel_routes WHERE id = ?")
+        .bind(routeId)
+        .first<{ readonly instance_id: string | null }>()
+      if (!route) throw new Error("Managed route was not found")
+      if (route.instance_id === null) throw new Error("Managed route has no assigned Instance")
+      return route.instance_id
     },
-    async release(eventId, reason, now) {
-      await database
+    async release(eventId, claimVersion, reason, now) {
+      const result = await database
         .prepare(
           `UPDATE staged_channel_events
            SET state = 'staged', lease_until = NULL, last_failure = ?, updated_at = ?
-           WHERE id = ? AND state = 'processing'`
+           WHERE id = ? AND state = 'processing' AND attempts = ?`
         )
-        .bind(reason.slice(0, 200), now.toISOString(), eventId)
+        .bind(reason.slice(0, 200), now.toISOString(), eventId, claimVersion)
         .run()
+      return result.meta.changes > 0
     },
-    async complete(eventId, now) {
-      await database
+    async complete(eventId, claimVersion, now) {
+      const result = await database
         .prepare(
           `UPDATE staged_channel_events
            SET state = 'delivered', lease_until = NULL, delivered_at = ?, updated_at = ?
-           WHERE id = ? AND state = 'processing'`
+           WHERE id = ? AND state = 'processing' AND attempts = ?`
         )
-        .bind(now.toISOString(), now.toISOString(), eventId)
+        .bind(now.toISOString(), now.toISOString(), eventId, claimVersion)
         .run()
+      return result.meta.changes > 0
     }
   }
 }

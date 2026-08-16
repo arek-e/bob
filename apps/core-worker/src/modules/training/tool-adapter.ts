@@ -4,6 +4,7 @@ import {
   TrainingLookupArguments,
   WorkoutHistoryArguments
 } from "@bob/contracts/capabilities/training"
+import { capabilityToolNames } from "@bob/contracts/tools"
 import { type ToolResult } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
@@ -20,7 +21,7 @@ import { isTrainingMutationRequest } from "./rules.ts"
 export function makeTrainingToolAdapter(training: TrainingModule): ToolCommandAdapter {
   return {
     capabilityId: trainingCapability.id,
-    names: trainingCapability.names,
+    names: capabilityToolNames(trainingCapability),
     async execute({ command, run }: ToolCommandAdapterContext): Promise<ToolResult> {
       if (isTrainingMutationTool(command.name)) {
         if (!isTrainingMutationRequest(run.request.userText)) {

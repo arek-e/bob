@@ -48,9 +48,9 @@ message, assistant messages, and Tool results. Bob decides when the run ends.
 Pi owns provider streaming, model normalization, provider registration, and
 OAuth mechanics. Bob owns the policy decisions around those operations.
 
-Define Bob Tool wrappers from the shared Tool catalogue. Each wrapper exposes
-a `pi-ai` Tool schema and one Bob-owned execution function. The wrapper
-encodes Tool results as untrusted data.
+Define Bob Tool metadata from the shared Tool catalogue. Each entry exposes a
+`pi-ai` Tool schema. The Agent loop constructs the Tool command and calls one
+Bob-owned Effect execution function. The loop encodes Tool results as untrusted data.
 
 Do not depend on `@earendil-works/pi-agent-core`.
 Do not depend on `@earendil-works/pi-coding-agent`.

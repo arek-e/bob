@@ -6,8 +6,10 @@ import { Context, Layer } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../policy/owner-data-key.ts"
 
-import { channels, inboundEvents, messages, shortReplyBindings, users } from "./schema.ts"
+import { makeOwnerDataKeyStore } from "../policy/owner-data-key.ts"
+import { channels, inboundEvents, messages, shortReplyBindings } from "./schema.ts"
 
 export interface ClaimedInbound {
   readonly eventId: string
@@ -54,7 +56,7 @@ export const ConversationStore = Context.Service<ConversationStore>("bob/Convers
 export interface ConversationStoreOptions {
   readonly ownerId: string
   readonly ownerTimeZone: string
-  readonly dataKeyVersion: number
+  readonly ownerDataKeys?: OwnerDataKeyStore
   readonly channelProviderId: string
   readonly now?: () => Date
   readonly randomUuid?: () => string
@@ -67,54 +69,9 @@ export function makeConversationStore(
 ): ConversationStore {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
-
-  async function ownerKey(): Promise<CryptoKey> {
-    let [owner] = await database.select().from(users).where(eq(users.id, options.ownerId)).limit(1)
-    if (owner?.wrappedDataKey === null || owner?.wrappedDataKey === undefined) {
-      const created = await protection.createWrappedDataKey()
-      const timestamp = now().toISOString()
-      if (owner === undefined) {
-        await database
-          .insert(users)
-          .values({
-            id: options.ownerId,
-            timeZone: options.ownerTimeZone,
-            wrappedDataKey: created.wrapped.ciphertext,
-            wrappedDataKeyIv: created.wrapped.iv,
-            dataKeyVersion: created.wrapped.version,
-            createdAt: timestamp,
-            updatedAt: timestamp
-          })
-          .onConflictDoNothing()
-      } else {
-        await database
-          .update(users)
-          .set({
-            wrappedDataKey: created.wrapped.ciphertext,
-            wrappedDataKeyIv: created.wrapped.iv,
-            dataKeyVersion: created.wrapped.version,
-            updatedAt: timestamp
-          })
-          .where(and(eq(users.id, options.ownerId), isNull(users.wrappedDataKey)))
-      }
-      ;[owner] = await database.select().from(users).where(eq(users.id, options.ownerId)).limit(1)
-    }
-    if (
-      owner?.wrappedDataKey === null ||
-      owner?.wrappedDataKey === undefined ||
-      owner.wrappedDataKeyIv === null ||
-      owner.wrappedDataKeyIv === undefined ||
-      owner.dataKeyVersion === null ||
-      owner.dataKeyVersion === undefined
-    ) {
-      throw new Error("Owner data key is unavailable")
-    }
-    return protection.unwrapDataKey({
-      ciphertext: owner.wrappedDataKey,
-      iv: owner.wrappedDataKeyIv,
-      version: owner.dataKeyVersion
-    })
-  }
+  const ownerDataKeys =
+    options.ownerDataKeys ??
+    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: options.ownerTimeZone, now })
 
   async function ensureChannel(event: NormalizedInboundEvent, key: CryptoKey): Promise<string> {
     const senderHash = await protection.hashLookup(event.senderE164)
@@ -194,9 +151,9 @@ export function makeConversationStore(
         }
       }
 
-      const key = await ownerKey()
-      const channelId = await ensureChannel(event, key)
-      const encrypted = await protection.encryptText(key, event.text)
+      const ownerDataKey = await ownerDataKeys.ensure(options.ownerId)
+      const channelId = await ensureChannel(event, ownerDataKey.key)
+      const encrypted = await protection.encryptText(ownerDataKey.key, event.text)
       const messageId = randomUuid()
       const createdAt = now().toISOString()
       const control = event.text.trim().toUpperCase()
@@ -211,7 +168,7 @@ export function makeConversationStore(
           direction: "inbound",
           textCiphertext: encrypted.ciphertext,
           textIv: encrypted.iv,
-          dataKeyVersion: options.dataKeyVersion,
+          dataKeyVersion: ownerDataKey.version,
           occurredAt: event.receivedAt,
           createdAt
         }),
@@ -319,7 +276,7 @@ export function makeConversationStore(
       if (message === undefined || channel === undefined) {
         throw new Error("Inbound message or channel is missing")
       }
-      const key = await ownerKey()
+      const key = (await ownerDataKeys.load(claimed.userId)).key
       const [text, number, fromNumber] = await Promise.all([
         protection.decryptText(key, {
           ciphertext: message.textCiphertext,

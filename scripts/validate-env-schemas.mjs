@@ -1,17 +1,8 @@
 import { spawnSync } from "node:child_process"
 
-const paths = [
-  "apps/core-worker",
-  "apps/connections-gateway",
-  "apps/sendblue-channel/ingress",
-  "apps/sendblue-channel/egress",
-  "apps/agent",
-  "apps/ui",
-  "tools/sendblue-reconcile",
-  "tools/pi-smoke",
-  "tools/data-backup",
-  "infra/cloudflare"
-]
+import { discoverEnvironmentSchemaDirectories } from "./environment-schema-inventory.mjs"
+
+const paths = discoverEnvironmentSchemaDirectories()
 
 const safeValidationEnvironment = {
   ...process.env,
@@ -101,7 +92,18 @@ const safeValidationEnvironment = {
   REMINDER_QUIET_HOURS_END: "07:00",
   REMINDER_DAILY_LIMIT: "4",
   ACCESS_SERVICE_TOKEN_ROTATION_VERSION: "1",
-  ACCESS_SERVICE_TOKEN_ROTATE_BY: "2099-01-01T00:00:00.000Z"
+  ACCESS_SERVICE_TOKEN_ROTATE_BY: "2099-01-01T00:00:00.000Z",
+  ROUTE_LOOKUP_KEY: "fixture-route-lookup-key",
+  ROUTER_EVENT_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  ROUTER_EVENT_KEY_VERSION: "v1",
+  ROUTER_ADMIN_TOKEN: "fixture-router-admin-token",
+  CONTROL_PLANE_URL: "https://control-plane.example.invalid",
+  CONTROL_PLANE_TOKEN: "fixture-control-plane-token",
+  RUNTIME_INGRESS_TOKEN: "fixture-runtime-ingress-token",
+  MANAGED_REGION: "fixture-region",
+  MANAGED_ISOLATION_CLASS: "microvm",
+  MANAGED_RESOURCE_POLICY_ID: "standard-v1",
+  MANAGED_RELEASE_CHANNEL: "stable"
 }
 
 for (const path of paths) {

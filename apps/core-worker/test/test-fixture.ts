@@ -1,5 +1,7 @@
 import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
 
+import type { ConversationTurnSnapshot } from "../src/modules/conversations/turn-store.ts"
+
 import { makeJournalConversationWorkflow } from "../src/modules/journal/conversation-workflow.ts"
 import { makeReminderConversationWorkflow } from "../src/modules/reminders/conversation-workflow.ts"
 import { makeRuntimeModules } from "../src/modules/runtime/module.ts"
@@ -57,4 +59,51 @@ export function testFixture<T>(value: TestFixture<T> & CompatibilityComposition)
         }
       : (value as object)
   ) as T
+}
+
+interface ConversationTurnFixtureInput {
+  readonly eventId: string
+  readonly ownerId: string
+  readonly channelId: string
+  readonly messageId: string
+  readonly text: string
+  readonly correlationId: string
+  readonly turnId?: string
+  readonly revision?: number
+  readonly traceparent?: string
+  readonly providerMessageHandle?: string
+  readonly service?: "imessage" | "sms" | "rcs" | "unknown"
+  readonly isGroup?: boolean
+  readonly number?: string
+  readonly fromNumber?: string
+}
+
+export function conversationTurnFixture(
+  input: ConversationTurnFixtureInput
+): ConversationTurnSnapshot {
+  const message = {
+    eventId: input.eventId,
+    messageId: input.messageId,
+    text: input.text,
+    ordinal: 1
+  }
+  const latest = {
+    ...message,
+    providerMessageHandle: input.providerMessageHandle ?? input.messageId,
+    service: input.service ?? ("unknown" as const),
+    isGroup: input.isGroup ?? false,
+    correlationId: input.correlationId,
+    number: input.number ?? "+46700000000",
+    fromNumber: input.fromNumber ?? "+46711111111"
+  }
+  return {
+    turnId: input.turnId ?? "018e6f65-4d55-7a1b-8df4-4ee15ea1db89",
+    ownerId: input.ownerId,
+    channelId: input.channelId,
+    revision: input.revision ?? 1,
+    claimExpiresAt: "2099-01-01T00:00:00.000Z",
+    latest:
+      input.traceparent === undefined ? latest : { ...latest, traceparent: input.traceparent },
+    messages: [message]
+  }
 }

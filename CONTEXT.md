@@ -89,6 +89,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 ## Domain language
 
 - **Owner:** The one person Bob serves.
+- **Owner data key:** One per-Owner encryption key wrapped by the active data key-encryption key.
 - **Owner settings:** The owner's time zone, locale, and time format.
 - **Channel Adapter:** One reviewed transport Adapter that converts provider traffic to and from Bob's channel Interface.
 - **Channel event:** One normalized provider event from a Channel Adapter.

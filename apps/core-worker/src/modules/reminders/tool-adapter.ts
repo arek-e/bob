@@ -5,7 +5,7 @@ import {
   ReminderOccurrenceArguments,
   ReminderSnoozeArguments
 } from "@bob/contracts/capabilities/reminders"
-import { type ToolName, type ToolResult } from "@bob/contracts/tools"
+import { capabilityToolNames, type ToolName, type ToolResult } from "@bob/contracts/tools"
 import { Schema } from "effect"
 
 import type {
@@ -134,7 +134,7 @@ async function validateMutationTarget(
 export function makeReminderToolAdapter(reminders: ReminderStore): ToolCommandAdapter {
   return {
     capabilityId: reminderCapability.id,
-    names: reminderCapability.names,
+    names: capabilityToolNames(reminderCapability),
     async execute(context) {
       const { command, run } = context
       const intent = reminderIntentForTool(command.name)

@@ -4,7 +4,9 @@ import {
   evaluateSuite,
   type EvaluationReport,
   type EvaluationRequest,
-  type EvaluationSuite
+  type Version1CandidateSet,
+  type Version1EvaluationSuite,
+  type Version1GoldenCase
 } from "./gate.ts"
 import { decodeCandidateSet } from "./schemas.ts"
 
@@ -26,7 +28,7 @@ export interface LiveEvaluationInput {
 
 export interface LiveEvaluationOptions {
   readonly approved: boolean
-  readonly suite: EvaluationSuite
+  readonly suite: Version1EvaluationSuite
   readonly observe: (input: LiveEvaluationInput) => Promise<typeof Schema.Json.Type>
 }
 
@@ -44,7 +46,7 @@ async function withTimeout<T>(promise: Promise<T>): Promise<T> {
   }
 }
 
-function assertLiveCaseIsSafe(scenario: EvaluationSuite["cases"][number]): void {
+function assertLiveCaseIsSafe(scenario: Version1GoldenCase): void {
   if (scenario.expected.tools === undefined || scenario.expected.tools.length !== 0) {
     throw new Error("live_case_tools_not_empty")
   }
@@ -91,6 +93,8 @@ export async function runBoundedLiveEvaluation(
     dataClass: "synthetic",
     candidates: observations
   })
-  const liveSuite: EvaluationSuite = { ...options.suite, cases: scenarios }
-  return evaluateSuite(liveSuite, candidates)
+  if (candidates.schemaVersion !== 1) throw new Error("evaluation_schema_version_mismatch")
+  const liveCandidates: Version1CandidateSet = candidates
+  const liveSuite: Version1EvaluationSuite = { ...options.suite, cases: scenarios }
+  return evaluateSuite(liveSuite, liveCandidates)
 }

@@ -99,7 +99,10 @@ describe("Core Queue telemetry", () => {
       deploymentEnvironment: "test"
     })
     const message = queueMessage({ outboxId, correlationId, traceparent: inboundTraceparent })
-    const prepareOutboundRecovery = vi.fn(async () => "recover" as const)
+    const prepareOutboundRecovery = vi.fn(async () => ({
+      status: "recover" as const,
+      dispatchGeneration: 1
+    }))
     const markEnqueued = vi.fn(async () => undefined)
     const record = vi.fn(async () => "alert-id")
     const send = vi.fn(async () => undefined)
@@ -138,11 +141,12 @@ describe("Core Queue telemetry", () => {
       objectId: outboxId,
       idempotencyKey: `alert:outbound-exhausted:${outboxId}`
     })
-    expect(prepareOutboundRecovery).toHaveBeenCalledWith(outboxId, 3)
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ outboxId, correlationId }), {
-      delayMs: 300_000
-    })
-    expect(markEnqueued).toHaveBeenCalledWith(outboxId, expect.any(String))
+    expect(prepareOutboundRecovery).toHaveBeenCalledWith(outboxId, 3, 0)
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ outboxId, correlationId, dispatchGeneration: 1 }),
+      { delayMs: 300_000 }
+    )
+    expect(markEnqueued).toHaveBeenCalledWith(outboxId, expect.any(String), 1)
     expect(message.ack).toHaveBeenCalledOnce()
     expect(message.retry).not.toHaveBeenCalled()
   })

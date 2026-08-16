@@ -7,10 +7,12 @@ import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
 import type { DataProtection } from "../policy/data-protection.ts"
+import type { OwnerDataKeyStore } from "../policy/owner-data-key.ts"
 
 import { operationalAlerts } from "../alerts/schema.ts"
 import { recordOperationalAlert } from "../alerts/store.ts"
-import { channels, conversationTurns, messages, users } from "../conversations/schema.ts"
+import { channels, conversationTurns, messages } from "../conversations/schema.ts"
+import { makeOwnerDataKeyStore } from "../policy/owner-data-key.ts"
 import { deliveryAttempts, outboxMessages, providerEvents } from "./schema.ts"
 import {
   makeDeliveryTargetRegistry,
@@ -54,8 +56,12 @@ export type DeliveryReconciliationTarget = DeliveryReconciliationIdentity &
 
 export interface DeliveryStore {
   createOutbox(input: CreateOutboxInput): Promise<string>
-  markEnqueued(outboxId: string, at: string): Promise<void>
-  claimOutbox(outboxId: string, leaseMs: number): Promise<OutboxClaim | undefined>
+  markEnqueued(outboxId: string, at: string, dispatchGeneration?: number): Promise<void>
+  claimOutbox(
+    outboxId: string,
+    leaseMs: number,
+    dispatchGeneration?: number
+  ): Promise<OutboxClaim | undefined>
   recordResult(result: DeliveryResult): Promise<readonly string[]>
   recordProviderEvent(event: NormalizedStatusEvent): Promise<readonly string[]>
   reconcileExpiredClaims(at: string): Promise<number>
@@ -63,9 +69,16 @@ export interface DeliveryStore {
   reconciliationTarget(outboxId: string): Promise<DeliveryReconciliationTarget | undefined>
   prepareOutboundRecovery(
     outboxId: string,
-    maxRecoveries: number
-  ): Promise<"recover" | "active" | "limit" | "resolved" | "unsafe" | "missing">
-  outboxDisposition(outboxId: string): Promise<"active" | "complete" | "missing">
+    maxRecoveries: number,
+    exhaustedGeneration?: number
+  ): Promise<
+    | { readonly status: "recover"; readonly dispatchGeneration: number }
+    | { readonly status: "active" | "limit" | "resolved" | "unsafe" | "missing" }
+  >
+  outboxDisposition(
+    outboxId: string,
+    dispatchGeneration?: number
+  ): Promise<"active" | "complete" | "missing">
 }
 
 export const DeliveryStore = Context.Service<DeliveryStore>("bob/DeliveryStore")
@@ -144,11 +157,15 @@ export function makeDeliveryStore(
     readonly now?: () => Date
     readonly randomUuid?: () => string
     readonly targetAdapters?: readonly DeliveryTargetAdapter[]
+    readonly ownerDataKeys?: OwnerDataKeyStore
   }
 ): DeliveryStore {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const targets = makeDeliveryTargetRegistry(options.targetAdapters)
+  const ownerDataKeys =
+    options.ownerDataKeys ??
+    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
   async function targetStatements(input: {
     readonly outcome: DeliveryTargetOutcome
     readonly targetType: string | null
@@ -168,25 +185,6 @@ export function makeDeliveryStore(
       occurredAt: input.occurredAt
     })
   }
-  async function ownerKey(ownerId: string): Promise<CryptoKey> {
-    const [owner] = await database.select().from(users).where(eq(users.id, ownerId)).limit(1)
-    if (
-      owner?.wrappedDataKey === null ||
-      owner?.wrappedDataKey === undefined ||
-      owner.wrappedDataKeyIv === null ||
-      owner.wrappedDataKeyIv === undefined ||
-      owner.dataKeyVersion === null ||
-      owner.dataKeyVersion === undefined
-    ) {
-      throw new Error("Owner data key is unavailable")
-    }
-    return protection.unwrapDataKey({
-      ciphertext: owner.wrappedDataKey,
-      iv: owner.wrappedDataKeyIv,
-      version: owner.dataKeyVersion
-    })
-  }
-
   type ApplicableStatusEvent = Omit<NormalizedStatusEvent, "destinationE164" | "providerOptedOut">
 
   async function applyProviderEvent(event: ApplicableStatusEvent): Promise<void> {
@@ -299,15 +297,8 @@ export function makeDeliveryStore(
         .where(eq(outboxMessages.idempotencyKey, input.idempotencyKey))
         .limit(1)
       if (existing !== undefined) return existing.id
-      const [owner] = await database
-        .select({ dataKeyVersion: users.dataKeyVersion })
-        .from(users)
-        .where(eq(users.id, input.ownerId))
-        .limit(1)
-      if (owner?.dataKeyVersion === null || owner?.dataKeyVersion === undefined) {
-        throw new Error("Owner data key version is unavailable")
-      }
-      const encrypted = await protection.encryptText(await ownerKey(input.ownerId), input.text)
+      const owner = await ownerDataKeys.load(input.ownerId)
+      const encrypted = await protection.encryptText(owner.key, input.text)
       const messageId = randomUuid()
       const outboxId = randomUuid()
       const createdAt = now().toISOString()
@@ -319,7 +310,7 @@ export function makeDeliveryStore(
           direction: "outbound",
           textCiphertext: encrypted.ciphertext,
           textIv: encrypted.iv,
-          dataKeyVersion: owner.dataKeyVersion,
+          dataKeyVersion: owner.version,
           occurredAt: createdAt,
           createdAt
         }),
@@ -346,14 +337,21 @@ export function makeDeliveryStore(
       return outboxId
     },
 
-    async markEnqueued(outboxId, at) {
+    async markEnqueued(outboxId, at, dispatchGeneration = 0) {
       await database
         .update(outboxMessages)
         .set({ enqueuedAt: at })
-        .where(and(eq(outboxMessages.id, outboxId), isNull(outboxMessages.enqueuedAt)))
+        .where(
+          and(
+            eq(outboxMessages.id, outboxId),
+            eq(outboxMessages.dispatchGeneration, dispatchGeneration),
+            eq(outboxMessages.state, "pending"),
+            isNull(outboxMessages.enqueuedAt)
+          )
+        )
     },
 
-    async claimOutbox(outboxId, leaseMs) {
+    async claimOutbox(outboxId, leaseMs, dispatchGeneration = 0) {
       const claimedAt = now()
       await this.reconcileExpiredClaims(claimedAt.toISOString())
       const [candidate] = await database
@@ -361,6 +359,9 @@ export function makeDeliveryStore(
         .from(outboxMessages)
         .where(eq(outboxMessages.id, outboxId))
         .limit(1)
+      if (candidate !== undefined && candidate.dispatchGeneration !== dispatchGeneration) {
+        return undefined
+      }
       if (candidate === undefined || candidate.state !== "pending") {
         await database
           .update(outboxMessages)
@@ -447,7 +448,7 @@ export function makeDeliveryStore(
       }
       const attemptId = randomUuid()
       const attemptNumber = Number(attempts[0]?.count ?? 0) + 1
-      const key = await ownerKey(candidate.userId)
+      const key = (await ownerDataKeys.load(candidate.userId)).key
       const [smsSafeText, number, fromNumber] = await Promise.all([
         protection.decryptText(key, { ciphertext: message.textCiphertext, iv: message.textIv }),
         protection.decryptText(key, {
@@ -872,10 +873,13 @@ export function makeDeliveryStore(
         return { ...identity, providerMessageHandle: target.providerMessageHandle }
       }
       if (target.payloadFingerprint === null) return undefined
-      const destinationE164 = await protection.decryptText(await ownerKey(target.ownerId), {
-        ciphertext: target.senderCiphertext,
-        iv: target.senderIv
-      })
+      const destinationE164 = await protection.decryptText(
+        (await ownerDataKeys.load(target.ownerId)).key,
+        {
+          ciphertext: target.senderCiphertext,
+          iv: target.senderIv
+        }
+      )
       const startedAt = Date.parse(target.startedAt)
       return {
         ...identity,
@@ -886,10 +890,11 @@ export function makeDeliveryStore(
       }
     },
 
-    async prepareOutboundRecovery(outboxId, maxRecoveries) {
+    async prepareOutboundRecovery(outboxId, maxRecoveries, exhaustedGeneration) {
       const [outbox] = await database
         .select({
           state: outboxMessages.state,
+          dispatchGeneration: outboxMessages.dispatchGeneration,
           recoveryCount: outboxMessages.recoveryCount,
           enqueuedAt: outboxMessages.enqueuedAt,
           deadLetteredAt: outboxMessages.deadLetteredAt
@@ -897,35 +902,45 @@ export function makeDeliveryStore(
         .from(outboxMessages)
         .where(eq(outboxMessages.id, outboxId))
         .limit(1)
-      if (outbox === undefined) return "missing"
-      if (["accepted", "failed", "cancelled"].includes(outbox.state)) return "resolved"
-      if (outbox.state !== "pending") return "unsafe"
-      if (
-        outbox.enqueuedAt !== null &&
-        outbox.deadLetteredAt !== null &&
-        Date.parse(outbox.enqueuedAt) >= Date.parse(outbox.deadLetteredAt)
-      ) {
-        return "active"
+      if (outbox === undefined) return { status: "missing" }
+      if (["accepted", "failed", "cancelled"].includes(outbox.state)) {
+        return { status: "resolved" }
       }
+      if (outbox.state !== "pending") return { status: "unsafe" }
       const [attempt] = await database
         .select({ id: deliveryAttempts.id })
         .from(deliveryAttempts)
         .where(eq(deliveryAttempts.outboxId, outboxId))
         .limit(1)
-      if (attempt !== undefined) return "unsafe"
-      if (outbox.recoveryCount >= maxRecoveries) return "limit"
+      if (attempt !== undefined) return { status: "unsafe" }
+
+      if (exhaustedGeneration === undefined) {
+        if (outbox.enqueuedAt !== null) return { status: "active" }
+        if (outbox.recoveryCount > 0) {
+          return { status: "recover", dispatchGeneration: outbox.dispatchGeneration }
+        }
+      } else if (outbox.dispatchGeneration !== exhaustedGeneration) {
+        if (outbox.dispatchGeneration === exhaustedGeneration + 1 && outbox.enqueuedAt === null) {
+          return { status: "recover", dispatchGeneration: outbox.dispatchGeneration }
+        }
+        return { status: "active" }
+      }
+
+      if (outbox.recoveryCount >= maxRecoveries) return { status: "limit" }
       const recoveredAt = now().toISOString()
       const [updated] = await database
         .update(outboxMessages)
         .set({
           deadLetteredAt: recoveredAt,
           enqueuedAt: null,
+          dispatchGeneration: outbox.dispatchGeneration + 1,
           recoveryCount: outbox.recoveryCount + 1
         })
         .where(
           and(
             eq(outboxMessages.id, outboxId),
             eq(outboxMessages.state, "pending"),
+            eq(outboxMessages.dispatchGeneration, outbox.dispatchGeneration),
             eq(outboxMessages.recoveryCount, outbox.recoveryCount),
             sql<boolean>`NOT EXISTS (
               SELECT 1 FROM ${deliveryAttempts}
@@ -933,17 +948,25 @@ export function makeDeliveryStore(
             )`
           )
         )
-        .returning({ id: outboxMessages.id })
-      return updated === undefined ? "unsafe" : "recover"
+        .returning({ dispatchGeneration: outboxMessages.dispatchGeneration })
+      return updated === undefined
+        ? { status: "unsafe" }
+        : { status: "recover", dispatchGeneration: updated.dispatchGeneration }
     },
 
-    async outboxDisposition(outboxId) {
+    async outboxDisposition(outboxId, dispatchGeneration) {
       const [outbox] = await database
-        .select({ state: outboxMessages.state })
+        .select({
+          state: outboxMessages.state,
+          dispatchGeneration: outboxMessages.dispatchGeneration
+        })
         .from(outboxMessages)
         .where(eq(outboxMessages.id, outboxId))
         .limit(1)
       if (outbox === undefined) return "missing"
+      if (dispatchGeneration !== undefined && dispatchGeneration !== outbox.dispatchGeneration) {
+        return "complete"
+      }
       return outbox.state === "pending" || outbox.state === "claimed" ? "active" : "complete"
     }
   }
