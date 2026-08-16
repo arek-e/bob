@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "../../packages/core-runtime/src/runtime-platform.d.ts",
+    "../../packages/db/src/sql.d.ts"
+  ]
+}

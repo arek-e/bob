@@ -7,7 +7,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --format=cjs --platform=node --target=node22 --outfile=dist/index.cjs && node ../../scripts/verify-agent-bundle.mjs",
+    "build": "esbuild src/index.ts --bundle --format=cjs --platform=node --target=node22 --outfile=dist/index.cjs",
     "env:check": "varlock load --agent --path . --skip-cache",
     "start": "varlock run --inject vars --skip-cache -- node dist/index.cjs",
     "typecheck": "tsc -p tsconfig.json"

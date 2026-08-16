@@ -1,0 +1,32 @@
+{
+  "name": "@bob/core-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./job-processors": "./src/entrypoints/queue.ts",
+    "./runtime": "./src/runtime/public.ts"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/index.js",
+    "env:check": "varlock load --agent --path . --skip-cache",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/contracts": "workspace:*",
+    "@bob/db": "workspace:*",
+    "@bob/job-queue": "workspace:*",
+    "@bob/object-store": "workspace:*",
+    "@bob/observability": "workspace:*",
+    "@js-temporal/polyfill": "0.5.1",
+    "better-auth": "1.6.26",
+    "drizzle-orm": "1.0.0-rc.4",
+    "effect": "4.0.0-beta.107",
+    "jose": "6.2.8"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9",
+    "vitest": "4.1.9"
+  }
+}

@@ -1,0 +1,9 @@
+services:
+  core:
+    environment:
+      AUTO_ENQUEUE_INBOUND: "true"
+    ports: ["127.0.0.1:18789:8788"]
+  agent:
+    ports: ["127.0.0.1:18788:8787"]
+  channel:
+    ports: ["127.0.0.1:18790:8786"]

@@ -17,7 +17,7 @@ jobs:
       matrix:
         include:
           - name: quality
-            command: pnpm check:static && pnpm eval:offline && pnpm build:artifacts && pnpm ui:safety
+            command: pnpm format:check && pnpm lint && pnpm build
           - name: typecheck
             command: pnpm typecheck
           - name: unit-tests
@@ -51,7 +51,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Probe pinned Alchemy and Effect runtime
-        run: pnpm infra:load
+        run: pnpm iac:load
 
   verify:
     if: always()

@@ -1,5 +1,4 @@
 import { Link } from "@tanstack/solid-router"
-import { Schema } from "effect"
 import { createSignal, onMount, Show, type JSX } from "solid-js"
 
 import { Button } from "~/components/ui/button"
@@ -8,8 +7,6 @@ import { Input } from "~/components/ui/input"
 import { Label } from "~/components/ui/label"
 import { apiBase, loadOwnerSession, safeReturnPath } from "~/lib/api"
 import { styles } from "~/lib/styles"
-
-const SetupState = Schema.Struct({ setupRequired: Schema.Boolean })
 
 export function SignInPage() {
   const [email, setEmail] = createSignal("")
@@ -124,35 +121,28 @@ export function SignInPage() {
 }
 
 export function SetupPage() {
+  const [setupToken, setSetupToken] = createSignal("")
   const [password, setPassword] = createSignal("")
   const [confirmation, setConfirmation] = createSignal("")
   const [passwordError, setPasswordError] = createSignal("")
   const [confirmationError, setConfirmationError] = createSignal("")
+  const [setupTokenError, setSetupTokenError] = createSignal("")
   const [status, setStatus] = createSignal("")
   const [setupState, setSetupState] = createSignal<
     "loading" | "required" | "complete" | "unavailable"
-  >("loading")
+  >("required")
   const [submitting, setSubmitting] = createSignal(false)
-
-  onMount(async () => {
-    try {
-      const response = await fetch(`${apiBase}/setup/api`, {
-        headers: { accept: "application/json" }
-      })
-      if (!response.ok) throw new Error("setup_unavailable")
-      const value = Schema.decodeUnknownSync(SetupState)(await response.json())
-      setSetupState(value.setupRequired === false ? "complete" : "required")
-      if (value.setupRequired === false) setStatus("The owner login already exists.")
-    } catch {
-      setSetupState("unavailable")
-      setStatus("Unable to check owner setup. Refresh this page and try again.")
-    }
-  })
 
   async function submit(event: SubmitEvent) {
     event.preventDefault()
+    setSetupTokenError("")
     setPasswordError("")
     setConfirmationError("")
+    if (setupToken().length < 32) {
+      setSetupTokenError("Enter the setup token from your Compose environment.")
+      document.getElementById("setup-token")?.focus()
+      return
+    }
     if (password().length < 12) {
       setPasswordError("Use at least 12 characters.")
       document.getElementById("setup-password")?.focus()
@@ -167,7 +157,10 @@ export function SetupPage() {
     try {
       const response = await fetch(`${apiBase}/setup/api`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-bob-setup-token": setupToken()
+        },
         body: JSON.stringify({ password: password() })
       })
       if (response.status === 409) {
@@ -212,6 +205,31 @@ export function SetupPage() {
         }
       >
         <form class={styles.authForm} novalidate onSubmit={(event) => void submit(event)}>
+          <div class={styles.fieldGroup}>
+            <Label for="setup-token">Setup token</Label>
+            <Input
+              id="setup-token"
+              name="setupToken"
+              type="password"
+              autocomplete="off"
+              required
+              value={setupToken()}
+              aria-describedby="setup-token-hint setup-token-error"
+              aria-invalid={setupTokenError().length > 0}
+              onInput={(event) => {
+                setSetupToken(event.currentTarget.value)
+                setSetupTokenError("")
+              }}
+            />
+            <p id="setup-token-hint" class={styles.hint}>
+              Use the value of SETUP_TOKEN from your local environment.
+            </p>
+            <Show when={setupTokenError().length > 0}>
+              <p id="setup-token-error" class={styles.fieldError} role="alert">
+                {setupTokenError()}
+              </p>
+            </Show>
+          </div>
           <div class={styles.fieldGroup}>
             <Label for="setup-password">Password</Label>
             <Input
