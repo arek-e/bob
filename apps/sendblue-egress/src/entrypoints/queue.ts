@@ -2,6 +2,8 @@ import type { SendOutcome } from "@bob/sendblue/client"
 
 import { OutboxClaim, type DeliveryResult } from "@bob/contracts/delivery"
 import { OutboundJob, type OutboundJob as OutboundJobValue } from "@bob/contracts/jobs"
+import { completeJob, retryJob } from "@bob/job-queue"
+import { processCloudflareMessage } from "@bob/job-queue/cloudflare"
 import { flushCloudflareTelemetry } from "@bob/observability/cloudflare"
 import { recordDecision, withBobSpan } from "@bob/observability/effect"
 import { observeHealth } from "@bob/observability/events"
@@ -155,7 +157,7 @@ function processOutboundJobEffect(job: OutboundJobValue, composition: EgressComp
           const headers = yield* injectCurrentTraceparent()
           const traceparent = headers.get("traceparent")
           if (traceparent !== null) result = { ...result, traceparent }
-          yield* Effect.tryPromise(() => composition.ports.deliveryResults.send(result))
+          yield* Effect.tryPromise(() => composition.ports.deliveryResults.publish(result))
         })
       ).pipe(
         Effect.as(true),
@@ -242,14 +244,17 @@ export async function handleOutboundQueue(
   }
   try {
     for (const message of batch.messages) {
-      try {
-        const job = Schema.decodeUnknownSync(OutboundJob)(message.body)
-        const outcome = await runOutboundJob(job, composition)
-        if (outcome === "done") message.ack()
-        else message.retry({ delaySeconds: 30 })
-      } catch {
-        message.retry({ delaySeconds: 30 })
-      }
+      await processCloudflareMessage(
+        message,
+        {
+          process: async (input) => {
+            const job = Schema.decodeUnknownSync(OutboundJob)(input)
+            const outcome = await runOutboundJob(job, composition)
+            return outcome === "done" ? completeJob : retryJob(30_000)
+          }
+        },
+        { unexpectedErrorDelayMs: 30_000 }
+      )
     }
   } finally {
     scheduleFlush(composition, context)

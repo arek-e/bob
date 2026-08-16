@@ -1,5 +1,7 @@
 import type { InboundJob } from "@bob/contracts/jobs"
+import type { JobPublisher } from "@bob/job-queue"
 
+import { makeCloudflareJobPublisher } from "@bob/job-queue/cloudflare"
 import {
   cloudflareEventSink,
   cloudflareTelemetryLayer,
@@ -28,7 +30,7 @@ const TelemetryConfiguration = Schema.Struct({
 
 interface IngressPorts {
   readonly core: Fetcher
-  readonly queue: Queue<InboundJob>
+  readonly queue: JobPublisher<InboundJob>
 }
 
 const IngressPorts = Context.Service<IngressPorts>("bob/IngressPorts")
@@ -53,7 +55,10 @@ function telemetryProcessor(bindings: IngressBindings) {
 
 export function composeIngress(bindings: IngressBindings) {
   const config = Schema.decodeUnknownSync(ApplicationConfiguration)(bindings)
-  const ports: IngressPorts = { core: bindings.CORE, queue: bindings.INBOUND_QUEUE }
+  const ports: IngressPorts = {
+    core: bindings.CORE,
+    queue: makeCloudflareJobPublisher(bindings.INBOUND_QUEUE)
+  }
   const events = cloudflareEventSink()
   const processor = telemetryProcessor(bindings)
   const layer = Layer.merge(

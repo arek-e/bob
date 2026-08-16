@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest"
 
 import type { GeneralCoreBindings, TransitionalBindings } from "../src/bindings.ts"
 
-import { composeCore, defaultRuntimeProfile } from "../src/composition.ts"
+import {
+  composeCore,
+  defaultRuntimeProfile,
+  makeCloudflareCoreRuntime
+} from "../src/composition.ts"
 import { composeGeneralCore } from "../src/core-composition.ts"
 import * as defaultEntrypoint from "../src/index.ts"
 import { makeDeliveryTargetRegistry } from "../src/modules/delivery/target-adapter.ts"
@@ -23,7 +27,7 @@ function coreBindings(): GeneralCoreBindings {
     DATA_LOOKUP_KEY: "b".repeat(40),
     INGRESS_CALLER_SECRET: "c".repeat(32),
     EGRESS_CALLER_SECRET: "d".repeat(32),
-    SENDBLUE_EGRESS_URL: "",
+    CHANNEL_EGRESS_URL: "",
     BETTER_AUTH_SECRET: "e".repeat(32),
     ACCESS_TEAM_DOMAIN: "team.cloudflareaccess.com",
     CORE_ACCESS_AUDIENCE: "core",
@@ -46,7 +50,12 @@ function coreBindings(): GeneralCoreBindings {
 
 describe("General Core profile", () => {
   it("composes without any Vertical binding", () => {
-    const composition = composeGeneralCore(coreBindings(), coreRuntimeProfile)
+    const bindings = coreBindings()
+    const composition = composeGeneralCore(
+      bindings,
+      coreRuntimeProfile,
+      makeCloudflareCoreRuntime(bindings)
+    )
     expect(composition.profile.profileId).toBe("core")
     expect(composition.profile.modules.map((module) => module.id)).toEqual(["memory", "settings"])
     expect(composition.runtime.conversations).toEqual([])

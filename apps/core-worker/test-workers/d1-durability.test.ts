@@ -85,6 +85,7 @@ const inboundId = "00000000-0000-4000-8000-000000000003"
 const messageId = "00000000-0000-4000-8000-000000000004"
 const runId = "00000000-0000-4000-8000-000000000005"
 const correlationId = "00000000-0000-4000-8000-000000000006"
+const channelProviderId = "sendblue"
 
 function key(byte: number): string {
   let binary = ""
@@ -196,6 +197,7 @@ describe("D1 migrations and durability", () => {
       ownerId,
       ownerTimeZone: "Europe/Stockholm",
       dataKeyVersion: 1,
+      channelProviderId,
       now: () => new Date("2026-08-11T10:01:00.000Z")
     })
 
@@ -215,6 +217,7 @@ describe("D1 migrations and durability", () => {
     )
 
     const delivery = makeDeliveryStore(database, protection, {
+      channelProviderId,
       now: () => new Date("2026-08-11T10:01:02.000Z")
     })
     const outboxId = await delivery.createOutbox({
@@ -233,7 +236,7 @@ describe("D1 migrations and durability", () => {
 
   it("accepts the first encrypted inbound with production hex keys", async () => {
     const telemetry = makeCaptureTelemetry({
-      serviceName: "bob-core-worker",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
@@ -323,7 +326,7 @@ describe("D1 migrations and durability", () => {
   it("continues the inbound confirmation through one server span", async () => {
     const { database } = await seedRunData()
     const telemetry = makeCaptureTelemetry({
-      serviceName: "bob-core-worker",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
@@ -366,11 +369,12 @@ describe("D1 migrations and durability", () => {
     expect(stored?.enqueuedAt).toBeDefined()
   })
 
-  it("stores owner locality and reports the Sendblue connection", async () => {
+  it("stores owner locality and reports the channel connection", async () => {
     const { database, protection } = await seedRunData()
     let next = 220
     const settings = makeOwnerSettingsStore(database, protection, {
       defaultTimeZone: "Europe/Stockholm",
+      channelProviderId,
       now: () => new Date("2026-08-11T10:05:00.000Z"),
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
@@ -432,7 +436,8 @@ describe("D1 migrations and durability", () => {
     )
     expect(await runStore.claim(runId, 90_000)).toBeDefined()
     const settings = makeOwnerSettingsStore(database, protection, {
-      defaultTimeZone: "Europe/Stockholm"
+      defaultTimeZone: "Europe/Stockholm",
+      channelProviderId
     })
     const executor = makeTestToolExecutor(
       database,
@@ -523,10 +528,12 @@ describe("D1 migrations and durability", () => {
       ownerId,
       ownerTimeZone: "Europe/Stockholm",
       dataKeyVersion: 1,
+      channelProviderId,
       now: () => new Date("2026-08-11T10:02:00.000Z")
     })
     await conversations.completeInbound(inboundId, "2026-08-11T10:01:00.000Z")
     const delivery = makeDeliveryStore(database, protection, {
+      channelProviderId,
       now: () => new Date("2026-08-11T10:01:00.000Z")
     })
     await delivery.createOutbox({
@@ -586,6 +593,7 @@ describe("D1 migrations and durability", () => {
       ownerId,
       ownerTimeZone: "Europe/Stockholm",
       dataKeyVersion: 1,
+      channelProviderId,
       now: () => new Date("2026-08-11T10:02:00.000Z"),
       randomUuid: () => "00000000-0000-4000-8000-000000000260"
     })
@@ -1127,11 +1135,12 @@ describe("D1 migrations and durability", () => {
     expect(event?.processedAt).not.toBeNull()
   })
 
-  it("marks a lost Sendblue result uncertain and never resends", async () => {
+  it("marks a lost channel result uncertain and never resends", async () => {
     const { database, protection } = await seedRunData()
     let current = new Date("2026-08-11T10:00:00.000Z")
     let next = 200
     const delivery = makeDeliveryStore(database, protection, {
+      channelProviderId,
       now: () => current,
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
@@ -1162,6 +1171,7 @@ describe("D1 migrations and durability", () => {
     const { database, protection } = await seedRunData()
     let next = 225
     const delivery = makeDeliveryStore(database, protection, {
+      channelProviderId,
       now: () => new Date("2026-08-11T10:00:00.000Z"),
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
@@ -1209,7 +1219,7 @@ describe("D1 migrations and durability", () => {
 
   it("stores provider opt-out before attempt correlation", async () => {
     const { database, protection } = await seedRunData()
-    const delivery = makeDeliveryStore(database, protection, {})
+    const delivery = makeDeliveryStore(database, protection, { channelProviderId })
 
     await delivery.recordProviderEvent({
       id: "00000000-0000-4000-8000-000000000250",
@@ -1231,6 +1241,7 @@ describe("D1 migrations and durability", () => {
     const { database, protection } = await seedRunData()
     let next = 300
     const delivery = makeDeliveryStore(database, protection, {
+      channelProviderId,
       now: () => new Date("2026-08-11T10:00:00.000Z"),
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
@@ -1331,6 +1342,7 @@ describe("D1 migrations and durability", () => {
     ])
     const delivery = makeDeliveryStore(database, protection, {
       now: () => new Date(at),
+      channelProviderId,
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`,
       targetAdapters: [
         makeReminderDeliveryTarget(
@@ -1543,6 +1555,7 @@ describe("D1 migrations and durability", () => {
     let next = 490
     const fixedNow = () => new Date("2026-08-11T10:00:00.000Z")
     const delivery = makeDeliveryStore(database, protection, {
+      channelProviderId,
       now: fixedNow,
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
@@ -1592,6 +1605,7 @@ describe("D1 migrations and durability", () => {
       ownerId,
       ownerTimeZone: "Europe/Stockholm",
       dataKeyVersion: 1,
+      channelProviderId,
       now: () => new Date("2026-08-11T10:00:00.000Z"),
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })
@@ -1616,6 +1630,7 @@ describe("D1 migrations and durability", () => {
     expect(channel?.optedOutAt).toBe(base.receivedAt)
 
     const delivery = makeDeliveryStore(database, protection, {
+      channelProviderId,
       now: () => new Date("2026-08-11T10:00:01.000Z"),
       randomUuid: () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`
     })

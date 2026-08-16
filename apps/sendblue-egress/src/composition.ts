@@ -1,5 +1,7 @@
 import type { DeliveryResult } from "@bob/contracts/delivery"
+import type { JobPublisher } from "@bob/job-queue"
 
+import { makeCloudflareJobPublisher } from "@bob/job-queue/cloudflare"
 import {
   cloudflareEventSink,
   cloudflareTelemetryLayer,
@@ -27,7 +29,7 @@ const TelemetryConfiguration = Schema.Struct({
 
 interface EgressPorts {
   readonly core: Fetcher
-  readonly deliveryResults: Queue<DeliveryResult>
+  readonly deliveryResults: JobPublisher<DeliveryResult>
   readonly sendblue: ReturnType<typeof createSendblueClient>
 }
 const EgressPorts = Context.Service<EgressPorts>("bob/EgressPorts")
@@ -55,7 +57,7 @@ export function composeEgress(bindings: EgressBindings) {
   const events = cloudflareEventSink()
   const ports: EgressPorts = {
     core: bindings.CORE,
-    deliveryResults: bindings.DELIVERY_RESULT_QUEUE,
+    deliveryResults: makeCloudflareJobPublisher(bindings.DELIVERY_RESULT_QUEUE),
     sendblue: createSendblueClient({
       apiKeyId: config.SENDBLUE_API_KEY_ID,
       apiSecretKey: config.SENDBLUE_API_SECRET_KEY

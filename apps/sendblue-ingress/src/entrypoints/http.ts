@@ -97,7 +97,7 @@ function persistInbound(
               correlationId: event.correlationId
             }
             if (traceparent !== null) Object.assign(job, { traceparent })
-            return composition.ports.queue.send(job)
+            return composition.ports.queue.publish(job)
           })
         })
       ).pipe(

@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-import { Uuid } from "./shared.ts"
+import { IsoDateTime, Uuid } from "./shared.ts"
 
 const Traceparent = Schema.String.check(Schema.isPattern(/^00-[0-9a-f]{32}-[0-9a-f]{16}-(00|01)$/))
 
@@ -22,6 +22,12 @@ export const SchedulerJob = Schema.Struct({
   scheduleRevision: Schema.Int
 })
 
+export const OwnerWakeJob = Schema.Struct({
+  ownerId: Uuid,
+  requestedAt: IsoDateTime
+})
+
 export type InboundJob = typeof InboundJob.Type
 export type OutboundJob = typeof OutboundJob.Type
 export type SchedulerJob = typeof SchedulerJob.Type
+export type OwnerWakeJob = typeof OwnerWakeJob.Type

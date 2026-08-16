@@ -11,9 +11,9 @@ Record the source SHA and the Coolify deployment ID.
 
 Check these signals in order:
 
-1. Cloudflare Worker and Queue health.
-2. Agent liveness at `/health`.
-3. Agent readiness at `/v1/admin/readiness`.
+1. Core Runtime and Job Queue health.
+2. Agent Runtime liveness at `/health`.
+3. Agent Runtime readiness at `/v1/admin/readiness`.
 4. Nango database health.
 5. Backup task result and backup age.
 
@@ -21,7 +21,7 @@ Do not log message text, credentials, or archive contents.
 
 ## Delivery recovery
 
-An exhausted outbound Queue item enters the Core delivery recovery path.
+An exhausted outbound Job Queue item enters the Core Runtime delivery recovery path.
 
 Core republishes only a pending outbox without a provider attempt.
 
@@ -33,11 +33,11 @@ Never resend a claimed or uncertain outbox automatically.
 
 ## Inbound recovery
 
-The egress Worker runs direct recovery every two minutes.
+The Channel Runtime runs direct recovery every two minutes.
 
-The Core Worker also calls the authenticated recovery endpoint on even UTC minutes.
+The Core Runtime also calls the authenticated recovery endpoint on even UTC minutes.
 
-D1 removes duplicate webhook and replay records.
+Application Storage removes duplicate webhook and replay records.
 
 ## Uncertain delivery recovery
 

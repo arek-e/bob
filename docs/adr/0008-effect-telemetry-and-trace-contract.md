@@ -68,7 +68,7 @@ Do not retain Worker processors across unrelated requests.
 
 ### Trace propagation
 
-Use W3C `traceparent` at every HTTP and Queue boundary.
+Use W3C `traceparent` at every HTTP and Job Queue boundary.
 
 Treat incoming trace data as untrusted input.
 
@@ -147,7 +147,7 @@ Do not block a durable action on telemetry delivery.
 
 Do not retry telemetry inside an application workflow.
 
-Use separate service names for Core, agent, ingress, and egress.
+Use separate service names for Core Runtime, Agent Runtime, and Channel Runtime.
 
 Add the production release SHA and environment as resource attributes.
 
@@ -183,7 +183,8 @@ No canary value can appear in spans, events, logs, or OTLP payloads.
 
 Production acceptance needs one safe Sendblue request.
 
-The request must appear in Tempo, Loki, and the durable D1 timeline.
+The request must appear in Tempo, Loki, and the durable Application Storage timeline. Production
+currently uses the D1 Adapter.
 
 Production proof stays incomplete until that acceptance test passes.
 
@@ -199,4 +200,4 @@ New span attributes require a reviewed contract change.
 
 Telemetry remains best-effort and cannot serve as the durable audit log.
 
-D1 remains the authority for workflow state and user-visible history.
+Application Storage remains the authority for workflow state and user-visible history.

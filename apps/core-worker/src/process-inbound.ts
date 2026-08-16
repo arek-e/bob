@@ -1,7 +1,9 @@
 import type { OutboundJob } from "@bob/contracts/jobs"
+import type { JobPublisher } from "@bob/job-queue"
 
 import { AgentRunResult, type AgentArtifact, type AgentRunRequest } from "@bob/contracts/agent"
 import { requiresPersonalGrounding } from "@bob/contracts/output-safety"
+import { makeCloudflareJobPublisher } from "@bob/job-queue/cloudflare"
 import { featureForTools } from "@bob/observability/attribution"
 import {
   recordDecision,
@@ -91,15 +93,12 @@ function boundedTurnMessages(
 }
 
 function wakeConversationTurn(
-  bindings: CoreBindings,
+  composition: CoreComposition,
   input: { readonly ownerId: string; readonly wakeAt?: string }
 ) {
   return promiseEffect(async () => {
     try {
-      const coordinators = bindings.OWNER_RUN_COORDINATOR.jurisdiction("eu")
-      const url = new URL("https://coordinator.internal/wake")
-      if (input.wakeAt !== undefined) url.searchParams.set("at", input.wakeAt)
-      await coordinators.get(coordinators.idFromName(input.ownerId)).fetch(url, { method: "POST" })
+      await (composition.runCoordinator ?? composition.ownerRunCoordinator).wake(input)
     } catch {
       // The durable turn state remains recoverable after a lost live wake-up.
     }
@@ -107,7 +106,6 @@ function wakeConversationTurn(
 }
 
 function releaseSettlingTurn(
-  bindings: CoreBindings,
   composition: CoreComposition,
   input: { readonly turnId: string; readonly activeRunId: string; readonly ownerId: string }
 ) {
@@ -116,7 +114,7 @@ function releaseSettlingTurn(
       composition.services.turns.releaseSettling(input.turnId, input.activeRunId)
     )
     if (!released.ready) return released
-    yield* wakeConversationTurn(bindings, { ownerId: input.ownerId })
+    yield* wakeConversationTurn(composition, { ownerId: input.ownerId })
     return released
   })
 }
@@ -179,7 +177,7 @@ function agentResponseInput(
 }
 
 function publishOutbox(
-  bindings: CoreBindings,
+  publisher: JobPublisher<OutboundJob>,
   composition: CoreComposition,
   outboxId: string,
   telemetry: OutboxTelemetry
@@ -189,7 +187,7 @@ function publishOutbox(
     Effect.gen(function* () {
       const span = yield* Effect.currentSpan
       yield* promiseEffect(() =>
-        bindings.OUTBOUND_QUEUE.send({
+        publisher.publish({
           outboxId,
           correlationId: telemetry.correlationId,
           traceparent: formatTraceparent(span)
@@ -203,7 +201,7 @@ function publishOutbox(
 }
 
 function createAndPublishOutbox(
-  bindings: CoreBindings,
+  publisher: JobPublisher<OutboundJob>,
   composition: CoreComposition,
   telemetry: OutboxTelemetry,
   create: () => Promise<string | undefined>
@@ -213,14 +211,14 @@ function createAndPublishOutbox(
     Effect.gen(function* () {
       const outboxId = yield* promiseEffect(create)
       if (outboxId === undefined) return undefined
-      yield* publishOutbox(bindings, composition, outboxId, telemetry)
+      yield* publishOutbox(publisher, composition, outboxId, telemetry)
       return outboxId
     })
   )
 }
 
 function enqueueOutbox(
-  bindings: CoreBindings,
+  publisher: JobPublisher<OutboundJob>,
   composition: CoreComposition,
   input: {
     ownerId: string
@@ -235,7 +233,7 @@ function enqueueOutbox(
   runId?: string
 ) {
   return createAndPublishOutbox(
-    bindings,
+    publisher,
     composition,
     runId === undefined
       ? {
@@ -263,7 +261,7 @@ function nativeReplyTarget(claimed: ClaimedInbound): string | undefined {
 
 function messageInteractionLifecycle(composition: CoreComposition, claimed: ClaimedInbound) {
   const eligible = nativeReplyTarget(claimed) !== undefined
-  const egressUrl = composition.config.SENDBLUE_EGRESS_URL
+  const egressUrl = composition.config.CHANNEL_EGRESS_URL
   if (!eligible || egressUrl.length === 0) {
     return { start: Effect.void, stop: Effect.void }
   }
@@ -429,10 +427,11 @@ function deterministicReply(
       case "stop":
       case "cancel":
         response =
-          "Sendblue manages opt-out words. Bob will stop messages after Sendblue confirms opt-out."
+          "The Channel Adapter manages opt-out words. Bob will stop messages after it confirms opt-out."
         break
       case "start":
-        response = "Sendblue manages START. Bob resumes only after Sendblue confirms the change."
+        response =
+          "The Channel Adapter manages START. Bob resumes only after it confirms the change."
         break
       case "repeat":
         response =
@@ -580,7 +579,7 @@ function suppressStaleAgentAttempt(
         composition.services.runs.completeWithoutResponse(input.result, input.attemptId)
       )
       if (!suppressed) return false
-      yield* releaseSettlingTurn(bindings, composition, {
+      yield* releaseSettlingTurn(composition, {
         turnId: input.turn.turnId,
         activeRunId: input.result.runId,
         ownerId: input.turn.ownerId
@@ -670,6 +669,10 @@ export async function processInbound(
   conversationTurn?: ConversationTurnSnapshot
 ): Promise<void> {
   const runTelemetry = telemetry?.runPromise ?? Effect.runPromise
+  const outboundPublisher =
+    composition.jobQueue?.outbound ??
+    composition.jobs?.outbound ??
+    makeCloudflareJobPublisher(bindings.OUTBOUND_QUEUE)
   let interactionStop: Effect.Effect<void> = Effect.void
   const process = withBobSpan(
     {
@@ -711,7 +714,7 @@ export async function processInbound(
       const releaseDeterministic = () =>
         turn === undefined
           ? Effect.void
-          : releaseSettlingTurn(bindings, composition, {
+          : releaseSettlingTurn(composition, {
               turnId: turn.turnId,
               activeRunId: deterministicRunId,
               ownerId: claimed.ownerId
@@ -752,7 +755,7 @@ export async function processInbound(
         readonly feature?: TelemetryFeature
       }) => {
         if (turn === undefined) {
-          return enqueueOutbox(bindings, composition, input).pipe(Effect.asVoid)
+          return enqueueOutbox(outboundPublisher, composition, input).pipe(Effect.asVoid)
         }
         const feature = input.feature ?? featureForReason(input.reasonCode)
         return Effect.gen(function* () {
@@ -814,7 +817,7 @@ export async function processInbound(
           yield* promiseEffect(() =>
             composition.services.turns.markEventsProcessed(turn.turnId, turn.revision)
           )
-          yield* publishOutbox(bindings, composition, outboxId, {
+          yield* publishOutbox(outboundPublisher, composition, outboxId, {
             correlationId: input.correlationId,
             feature
           })
@@ -856,7 +859,7 @@ export async function processInbound(
             )
       )
       if (conversationTurn === undefined && stored?.outboxId !== undefined) {
-        yield* publishOutbox(bindings, composition, stored.outboxId, {
+        yield* publishOutbox(outboundPublisher, composition, stored.outboxId, {
           correlationId: claimed.correlationId,
           feature: featureForTools(composition.profile, stored.request.allowedTools),
           runId: stored.request.runId
@@ -1067,7 +1070,7 @@ export async function processInbound(
             )
           )
           if (committed === "superseded") {
-            yield* releaseSettlingTurn(bindings, composition, {
+            yield* releaseSettlingTurn(composition, {
               turnId: conversationTurn.turnId,
               activeRunId: stored.request.runId,
               ownerId: claimed.ownerId
@@ -1080,7 +1083,7 @@ export async function processInbound(
               conversationTurn.revision
             )
           )
-          yield* publishOutbox(bindings, composition, stored.outboxId, {
+          yield* publishOutbox(outboundPublisher, composition, stored.outboxId, {
             correlationId: claimed.correlationId,
             feature,
             runId: stored.request.runId
@@ -1100,7 +1103,7 @@ export async function processInbound(
           toolCalls: 0
         }
         yield* createAndPublishOutbox(
-          bindings,
+          outboundPublisher,
           composition,
           {
             correlationId: claimed.correlationId,
@@ -1222,7 +1225,7 @@ export async function processInbound(
         if (retry.status === "released") {
           if (conversationTurn !== undefined) {
             yield* wakeConversationTurn(
-              bindings,
+              composition,
               retry.wakeAt === undefined
                 ? { ownerId: conversationTurn.ownerId }
                 : { ownerId: conversationTurn.ownerId, wakeAt: retry.wakeAt }
@@ -1234,7 +1237,7 @@ export async function processInbound(
       }
       yield* promiseEffect(() =>
         reportAgentUsage(
-          composition.database,
+          composition.applicationStorage ?? composition.database,
           composition.services.alerts,
           composition.services.events,
           {
@@ -1303,7 +1306,7 @@ export async function processInbound(
             composition.services.tools.mutationActivity(agentRequest.runId)
           )
           if (settledActivity.status !== "active") {
-            yield* releaseSettlingTurn(bindings, composition, {
+            yield* releaseSettlingTurn(composition, {
               turnId: conversationTurn.turnId,
               activeRunId: agentRequest.runId,
               ownerId: conversationTurn.ownerId
@@ -1311,7 +1314,7 @@ export async function processInbound(
             return
           }
         }
-        yield* wakeConversationTurn(bindings, {
+        yield* wakeConversationTurn(composition, {
           ownerId: conversationTurn.ownerId,
           wakeAt: transition.wakeAt
         })
@@ -1338,7 +1341,7 @@ export async function processInbound(
         runId: agentRequest.runId
       }
       if (conversationTurn === undefined) {
-        yield* createAndPublishOutbox(bindings, composition, outboxTelemetry, () =>
+        yield* createAndPublishOutbox(outboundPublisher, composition, outboxTelemetry, () =>
           composition.services.runs.completeWithResponse(
             result,
             agentResponseInput(
@@ -1415,7 +1418,7 @@ export async function processInbound(
               outcome: "applied",
               conversationRevision: conversationTurn.revision
             })
-            yield* releaseSettlingTurn(bindings, composition, {
+            yield* releaseSettlingTurn(composition, {
               turnId: conversationTurn.turnId,
               activeRunId: agentRequest.runId,
               ownerId: claimed.ownerId
@@ -1430,7 +1433,7 @@ export async function processInbound(
           conversationTurn.revision
         )
       )
-      yield* publishOutbox(bindings, composition, outboxId, outboxTelemetry)
+      yield* publishOutbox(outboundPublisher, composition, outboxId, outboxTelemetry)
     })
   )
   const workflow =

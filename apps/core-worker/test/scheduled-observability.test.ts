@@ -52,7 +52,7 @@ afterEach(() => {
 describe("Core scheduled telemetry", () => {
   it("uses client spans for the clock and one producer span per pending outbox", async () => {
     const telemetry = makeCaptureTelemetry({
-      serviceName: "bob-core",
+      serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
@@ -126,7 +126,7 @@ describe("Core scheduled telemetry", () => {
     const bindings = testFixture<TransitionalBindings>({
       REMINDER_CLOCK: { jurisdiction: vi.fn(() => namespace) },
       OUTBOUND_QUEUE: { send: async (job: OutboundJob) => published.push(job) },
-      SENDBLUE_EGRESS_URL: "https://egress.example.invalid",
+      CHANNEL_EGRESS_URL: "https://egress.example.invalid",
       EGRESS_CALLER_SECRET: "c".repeat(64)
     })
     compositionHarness.current = {
