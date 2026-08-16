@@ -3,8 +3,8 @@ import { spawnSync } from "node:child_process"
 const paths = [
   "apps/core-worker",
   "apps/connections-gateway",
-  "apps/sendblue-ingress",
-  "apps/sendblue-egress",
+  "apps/sendblue-channel/ingress",
+  "apps/sendblue-channel/egress",
   "apps/agent",
   "apps/ui",
   "tools/sendblue-reconcile",

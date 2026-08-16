@@ -10,8 +10,7 @@
   "dependencies": {
     "@bob/contracts": "workspace:*",
     "@bob/job-queue": "workspace:*",
-    "@bob/sendblue-egress": "workspace:*",
-    "@bob/sendblue-ingress": "workspace:*",
+    "@bob/sendblue-channel": "workspace:*",
     "bullmq": "6.1.2",
     "effect": "4.0.0-beta.107"
   },
