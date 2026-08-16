@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   AgentArtifact,
+  AgentRunOperation,
   AgentRunRequest,
   AgentRunResult,
   AgentSteerRequest,
@@ -11,6 +12,21 @@ import {
 } from "../src/agent.ts"
 
 describe("AgentRunRequest rollout compatibility", () => {
+  it("accepts only the current durable Agent loop version", () => {
+    const operation = {
+      protocolVersion: 1,
+      loopVersion: 1,
+      runId: "00000000-0000-4000-8000-000000000001",
+      sequence: 1,
+      kind: "model",
+      payload: { turnIndex: 1 }
+    }
+    expect(Schema.decodeUnknownSync(AgentRunOperation)(operation)).toEqual(operation)
+    expect(() =>
+      Schema.decodeUnknownSync(AgentRunOperation)({ ...operation, loopVersion: 2 })
+    ).toThrow()
+  })
+
   it("accepts a general structured plan artifact", () => {
     expect(
       Schema.decodeUnknownSync(AgentArtifact)({

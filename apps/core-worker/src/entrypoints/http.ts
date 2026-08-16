@@ -1,4 +1,8 @@
-import { AgentRunResult } from "@bob/contracts/agent"
+import {
+  AgentRunOperationAppendRequest,
+  AgentRunOperationsLoadRequest,
+  AgentRunResult
+} from "@bob/contracts/agent"
 import { NormalizedInboundEvent, NormalizedStatusEvent } from "@bob/contracts/channel"
 import { DeliveryReconciliationResponse, DeliveryResult } from "@bob/contracts/delivery"
 import { OwnerSettingsUpdate } from "@bob/contracts/settings"
@@ -430,6 +434,22 @@ export async function handleHttp(
           durationMs: Math.max(0, Date.now() - startedAt)
         })
       }
+    }
+
+    if (request.method === "POST" && url.pathname === "/internal/agent/operations/load") {
+      const input = Schema.decodeUnknownSync(AgentRunOperationsLoadRequest)(await readJson(request))
+      return json({
+        operations: await composition.services.runs.loadOperations(input.runId, input.attemptId)
+      })
+    }
+
+    if (request.method === "POST" && url.pathname === "/internal/agent/operations") {
+      const input = Schema.decodeUnknownSync(AgentRunOperationAppendRequest)(
+        await readJson(request)
+      )
+      return json({
+        status: await composition.services.runs.appendOperation(input.operation, input.attemptId)
+      })
     }
 
     if (request.method === "GET" && url.pathname === "/api/settings") {

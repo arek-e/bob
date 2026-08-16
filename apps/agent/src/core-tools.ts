@@ -1,3 +1,8 @@
+import {
+  AgentRunOperationAppendResult,
+  AgentRunOperationsLoadResult,
+  type AgentRunOperation
+} from "@bob/contracts/agent"
 import { ToolResult, type CapabilityCatalogue, type ToolCommand } from "@bob/contracts/tools"
 import { currentBobCorrelationId, Telemetry } from "@bob/observability/effect"
 import { injectCurrentTraceparent } from "@bob/observability/propagation"
@@ -9,6 +14,8 @@ export interface CoreToolClient {
     signal?: AbortSignal
   ): Effect.Effect<typeof ToolResult.Type, unknown>
   execute(command: ToolCommand, signal?: AbortSignal): Promise<typeof ToolResult.Type>
+  loadRunOperations(runId: string, attemptId: string): Promise<readonly AgentRunOperation[]>
+  appendRunOperation(operation: AgentRunOperation, attemptId: string): Promise<void>
   checkReadiness(signal?: AbortSignal): Promise<boolean>
 }
 
@@ -80,6 +87,35 @@ export function createCoreToolClient(options: {
   return {
     executeEffect,
     execute: (command, signal) => Effect.runPromise(executeEffect(command, signal)),
+    async loadRunOperations(runId, attemptId) {
+      const response = await request(`${options.coreUrl}/internal/agent/operations/load`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "CF-Access-Client-Id": options.accessClientId,
+          "CF-Access-Client-Secret": options.accessClientSecret
+        },
+        body: JSON.stringify({ runId, attemptId }),
+        signal: AbortSignal.timeout(15_000)
+      })
+      if (!response.ok) throw new Error(`Core operation load failed: ${response.status}`)
+      return Schema.decodeUnknownSync(AgentRunOperationsLoadResult)(await response.json())
+        .operations
+    },
+    async appendRunOperation(operation, attemptId) {
+      const response = await request(`${options.coreUrl}/internal/agent/operations`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "CF-Access-Client-Id": options.accessClientId,
+          "CF-Access-Client-Secret": options.accessClientSecret
+        },
+        body: JSON.stringify({ operation, attemptId }),
+        signal: AbortSignal.timeout(15_000)
+      })
+      if (!response.ok) throw new Error(`Core operation append failed: ${response.status}`)
+      Schema.decodeUnknownSync(AgentRunOperationAppendResult)(await response.json())
+    },
     async checkReadiness(signal) {
       const requestSignal =
         signal === undefined

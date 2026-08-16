@@ -1,7 +1,12 @@
 import type { BatchItem } from "drizzle-orm/batch"
 
-import { AgentRunRequest, type AgentArtifact, type AgentRunResult } from "@bob/contracts/agent"
-import { and, eq, isNull, lt, or, sql } from "drizzle-orm"
+import {
+  AgentRunOperation,
+  AgentRunRequest,
+  type AgentArtifact,
+  type AgentRunResult
+} from "@bob/contracts/agent"
+import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm"
 import { Context, Layer, Schema } from "effect"
 
 import type { CoreDatabase } from "../../database.ts"
@@ -12,6 +17,7 @@ import { artifactRevisions, artifacts } from "../artifacts/schema.ts"
 import { outboxMessages } from "../delivery/schema.ts"
 import {
   agentRunAttempts,
+  agentRunOperations,
   agentRuns,
   conversationTurns,
   inboundEvents,
@@ -57,6 +63,11 @@ export interface AgentRunStore {
   loadForInbound(inboundEventId: string): Promise<StoredAgentRun | undefined>
   loadForTurn(turnId: string, revision: number): Promise<StoredAgentRun | undefined>
   claim(runId: string, leaseMs: number): Promise<string | undefined>
+  loadOperations(runId: string, attemptId: string): Promise<readonly AgentRunOperation[]>
+  appendOperation(
+    operation: AgentRunOperation,
+    attemptId: string
+  ): Promise<"appended" | "duplicate">
   completeWithResponse(
     result: AgentRunResult,
     response: {
@@ -255,6 +266,147 @@ export function makeAgentRunStore(
         })
       ])
       return attemptId
+    },
+
+    async loadOperations(runId, attemptId) {
+      const [run] = await database
+        .select({ ownerId: agentRuns.userId })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, runId),
+            eq(agentRuns.status, "executing"),
+            eq(agentRuns.activeAttemptId, attemptId)
+          )
+        )
+        .limit(1)
+      if (run === undefined) throw new Error("Agent run attempt is not active")
+      const rows = await database
+        .select()
+        .from(agentRunOperations)
+        .where(eq(agentRunOperations.runId, runId))
+        .orderBy(asc(agentRunOperations.sequence))
+      const owner = await ownerKey(run.ownerId)
+      return Promise.all(
+        rows.map(async (row) =>
+          Schema.decodeUnknownSync(AgentRunOperation)({
+            protocolVersion: 1,
+            loopVersion: row.loopVersion,
+            runId: row.runId,
+            sequence: row.sequence,
+            kind: row.kind,
+            payload: Schema.decodeUnknownSync(Schema.Json)(
+              JSON.parse(
+                await protection.decryptText(owner.key, {
+                  ciphertext: row.payloadCiphertext,
+                  iv: row.payloadIv
+                })
+              )
+            )
+          })
+        )
+      )
+    },
+
+    async appendOperation(operation, attemptId) {
+      const decoded = Schema.decodeUnknownSync(AgentRunOperation)(operation)
+      const serializedOperation = JSON.stringify(decoded)
+      const payloadHash = await protection.contentHash(serializedOperation)
+      const [existing] = await database
+        .select({
+          kind: agentRunOperations.kind,
+          loopVersion: agentRunOperations.loopVersion,
+          payloadHash: agentRunOperations.payloadHash
+        })
+        .from(agentRunOperations)
+        .where(
+          and(
+            eq(agentRunOperations.runId, decoded.runId),
+            eq(agentRunOperations.sequence, decoded.sequence)
+          )
+        )
+        .limit(1)
+      if (existing !== undefined) {
+        if (
+          existing.kind === decoded.kind &&
+          existing.loopVersion === decoded.loopVersion &&
+          existing.payloadHash === payloadHash
+        ) {
+          return "duplicate"
+        }
+        throw new Error("Agent run operation sequence conflict")
+      }
+
+      const [run] = await database
+        .select({ ownerId: agentRuns.userId })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, decoded.runId),
+            eq(agentRuns.status, "executing"),
+            eq(agentRuns.activeAttemptId, attemptId)
+          )
+        )
+        .limit(1)
+      if (run === undefined) throw new Error("Agent run attempt is not active")
+      const owner = await ownerKey(run.ownerId)
+      const encrypted = await protection.encryptText(owner.key, JSON.stringify(decoded.payload))
+      const id = randomUuid()
+      const createdAt = now().toISOString()
+      const [inserted] = await database
+        .insert(agentRunOperations)
+        .select(sql`
+          SELECT
+            ${id},
+            ${decoded.runId},
+            ${decoded.sequence},
+            ${decoded.kind},
+            ${decoded.loopVersion},
+            ${encrypted.ciphertext},
+            ${encrypted.iv},
+            ${payloadHash},
+            ${owner.version},
+            ${attemptId},
+            ${createdAt}
+          FROM ${agentRuns}
+          WHERE
+            ${agentRuns.id} = ${decoded.runId}
+            AND ${agentRuns.status} = ${"executing"}
+            AND ${agentRuns.activeAttemptId} = ${attemptId}
+            AND ${decoded.sequence} = COALESCE(
+              (
+                SELECT MAX(${agentRunOperations.sequence}) + 1
+                FROM ${agentRunOperations}
+                WHERE ${agentRunOperations.runId} = ${decoded.runId}
+              ),
+              1
+            )
+        `)
+        .returning({ id: agentRunOperations.id })
+      if (inserted !== undefined) return "appended"
+
+      const [settled] = await database
+        .select({
+          kind: agentRunOperations.kind,
+          loopVersion: agentRunOperations.loopVersion,
+          payloadHash: agentRunOperations.payloadHash
+        })
+        .from(agentRunOperations)
+        .where(
+          and(
+            eq(agentRunOperations.runId, decoded.runId),
+            eq(agentRunOperations.sequence, decoded.sequence)
+          )
+        )
+        .limit(1)
+      if (
+        settled?.kind === decoded.kind &&
+        settled.loopVersion === decoded.loopVersion &&
+        settled.payloadHash === payloadHash
+      ) {
+        return "duplicate"
+      }
+      throw new Error("Agent run operation append was fenced")
     },
 
     async completeWithResponse(result, response, conversation, attemptId) {

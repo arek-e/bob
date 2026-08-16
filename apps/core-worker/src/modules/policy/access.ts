@@ -112,6 +112,8 @@ function requiredCaller(pathname: string): CoreCaller | undefined {
   if (
     pathname === "/internal/tools" ||
     pathname === "/internal/agent/result" ||
+    pathname === "/internal/agent/operations" ||
+    pathname === "/internal/agent/operations/load" ||
     pathname === "/internal/readiness"
   )
     return "agent"

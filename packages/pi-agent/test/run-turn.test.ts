@@ -1,4 +1,4 @@
-import type { AgentRunRequest } from "@bob/contracts/agent"
+import type { AgentRunOperation, AgentRunRequest, AgentRunResult } from "@bob/contracts/agent"
 import type { ToolCommand, ToolResult } from "@bob/contracts/tools"
 
 import { transitionalDeploymentProfile } from "@bob/contracts/deployment-profiles"
@@ -2229,5 +2229,187 @@ describe("Bob's direct pi-ai loop", () => {
         })
       )
     ).resolves.toMatchObject({ status: "completed", sourceIds: [] })
+  })
+
+  it("resumes a checkpointed final model response without repeating the model call", async () => {
+    const request = baseRequest({ allowedTools: [] })
+    const assistant = structuredResponse({ responseText: "Recovered response." })
+    const appended: AgentRunOperation[] = []
+    const operations: AgentRunOperation[] = [
+      {
+        protocolVersion: 1,
+        loopVersion: 1,
+        runId: request.runId,
+        sequence: 1,
+        kind: "model",
+        payload: JSON.parse(
+          JSON.stringify({ turnIndex: 1, turnPhase: "primary", message: assistant })
+        )
+      }
+    ]
+    const agent = makeAgent(async () => okResult())
+
+    await expect(
+      agent.runTurn(request, undefined, {
+        operations,
+        append: async (operation) => {
+          appended.push(operation)
+        }
+      })
+    ).resolves.toMatchObject({ status: "completed", responseText: "Recovered response." })
+
+    expect(modelHarness.completeSimple).not.toHaveBeenCalled()
+    expect(appended).toHaveLength(1)
+    expect(appended[0]).toMatchObject({ sequence: 2, kind: "final" })
+  })
+
+  it("does not persist model reasoning in a durable operation", async () => {
+    const privateReasoning = "private chain of thought"
+    const final = structuredResponse({ responseText: "Safe response." })
+    modelHarness.state.responses.push({
+      ...final,
+      content: [
+        {
+          type: "thinking",
+          thinking: privateReasoning,
+          thinkingSignature: "opaque-reasoning-signature"
+        },
+        ...final.content
+      ]
+    })
+    const appended: AgentRunOperation[] = []
+    const agent = makeAgent(async () => okResult())
+
+    await expect(
+      agent.runTurn(baseRequest({ allowedTools: [] }), undefined, {
+        operations: [],
+        append: async (operation) => {
+          appended.push(operation)
+        }
+      })
+    ).resolves.toMatchObject({ status: "completed", responseText: "Safe response." })
+
+    expect(JSON.stringify(appended)).not.toContain(privateReasoning)
+    expect(JSON.stringify(appended)).toContain("opaque-reasoning-signature")
+  })
+
+  it("does not start a Tool when its model operation cannot checkpoint", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("memory_search", { query: "owner" }, { id: "call-blocked" }))
+    )
+    const executeTool = vi.fn(async () => okResult())
+    const agent = makeAgent(executeTool)
+
+    await expect(
+      agent.runTurn(baseRequest(), undefined, {
+        operations: [],
+        append: async () => {
+          throw new Error("checkpoint unavailable")
+        }
+      })
+    ).resolves.toMatchObject({ status: "failed", errorCode: "provider" })
+
+    expect(executeTool).not.toHaveBeenCalled()
+  })
+
+  it("resumes at the first incomplete Tool call", async () => {
+    const request = baseRequest({ allowedTools: ["memory_search"] })
+    const firstCall = fauxToolCall("memory_search", { query: "first" }, { id: "call-first" })
+    const secondCall = fauxToolCall("memory_search", { query: "second" }, { id: "call-second" })
+    const assistant = toolResponse(firstCall, secondCall)
+    const firstResult = okResult("memory_results", "First result.")
+    const operations: AgentRunOperation[] = [
+      {
+        protocolVersion: 1,
+        loopVersion: 1,
+        runId: request.runId,
+        sequence: 1,
+        kind: "model",
+        payload: JSON.parse(
+          JSON.stringify({ turnIndex: 1, turnPhase: "primary", message: assistant })
+        )
+      },
+      {
+        protocolVersion: 1,
+        loopVersion: 1,
+        runId: request.runId,
+        sequence: 2,
+        kind: "tool",
+        payload: {
+          turnIndex: 1,
+          toolCallIndex: 1,
+          toolCallId: firstCall.id,
+          result: firstResult,
+          timestamp: 1
+        }
+      }
+    ]
+    modelHarness.state.responses.push(
+      structuredResponse({
+        responseText: "Both searches finished.",
+        toolNames: ["memory_search"]
+      })
+    )
+    const executeTool = vi.fn(async (_command: ToolCommand) =>
+      okResult("memory_results", "Second result.")
+    )
+    const appended: AgentRunOperation[] = []
+    const agent = makeAgent(executeTool)
+
+    await expect(
+      agent.runTurn(request, undefined, {
+        operations,
+        append: async (operation) => {
+          appended.push(operation)
+        }
+      })
+    ).resolves.toMatchObject({ status: "completed", responseText: "Both searches finished." })
+
+    expect(executeTool).toHaveBeenCalledTimes(1)
+    expect(executeTool.mock.calls[0]?.[0]).toMatchObject({ toolCallId: secondCall.id })
+    expect(appended.map((operation) => [operation.sequence, operation.kind])).toEqual([
+      [3, "tool"],
+      [4, "model"],
+      [5, "final"]
+    ])
+  })
+
+  it("returns a checkpointed final result without model or Tool execution", async () => {
+    const request = baseRequest({ allowedTools: [] })
+    const finalResult: AgentRunResult = {
+      protocolVersion: 1,
+      runId: request.runId,
+      correlationId: request.correlationId,
+      status: "completed",
+      responseText: "Already complete.",
+      sourceIds: [],
+      conflict: "none",
+      model: "gpt-test",
+      durationMs: 10,
+      inputTokens: 2,
+      outputTokens: 3,
+      toolCalls: 0
+    }
+    const executeTool = vi.fn(async () => okResult())
+    const agent = makeAgent(executeTool)
+
+    await expect(
+      agent.runTurn(request, undefined, {
+        operations: [
+          {
+            protocolVersion: 1,
+            loopVersion: 1,
+            runId: request.runId,
+            sequence: 1,
+            kind: "final",
+            payload: JSON.parse(JSON.stringify(finalResult))
+          }
+        ],
+        append: async () => undefined
+      })
+    ).resolves.toEqual(finalResult)
+
+    expect(modelHarness.completeSimple).not.toHaveBeenCalled()
+    expect(executeTool).not.toHaveBeenCalled()
   })
 })

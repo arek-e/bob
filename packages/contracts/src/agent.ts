@@ -151,6 +151,38 @@ export const AgentRunResult = Schema.Struct({
   toolCalls: Schema.Int
 })
 
+const AgentRunOperationSequence = Schema.Number.check(
+  Schema.isInt(),
+  Schema.isBetween({ minimum: 1, maximum: 32 })
+)
+
+export const AgentRunOperation = Schema.Struct({
+  protocolVersion: Schema.Literal(1),
+  loopVersion: Schema.Literal(1),
+  runId: Uuid,
+  sequence: AgentRunOperationSequence,
+  kind: Schema.Literals(["model", "tool", "final"]),
+  payload: Schema.Json
+})
+
+export const AgentRunOperationAppendRequest = Schema.Struct({
+  attemptId: Uuid,
+  operation: AgentRunOperation
+})
+
+export const AgentRunOperationAppendResult = Schema.Struct({
+  status: Schema.Literals(["appended", "duplicate"])
+})
+
+export const AgentRunOperationsLoadRequest = Schema.Struct({
+  runId: Uuid,
+  attemptId: Uuid
+})
+
+export const AgentRunOperationsLoadResult = Schema.Struct({
+  operations: Schema.Array(AgentRunOperation).check(Schema.isMaxLength(32))
+})
+
 export const AgentSteerRequest = Schema.Struct({
   runId: Uuid
 })
@@ -186,6 +218,11 @@ export type PriorToolReceiptOrigin = typeof PriorToolReceiptOrigin.Type
 export type PriorToolReceipt = typeof PriorToolReceipt.Type
 export type AgentRunRequest = typeof AgentRunRequest.Type
 export type AgentRunResult = typeof AgentRunResult.Type
+export type AgentRunOperation = typeof AgentRunOperation.Type
+export type AgentRunOperationAppendRequest = typeof AgentRunOperationAppendRequest.Type
+export type AgentRunOperationAppendResult = typeof AgentRunOperationAppendResult.Type
+export type AgentRunOperationsLoadRequest = typeof AgentRunOperationsLoadRequest.Type
+export type AgentRunOperationsLoadResult = typeof AgentRunOperationsLoadResult.Type
 export type AgentSteerRequest = typeof AgentSteerRequest.Type
 export type AgentSteerResult = typeof AgentSteerResult.Type
 export type DeviceLoginEvent = typeof DeviceLoginEvent.Type

@@ -6,6 +6,7 @@ import { createCoreDatabase } from "../src/database.ts"
 import { makeAgentRunStore } from "../src/modules/conversations/run-store.ts"
 import {
   agentRunAttempts,
+  agentRunOperations,
   agentRuns,
   channels,
   conversationTurns,
@@ -187,6 +188,50 @@ afterEach(async () => {
 })
 
 describe("durable conversation turns", () => {
+  it("appends encrypted Agent run operations with sequence and attempt fences", async () => {
+    const { database, protection } = await seedInbound()
+    const runId = "00000000-0000-4000-8000-000000000510"
+    const attemptId = "00000000-0000-4000-8000-000000000511"
+    await insertExecutingConversationRun(database, {
+      turnId: "00000000-0000-4000-8000-000000000512",
+      runId,
+      attemptId,
+      revision: 1,
+      at: "2026-08-12T08:00:00.000Z"
+    })
+    const runs = makeAgentRunStore(database, protection, {
+      now: () => new Date("2026-08-12T08:00:01.000Z"),
+      randomUuid: uuidSequence(513)
+    })
+    const operation = {
+      protocolVersion: 1 as const,
+      loopVersion: 1 as const,
+      runId,
+      sequence: 1,
+      kind: "model" as const,
+      payload: { privateText: "owner-private-checkpoint" }
+    }
+
+    await expect(runs.appendOperation(operation, attemptId)).resolves.toBe("appended")
+    await expect(runs.appendOperation(operation, attemptId)).resolves.toBe("duplicate")
+    await expect(runs.loadOperations(runId, attemptId)).resolves.toEqual([operation])
+
+    const [stored] = await database.select().from(agentRunOperations)
+    expect(stored?.payloadCiphertext).not.toContain("owner-private-checkpoint")
+    await expect(
+      runs.appendOperation(
+        { ...operation, sequence: 2, payload: { privateText: "different" } },
+        "00000000-0000-4000-8000-000000000599"
+      )
+    ).rejects.toThrow("not active")
+    await expect(runs.appendOperation({ ...operation, sequence: 3 }, attemptId)).rejects.toThrow(
+      "fenced"
+    )
+    await expect(
+      runs.appendOperation({ ...operation, payload: { privateText: "conflict" } }, attemptId)
+    ).rejects.toThrow("sequence conflict")
+  })
+
   it("offers the first inbound as revision one with a bounded collection window", async () => {
     const { database, protection } = await seedInbound()
     const turns = makeConversationTurnStore(database, protection, {

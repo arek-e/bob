@@ -208,6 +208,27 @@ export const agentRunAttempts = sqliteTable("agent_run_attempts", {
   finishedAt: text("finished_at")
 })
 
+export const agentRunOperations = sqliteTable(
+  "agent_run_operations",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").notNull(),
+    sequence: integer("sequence").notNull(),
+    kind: text("kind", { enum: ["model", "tool", "final"] }).notNull(),
+    loopVersion: integer("loop_version").notNull(),
+    payloadCiphertext: text("payload_ciphertext").notNull(),
+    payloadIv: text("payload_iv").notNull(),
+    payloadHash: text("payload_hash").notNull(),
+    dataKeyVersion: integer("data_key_version").notNull(),
+    createdByAttemptId: text("created_by_attempt_id").notNull(),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    uniqueIndex("agent_run_operations_sequence_uq").on(table.runId, table.sequence),
+    index("agent_run_operations_order_idx").on(table.runId, table.sequence)
+  ]
+)
+
 export const toolCalls = sqliteTable(
   "tool_calls",
   {

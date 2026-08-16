@@ -92,6 +92,9 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Agent experience:** Reviewed evidence about workflows, environment behavior, outcomes, and recurring failures.
 - **Health observation:** One read-only, content-free event sent through a fail-open telemetry seam.
 - **Plan artifact:** One reusable structured draft for any owner planning task.
+- **Agent run operation:** One completed model call, Tool call, or final output in an Agent run.
+- **Agent run checkpoint:** One durable Agent run operation and its position in the ordered replay log.
+- **Executable workflow step:** One stable, deterministic workflow action with explicit retry and completion rules. It is not a Plan artifact item.
 - **Short reply binding:** An expiring link from one reply to one pending action.
 - **Memory candidate:** An unconfirmed proposed fact revision.
 - **Fact:** Stable identity for one durable personal claim.

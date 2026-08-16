@@ -167,6 +167,7 @@ describe("D1 migrations and durability", () => {
     ).all<{ name: string }>()
     const names = new Set(rows.results.map((row) => row.name))
     expect(names.has("agent_runs")).toBe(true)
+    expect(names.has("agent_run_operations")).toBe(true)
     expect(names.has("search_documents_fts")).toBe(true)
     expect(names.has("retrieval_documents_fts")).toBe(true)
     expect(names.has("retrieval_documents_fts_update")).toBe(true)
