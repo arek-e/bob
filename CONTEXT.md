@@ -36,7 +36,7 @@ Bob can become proactive when a grounded signal shows a likely owner need.
 
 Bob must limit unnecessary questions, actions, and interruptions.
 
-Bob improves through measured outcomes, synthetic evaluations, reviewed changes, and controlled releases.
+Bob improves through owner feedback and reviewed changes.
 
 Bob does not rewrite its production policy or grant itself new authority.
 
@@ -49,9 +49,6 @@ The authority model follows these rules:
 - Provide correction, cancellation, or undo when the domain supports it.
 - Stop access when the owner revokes a connection or capability.
 
-[Personal agent interaction research](docs/research/personal-agent-interaction.md) records the
-research basis, public benchmarks, and proposed evaluation plan.
-
 ## System map
 
 These names describe responsibilities. They are stable across deployment providers.
@@ -59,11 +56,11 @@ Provider names appear only in Runtime Adapter details, configuration, and implem
 
 | System              | Responsibility                                                         | Runtime Adapter examples                                                |
 | ------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Core Runtime        | Serves the API and UI. Owns core conversation and workflow invariants. | Cloudflare Adapter: Worker; Compose Adapter: Node process               |
+| Core Runtime        | Serves the API and UI. Owns core conversation and workflow invariants. | Node process                                                            |
 | Agent Runtime       | Runs the bounded model and Tool loop.                                  | Compose Adapter: Node process                                           |
 | Channel Runtime     | Receives normalized events and sends replies.                          | Sendblue Adapter; Compose Adapter: HTTP host                            |
 | Job Queue           | Publishes durable work and tracks attempts.                            | Cloudflare Adapter: Queues; Compose Adapter: BullMQ over Redis          |
-| Application Storage | Stores durable relational records and atomic changes.                  | Cloudflare Adapter: D1; Compose Adapter: PostgreSQL                     |
+| Application Storage | Stores durable relational records and atomic changes.                  | PostgreSQL with Drizzle ORM                                             |
 | Object Storage      | Stores private objects outside relational records.                     | Cloudflare Adapter: R2; Compose Adapter: filesystem or S3               |
 | Run Coordinator     | Serializes owner runs and schedules delayed wakes.                     | Cloudflare Adapter: Durable Objects; Compose Adapter: delayed jobs      |
 | Scheduler           | Starts periodic maintenance and recovery work.                         | Cloudflare Adapter: Cron; Compose Adapter: Node interval                |
@@ -71,6 +68,15 @@ Provider names appear only in Runtime Adapter details, configuration, and implem
 
 The Core Runtime composes these systems through provider-neutral Interfaces.
 One deployment selects one Adapter for each system.
+
+The primary app catalogue uses the portable Node Runtime with PostgreSQL, BullMQ, and filesystem or
+S3 Adapters. Cloudflare compatibility Implementations live in `packages/cloudflare` during
+migration. The UI remains a separate browser app.
+
+The root `compose.yaml` is the primary portable deployment profile.
+
+Infrastructure as code lives in `iac`. Each top-level directory names its deployment system.
+Each runnable app owns its Dockerfile.
 
 ## Non-goals
 
@@ -101,7 +107,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Tool command:** One typed request from Bob's Pi loop to an owning Capability Module.
 - **Capability Module:** One statically registered group of Tool definitions, execution Adapters, and safety metadata.
 - **General Agent Core:** Domain-neutral Modules for conversation, the Pi harness, retrieval, memory, planning, policy, action evidence, and delivery.
-- **Vertical Module:** One optional domain-owned set of capability, Context source, workflow, storage, route, schedule, and evaluation Implementations.
+- **Vertical Module:** One optional domain-owned set of capability, Context source, workflow, storage, route, and schedule Implementations.
 - **Deployment profile:** One reviewed, immutable composition of the core profile and Vertical Modules for a release.
 - **Core profile:** The minimum deployment profile. It contains the General Agent Core and no Vertical Module.
 - **Runtime profile:** One static composition of Tool, evidence, conversation, route, schedule, and delivery target Adapters.
@@ -128,7 +134,6 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Delivery attempt:** One local attempt to contact a provider.
 - **Delivery recovery:** A bounded decision that restores a safe delivery or raises an operational alert.
 - **Scheduled recovery:** Independent repair phases that continue after one item fails.
-- **Runtime assurance:** Evidence that the private runtime, backups, and credentials meet the production contract.
 - **Production release:** One immutable bundle of a reviewed source revision, configuration revision, and runtime artifacts.
 - **Acknowledged:** The owner confirms seeing one reminder occurrence.
 - **Completed:** The owner confirms finishing one task.
@@ -139,13 +144,10 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Trusted helper:** A separate person with explicit, revocable scopes.
 - **Connections Gateway:** The shared application data-plane Module that gives one Bob Instance scoped access to external connections.
 - **Instance identity:** The verified workload identity that selects one Bob Instance at the Connections Gateway.
-- **Runtime deployment contract:** The versioned, provider-neutral manifest for one reviewed Runtime Release.
-- **Bob Runner:** The external compute-plane Module that applies desired state through a Runtime Driver.
 - **Managed Account:** One application-plane account that can own one Bob Instance.
 - **Provisioning subject:** One opaque Managed Account reference sent to the Control Plane.
 - **Managed Channel Router:** The application data-plane Module that maps an authorized sender to one Bob Instance.
 - **Staged channel event:** One durable authorized event that waits for its Bob Instance to become ready.
-- **Runtime materialization:** Verified contract acquisition and protected local Secret Projection by a Bob Runner.
 - **Job Queue:** Durable job publication and attempts behind a provider-neutral Interface.
 - **Application Storage:** Durable relational records and atomic changes behind a provider-neutral Interface.
 - **Object Storage:** Private objects behind a provider-neutral Interface.
@@ -155,13 +157,14 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 
 ## System invariants
 
-- Application Storage is authoritative for application records. The Cloudflare Adapter uses D1.
+- Application Storage is authoritative for application records. The primary Runtime uses PostgreSQL.
+- `packages/db` owns all Drizzle schemas, the PostgreSQL connection, migrations, and Better Auth storage.
 - Better Auth owns the `auth_user`, `auth_session`, `auth_account`, `auth_verification`, and `auth_rate_limit` tables.
-- Cloudflare Access protects only Core internal routes and the one-time owner setup route.
+- A one-time setup token protects owner setup in the primary Runtime.
 - Better Auth sessions protect owner API routes.
 - The owner record is authoritative for live locality settings.
 - A locality change affects new requests. An installed scheduling Module keeps saved schedules stable.
-- Run Coordinator coordinates run order and any installed scheduled wake-ups. The Cloudflare Adapter uses Durable Objects.
+- Run Coordinator coordinates run order and installed scheduled wake-ups through Redis jobs.
 - Run Coordinator state is not authoritative application data.
 - Bob's Pi loop owns the single model and tool loop policy.
 - Pi permanently owns provider streaming, model normalization, and OAuth support.
@@ -192,13 +195,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - A managed Warm Sandbox contains no Owner state, credentials, storage, messages, or Secret Projection.
 - Managed production Cloudflare changes belong to `teampitch-ops`.
 - Managed production release identities and GitHub environments belong to the private Control Plane.
-- Runtime Alchemy owns portable and self-hosted plans. It does not write managed production resources.
-- The Runtime deployment contract contains no hosting-provider identifier or secret value.
-- Runtime source history does not contain deployment-only commits.
 - Each Runtime Adapter passes the same conformance tests before promotion.
 - One Bob Instance uses one authoritative Runtime Adapter set at a time.
-- Each promoted Runtime release uses one immutable OCI bundle digest.
-- Bob Runner remains outside the Bob Instance application stack.
 - The Connections Gateway derives Instance scope from verified Instance identity.
 - The Connections Gateway namespaces every Nango owner reference with the Bob Instance ID.
 - The Sendblue modules never receive Pi OAuth credentials.
@@ -208,16 +206,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Every Bob production record uses the `ops/apps/prod/bob` prefix.
 - Local checks use explicit fixtures. They do not define a deployable environment.
 - Secret values never enter committed environment files.
-- Alchemy state credentials stay in Cloudflare Secrets Store.
-- Alchemy owns each Bob Cloudflare resource that it declares.
-- A separate Application Storage instance stores continuous public benchmark run metadata.
-- A separate Object Storage instance stores public or synthetic evaluation artifacts.
-- A scheduled evaluation process runs the committed synthetic interaction gate each day.
-- The evaluation process can access only the separate evaluation Application Storage and Object Storage instances.
-- Production Core and Agent Runtimes cannot access evaluation storage.
-- Alchemy creates Access service tokens and Tunnel credentials before OpenBao receives their runtime copies.
 - No Cloudflare resource has two infrastructure owners.
-- Coolify and OpenBao stay outside Alchemy.
 - Health observation is read-only, content-free, validated, and fail-open.
 - Effect composes I/O. Pure domain rules stay as normal TypeScript.
 - Drizzle owns application schemas and queries. Better Auth uses the selected Application Storage Adapter for auth tables.
@@ -238,8 +227,3 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - A delivery claim and its first attempt enter Application Storage in one atomic operation.
 - An exhausted outbound queue item gets a bounded recovery decision.
 - One scheduled recovery failure does not stop unrelated recovery work.
-
-## Decision index
-
-- [Architecture decision index](docs/adr/README.md)
-- [Personal agent interaction research](docs/research/personal-agent-interaction.md)

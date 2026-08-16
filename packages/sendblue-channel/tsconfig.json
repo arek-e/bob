@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": [
+    "runtime-platform.d.ts",
+    "egress/src/**/*.ts",
+    "egress/test/**/*.ts",
+    "ingress/src/**/*.ts",
+    "ingress/test/**/*.ts"
+  ]
+}

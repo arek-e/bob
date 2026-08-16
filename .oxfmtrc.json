@@ -26,7 +26,7 @@
     ".alchemy",
     ".wrangler",
     "pnpm-lock.yaml",
-    "apps/core-worker/migrations/*.sql",
+    "packages/db/migrations/*.sql",
     "**/environment.generated.ts",
     "**/routeTree.gen.ts"
   ]

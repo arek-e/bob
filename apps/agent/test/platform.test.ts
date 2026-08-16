@@ -8,20 +8,6 @@ describe("agent platform contract", () => {
     expect(AGENT_LISTEN_HOST).toBe("0.0.0.0")
   })
 
-  it("uses the OpenBao AppRole secret file in Coolify", async () => {
-    const [compose, composition, policy] = await Promise.all([
-      readFile("infra/coolify/compose.yaml", "utf8"),
-      readFile("apps/agent/src/composition.ts", "utf8"),
-      readFile("infra/openbao/agent-production-policy.hcl", "utf8")
-    ])
-    expect(compose).toContain("BAO_APPROLE_SECRET_ID_PATH: /run/secrets/openbao_approle_secret_id")
-    expect(compose).toContain("target: openbao_approle_secret_id")
-    expect(compose).not.toContain("BAO_APPROLE_SECRET_ID: ${BAO_APPROLE_SECRET_ID:?}")
-    expect(composition).toContain("getAppRoleSecretId")
-    expect(policy).toContain('path "ops/data/apps/prod/bob/pi-auth/openai-codex"')
-    expect(policy).not.toContain("/access/")
-  })
-
   it("builds a bounded production image", async () => {
     const [dockerfile, dockerignore, packageManifest] = await Promise.all([
       readFile("apps/agent/Dockerfile", "utf8"),

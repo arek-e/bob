@@ -1,1 +1,0 @@
-ALTER TABLE `conversation_turns` ADD `context_eligible` integer;

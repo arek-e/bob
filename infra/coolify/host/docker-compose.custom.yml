@@ -1,3 +1,0 @@
-services:
-  coolify:
-    image: docker.io/coollabsio/coolify:4.1.2

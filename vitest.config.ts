@@ -7,11 +7,10 @@ export default defineConfig({
     },
     include: [
       "apps/*/test/**/*.test.ts",
-      "apps/sendblue-channel/*/test/**/*.test.ts",
-      "infra/*/test/**/*.test.ts",
-      "packages/*/test/**/*.test.ts",
-      "tools/*/test/**/*.test.ts",
-      "evals/deterministic/**/*.test.ts"
+      "packages/cloudflare/*/test/**/*.test.ts",
+      "packages/sendblue-channel/*/test/**/*.test.ts",
+      "iac/*/test/**/*.test.ts",
+      "packages/*/test/**/*.test.ts"
     ],
     passWithNoTests: false
   }

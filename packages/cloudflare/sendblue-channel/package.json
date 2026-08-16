@@ -1,0 +1,17 @@
+{
+  "name": "@bob/cloudflare-sendblue-channel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild ingress/src/index.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/ingress/index.js && esbuild egress/src/index.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/egress/index.js",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/sendblue-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260810.1",
+    "esbuild": "0.25.9"
+  }
+}
