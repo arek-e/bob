@@ -68,14 +68,6 @@ export class CoolifyReleaseClient {
     )
   }
 
-  async currentSourceRevision(fallbackRevision) {
-    const application = await this.request(`applications/${this.applicationId}`)
-    const configuredRevision = application.git_commit_sha
-    if (revisionPattern.test(configuredRevision ?? "")) return configuredRevision
-    if (revisionPattern.test(fallbackRevision ?? "")) return fallbackRevision
-    throw new Error("Coolify source revision is invalid")
-  }
-
   async updateSourceRevision(sourceRevision) {
     if (!revisionPattern.test(sourceRevision ?? "")) {
       throw new Error("Coolify source revision is invalid")
@@ -129,7 +121,10 @@ export class CoolifyReleaseClient {
 export const releaseToCoolify = async ({ client, bundle, waitOptions }) => {
   const desired = releaseEnvironment(bundle)
   const previous = await client.currentEnvironment(Object.keys(desired))
-  const previousSourceRevision = await client.currentSourceRevision(previous.BOB_RELEASE_SHA)
+  const previousSourceRevision = previous.BOB_RELEASE_SHA
+  if (!revisionPattern.test(previousSourceRevision ?? "")) {
+    throw new Error("Prior release source revision is invalid")
+  }
   try {
     await client.updateSourceRevision(bundle.sourceRevision)
     await client.updateEnvironment(desired)
