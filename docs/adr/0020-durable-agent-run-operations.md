@@ -37,6 +37,9 @@ Checkpoint these completed Agent run operations:
 
 Store the operation before the Pi loop starts the next operation.
 
+Bound each Tool result so one operation fits in the checkpoint request. Replace an oversized result
+with a bounded result. Preserve confirmed, proposed, or unknown mutation evidence in that result.
+
 Assign each operation one monotonic sequence number within its Agent run.
 
 Fence every append with the current Agent run attempt ID. A stale attempt cannot append.
@@ -109,3 +112,5 @@ Plan artifacts stay independent from workflow execution state.
 12. A checkpointed final result returns without another model call.
 13. A transient Agent host failure retries the same run without a terminal reply.
 14. Retry exhaustion produces one terminal failure response.
+15. An oversized read result becomes a bounded failure that can checkpoint.
+16. An oversized mutation result keeps its action outcome evidence.

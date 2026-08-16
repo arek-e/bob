@@ -4,6 +4,8 @@ import { CapabilityCatalogueGeneration, makeCapabilityCatalogue } from "./capabi
 import { ToolName } from "./capabilities/definitions.ts"
 import { IsoDateTime, JsonObject, NonEmptyText, ShortText, Uuid } from "./shared.ts"
 
+export const MAX_TOOL_RESULT_BYTES = 32 * 1024
+
 function isJsonObject(value: typeof Schema.Json.Type): value is typeof JsonObject.Type {
   return value !== null && !Array.isArray(value) && Object(value) === value
 }
@@ -84,7 +86,13 @@ export const ToolResult = Schema.Struct({
   message: ShortText,
   data: Schema.optionalKey(JsonObject),
   evidence: Schema.optionalKey(ToolEvidence)
-})
+}).check(
+  Schema.makeFilter((result) =>
+    new TextEncoder().encode(JSON.stringify(result)).byteLength <= MAX_TOOL_RESULT_BYTES
+      ? undefined
+      : { path: [], issue: "Tool result exceeds the byte limit" }
+  )
+)
 
 export type ToolCommand = typeof ToolCommand.Type
 export type ToolResult = typeof ToolResult.Type

@@ -2,6 +2,7 @@ import { AgentRunRequest } from "@bob/contracts/agent"
 import {
   type CapabilityCatalogue,
   conversationMutationIdempotencyKey,
+  MAX_TOOL_RESULT_BYTES,
   ToolCommand,
   ToolName,
   ToolResult
@@ -87,6 +88,34 @@ function domainError(): ToolResult {
     ok: false,
     code: "domain_error",
     message: "Bob could not complete this action safely."
+  }
+}
+
+export function boundToolResult(result: ToolResult): ToolResult {
+  if (new TextEncoder().encode(JSON.stringify(result)).byteLength <= MAX_TOOL_RESULT_BYTES) {
+    return result
+  }
+  const actionOutcome = result.evidence?.actionOutcome
+  if (actionOutcome === "unknown") {
+    return {
+      ok: false,
+      code: "external_outcome_unknown",
+      message: "The action result is unknown. Review the current state before trying again.",
+      evidence: { actionOutcome }
+    }
+  }
+  if (actionOutcome !== undefined) {
+    return {
+      ok: result.ok,
+      code: "tool_result_too_large",
+      message: "The action finished, but its detailed result was too large.",
+      evidence: { actionOutcome }
+    }
+  }
+  return {
+    ok: false,
+    code: "tool_result_too_large",
+    message: "The tool returned too much data. Use a narrower request."
   }
 }
 
@@ -369,21 +398,21 @@ export function makeToolExecutor(
     const adapter = registry.adapterFor(command.name)
     if (adapter === undefined) return denied()
     const result = await adapter.execute(adapterContext)
-    if (result.evidence?.actionOutcome !== undefined) return result
+    if (result.evidence?.actionOutcome !== undefined) return boundToolResult(result)
     const confirmedCodes = registry.catalogue.confirmedActionCodes(command.name)
     if (result.ok && confirmedCodes.includes(result.code)) {
-      return {
+      return boundToolResult({
         ...result,
         evidence: { ...result.evidence, actionOutcome: "confirmed" }
-      }
+      })
     }
     if (result.code === "external_outcome_unknown") {
-      return {
+      return boundToolResult({
         ...result,
         evidence: { ...result.evidence, actionOutcome: "unknown" }
-      }
+      })
     }
-    return result
+    return boundToolResult(result)
   }
 
   const executor: ToolExecutor = {
