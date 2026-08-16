@@ -16,8 +16,8 @@ The workflow performs these actions:
 3. Create one canonical OCI release bundle.
 4. Verify the bundle and every image digest.
 5. Read a short-lived Coolify credential from OpenBao.
-6. Update the reviewed Runtime image pins.
-7. Deploy the exact source revision through Coolify.
+6. Pin the reviewed source revision and Runtime image digests.
+7. Deploy that exact release through Coolify.
 8. Check authenticated Agent readiness.
 
 The workflow does not make a source commit. Coolify stores deployment history. The OCI bundle
@@ -41,7 +41,8 @@ The workflow changes only these Coolify values:
 
 Coolify records the deployment. The workflow checks that Coolify used the exact source revision.
 
-If deployment fails, the workflow restores the prior image pins and starts a rollback deployment.
+If deployment fails, the workflow restores the prior source and image pins. It then starts a
+rollback deployment.
 
 The protected `production` environment controls access. OpenBao accepts only the reviewed GitHub
 OIDC subject. It grants read access to the Coolify token and Agent readiness identity.
@@ -100,7 +101,7 @@ Record the bundle digest, source revision, image digests, deployment ID, and bac
 
 ## Roll back
 
-The release script restores the prior image pins after a failed deployment.
+The release script restores the prior source and image pins after a failed deployment.
 
 For a later rollback, select the prior immutable bundle and run the protected release workflow.
 

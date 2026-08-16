@@ -53,6 +53,43 @@ describe("Coolify release", () => {
     })
   })
 
+  it("reads and updates the exact Coolify source revision", async () => {
+    const fetchImplementation = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ git_commit_sha: "a".repeat(40) }))
+      .mockResolvedValueOnce(Response.json({ message: "updated" }))
+    const client = new CoolifyReleaseClient({
+      baseUrl: "https://coolify.example.test",
+      token: "token",
+      applicationId: "runtime",
+      fetchImplementation
+    })
+
+    await expect(client.currentSourceRevision("b".repeat(40))).resolves.toBe("a".repeat(40))
+    await client.updateSourceRevision("c".repeat(40))
+
+    expect(fetchImplementation).toHaveBeenNthCalledWith(
+      2,
+      new URL("https://coolify.example.test/api/v1/applications/runtime"),
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ git_commit_sha: "c".repeat(40) })
+      })
+    )
+  })
+
+  it("uses the last release revision when the application followed its branch", async () => {
+    const fetchImplementation = vi.fn().mockResolvedValue(Response.json({ git_commit_sha: null }))
+    const client = new CoolifyReleaseClient({
+      baseUrl: "https://coolify.example.test",
+      token: "token",
+      applicationId: "runtime",
+      fetchImplementation
+    })
+
+    await expect(client.currentSourceRevision("b".repeat(40))).resolves.toBe("b".repeat(40))
+  })
+
   it("restores the prior pins and deploys them after a failed release", async () => {
     const previous = {
       BOB_RELEASE_SHA: "b".repeat(40),
@@ -63,6 +100,8 @@ describe("Coolify release", () => {
     }
     const client = {
       currentEnvironment: vi.fn().mockResolvedValue(previous),
+      currentSourceRevision: vi.fn().mockResolvedValue("b".repeat(40)),
+      updateSourceRevision: vi.fn().mockResolvedValue(undefined),
       updateEnvironment: vi.fn().mockResolvedValue(undefined),
       deploy: vi.fn().mockResolvedValueOnce("release").mockResolvedValueOnce("rollback"),
       waitForDeployment: vi
@@ -71,6 +110,8 @@ describe("Coolify release", () => {
         .mockResolvedValueOnce(undefined)
     }
     await expect(releaseToCoolify({ client, bundle })).rejects.toThrow("failed")
+    expect(client.updateSourceRevision).toHaveBeenNthCalledWith(1, bundle.sourceRevision)
+    expect(client.updateSourceRevision).toHaveBeenNthCalledWith(2, "b".repeat(40))
     expect(client.updateEnvironment).toHaveBeenNthCalledWith(2, previous)
     expect(client.waitForDeployment).toHaveBeenNthCalledWith(
       2,

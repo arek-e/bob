@@ -1,7 +1,7 @@
 {
   "schemaVersion": "bob.runtime.v1alpha1",
   "composeFile": "infra/coolify/compose.yaml",
-  "composeDigest": "sha256:37b74cec68e96b6403890bd50b9fbd0d0585e6dc4241a0874bc93a1f5a727a8e",
+  "composeDigest": "sha256:d2ce0d0429a2c3fe02ab4be3add3788aadf5fbf2e55523efce6f39beda74192b",
   "services": [
     {
       "name": "agent-secret-init",

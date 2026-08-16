@@ -9,6 +9,9 @@ Coolify hosts the initial Compose target. It does not own orchestration policy.
 
 The immutable Runtime release bundle owns source and image pins.
 
+Keep `git_commit_sha` pinned to the deployed bundle revision. Do not leave the application on the
+moving branch tip.
+
 `infra/coolify/base-images.json` owns reviewed third-party image pins.
 
 `infra/coolify/runtime-contract.json` owns scheduled task and readiness requirements.

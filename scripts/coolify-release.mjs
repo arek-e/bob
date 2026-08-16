@@ -68,6 +68,24 @@ export class CoolifyReleaseClient {
     )
   }
 
+  async currentSourceRevision(fallbackRevision) {
+    const application = await this.request(`applications/${this.applicationId}`)
+    const configuredRevision = application.git_commit_sha
+    if (revisionPattern.test(configuredRevision ?? "")) return configuredRevision
+    if (revisionPattern.test(fallbackRevision ?? "")) return fallbackRevision
+    throw new Error("Coolify source revision is invalid")
+  }
+
+  async updateSourceRevision(sourceRevision) {
+    if (!revisionPattern.test(sourceRevision ?? "")) {
+      throw new Error("Coolify source revision is invalid")
+    }
+    await this.request(`applications/${this.applicationId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ git_commit_sha: sourceRevision })
+    })
+  }
+
   async updateEnvironment(values) {
     for (const [key, value] of Object.entries(values)) {
       await this.request(`applications/${this.applicationId}/envs`, {
@@ -111,15 +129,18 @@ export class CoolifyReleaseClient {
 export const releaseToCoolify = async ({ client, bundle, waitOptions }) => {
   const desired = releaseEnvironment(bundle)
   const previous = await client.currentEnvironment(Object.keys(desired))
-  await client.updateEnvironment(desired)
+  const previousSourceRevision = await client.currentSourceRevision(previous.BOB_RELEASE_SHA)
   try {
+    await client.updateSourceRevision(bundle.sourceRevision)
+    await client.updateEnvironment(desired)
     const deploymentId = await client.deploy()
     await client.waitForDeployment(deploymentId, bundle.sourceRevision, waitOptions)
     return { deploymentId, sourceRevision: bundle.sourceRevision }
   } catch (error) {
+    await client.updateSourceRevision(previousSourceRevision)
     await client.updateEnvironment(previous)
     const rollbackId = await client.deploy()
-    await client.waitForDeployment(rollbackId, previous.BOB_RELEASE_SHA, waitOptions)
+    await client.waitForDeployment(rollbackId, previousSourceRevision, waitOptions)
     throw error
   }
 }
