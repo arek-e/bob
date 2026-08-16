@@ -112,6 +112,7 @@ export async function handleAgentHttp(
     }
     if (request.method === "POST" && url.pathname === "/v1/run") {
       const input = Schema.decodeUnknownSync(AgentRunRequest)(await readJson(request))
+      const attemptHeader = request.headers.get("x-bob-run-attempt-id")
       if (
         input.legacySnapshotReplay !== true &&
         (input.deploymentProfileId === undefined ||
@@ -131,6 +132,34 @@ export async function handleAgentHttp(
       ) {
         return json({ code: "capability_catalogue_mismatch" }, 409)
       }
+      if (input.legacySnapshotReplay !== true && attemptHeader === null) {
+        return json({ code: "agent_run_attempt_required" }, 409)
+      }
+      const attemptId =
+        attemptHeader === null
+          ? undefined
+          : Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(attemptHeader)
+      let operations: Awaited<
+        ReturnType<AgentComposition["services"]["coreTools"]["loadRunOperations"]>
+      > = []
+      if (attemptId !== undefined) {
+        try {
+          operations = await composition.services.coreTools.loadRunOperations(
+            input.runId,
+            attemptId
+          )
+        } catch {
+          return json({ code: "agent_run_checkpoint_unavailable" }, 503)
+        }
+      }
+      const durability =
+        attemptId === undefined
+          ? undefined
+          : {
+              operations,
+              append: (operation: (typeof operations)[number]) =>
+                composition.services.coreTools.appendRunOperation(operation, attemptId)
+            }
       const feature = featureForTools(composition.profile, input.allowedTools)
       const parent = externalParentFromTraceparent(request.headers.get("traceparent"))
       const run = withBobSpan(
@@ -143,7 +172,7 @@ export async function handleAgentHttp(
         Effect.gen(function* () {
           const span = yield* Effect.currentSpan
           const output = Schema.decodeUnknownSync(AgentRunResult)(
-            yield* composition.services.agent.runTurnEffect(input, request.signal)
+            yield* composition.services.agent.runTurnEffect(input, request.signal, durability)
           )
           yield* emitHealth({
             type: "agent_run",

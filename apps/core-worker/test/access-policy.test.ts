@@ -98,16 +98,21 @@ describe("core route authorization", () => {
     ).rejects.toThrow("access_denied")
   })
 
-  it("allows the agent only on tool, result, and readiness routes", async () => {
-    await expect(
-      authorizeCoreRequest(request("/internal/tools"), configuration, async () => agent)
-    ).resolves.toBe("agent")
+  it("allows the agent only on its internal routes", async () => {
+    for (const path of [
+      "/internal/tools",
+      "/internal/agent/result",
+      "/internal/agent/operations",
+      "/internal/agent/operations/load",
+      "/internal/readiness"
+    ]) {
+      await expect(
+        authorizeCoreRequest(request(path), configuration, async () => agent)
+      ).resolves.toBe("agent")
+    }
     await expect(
       authorizeCoreRequest(request("/internal/tools"), configuration, async () => owner)
     ).rejects.toThrow("access_denied")
-    await expect(
-      authorizeCoreRequest(request("/internal/readiness"), configuration, async () => agent)
-    ).resolves.toBe("agent")
   })
 
   it("rejects an unclassified protected route", async () => {

@@ -41,6 +41,8 @@ const runResult: AgentRunResult = {
   toolCalls: 1
 }
 
+const runAttemptId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db93"
+
 const activeRuntimes: Array<{ readonly dispose: () => Promise<void> }> = []
 
 afterEach(async () => {
@@ -69,6 +71,8 @@ function composition(
   const coreTools = {
     executeEffect: vi.fn(() => Effect.die("not implemented in HTTP boundary test")),
     execute: vi.fn(),
+    loadRunOperations: vi.fn(async () => []),
+    appendRunOperation: vi.fn(async () => undefined),
     checkReadiness: vi.fn(async () => true)
   }
   const runtime = ManagedRuntime.make(
@@ -171,7 +175,11 @@ describe("agent HTTP boundary", () => {
     const response = await handleAgentHttp(
       new Request("http://agent/v1/run", {
         method: "POST",
-        headers: { "content-type": "application/json", traceparent: incomingTrace },
+        headers: {
+          "content-type": "application/json",
+          traceparent: incomingTrace,
+          "x-bob-run-attempt-id": runAttemptId
+        },
         body: JSON.stringify(runRequest)
       }),
       target
@@ -196,7 +204,8 @@ describe("agent HTTP boundary", () => {
     ).toBe(runSpan?.spanId)
     expect(target.services.agent.runTurnEffect).toHaveBeenCalledWith(
       runRequest,
-      expect.any(AbortSignal)
+      expect.any(AbortSignal),
+      expect.objectContaining({ operations: [] })
     )
     expect(target.services.agent.runTurn).not.toHaveBeenCalled()
     expect(target.services.access.verify).toHaveBeenCalledWith(expect.any(Request), "run")
@@ -215,7 +224,10 @@ describe("agent HTTP boundary", () => {
     const response = await handleAgentHttp(
       new Request("http://agent/v1/run", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-bob-run-attempt-id": runAttemptId
+        },
         body: JSON.stringify({
           ...runRequest,
           capabilityCatalogueGeneration: "capability-v2:0000000000000000"
@@ -249,6 +261,44 @@ describe("agent HTTP boundary", () => {
     expect(await response.json()).toEqual({ code: "deployment_profile_required" })
   })
 
+  it("requires an active attempt identity for a new run", async () => {
+    const target = composition(true)
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/run", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(runRequest)
+      }),
+      target
+    )
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ code: "agent_run_attempt_required" })
+    expect(target.services.agent.runTurnEffect).not.toHaveBeenCalled()
+  })
+
+  it("fails closed when durable operations cannot load", async () => {
+    const target = composition(true)
+    target.services.coreTools.loadRunOperations = vi.fn(async () => {
+      throw new Error("core unavailable")
+    })
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/run", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-bob-run-attempt-id": runAttemptId
+        },
+        body: JSON.stringify(runRequest)
+      }),
+      target
+    )
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ code: "agent_run_checkpoint_unavailable" })
+    expect(target.services.agent.runTurnEffect).not.toHaveBeenCalled()
+  })
+
   it("rejects a run from a different deployment profile", async () => {
     const target = composition(true)
     const response = await handleAgentHttp(
@@ -279,7 +329,10 @@ describe("agent HTTP boundary", () => {
     const response = await handleAgentHttp(
       new Request("http://agent/v1/run", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-bob-run-attempt-id": runAttemptId
+        },
         body: JSON.stringify(runRequest),
         signal: controller.signal
       }),

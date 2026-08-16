@@ -55,6 +55,7 @@ describe("isolated D1 restore drill", () => {
       "conversation_turn_messages",
       "agent_runs",
       "agent_run_attempts",
+      "agent_run_operations",
       "tool_calls",
       "training_proposals",
       "agent_usage",
@@ -87,7 +88,7 @@ describe("isolated D1 restore drill", () => {
       "operational_alerts"
     ]
 
-    expect(schemaTables).toHaveLength(47)
+    expect(schemaTables).toHaveLength(48)
     expect(new Set(expectedOrder)).toEqual(new Set(schemaTables))
     expect(ordered).toEqual(expectedOrder)
     expect(ordered.indexOf("auth_user")).toBeLessThan(ordered.indexOf("auth_account"))

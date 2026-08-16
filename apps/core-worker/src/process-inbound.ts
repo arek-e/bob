@@ -585,6 +585,7 @@ function suppressStaleAgentAttempt(
 
 function invokeAgent(
   request: AgentRunRequest,
+  attemptId: string,
   composition: CoreComposition,
   feature: TelemetryFeature
 ) {
@@ -600,7 +601,8 @@ function invokeAgent(
         "content-type": "application/json",
         "CF-Access-Client-Id": composition.config.AGENT_ACCESS_CLIENT_ID,
         "CF-Access-Client-Secret": composition.config.AGENT_ACCESS_CLIENT_SECRET,
-        "x-bob-correlation-id": request.correlationId
+        "x-bob-correlation-id": request.correlationId,
+        "x-bob-run-attempt-id": attemptId
       })
       const call = Effect.tryPromise({
         try: async (signal) => {
@@ -1138,7 +1140,7 @@ export async function processInbound(
         return
       }
 
-      let result = yield* invokeAgent(agentRequest, composition, feature).pipe(
+      let result = yield* invokeAgent(agentRequest, runAttemptId, composition, feature).pipe(
         Effect.catch((error) =>
           Effect.succeed(failedAgentResult(agentRequest, composition.config.BOB_MODEL, error))
         )

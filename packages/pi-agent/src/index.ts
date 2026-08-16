@@ -1,11 +1,14 @@
-import type {
-  AgentRunRequest,
-  AgentRunResult,
-  AgentSteerResult,
-  DeviceLoginEvent
-} from "@bob/contracts/agent"
-
 import {
+  AgentRunOperation as AgentRunOperationSchema,
+  AgentRunResult as AgentRunResultSchema,
+  type AgentRunOperation,
+  type AgentRunRequest,
+  type AgentRunResult,
+  type AgentSteerResult,
+  type DeviceLoginEvent
+} from "@bob/contracts/agent"
+import {
+  ToolResult as ToolResultSchema,
   type CapabilityCatalogue,
   type ToolCommand,
   type ToolName,
@@ -111,11 +114,24 @@ export interface AuthStatus {
 }
 
 export interface BobPiAgent {
-  runTurnEffect(request: AgentRunRequest, signal?: AbortSignal): Effect.Effect<AgentRunResult>
-  runTurn(request: AgentRunRequest, signal?: AbortSignal): Promise<AgentRunResult>
+  runTurnEffect(
+    request: AgentRunRequest,
+    signal?: AbortSignal,
+    durability?: AgentRunDurability
+  ): Effect.Effect<AgentRunResult>
+  runTurn(
+    request: AgentRunRequest,
+    signal?: AbortSignal,
+    durability?: AgentRunDurability
+  ): Promise<AgentRunResult>
   requestSteer(runId: AgentRunRequest["runId"]): AgentSteerResult
   getAuthStatus(): Promise<AuthStatus>
   startDeviceLogin(): Promise<DeviceLoginEvent>
+}
+
+export interface AgentRunDurability {
+  readonly operations: readonly AgentRunOperation[]
+  readonly append: (operation: AgentRunOperation) => Promise<void>
 }
 
 type Completion =
@@ -150,6 +166,129 @@ interface ActiveRunState {
   phase: "checkpoint" | "model" | "tool"
   modelCall?: ActiveModelCall
   toolCall?: ActiveToolCall
+}
+
+const CheckpointTextContent = Schema.Struct({
+  type: Schema.Literal("text"),
+  text: Schema.String,
+  textSignature: Schema.optionalKey(Schema.String)
+})
+
+const CheckpointThinkingContent = Schema.Struct({
+  type: Schema.Literal("thinking"),
+  thinking: Schema.String,
+  thinkingSignature: Schema.optionalKey(Schema.String),
+  redacted: Schema.optionalKey(Schema.Boolean)
+})
+
+const CheckpointToolCall = Schema.Struct({
+  type: Schema.Literal("toolCall"),
+  id: Schema.String,
+  name: Schema.String,
+  arguments: Schema.Record(Schema.String, Schema.Json),
+  thoughtSignature: Schema.optionalKey(Schema.String)
+})
+
+const CheckpointUsage = Schema.Struct({
+  input: Schema.Number,
+  output: Schema.Number,
+  cacheRead: Schema.Number,
+  cacheWrite: Schema.Number,
+  cacheWrite1h: Schema.optionalKey(Schema.Number),
+  reasoning: Schema.optionalKey(Schema.Number),
+  totalTokens: Schema.Number,
+  cost: Schema.Struct({
+    input: Schema.Number,
+    output: Schema.Number,
+    cacheRead: Schema.Number,
+    cacheWrite: Schema.Number,
+    total: Schema.Number
+  })
+})
+
+const CheckpointAssistantMessage = Schema.Struct({
+  role: Schema.Literal("assistant"),
+  content: Schema.Array(
+    Schema.Union([CheckpointTextContent, CheckpointThinkingContent, CheckpointToolCall])
+  ),
+  api: Schema.String,
+  provider: Schema.String,
+  model: Schema.String,
+  responseModel: Schema.optionalKey(Schema.String),
+  responseId: Schema.optionalKey(Schema.String),
+  usage: CheckpointUsage,
+  stopReason: Schema.Literals([
+    "pending",
+    "stop",
+    "length",
+    "toolUse",
+    "error",
+    "aborted",
+    "deferred"
+  ]),
+  deferred: Schema.optionalKey(
+    Schema.Struct({
+      provider: Schema.String,
+      modelId: Schema.String,
+      api: Schema.String,
+      id: Schema.String,
+      expiresAt: Schema.optionalKey(Schema.Number),
+      pollAfterMs: Schema.optionalKey(Schema.Number),
+      data: Schema.optionalKey(Schema.Json)
+    })
+  ),
+  errorMessage: Schema.optionalKey(Schema.String),
+  rawStopReason: Schema.optionalKey(Schema.String),
+  timestamp: Schema.Number
+})
+
+const ModelOperationPayload = Schema.Struct({
+  turnIndex: Schema.Int,
+  turnPhase: Schema.Literals(["primary", "repair"]),
+  message: CheckpointAssistantMessage
+})
+
+const ToolOperationPayload = Schema.Struct({
+  turnIndex: Schema.Int,
+  toolCallIndex: Schema.Int,
+  toolCallId: Schema.String,
+  result: ToolResultSchema,
+  timestamp: Schema.Number
+})
+
+function jsonValue<Value>(value: Value): typeof Schema.Json.Type {
+  return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(JSON.stringify(value)))
+}
+
+function checkpointAssistantMessage(message: AssistantMessage): typeof Schema.Json.Type {
+  const content: AssistantMessage["content"] = []
+  for (const block of message.content) {
+    if (block.type !== "thinking") content.push(block)
+    else if (block.thinkingSignature !== undefined) {
+      content.push({ ...block, thinking: "", redacted: true })
+    }
+  }
+  const { diagnostics: _diagnostics, ...safeMessage } = message
+  return jsonValue({ ...safeMessage, content })
+}
+
+function mutableAssistantMessage(
+  message: typeof CheckpointAssistantMessage.Type
+): AssistantMessage {
+  const { deferred, ...messageWithoutDeferred } = message
+  const common = {
+    ...messageWithoutDeferred,
+    content: message.content.map((block) =>
+      block.type === "toolCall" ? { ...block, arguments: { ...block.arguments } } : { ...block }
+    )
+  }
+  if (deferred === undefined) return common
+  const { data, ...deferredWithoutData } = deferred
+  if (data === undefined) return { ...common, deferred: deferredWithoutData }
+  return {
+    ...common,
+    deferred: { ...deferredWithoutData, data: JSON.parse(JSON.stringify(data)) }
+  }
 }
 
 class ModelCompletionFailure {
@@ -284,7 +423,8 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
 
   const runTurnEffect = (
     request: AgentRunRequest,
-    externalSignal?: AbortSignal
+    externalSignal?: AbortSignal,
+    durability?: AgentRunDurability
   ): Effect.Effect<AgentRunResult> =>
     Effect.suspend(() => {
       const startedAt = now()
@@ -348,6 +488,14 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         { sourceMessageId: request.sourceMessageId, text: request.userText }
       ]
       const needsPersonalGrounding = request.grounding?.requiresSources === true
+      const storedOperations = durability?.operations ?? []
+      let operationSequence = 0
+      for (const operation of storedOperations) {
+        if (operation.runId !== request.runId || operation.sequence !== operationSequence + 1) {
+          throw new Error("Stored Agent run operations are not contiguous")
+        }
+        operationSequence = operation.sequence
+      }
 
       const result = (
         status: AgentRunResult["status"],
@@ -398,6 +546,31 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
           timestamp: now()
         })),
         tools: modelTools
+      }
+
+      const appendOperation = (
+        kind: AgentRunOperation["kind"],
+        payload: typeof Schema.Json.Type
+      ): Effect.Effect<boolean> => {
+        if (durability === undefined) return Effect.succeed(true)
+        const operation = Schema.decodeUnknownSync(AgentRunOperationSchema)({
+          protocolVersion: 1,
+          loopVersion: 1,
+          runId: request.runId,
+          sequence: operationSequence + 1,
+          kind,
+          payload
+        })
+        return Effect.tryPromise({
+          try: () => durability.append(operation),
+          catch: () => undefined
+        }).pipe(
+          Effect.map(() => {
+            operationSequence = operation.sequence
+            return true
+          }),
+          Effect.catch(() => Effect.succeed(false))
+        )
       }
 
       let timeout: ReturnType<typeof setTimeout> | undefined
@@ -528,6 +701,24 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
           )
         })
 
+      const recordCompletedToolResult = (toolName: string, toolResult: ToolResult): void => {
+        toolResults.push(toolResult)
+        for (const source of trustedToolSourcesFromResult(toolResult)) {
+          if (!trustedToolSources.has(source.sourceId) && trustedToolSources.size >= 24) continue
+          trustedToolSources.set(source.sourceId, source)
+          approvedSourceIds.add(source.sourceId)
+        }
+        if (toolResultConfirmsAction(toolResult)) {
+          confirmedActionToolNames.add(toolName)
+        }
+        if (toolResult.evidence?.actionOutcome === "proposed") {
+          proposedActionToolNames.add(toolName)
+        }
+        if (toolResult.evidence?.actionOutcome === "unknown") {
+          unknownActionToolNames.add(toolName)
+        }
+      }
+
       const executeCall = (
         tool: (typeof tools)[number],
         call: ToolCall,
@@ -566,18 +757,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
             ? fallbackExecution
             : Effect.suspend(() => executeToolEffect(command, toolSignal))
         const completed = (toolResult: ToolResult) => {
-          toolResults.push(toolResult)
-          for (const source of trustedToolSourcesFromResult(toolResult)) {
-            if (!trustedToolSources.has(source.sourceId) && trustedToolSources.size >= 24) continue
-            trustedToolSources.set(source.sourceId, source)
-            approvedSourceIds.add(source.sourceId)
-          }
-          if (toolResultConfirmsAction(toolResult)) {
-            confirmedActionToolNames.add(call.name)
-          }
-          if (toolResult.evidence?.actionOutcome === "proposed") {
-            proposedActionToolNames.add(call.name)
-          }
+          recordCompletedToolResult(call.name, toolResult)
           return {
             type: "completed" as const,
             result: toolResult,
@@ -646,99 +826,143 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         })
       }
 
-      const runPrimaryTurn = (): Effect.Effect<LoopIteration> => {
-        if (cancellationRequested()) {
-          return Effect.succeed(failedCompletion("aborted", "cancelled"))
+      let restoredFinal: AgentRunResult | undefined
+      let restoredContinuation:
+        | {
+            readonly assistant: AssistantMessage
+            readonly turnIndex: number
+            readonly turnPhase: BobTurnPhase
+            readonly completed: ReadonlyMap<string, ToolResult>
+          }
+        | undefined
+      let mutableRestoredContinuation:
+        | {
+            assistant: AssistantMessage
+            turnIndex: number
+            turnPhase: BobTurnPhase
+            completed: Map<string, ToolResult>
+          }
+        | undefined
+
+      for (const operation of storedOperations) {
+        if (restoredFinal !== undefined) throw new Error("Stored final operation is not terminal")
+        if (operation.kind === "model") {
+          const stored = Schema.decodeUnknownSync(ModelOperationPayload)(operation.payload)
+          const storedMessage = mutableAssistantMessage(stored.message)
+          turns = Math.max(turns, stored.turnIndex)
+          inputTokens += storedMessage.usage.input
+          outputTokens += storedMessage.usage.output
+          context.messages.push(storedMessage)
+          mutableRestoredContinuation = {
+            assistant: storedMessage,
+            turnIndex: stored.turnIndex,
+            turnPhase: stored.turnPhase,
+            completed: new Map()
+          }
+          continue
         }
-        if (turns >= turnsLimit) {
-          return Effect.gen(function* () {
+        if (operation.kind === "tool") {
+          const stored = Schema.decodeUnknownSync(ToolOperationPayload)(operation.payload)
+          const continuation = mutableRestoredContinuation
+          if (continuation === undefined || continuation.turnIndex !== stored.turnIndex) {
+            throw new Error("Stored Tool operation has no matching model operation")
+          }
+          const call = toolCallsFromAssistant(continuation.assistant).find(
+            (candidate) => candidate.id === stored.toolCallId
+          )
+          if (call === undefined || continuation.completed.has(call.id)) {
+            throw new Error("Stored Tool operation does not match one pending Tool call")
+          }
+          toolCalls += 1
+          if (stored.toolCallIndex !== toolCalls) {
+            throw new Error("Stored Tool operation index is not contiguous")
+          }
+          executedToolNames.add(call.name)
+          recordCompletedToolResult(call.name, stored.result)
+          continuation.completed.set(call.id, stored.result)
+          context.messages.push(toolResultMessage(call, stored.result, () => stored.timestamp))
+          if (!stored.result.ok && toolResultNeedsReflection(stored.result)) context.tools = []
+          continue
+        }
+        restoredFinal = Schema.decodeUnknownSync(AgentRunResultSchema)(operation.payload)
+        if (
+          restoredFinal.runId !== request.runId ||
+          restoredFinal.correlationId !== request.correlationId
+        ) {
+          throw new Error("Stored final operation identity does not match the Agent run")
+        }
+      }
+      restoredContinuation = mutableRestoredContinuation
+
+      const continueAssistant = (
+        assistant: AssistantMessage,
+        turnIndex: number,
+        completed: ReadonlyMap<string, ToolResult>
+      ): Effect.Effect<LoopIteration> =>
+        Effect.gen(function* () {
+          if (assistant.stopReason === "aborted") {
             yield* recordDecision({
               name: "bob.decision.loop",
-              code: "turn_limit",
+              code: "timeout",
+              outcome: "applied"
+            })
+            return failedCompletion(assistant.errorMessage ?? "aborted", "cancelled")
+          }
+          if (assistant.stopReason === "error") {
+            yield* recordDecision({
+              name: "bob.decision.loop",
+              code: "provider_failure",
               outcome: "denied"
             })
-            return failedCompletion("Turn limit reached.")
-          })
-        }
-        turns += 1
-        const turnIndex = turns
-        return withBobSpan(
-          {
-            name: "bob.agent.turn",
-            correlationId: request.correlationId,
-            runId: request.runId,
-            feature,
-            turnIndex,
-            turnPhase: "primary"
-          },
-          Effect.gen(function* () {
-            const completion = yield* completeModel(turnIndex, "primary")
-            if (completion.type === "timeout") {
-              yield* recordDecision({
-                name: "bob.decision.loop",
-                code: "timeout",
-                outcome: "applied"
-              })
-              return completion
-            }
-            if (completion.type === "failed") {
-              yield* recordDecision({
-                name: "bob.decision.loop",
-                code: "provider_failure",
-                outcome: "denied"
-              })
-              return completion
-            }
-            const assistant = completion.message
-            context.messages.push(assistant)
-            if (assistant.stopReason === "aborted") {
-              yield* recordDecision({
-                name: "bob.decision.loop",
-                code: "timeout",
-                outcome: "applied"
-              })
-              return failedCompletion(assistant.errorMessage ?? "aborted", "cancelled")
-            }
-            if (assistant.stopReason === "error") {
-              yield* recordDecision({
-                name: "bob.decision.loop",
-                code: "provider_failure",
-                outcome: "denied"
-              })
-              return failedCompletion(assistant.errorMessage)
-            }
+            return failedCompletion(assistant.errorMessage)
+          }
 
-            const calls = toolCallsFromAssistant(assistant)
-            if (calls.length === 0) {
-              yield* recordDecision({
-                name: "bob.decision.loop",
-                code: "final",
-                outcome: "selected"
-              })
-              return { type: "final" as const, message: assistant }
-            }
+          const calls = toolCallsFromAssistant(assistant)
+          if (calls.length === 0) {
             yield* recordDecision({
               name: "bob.decision.loop",
-              code: "tool_calls",
-              outcome: "selected",
-              selectedCount: calls.length
+              code: "final",
+              outcome: "selected"
             })
+            return { type: "final" as const, message: assistant }
+          }
+          yield* recordDecision({
+            name: "bob.decision.loop",
+            code: "tool_calls",
+            outcome: "selected",
+            selectedCount: calls.length
+          })
 
-            for (const call of calls) {
-              const allowlisted = request.allowedTools.some((name) => name === call.name)
-              const tool = toolsByName.get(call.name)
-              if (!allowlisted || tool === undefined) {
-                yield* recordDecision({
-                  name: "bob.decision.tool_gate",
-                  code: allowlisted ? "not_registered" : "not_allowlisted",
-                  outcome: "denied"
-                })
-                toolResults.push(safeToolFailure())
-                return {
-                  type: "failed" as const,
-                  errorMessage: "Tool is not allowed for this run."
-                }
+          for (const call of calls) {
+            const allowlisted = request.allowedTools.some((name) => name === call.name)
+            const tool = toolsByName.get(call.name)
+            if (!allowlisted || tool === undefined) {
+              yield* recordDecision({
+                name: "bob.decision.tool_gate",
+                code: allowlisted ? "not_registered" : "not_allowlisted",
+                outcome: "denied"
+              })
+              toolResults.push(safeToolFailure())
+              return {
+                type: "failed" as const,
+                errorMessage: "Tool is not allowed for this run."
               }
+            }
+
+            let parameters: unknown
+            try {
+              parameters = validateToolCall(modelTools, call)
+            } catch {
+              yield* recordDecision({
+                name: "bob.decision.tool_gate",
+                code: "arguments_invalid",
+                outcome: "denied"
+              })
+              return failedCompletion("Tool arguments failed validation.", "invalid_output")
+            }
+
+            let toolResult = completed.get(call.id)
+            if (toolResult === undefined) {
               if (toolCalls >= request.limits.maxToolCalls) {
                 yield* recordDecision({
                   name: "bob.decision.tool_gate",
@@ -749,67 +973,129 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
                 return { type: "failed" as const, errorMessage: "Tool-call limit reached." }
               }
 
-              let parameters: unknown
-              try {
-                parameters = validateToolCall(modelTools, call)
-              } catch {
-                yield* recordDecision({
-                  name: "bob.decision.tool_gate",
-                  code: "arguments_invalid",
-                  outcome: "denied"
-                })
-                return failedCompletion("Tool arguments failed validation.", "invalid_output")
-              }
               yield* recordDecision({
                 name: "bob.decision.tool_gate",
                 code: "allowed",
                 outcome: "allowed"
               })
-              if (cancellationRequested()) {
-                return failedCompletion("aborted", "cancelled")
-              }
+              if (cancellationRequested()) return failedCompletion("aborted", "cancelled")
               const command = yield* Effect.promise(() =>
                 toolCommandForCall(options.catalogue, request, tool.label, call.id, parameters)
               )
-              if (cancellationRequested()) {
-                return failedCompletion("aborted", "cancelled")
-              }
+              if (cancellationRequested()) return failedCompletion("aborted", "cancelled")
               const execution = yield* executeCall(tool, call, command)
               if (execution.type !== "completed") return execution
-              context.messages.push(execution.message)
-              if (externalSignal?.aborted === true || activeRun.steerRequested) {
-                return failedCompletion("aborted", "cancelled")
+              toolResult = execution.result
+              const toolCheckpointed = yield* appendOperation(
+                "tool",
+                Schema.decodeUnknownSync(Schema.Json)({
+                  turnIndex,
+                  toolCallIndex: toolCalls,
+                  toolCallId: call.id,
+                  result: execution.result,
+                  timestamp: execution.message.timestamp
+                })
+              )
+              if (!toolCheckpointed) {
+                return failedCompletion("Agent run checkpoint failed.", "provider")
               }
-              if (!execution.result.ok) {
-                if (toolResultNeedsReflection(execution.result)) {
-                  if (execution.result.evidence?.actionOutcome === "unknown") {
-                    unknownActionToolNames.add(tool.label)
-                  }
-                  yield* recordDecision({
-                    name: "bob.decision.policy",
-                    code:
-                      execution.result.code === "external_outcome_unknown"
-                        ? "external_unknown"
-                        : "confirmation_required",
-                    outcome: "applied",
-                    toolName: call.name
-                  })
-                  context.tools = []
-                  return { type: "continue" as const }
-                }
+              context.messages.push(execution.message)
+            }
+
+            if (externalSignal?.aborted === true || activeRun.steerRequested) {
+              return failedCompletion("aborted", "cancelled")
+            }
+            if (!toolResult.ok) {
+              if (toolResultNeedsReflection(toolResult)) {
                 yield* recordDecision({
                   name: "bob.decision.policy",
-                  code: "provider_failure",
-                  outcome: "denied"
+                  code:
+                    toolResult.code === "external_outcome_unknown"
+                      ? "external_unknown"
+                      : "confirmation_required",
+                  outcome: "applied",
+                  toolName: call.name
                 })
-                return {
-                  type: "failed" as const,
-                  errorMessage: "The tool could not complete safely."
-                }
+                context.tools = []
+                return { type: "continue" as const }
+              }
+              yield* recordDecision({
+                name: "bob.decision.policy",
+                code: "provider_failure",
+                outcome: "denied"
+              })
+              return {
+                type: "failed" as const,
+                errorMessage: "The tool could not complete safely."
               }
             }
-            return { type: "continue" as const }
+          }
+          return { type: "continue" as const }
+        })
+
+      const runPrimaryTurn = (): Effect.Effect<LoopIteration> => {
+        if (cancellationRequested()) {
+          return Effect.succeed(failedCompletion("aborted", "cancelled"))
+        }
+        const resumed = restoredContinuation
+        if (resumed !== undefined) restoredContinuation = undefined
+        if (resumed === undefined && turns >= turnsLimit) {
+          return Effect.gen(function* () {
+            yield* recordDecision({
+              name: "bob.decision.loop",
+              code: "turn_limit",
+              outcome: "denied"
+            })
+            return failedCompletion("Turn limit reached.")
           })
+        }
+        const turnIndex = resumed?.turnIndex ?? turns + 1
+        if (resumed === undefined) turns = turnIndex
+        const turnPhase = resumed?.turnPhase ?? "primary"
+        return withBobSpan(
+          {
+            name: "bob.agent.turn",
+            correlationId: request.correlationId,
+            runId: request.runId,
+            feature,
+            turnIndex,
+            turnPhase
+          },
+          resumed === undefined
+            ? Effect.gen(function* () {
+                const completion = yield* completeModel(turnIndex, "primary")
+                if (completion.type === "timeout") {
+                  yield* recordDecision({
+                    name: "bob.decision.loop",
+                    code: "timeout",
+                    outcome: "applied"
+                  })
+                  return completion
+                }
+                if (completion.type === "failed") {
+                  yield* recordDecision({
+                    name: "bob.decision.loop",
+                    code: "provider_failure",
+                    outcome: "denied"
+                  })
+                  return completion
+                }
+                const assistant = completion.message
+                const modelCheckpointed = yield* appendOperation(
+                  "model",
+                  Schema.decodeUnknownSync(Schema.Json)({
+                    turnIndex,
+                    turnPhase: "primary",
+                    message: checkpointAssistantMessage(assistant)
+                  })
+                )
+                if (!modelCheckpointed) {
+                  return failedCompletion("Agent run checkpoint failed.", "provider")
+                }
+                context.messages.push(assistant)
+                return yield* continueAssistant(assistant, turnIndex, new Map())
+              })
+            : continueAssistant(resumed.assistant, resumed.turnIndex, resumed.completed)
         )
       }
 
@@ -972,6 +1258,17 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
                   "invalid_output"
                 )
               }
+              const repairCheckpointed = yield* appendOperation(
+                "model",
+                Schema.decodeUnknownSync(Schema.Json)({
+                  turnIndex: repairTurn,
+                  turnPhase: "repair",
+                  message: checkpointAssistantMessage(completion.message)
+                })
+              )
+              if (!repairCheckpointed) {
+                return result("failed", undefined, "provider")
+              }
               context.messages.push(completion.message)
               const repaired = yield* validateOutput(structuredOutputText(completion.message))
               if (!repaired.ok) {
@@ -1080,6 +1377,20 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
         return yield* validateAndRepair(loop.message)
       })
 
+      const durableLoopProgram =
+        restoredFinal === undefined
+          ? loopProgram.pipe(
+              Effect.flatMap((output) => {
+                if (output.status !== "completed") return Effect.succeed(output)
+                return appendOperation("final", Schema.decodeUnknownSync(Schema.Json)(output)).pipe(
+                  Effect.map((checkpointed) =>
+                    checkpointed ? output : result("failed", undefined, "provider")
+                  )
+                )
+              })
+            )
+          : Effect.succeed(restoredFinal)
+
       return withBobSpan(
         {
           name: "bob.agent.loop",
@@ -1087,7 +1398,7 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
           runId: request.runId,
           feature
         },
-        loopProgram
+        durableLoopProgram
       ).pipe(
         Effect.ensuring(
           Effect.sync(() => {
@@ -1101,7 +1412,8 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
 
   return {
     runTurnEffect,
-    runTurn: (request, signal) => Effect.runPromise(runTurnEffect(request, signal)),
+    runTurn: (request, signal, durability) =>
+      Effect.runPromise(runTurnEffect(request, signal, durability)),
     requestSteer: (runId) => {
       const active = activeRuns.get(runId)
       if (active === undefined) {
@@ -1187,9 +1499,10 @@ export function createBobPiAgent(options: BobPiAgentOptions): BobPiAgent {
 export function runTurn(
   agent: BobPiAgent,
   request: AgentRunRequest,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  durability?: AgentRunDurability
 ): Promise<AgentRunResult> {
-  return agent.runTurn(request, signal)
+  return agent.runTurn(request, signal, durability)
 }
 
 export function getAuthStatus(agent: BobPiAgent): Promise<AuthStatus> {
