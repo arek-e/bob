@@ -6,6 +6,7 @@ import type { MessageAttachmentReference } from "./attachment-store.ts"
 
 export interface OfferedConversationTurn {
   readonly turnId: string
+  readonly ownerId: string
   readonly revision: number
   readonly status: "collecting" | "running" | "settling" | "committing" | "replied"
   readonly quietUntil: string
@@ -47,8 +48,12 @@ export interface ConversationTurnSnapshot {
 
 export interface ConversationTurnStoreAdapter {
   offer(inboundEventId: string, traceparent?: string): Promise<OfferedConversationTurn>
-  claimReady(turnId?: string, leaseMs?: number): Promise<ConversationTurnSnapshot | undefined>
-  nextWakeAt(): Promise<string | undefined>
+  claimReady(
+    turnId?: string,
+    leaseMs?: number,
+    ownerId?: string
+  ): Promise<ConversationTurnSnapshot | undefined>
+  nextWakeAt(ownerId?: string): Promise<string | undefined>
   currentRevision(turnId: string): Promise<number | undefined>
   excludeFromContext(turnId: string, revision: number): Promise<boolean>
   excludeMessageFromContext(messageId: string): Promise<boolean>

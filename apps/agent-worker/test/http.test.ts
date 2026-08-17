@@ -40,6 +40,7 @@ const runResult: AgentRunResult = {
 }
 
 const runAttemptId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db93"
+const ownerHeaders = { "x-bob-owner-id": runRequest.ownerId }
 
 const activeRuntimes: Array<{ readonly dispose: () => Promise<void> }> = []
 
@@ -155,7 +156,7 @@ describe("agent HTTP boundary", () => {
     expect(await response.json()).toEqual({ healthy: true, service: "agent-worker", version: 1 })
   })
 
-  it("checks credentials and Core through the private readiness route", async () => {
+  it("checks shared dependencies through the private readiness route", async () => {
     const target = composition(true)
     target.agent.getAuthStatus = vi.fn(() =>
       Effect.succeed({
@@ -170,7 +171,7 @@ describe("agent HTTP boundary", () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
       ready: true,
-      checks: { credentials: "ready", core: "ready" },
+      checks: { core: "ready" },
       service: "agent-worker",
       version: 1,
       deploymentProfileId: transitionalDeploymentProfile.profileId,
@@ -180,15 +181,15 @@ describe("agent HTTP boundary", () => {
     expect(target.services.coreTools.checkReadiness).toHaveBeenCalledOnce()
   })
 
-  it("reports unavailable credentials without exposing a cause", async () => {
+  it("does not make pool readiness depend on one Owner credential", async () => {
     const target = composition(true)
 
     const response = await handleAgentHttp(new Request("http://agent/v1/admin/readiness"), target)
 
-    expect(response.status).toBe(503)
+    expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({
-      ready: false,
-      checks: { credentials: "unavailable", core: "ready" }
+      ready: true,
+      checks: { core: "ready" }
     })
   })
 
@@ -196,7 +197,7 @@ describe("agent HTTP boundary", () => {
     const target = composition(true)
 
     const response = await handleAgentHttp(
-      new Request("http://agent/v1/admin/smoke", { method: "POST" }),
+      new Request("http://agent/v1/admin/smoke", { method: "POST", headers: ownerHeaders }),
       target
     )
 
@@ -216,7 +217,7 @@ describe("agent HTTP boundary", () => {
     const target = composition(true, "run")
 
     const response = await handleAgentHttp(
-      new Request("http://agent/v1/admin/smoke", { method: "POST" }),
+      new Request("http://agent/v1/admin/smoke", { method: "POST", headers: ownerHeaders }),
       target
     )
 
@@ -237,7 +238,7 @@ describe("agent HTTP boundary", () => {
     )
 
     const response = await handleAgentHttp(
-      new Request("http://agent/v1/admin/smoke", { method: "POST" }),
+      new Request("http://agent/v1/admin/smoke", { method: "POST", headers: ownerHeaders }),
       target
     )
 
@@ -549,7 +550,10 @@ describe("agent HTTP boundary", () => {
   it("returns a device code only through the private admin route", async () => {
     const target = composition(true)
     const response = await handleAgentHttp(
-      new Request("http://agent/v1/admin/auth/device-login", { method: "POST" }),
+      new Request("http://agent/v1/admin/auth/device-login", {
+        method: "POST",
+        headers: ownerHeaders
+      }),
       target
     )
     expect(response.status).toBe(202)

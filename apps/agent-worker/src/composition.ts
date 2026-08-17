@@ -8,6 +8,7 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import { readFile } from "node:fs/promises"
 
 import { AccessVerifier, accessVerifierLayer, createSharedSecretAccessVerifier } from "./access.ts"
+import { createCoreAgentRunGateway } from "./agent-run-gateway.ts"
 import { readAgentConfiguration, type AgentConfiguration } from "./configuration.ts"
 import { CoreToolClient, coreToolClientLayer, createCoreToolClient } from "./core-tools.ts"
 import { OpenBaoCredentialStore } from "./openbao-credential-store.ts"
@@ -24,6 +25,7 @@ export interface AgentComposition {
   readonly services: {
     readonly access: AccessVerifier
     readonly coreTools: CoreToolClient
+    readonly agentRuns?: ReturnType<typeof createCoreAgentRunGateway>
   }
 }
 
@@ -32,6 +34,10 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
   const access = createSharedSecretAccessVerifier(config.runtimeSharedSecret)
   const coreTools = createCoreToolClient({
     catalogue: defaultAgentProfile,
+    coreUrl: config.coreUrl,
+    callerSecret: config.coreCallerSecret
+  })
+  const agentRuns = createCoreAgentRunGateway({
     coreUrl: config.coreUrl,
     callerSecret: config.coreCallerSecret
   })
@@ -95,7 +101,7 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
     config,
     profile: defaultAgentProfile,
     runtime,
-    services: { access, coreTools }
+    services: { access, coreTools, agentRuns }
   }
 }
 

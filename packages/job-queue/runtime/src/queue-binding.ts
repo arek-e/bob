@@ -5,7 +5,7 @@ import type {
   PublishJobOptions
 } from "@bob/job-queue-types"
 
-import { validatedDelayMs } from "@bob/job-queue-types"
+import { validatedDeduplicationKey, validatedDelayMs } from "@bob/job-queue-types"
 
 export interface QueueBinding<Job, Result = void> {
   readonly send: (job: Job, options?: { readonly delaySeconds?: number }) => Promise<Result>
@@ -26,6 +26,9 @@ export function makeQueueBindingJobPublisher<Job, Result>(
 ): JobPublisher<Job> {
   return {
     async publish(job: Job, options?: PublishJobOptions): Promise<void> {
+      if (validatedDeduplicationKey(options) !== undefined) {
+        throw new TypeError("This queue binding does not support deduplication keys")
+      }
       const delayMs = validatedDelayMs(options)
       if (delayMs === undefined || delayMs === 0) {
         await queue.send(job)

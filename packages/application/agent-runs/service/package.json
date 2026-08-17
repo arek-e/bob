@@ -1,0 +1,28 @@
+{
+  "name": "@bob/agent-runs-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./agent-runs": "./src/agent-runs.ts",
+    "./dispatcher": "./src/dispatcher.ts",
+    "./worker-gateway": "./src/worker-gateway.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/agent-runs-types": "workspace:*",
+    "@bob/agent-types": "workspace:*",
+    "@bob/db-service": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/deployment-profile-types": "workspace:*",
+    "@bob/job-queue-types": "workspace:*",
+    "@bob/policy-service": "workspace:*",
+    "@bob/policy-types": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "4.0.0-beta.107"
+  }
+}

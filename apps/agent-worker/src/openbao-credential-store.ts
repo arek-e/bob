@@ -7,6 +7,8 @@ import type {
 
 import { Schema } from "effect"
 
+import { currentAgentExecutionContext } from "./execution-context.ts"
+
 const OAuthRecord = Schema.Struct({
   type: Schema.Literal("oauth"),
   access: Schema.String,
@@ -50,6 +52,7 @@ interface OpenBaoCredentialStoreBaseOptions {
   readonly allowDelete?: boolean
   readonly fetch?: typeof fetch
   readonly now?: () => number
+  readonly fixedOwnerId?: string
 }
 
 interface OpenBaoKubernetesCredentialStoreOptions {
@@ -94,7 +97,9 @@ export class OpenBaoCredentialStore implements CredentialStore {
 
   private providerPath(providerId: string): string | undefined {
     if (providerId !== "openai-codex") return undefined
-    return "apps/prod/bob/pi-auth/openai-codex"
+    const ownerId = this.options.fixedOwnerId ?? currentAgentExecutionContext()?.ownerId
+    if (ownerId === undefined) return undefined
+    return `apps/prod/bob/owners/${encodeURIComponent(ownerId)}/pi-auth/openai-codex`
   }
 
   private async withLock<A>(providerId: string, action: () => Promise<A>): Promise<A> {

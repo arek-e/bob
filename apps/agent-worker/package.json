@@ -13,12 +13,16 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@bob/agent-runs-types": "workspace:*",
     "@bob/agent-service": "workspace:*",
     "@bob/agent-types": "workspace:*",
     "@bob/deployment-profile-types": "workspace:*",
+    "@bob/job-queue-runtime": "workspace:*",
+    "@bob/job-queue-types": "workspace:*",
     "@bob/observability": "workspace:*",
     "@bob/tools-types": "workspace:*",
     "@effect/platform-node": "4.0.0-beta.107",
+    "bullmq": "6.1.2",
     "effect": "4.0.0-beta.107",
     "varlock": "1.16.1"
   },

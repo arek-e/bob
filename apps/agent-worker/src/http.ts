@@ -22,6 +22,7 @@ import type { AgentComposition } from "./composition.ts"
 
 import { AccessVerifier } from "./access.ts"
 import { CoreToolClient } from "./core-tools.ts"
+import { withAgentExecutionContext } from "./execution-context.ts"
 import { RequestBodyTooLargeError } from "./http-errors.ts"
 
 const MAX_BODY_BYTES = 64 * 1024
@@ -96,26 +97,14 @@ export async function handleAgentHttp(
   try {
     if (request.method === "GET" && url.pathname === "/v1/admin/readiness") {
       const readiness = await composition.runtime.runPromise(
-        Effect.all(
-          {
-            auth: BobAgent.use((agent) => agent.getAuthStatus()).pipe(Effect.option),
-            core: CoreToolClient.use((client) => client.checkReadiness()).pipe(Effect.option)
-          },
-          { concurrency: "unbounded" }
-        ),
+        CoreToolClient.use((client) => client.checkReadiness()).pipe(Effect.option),
         { signal: request.signal }
       )
-      const authStatus = Option.getOrUndefined(readiness.auth)
-      const credentialsReady =
-        authStatus?.configured === true &&
-        authStatus.expiresAt !== undefined &&
-        Date.parse(authStatus.expiresAt) > Date.now()
-      const coreReady = Option.getOrElse(readiness.core, () => false)
+      const coreReady = Option.getOrElse(readiness, () => false)
       return json(
         {
-          ready: credentialsReady && coreReady,
+          ready: coreReady,
           checks: {
-            credentials: credentialsReady ? "ready" : "unavailable",
             core: coreReady ? "ready" : "unavailable"
           },
           service: "agent-worker",
@@ -123,16 +112,21 @@ export async function handleAgentHttp(
           deploymentProfileId: composition.profile.profileId,
           capabilityCatalogueGeneration: composition.profile.generation
         },
-        credentialsReady && coreReady ? 200 : 503
+        coreReady ? 200 : 503
       )
     }
     if (request.method === "POST" && url.pathname === "/v1/admin/smoke") {
+      const ownerId = Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
+        request.headers.get("x-bob-owner-id")
+      )
       const output = Schema.decodeUnknownSync(AgentSmokeResult)(
-        await composition.runtime.runPromise(
-          BobAgent.use((agent) => agent.runSmoke()),
-          {
-            signal: request.signal
-          }
+        await withAgentExecutionContext({ ownerId }, () =>
+          composition.runtime.runPromise(
+            BobAgent.use((agent) => agent.runSmoke()),
+            {
+              signal: request.signal
+            }
+          )
         )
       )
       return json(output, output.status === "completed" ? 200 : 503)
@@ -270,12 +264,26 @@ export async function handleAgentHttp(
     }
     if (request.method === "GET" && url.pathname === "/v1/admin/auth/status") {
       return json(
-        await composition.runtime.runPromise(BobAgent.use((agent) => agent.getAuthStatus()))
+        await withAgentExecutionContext(
+          {
+            ownerId: Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
+              request.headers.get("x-bob-owner-id")
+            )
+          },
+          () => composition.runtime.runPromise(BobAgent.use((agent) => agent.getAuthStatus()))
+        )
       )
     }
     if (request.method === "POST" && url.pathname === "/v1/admin/auth/device-login") {
       const event = Schema.decodeUnknownSync(DeviceLoginEvent)(
-        await composition.runtime.runPromise(BobAgent.use((agent) => agent.startDeviceLogin()))
+        await withAgentExecutionContext(
+          {
+            ownerId: Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
+              request.headers.get("x-bob-owner-id")
+            )
+          },
+          () => composition.runtime.runPromise(BobAgent.use((agent) => agent.startDeviceLogin()))
+        )
       )
       return json(event, event.type === "failed" ? 409 : 202)
     }

@@ -4,12 +4,13 @@ import type { CoreBindings } from "@bob/core-types/bindings"
 import type { OutboundJob } from "@bob/core-types/jobs"
 import type { JobPublisher } from "@bob/job-queue-types"
 
+import { AgentRuns } from "@bob/agent-runs-types/agent-runs"
 import { AgentRunResult, type AgentRunRequest } from "@bob/agent-types/run"
 import { ArtifactStore } from "@bob/artifacts-types/store"
 import { ContextStore } from "@bob/context-types/store"
 import { selectAgentResponse } from "@bob/conversations-service/agent-response"
 import { conversationTiming } from "@bob/conversations-service/timing"
-import { AgentRunStore } from "@bob/conversations-types/run-store"
+import { AgentRunStore, AgentRunStoreError } from "@bob/conversations-types/run-store"
 import { ConversationStore, type ClaimedInbound } from "@bob/conversations-types/store"
 import { ToolExecutor } from "@bob/conversations-types/tool-executor"
 import { ConversationTurnStore } from "@bob/conversations-types/turn-store"
@@ -954,9 +955,37 @@ export function processConversationTurnEffect(
           runId: agentRequest.runId,
           feature
         },
-        stored === undefined
-          ? promiseEffect(() => composition.interfaces.runs.create(agentRequest, claimed.eventId))
-          : Effect.succeed({ runId: agentRequest.runId, duplicate: true })
+        stored === undefined && composition.config.ASYNC_AGENT_RUNS === "true"
+          ? Effect.flatMap(AgentRuns, (runs) =>
+              runs
+                .submit({
+                  idempotencyKey: `conversation-turn-${conversationTurn.turnId}-${conversationTurn.revision}`,
+                  origin: {
+                    type: "conversation_turn",
+                    turnId: conversationTurn.turnId,
+                    revision: conversationTurn.revision
+                  },
+                  request: agentRequest,
+                  execution: {
+                    jobProtocolVersion: 1,
+                    coreGatewayProtocolVersion: 1,
+                    checkpointLoopVersion: 1,
+                    deploymentProfileId: composition.profile.profileId,
+                    capabilityCatalogueGeneration: composition.profile.generation,
+                    executionPoolId: composition.config.AGENT_EXECUTION_POOL_ID ?? "core-v1"
+                  }
+                })
+                .pipe(
+                  Effect.map((reference) => ({
+                    runId: reference.runId,
+                    duplicate: reference.state === "already_accepted"
+                  })),
+                  Effect.mapError((cause) => new AgentRunStoreError({ operation: "submit", cause }))
+                )
+            )
+          : stored === undefined
+            ? promiseEffect(() => composition.interfaces.runs.create(agentRequest, claimed.eventId))
+            : Effect.succeed({ runId: agentRequest.runId, duplicate: true })
       )
 
       if (
@@ -967,6 +996,18 @@ export function processConversationTurnEffect(
             agentRequest.runId
           )
         ))
+      ) {
+        return
+      }
+
+      if (
+        composition.config.ASYNC_AGENT_RUNS === "true" &&
+        (stored === undefined ||
+          stored.status === "accepted" ||
+          stored.status === "queued" ||
+          stored.status === "running" ||
+          stored.status === "retry_wait" ||
+          stored.status === "waiting_effect")
       ) {
         return
       }
@@ -1012,9 +1053,17 @@ export function processConversationTurnEffect(
         return
       }
 
-      const runAttemptId = yield* promiseEffect(() =>
-        composition.interfaces.runs.claim(created.runId, conversationTiming.activeLeaseMs)
-      )
+      const savedCompletion =
+        stored?.status === "awaiting_finalization" &&
+        stored.activeAttemptId !== undefined &&
+        stored.result !== undefined
+          ? { attemptId: stored.activeAttemptId, result: stored.result }
+          : undefined
+      const runAttemptId =
+        savedCompletion?.attemptId ??
+        (yield* promiseEffect(() =>
+          composition.interfaces.runs.claim(created.runId, conversationTiming.activeLeaseMs)
+        ))
       yield* recordDecision({
         name: "bob.decision.idempotency",
         code: runAttemptId === undefined ? "in_progress" : "allowed",
@@ -1036,11 +1085,13 @@ export function processConversationTurnEffect(
         return
       }
 
-      let result = yield* invokeAgent(agentRequest, runAttemptId, composition, feature).pipe(
-        Effect.catch((error) =>
-          Effect.succeed(failedAgentResult(agentRequest, composition.config.BOB_MODEL, error))
-        )
-      )
+      let result =
+        savedCompletion?.result ??
+        (yield* invokeAgent(agentRequest, runAttemptId, composition, feature).pipe(
+          Effect.catch((error) =>
+            Effect.succeed(failedAgentResult(agentRequest, composition.config.BOB_MODEL, error))
+          )
+        ))
       let mutationActivity = yield* composition.interfaces.tools.mutationActivity(
         agentRequest.runId
       )

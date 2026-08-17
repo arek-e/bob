@@ -41,6 +41,11 @@ function requiredCaller(pathname: string): CoreCaller | undefined {
     pathname === "/internal/agent/result" ||
     pathname === "/internal/agent/operations" ||
     pathname === "/internal/agent/operations/load" ||
+    pathname === "/internal/agent-runs/acquire" ||
+    pathname === "/internal/agent-runs/renew" ||
+    pathname === "/internal/agent-runs/control" ||
+    pathname === "/internal/agent-runs/checkpoint" ||
+    pathname === "/internal/agent-runs/outcome" ||
     pathname === "/internal/readiness" ||
     /^\/internal\/agent\/runs\/[^/]+\/attachments\/[^/]+$/.test(pathname)
   ) {

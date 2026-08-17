@@ -1,6 +1,8 @@
 export interface PublishJobOptions {
   /** Do not make the job available before this delay has elapsed. */
   readonly delayMs?: number
+  /** Stable, content-free identity used by an Adapter to reject duplicate jobs. */
+  readonly deduplicationKey?: string
 }
 
 /**
@@ -70,4 +72,13 @@ export function validatedDelayMs(options?: PublishJobOptions): number | undefine
     throw new RangeError("Job delay must be a non-negative safe integer")
   }
   return delayMs
+}
+
+export function validatedDeduplicationKey(options?: PublishJobOptions): string | undefined {
+  const key = options?.deduplicationKey
+  if (key === undefined) return undefined
+  if (!/^[A-Za-z0-9_-]{1,200}$/.test(key)) {
+    throw new TypeError("Job deduplication key must use letters, numbers, underscores, or hyphens")
+  }
+  return key
 }

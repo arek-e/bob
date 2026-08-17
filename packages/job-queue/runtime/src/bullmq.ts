@@ -1,9 +1,13 @@
 import type { JobProcessor, JobPublisher, PublishJobOptions } from "@bob/job-queue-types"
 
-import { validatedDelayMs } from "@bob/job-queue-types"
+import { validatedDeduplicationKey, validatedDelayMs } from "@bob/job-queue-types"
 
 export interface BullMqQueueAdapterInput<Job, Result> {
-  readonly add: (name: string, job: Job, options?: { readonly delay?: number }) => Promise<Result>
+  readonly add: (
+    name: string,
+    job: Job,
+    options?: { readonly delay?: number; readonly jobId?: string }
+  ) => Promise<Result>
 }
 
 export interface BullMqJobAdapterInput<Job> {
@@ -26,7 +30,15 @@ export function makeBullMqJobPublisher<Job, Result>(
   return {
     async publish(job: Job, options?: PublishJobOptions): Promise<void> {
       const delayMs = validatedDelayMs(options)
-      await queue.add(jobName, job, delayMs === undefined ? undefined : { delay: delayMs })
+      const jobId = validatedDeduplicationKey(options)
+      if (delayMs === undefined) {
+        if (jobId === undefined) await queue.add(jobName, job)
+        else await queue.add(jobName, job, { jobId })
+      } else if (jobId === undefined) {
+        await queue.add(jobName, job, { delay: delayMs })
+      } else {
+        await queue.add(jobName, job, { delay: delayMs, jobId })
+      }
     }
   }
 }

@@ -8,6 +8,8 @@ import { currentBobCorrelationId, Telemetry, injectCurrentTraceparent } from "@b
 import { ToolResult, type CapabilityCatalogue, type ToolCommand } from "@bob/tools-types/tools"
 import { Context, Effect, Exit, Layer, Option, Schema } from "effect"
 
+import { currentAgentExecutionContext } from "./execution-context.ts"
+
 export class CoreToolClientError extends Schema.TaggedError<CoreToolClientError>()(
   "CoreToolClientError",
   {
@@ -53,6 +55,18 @@ export function createCoreToolClient(options: {
 }): CoreToolClient {
   const request = options.fetch ?? fetch
   const now = options.now ?? Date.now
+
+  const authorityHeaders = () => {
+    const context = currentAgentExecutionContext()
+    if (context?.authority === undefined) return {}
+    const authority = context.authority()
+    return {
+      "x-bob-run-id": authority.runId,
+      "x-bob-run-attempt-id": authority.attemptId,
+      "x-bob-run-attempt-fence": String(authority.attemptFence),
+      "x-bob-run-control-revision": String(authority.controlRevision)
+    }
+  }
 
   const requestResponse = (
     operation: CoreToolClientError["operation"],
@@ -108,7 +122,8 @@ export function createCoreToolClient(options: {
       const headers = yield* injectCurrentTraceparent({
         "content-type": "application/json",
         "x-bob-caller-token": options.callerSecret,
-        "x-bob-correlation-id": correlationId
+        "x-bob-correlation-id": correlationId,
+        ...authorityHeaders()
       })
       const response = yield* requestResponse(
         "execute",
@@ -179,7 +194,12 @@ export function createCoreToolClient(options: {
       const response = yield* requestResponse(
         "load_attachment",
         `/internal/agent/runs/${encodeURIComponent(runId)}/attachments/${encodeURIComponent(attachment.id)}`,
-        { headers: { "x-bob-caller-token": options.callerSecret } },
+        {
+          headers: {
+            "x-bob-caller-token": options.callerSecret,
+            ...authorityHeaders()
+          }
+        },
         15_000
       )
       if (!response.ok) {

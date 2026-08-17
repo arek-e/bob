@@ -2,6 +2,12 @@ import type { CoreAdapters } from "@bob/core-types/adapters"
 import type { GeneralCoreBindings } from "@bob/core-types/bindings"
 import type { CoreDeploymentProfile } from "@bob/deployment-profile-types/runtime"
 
+import {
+  agentRunGatewayLayer,
+  agentRunsLayer,
+  makeAgentRunGateway,
+  makeAgentRuns
+} from "@bob/agent-runs-service"
 import { artifactStoreLayer, makeArtifactStore } from "@bob/artifacts-service/store"
 import { makePrivateTextReader } from "@bob/context-service/private-text"
 import { contextStoreLayer } from "@bob/context-service/store"
@@ -48,6 +54,8 @@ const Configuration = Schema.Struct({
   AGENT_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   AGENT_URL: Schema.String,
   AGENT_ADMIN_URL: Schema.String,
+  AGENT_EXECUTION_POOL_ID: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
+  ASYNC_AGENT_RUNS: Schema.optionalKey(Schema.Literal("true")),
   BOB_MODEL: Schema.String,
   BOB_PROVIDER: Schema.Literal("openai-codex"),
   BOB_RUN_TOKEN_BUDGET: Schema.Number.check(
@@ -140,6 +148,8 @@ export function composeGeneralCore(
     }
   )
   const runs = makeAgentRunStore(applicationStorage, protection, { ownerDataKeys })
+  const agentRuns = makeAgentRuns(applicationStorage, protection, { ownerDataKeys })
+  const agentRunGateway = makeAgentRunGateway(applicationStorage, protection, { ownerDataKeys })
   const toolAdapters = makeToolAdapterRegistry(runtimeProfile.catalogue, [
     makeMemoryToolAdapter(memory, retrieval),
     makeSettingsToolAdapter(settings),
@@ -168,6 +178,8 @@ export function composeGeneralCore(
     ownerSettingsStoreLayer(settings),
     contextStoreLayer(context),
     agentRunStoreLayer(runs),
+    agentRunsLayer(agentRuns),
+    agentRunGatewayLayer(agentRunGateway),
     toolExecutorLayer(tools)
   )
   return {

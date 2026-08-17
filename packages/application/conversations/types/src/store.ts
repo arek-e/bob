@@ -19,7 +19,7 @@ export interface ClaimedInbound {
 }
 
 export interface ConversationStoreAdapter {
-  acceptInbound(event: NormalizedInboundEvent): Promise<InboundAcceptance>
+  acceptInbound(event: NormalizedInboundEvent, ownerId?: string): Promise<InboundAcceptance>
   markEnqueued(eventId: string, at: string): Promise<void>
   getInboundOwner(eventId: string): Promise<string | undefined>
   claimInbound(eventId: string, leaseMs: number): Promise<ClaimedInbound | undefined>

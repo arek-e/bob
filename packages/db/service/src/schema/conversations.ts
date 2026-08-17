@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm"
-import { boolean, index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, check, index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -35,6 +35,7 @@ export const channels = pgTable(
   },
   (table) => [
     uniqueIndex("channels_provider_address_uq").on(
+      table.userId,
       table.provider,
       table.accountId,
       table.lineId,
@@ -193,17 +194,53 @@ export const agentRuns = pgTable(
   {
     id: text("id").primaryKey(),
     userId: text("user_id").notNull(),
-    inboundEventId: text("inbound_event_id").notNull(),
+    inboundEventId: text("inbound_event_id"),
+    originType: text("origin_type", {
+      enum: ["conversation_turn", "scheduled", "proactive", "legacy_inbound"]
+    }),
+    originId: text("origin_id"),
     conversationTurnId: text("turn_id"),
     conversationTurnRevision: integer("turn_revision"),
     targetMessageId: text("target_message_id"),
     correlationId: text("correlation_id").notNull(),
     inputSnapshotJson: text("input_snapshot_json").notNull(),
     inputHash: text("input_hash").notNull(),
+    submissionHash: text("submission_hash"),
     status: text("status", {
-      enum: ["pending", "claimed", "executing", "completed", "failed", "unknown", "superseded"]
+      enum: [
+        "pending",
+        "claimed",
+        "executing",
+        "accepted",
+        "queued",
+        "running",
+        "retry_wait",
+        "waiting_effect",
+        "awaiting_finalization",
+        "completed",
+        "failed",
+        "cancelled",
+        "unknown",
+        "superseded",
+        "indeterminate"
+      ]
     }).notNull(),
     model: text("model").notNull(),
+    idempotencyKey: text("idempotency_key"),
+    executionPoolId: text("execution_pool_id"),
+    jobProtocolVersion: integer("job_protocol_version").notNull().default(1),
+    coreGatewayProtocolVersion: integer("core_gateway_protocol_version").notNull().default(1),
+    checkpointLoopVersion: integer("checkpoint_loop_version").notNull().default(1),
+    dispatchGeneration: integer("dispatch_generation").notNull().default(1),
+    activeAttemptFence: integer("active_attempt_fence").notNull().default(0),
+    controlRevision: integer("control_revision").notNull().default(0),
+    cancellationRequestedAt: text("cancellation_requested_at"),
+    cancellationReason: text("cancellation_reason", {
+      enum: ["owner_request", "superseded", "operator_drain", "policy"]
+    }),
+    outcomeSnapshotJson: text("outcome_snapshot_json"),
+    outcomeHash: text("outcome_hash"),
+    finalizationCompletedAt: text("finalization_completed_at"),
     claimedAt: text("claimed_at"),
     claimExpiresAt: text("claim_expires_at"),
     activeAttemptId: text("active_attempt_id"),
@@ -218,19 +255,63 @@ export const agentRuns = pgTable(
       .on(table.conversationTurnId, table.conversationTurnRevision)
       .where(
         sql`${table.conversationTurnId} IS NOT NULL AND ${table.conversationTurnRevision} IS NOT NULL`
-      )
+      ),
+    uniqueIndex("agent_runs_owner_idempotency_uq")
+      .on(table.userId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} IS NOT NULL`),
+    index("agent_runs_dispatch_idx").on(table.status, table.executionPoolId, table.createdAt),
+    check("agent_runs_dispatch_generation_positive", sql`${table.dispatchGeneration} > 0`),
+    check("agent_runs_active_fence_non_negative", sql`${table.activeAttemptFence} >= 0`),
+    check("agent_runs_control_revision_non_negative", sql`${table.controlRevision} >= 0`)
   ]
 )
 
-export const agentRunAttempts = pgTable("agent_run_attempts", {
-  id: text("id").primaryKey(),
-  runId: text("run_id").notNull(),
-  attemptNumber: integer("attempt_number").notNull(),
-  status: text("status").notNull(),
-  errorCode: text("error_code"),
-  startedAt: text("started_at").notNull(),
-  finishedAt: text("finished_at")
-})
+export const agentRunAttempts = pgTable(
+  "agent_run_attempts",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").notNull(),
+    attemptNumber: integer("attempt_number").notNull(),
+    fence: integer("fence").notNull().default(0),
+    workerId: text("worker_id"),
+    leaseExpiresAt: text("lease_expires_at"),
+    status: text("status").notNull(),
+    errorCode: text("error_code"),
+    startedAt: text("started_at").notNull(),
+    finishedAt: text("finished_at")
+  },
+  (table) => [
+    uniqueIndex("agent_run_attempts_sequence_uq").on(table.runId, table.attemptNumber),
+    uniqueIndex("agent_run_attempts_fence_uq").on(table.runId, table.fence),
+    index("agent_run_attempts_lease_idx").on(table.status, table.leaseExpiresAt),
+    check("agent_run_attempts_number_positive", sql`${table.attemptNumber} > 0`),
+    check("agent_run_attempts_fence_non_negative", sql`${table.fence} >= 0`)
+  ]
+)
+
+export const agentRunOutbox = pgTable(
+  "agent_run_outbox",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").notNull(),
+    kind: text("kind", { enum: ["dispatch", "continuation", "control"] }).notNull(),
+    generation: integer("generation").notNull(),
+    state: text("state", { enum: ["pending", "claimed", "published", "failed"] }).notNull(),
+    availableAt: text("available_at").notNull(),
+    claimedAt: text("claimed_at"),
+    claimToken: text("claim_token"),
+    claimExpiresAt: text("claim_expires_at"),
+    publishedAt: text("published_at"),
+    failureCount: integer("failure_count").notNull().default(0),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    uniqueIndex("agent_run_outbox_generation_uq").on(table.runId, table.kind, table.generation),
+    index("agent_run_outbox_publish_idx").on(table.kind, table.state, table.availableAt),
+    check("agent_run_outbox_generation_positive", sql`${table.generation} > 0`),
+    check("agent_run_outbox_failure_count_non_negative", sql`${table.failureCount} >= 0`)
+  ]
+)
 
 export const agentRunOperations = pgTable(
   "agent_run_operations",

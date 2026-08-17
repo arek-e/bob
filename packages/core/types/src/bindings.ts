@@ -28,6 +28,8 @@ export interface GeneralCoreBindings {
   AGENT_CALLER_SECRET: string
   AGENT_URL: string
   AGENT_ADMIN_URL: string
+  AGENT_EXECUTION_POOL_ID?: string
+  ASYNC_AGENT_RUNS?: "true"
   UI_BASE_URL: string
   BOB_MODEL: string
   BOB_PROVIDER: string
