@@ -13,7 +13,7 @@ export class ObjectStorageError extends Schema.TaggedError<ObjectStorageError>()
   }
 ) {}
 
-export interface ObjectStorageShape {
+export interface ObjectStorageService {
   /** Return undefined only when the key does not exist. */
   readonly get: (key: string) => Effect.Effect<StoredPrivateObject | undefined, ObjectStorageError>
   /** Atomically replace the value stored at the key. */
@@ -22,7 +22,7 @@ export interface ObjectStorageShape {
   readonly delete: (key: string) => Effect.Effect<void, ObjectStorageError>
 }
 
-export class ObjectStorage extends Context.Service<ObjectStorage, ObjectStorageShape>()(
+export class ObjectStorage extends Context.Service<ObjectStorage, ObjectStorageService>()(
   "@bob/object-storage/ObjectStorage"
 ) {}
 

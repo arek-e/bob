@@ -27,6 +27,7 @@
     "pnpm-lock.yaml",
     "packages/db/service/migrations/*.sql",
     "**/environment.generated.ts",
-    "**/routeTree.gen.ts"
+    "**/routeTree.gen.ts",
+    "tools/oxlint/anti-slop/**"
   ]
 }

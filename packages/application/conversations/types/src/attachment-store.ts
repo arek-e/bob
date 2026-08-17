@@ -31,7 +31,7 @@ export class MessageAttachmentError extends Schema.TaggedError<MessageAttachment
   }
 ) {}
 
-export interface MessageAttachmentStoreShape {
+export interface MessageAttachmentStoreService {
   readonly storeInbound: (
     eventId: string,
     ordinal: number,
@@ -46,5 +46,5 @@ export interface MessageAttachmentStoreShape {
 
 export class MessageAttachmentStore extends Context.Service<
   MessageAttachmentStore,
-  MessageAttachmentStoreShape
+  MessageAttachmentStoreService
 >()("@bob/conversations/MessageAttachmentStore") {}

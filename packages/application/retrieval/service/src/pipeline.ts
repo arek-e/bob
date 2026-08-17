@@ -30,22 +30,22 @@ export { RetrievalPipeline } from "@bob/retrieval-types/retrieval"
 
 const MemoryClassValue = Schema.Literals(["owner_fact", "owner_episode", "agent_experience"])
 
-interface CandidateRow {
-  [key: string]: unknown
-  document_id: string
-  source_id: string
-  text: string
-  search_text: string
-  content_hash: string | null
-  source_type: string
-  source_label: string
-  memory_class: string
-  occurred_at: string | null
-  conflict_key: string | null
-  valid_from: string | null
-  valid_to: string | null
-  importance: number
-}
+const CandidateRow = Schema.Struct({
+  document_id: Schema.String,
+  source_id: Schema.String,
+  text: Schema.String,
+  search_text: Schema.String,
+  content_hash: Schema.NullOr(Schema.String),
+  source_type: Schema.String,
+  source_label: Schema.String,
+  memory_class: Schema.String,
+  occurred_at: Schema.NullOr(Schema.String),
+  conflict_key: Schema.NullOr(Schema.String),
+  valid_from: Schema.NullOr(Schema.String),
+  valid_to: Schema.NullOr(Schema.String),
+  importance: Schema.Number
+})
+type CandidateRow = typeof CandidateRow.Type
 
 function rowCandidate(row: CandidateRow, lexicalPosition: number): RetrievalCandidate {
   const candidate: RetrievalCandidate = {
@@ -138,7 +138,7 @@ export function makeRetrievalPipeline(
       const rows =
         analyzed.ftsQuery === undefined
           ? await Effect.runPromise(
-              database.execute<CandidateRow>(sql`
+              database.execute(sql`
               SELECT
                 d.id AS document_id,
                 d.source_id,
@@ -163,7 +163,7 @@ export function makeRetrievalPipeline(
             `)
             )
           : await Effect.runPromise(
-              database.execute<CandidateRow>(sql`
+              database.execute(sql`
               SELECT
                 d.id AS document_id,
                 d.source_id,
@@ -228,7 +228,7 @@ export function makeRetrievalPipeline(
         }
       }
       const relevant = selectRelevantCandidates(
-        rows.map(rowCandidate),
+        rows.map((row, index) => rowCandidate(Schema.decodeUnknownSync(CandidateRow)(row), index)),
         analyzed.terms,
         analyzed.temporal,
         {

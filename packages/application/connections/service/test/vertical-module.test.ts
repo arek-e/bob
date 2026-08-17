@@ -4,8 +4,16 @@ import { describe, expect, it } from "vitest"
 
 import { connectionsVerticalModule } from "../src/vertical-module.ts"
 
-const context = (bindings: unknown) =>
-  ({ bindings, database: {} }) as unknown as DeploymentProfileContext
+interface ConnectionsBindings {
+  readonly CONNECTIONS_GATEWAY_URL?: string
+  readonly CONNECTIONS_GATEWAY_CALLER_SECRET?: string
+}
+
+function context(bindings: ConnectionsBindings): DeploymentProfileContext {
+  const fixture = { bindings, database: {} }
+  // SAFETY: This focused test does not execute the database Adapter.
+  return fixture as DeploymentProfileContext
+}
 
 describe("Connections Vertical Module", () => {
   it("prepares its complete runtime contribution set from owned configuration", () => {

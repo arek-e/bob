@@ -14,7 +14,7 @@ import {
 } from "@bob/policy-service/effect-outcome"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { OwnerSettingsStore, OwnerSettingsStoreError } from "@bob/settings-types/store"
-import { liftPromiseAdapter } from "@bob/shared-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/shared-types/effect-adapter"
 import { and, eq } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 
@@ -157,11 +157,14 @@ export function makeOwnerSettingsStore(
 }
 
 export function ownerSettingsStoreLayer(store: OwnerSettingsStoreAdapter) {
+  const failure = (operation: keyof OwnerSettingsStoreAdapter) => (cause: unknown) =>
+    new OwnerSettingsStoreError({ operation: String(operation), cause })
   return Layer.succeed(
     OwnerSettingsStore,
-    liftPromiseAdapter(
-      store,
-      (operation, cause) => new OwnerSettingsStoreError({ operation: String(operation), cause })
-    )
+    OwnerSettingsStore.of({
+      get: liftPromiseOperation(store.get, failure("get")),
+      update: liftPromiseOperation(store.update, failure("update")),
+      connections: liftPromiseOperation(store.connections, failure("connections"))
+    })
   )
 }

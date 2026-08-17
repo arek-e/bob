@@ -119,13 +119,14 @@ describe("core workflow telemetry", () => {
         delivery: { markEnqueued: vi.fn(async () => undefined) }
       }
     })
-    const runTelemetry = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-      Effect.runPromise(
-        effect.pipe(
-          Effect.provide(composition.layer),
-          Effect.provide(telemetry.layer)
-        ) as Effect.Effect<A, E>
+    const runTelemetry = <A, E, R>(effect: Effect.Effect<A, E, R>) => {
+      const provided = effect.pipe(
+        Effect.provide(composition.layer),
+        Effect.provide(telemetry.layer)
       )
+      // SAFETY: The composition and telemetry Layers provide every service used by this test.
+      return Effect.runPromise(provided as Effect.Effect<A, E>)
+    }
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const bindings = testFixture<CoreBindings>({
       OUTBOUND_QUEUE: {

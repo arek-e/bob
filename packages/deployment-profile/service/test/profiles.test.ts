@@ -31,7 +31,7 @@ describe("Deployment Profile runtime views", () => {
   })
 
   it("prepares one complete static runtime view", () => {
-    const context = {
+    const contextFixture = {
       bindings: {
         CONNECTIONS_GATEWAY_URL: "https://connections.example",
         CONNECTIONS_GATEWAY_CALLER_SECRET: "a-secure-caller-secret-with-32-characters",
@@ -49,7 +49,9 @@ describe("Deployment Profile runtime views", () => {
       settings: {},
       ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
       ownerTimeZone: "Europe/Stockholm"
-    } as unknown as DeploymentProfileContext
+    }
+    // SAFETY: This test verifies assembly and does not execute infrastructure Adapters.
+    const context = contextFixture as DeploymentProfileContext
     const prepared = transitionalRuntimeProfile.prepare(context)
 
     expect(prepared.verticalModules.map((module) => module.id)).toEqual([

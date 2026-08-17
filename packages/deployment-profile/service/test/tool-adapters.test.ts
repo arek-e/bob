@@ -36,6 +36,7 @@ const ownerId = "00000000-0000-4000-8000-000000000001"
 const runId = "00000000-0000-4000-8000-000000000002"
 
 function testFixture<T, Value extends Partial<T> = Partial<T>>(value: Value): T & Value {
+  // SAFETY: Each focused fixture supplies every member used by its test.
   return value as T & Value
 }
 

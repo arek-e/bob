@@ -312,17 +312,16 @@ export async function handleHttp(
       if (decodedMediaType._tag === "Failure") return json({ code: "invalid_media" }, 415)
       const mediaType = decodedMediaType.value
       const body = await readAttachmentBytes(request)
-      try {
-        const attachment = await runTelemetry(
-          MessageAttachmentStore.use((store) =>
-            store.storeInbound(eventId, ordinal, mediaType, body)
-          )
-        )
-        return json(Schema.encodeSync(MessageAttachmentReference)(attachment), 201)
-      } catch (error) {
-        const failure = error as MessageAttachmentError
+      const stored = await runTelemetry(
+        MessageAttachmentStore.use((store) =>
+          store.storeInbound(eventId, ordinal, mediaType, body)
+        ).pipe(Effect.result)
+      )
+      if (stored._tag === "Failure") {
+        const failure = stored.failure
         return json({ code: failure.code ?? "storage_failed" }, attachmentFailureStatus(failure))
       }
+      return json(Schema.encodeSync(MessageAttachmentReference)(stored.success), 201)
     }
 
     const agentAttachment = url.pathname.match(
@@ -335,23 +334,25 @@ export async function handleHttp(
       const attachmentId = Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
         decodeURIComponent(agentAttachment[2]!)
       )
-      try {
-        const attachment = await runTelemetry(
-          MessageAttachmentStore.use((store) => store.loadForAgent(runId, attachmentId))
+      const loaded = await runTelemetry(
+        MessageAttachmentStore.use((store) => store.loadForAgent(runId, attachmentId)).pipe(
+          Effect.result
         )
-        return secure(
-          new Response(Uint8Array.from(attachment.body).buffer, {
-            headers: {
-              "content-type": attachment.mediaType,
-              "content-length": String(attachment.byteLength),
-              "x-bob-content-hash": attachment.contentHash
-            }
-          })
-        )
-      } catch (error) {
-        const failure = error as MessageAttachmentError
+      )
+      if (loaded._tag === "Failure") {
+        const failure = loaded.failure
         return json({ code: failure.code ?? "storage_failed" }, attachmentFailureStatus(failure))
       }
+      const attachment = loaded.success
+      return secure(
+        new Response(Uint8Array.from(attachment.body).buffer, {
+          headers: {
+            "content-type": attachment.mediaType,
+            "content-length": String(attachment.byteLength),
+            "x-bob-content-hash": attachment.contentHash
+          }
+        })
+      )
     }
 
     const inboundEnqueued = url.pathname.match(/^\/internal\/inbound\/([^/]+)\/enqueued$/)

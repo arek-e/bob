@@ -8,7 +8,7 @@ import type { ToolResult } from "@bob/tools-types/tools"
 import { makeCaptureTelemetry, withBobSpan } from "@bob/observability"
 import { makeToolAdapterRegistry } from "@bob/tools-service/registry"
 import { makeCapabilityCatalogue } from "@bob/tools-types/catalogue"
-import { Context, Effect } from "effect"
+import { Context, Effect, Option } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { makeToolExecutor } from "../src/tool-executor.ts"
@@ -39,7 +39,7 @@ class ToolDependency extends Context.Service<ToolDependency, { readonly value: s
 
 function scriptedDatabase(results: unknown[]): CoreDatabase {
   const next = () => Effect.sync(() => results.shift())
-  const builder = (): object => {
+  const builder = () => {
     const query = new Proxy(
       {},
       {
@@ -58,11 +58,13 @@ function scriptedDatabase(results: unknown[]): CoreDatabase {
     )
     return query
   }
-  return {
-    select: builder,
-    insert: builder,
-    update: builder
-  } as unknown as CoreDatabase
+  const databaseTarget = {}
+  // SAFETY: The Proxy supplies the database query operations exercised by this test.
+  const database = databaseTarget as CoreDatabase
+  return new Proxy(database, {
+    get: (_target, property) =>
+      property === "select" || property === "insert" || property === "update" ? builder : undefined
+  })
 }
 
 const protection: DataProtection = {
@@ -80,9 +82,11 @@ const protection: DataProtection = {
   contentHash: async (value) => value,
   contentHashBytes: async (value) => String(value.byteLength)
 }
+// SAFETY: Encryption is stubbed in this test, so no CryptoKey operation reads this value.
+const testCryptoKey = {} as CryptoKey
 const ownerDataKeys: OwnerDataKeyStoreAdapter = {
-  load: async () => ({ key: {} as CryptoKey, version: 1 }),
-  ensure: async () => ({ key: {} as CryptoKey, version: 1 })
+  load: async () => ({ key: testCryptoKey, version: 1 }),
+  ensure: async () => ({ key: testCryptoKey, version: 1 })
 }
 
 describe("Effect-native durable Tool execution", () => {
@@ -174,15 +178,19 @@ describe("Effect-native durable Tool execution", () => {
         ],
         settlement
       ])
-      const adapter = {
+      const adapter: ToolCommandAdapter = {
         capabilityId: "test-tools",
         names: ["test_read"],
         execute: () =>
           Effect.gen(function* () {
-            const dependency = yield* ToolDependency
-            return { ok: true, code: "read", message: dependency.value } satisfies ToolResult
+            const dependency = yield* Effect.serviceOption(ToolDependency)
+            return {
+              ok: true,
+              code: "read",
+              message: Option.getOrElse(dependency, () => ({ value: "missing" })).value
+            } satisfies ToolResult
           })
-      } as unknown as ToolCommandAdapter
+      }
       const catalogue = makeCapabilityCatalogue("test", [capability])
       const executor = makeToolExecutor(
         database,

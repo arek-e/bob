@@ -1,3 +1,5 @@
+import type { OutboundJob } from "@bob/core-types/jobs"
+
 import {
   flushTelemetry,
   invocationTelemetryLayer,
@@ -107,7 +109,7 @@ async function runIngress<A>(
   const finish = runtime.runPromise(flushTelemetry).finally(() => runtime.dispose())
   if (context === undefined) await finish
   else context.waitUntil(finish)
-  return result as A
+  return result
 }
 
 async function runEgress<A, E>(
@@ -124,7 +126,7 @@ async function runEgress<A, E>(
 }
 
 export function processOutboundJob(
-  input: unknown,
+  input: OutboundJob,
   bindings: LegacyEgressBindings,
   context?: RuntimeLifecycle
 ) {
@@ -172,6 +174,7 @@ export function reconcileInboundHistory(options: {
     readonly signal?: AbortSignal
   }) => Promise<Response>
 }) {
+  // SAFETY: This focused provider implements the history operations used by reconciliation.
   const provider = SendblueProvider.of({
     hasLine: (number: string) => Effect.promise(() => options.history.hasLine(number)),
     listInbound: (window: {

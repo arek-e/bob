@@ -4,8 +4,15 @@ import { describe, expect, it, vi } from "vitest"
 
 import { reminderVerticalModule } from "../src/vertical-module.ts"
 
-function context(bindings: unknown): DeploymentProfileContext {
-  return {
+interface ReminderBindings {
+  readonly REMINDER_CLOCK?: { readonly fetch?: ReturnType<typeof vi.fn> }
+  readonly REMINDER_QUIET_HOURS_START?: string
+  readonly REMINDER_QUIET_HOURS_END?: string
+  readonly REMINDER_DAILY_LIMIT?: number
+}
+
+function context(bindings: ReminderBindings): DeploymentProfileContext {
+  const fixture = {
     bindings,
     database: {},
     protection: {},
@@ -15,7 +22,9 @@ function context(bindings: unknown): DeploymentProfileContext {
     settings: {},
     ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
     ownerTimeZone: "Europe/Stockholm"
-  } as unknown as DeploymentProfileContext
+  }
+  // SAFETY: This focused test does not execute the infrastructure Adapters.
+  return fixture as DeploymentProfileContext
 }
 
 describe("Reminder Vertical Module", () => {

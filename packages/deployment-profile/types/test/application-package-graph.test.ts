@@ -29,6 +29,7 @@ interface PackageManifest {
 }
 
 function manifestFor(module: string, project: "types" | "service"): PackageManifest {
+  // SAFETY: The repository controls these manifests, and this test reads only dependency maps.
   return JSON.parse(
     readFileSync(join(applicationRoot, module, project, "package.json"), "utf8")
   ) as PackageManifest

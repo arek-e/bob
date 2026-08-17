@@ -1,5 +1,5 @@
 import { ObjectStorage, ObjectStorageError, validatedObjectKey } from "@bob/object-store-types"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises"
 import { dirname, resolve, sep } from "node:path"
 
@@ -20,7 +20,12 @@ export function filesystemObjectStorageLayer(root: string) {
             try {
               return { body: new Uint8Array(await readFile(objectPath(normalizedRoot, key))) }
             } catch (error) {
-              if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+              const fileError = Schema.decodeUnknownExit(
+                Schema.Struct({ code: Schema.optionalKey(Schema.String) })
+              )(error)
+              if (fileError._tag === "Success" && fileError.value.code === "ENOENT") {
+                return undefined
+              }
               throw error
             }
           },

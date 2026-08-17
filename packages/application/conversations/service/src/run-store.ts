@@ -17,7 +17,7 @@ import {
 import { outboxMessages } from "@bob/db-service/schema/delivery"
 import { allInTransaction } from "@bob/db-types"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
-import { liftPromiseAdapter } from "@bob/shared-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/shared-types/effect-adapter"
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
 
@@ -872,11 +872,31 @@ export function makeAgentRunStore(
 }
 
 export function agentRunStoreLayer(store: AgentRunStoreAdapter) {
+  const failure = (operation: keyof AgentRunStoreAdapter) => (cause: unknown) =>
+    new AgentRunStoreError({ operation: String(operation), cause })
   return Layer.succeed(
     AgentRunStore,
-    liftPromiseAdapter(
-      store,
-      (operation, cause) => new AgentRunStoreError({ operation: String(operation), cause })
-    )
+    AgentRunStore.of({
+      create: liftPromiseOperation(store.create, failure("create")),
+      loadForInbound: liftPromiseOperation(store.loadForInbound, failure("loadForInbound")),
+      loadForTurn: liftPromiseOperation(store.loadForTurn, failure("loadForTurn")),
+      claim: liftPromiseOperation(store.claim, failure("claim")),
+      loadOperations: liftPromiseOperation(store.loadOperations, failure("loadOperations")),
+      appendOperation: liftPromiseOperation(store.appendOperation, failure("appendOperation")),
+      releaseForRetry: liftPromiseOperation(store.releaseForRetry, failure("releaseForRetry")),
+      completeWithResponse: liftPromiseOperation(
+        store.completeWithResponse,
+        failure("completeWithResponse")
+      ),
+      completeWithoutResponse: liftPromiseOperation(
+        store.completeWithoutResponse,
+        failure("completeWithoutResponse")
+      ),
+      completeForReflection: liftPromiseOperation(
+        store.completeForReflection,
+        failure("completeForReflection")
+      ),
+      channelForRun: liftPromiseOperation(store.channelForRun, failure("channelForRun"))
+    })
   )
 }

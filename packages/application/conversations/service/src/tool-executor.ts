@@ -1,4 +1,4 @@
-import type { ToolExecutorShape } from "@bob/conversations-types/tool-executor"
+import type { ToolExecutorService } from "@bob/conversations-types/tool-executor"
 import type { CoreDatabase } from "@bob/db-types"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
@@ -67,7 +67,13 @@ function canonicalJson(value: typeof Schema.Json.Type): string {
 }
 
 export { ToolExecutor }
-export type { MutationActivity, ToolExecutorShape } from "@bob/conversations-types/tool-executor"
+export type { MutationActivity, ToolExecutorService } from "@bob/conversations-types/tool-executor"
+
+interface OptionalToolRunContext {
+  locale?: string
+  conversationTurnId?: string
+  conversationTurnRevision?: number
+}
 
 function denied(): ToolResult {
   return { ok: false, code: "policy_denied", message: "This tool is not allowed for this run." }
@@ -229,7 +235,7 @@ export function makeToolExecutor(
     readonly toolLeaseMs?: number
     readonly ownerDataKeys?: OwnerDataKeyStoreAdapter
   }
-): ToolExecutorShape {
+): ToolExecutorService {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const toolLeaseMs = options.toolLeaseMs ?? 60_000
@@ -381,18 +387,20 @@ export function makeToolExecutor(
       ) {
         return denied()
       }
+      const optionalRun: OptionalToolRunContext = {}
+      if (context.request.locale !== undefined) optionalRun.locale = context.request.locale
+      if (context.request.conversationTurnId !== undefined) {
+        optionalRun.conversationTurnId = context.request.conversationTurnId
+      }
+      if (context.request.conversationTurnRevision !== undefined) {
+        optionalRun.conversationTurnRevision = context.request.conversationTurnRevision
+      }
       const run: ToolRunContext = {
         correlationId: context.request.correlationId,
         userText: conversationPolicyText(context.request),
         localTime: context.request.localTime,
         timeZone: context.request.timeZone,
-        ...(context.request.locale === undefined ? {} : { locale: context.request.locale }),
-        ...(context.request.conversationTurnId === undefined
-          ? {}
-          : { conversationTurnId: context.request.conversationTurnId }),
-        ...(context.request.conversationTurnRevision === undefined
-          ? {}
-          : { conversationTurnRevision: context.request.conversationTurnRevision }),
+        ...optionalRun,
         channelId: context.channelId,
         messageId: context.messageId
       }
@@ -418,7 +426,7 @@ export function makeToolExecutor(
     })
   }
 
-  const executor: ToolExecutorShape = {
+  const executor: ToolExecutorService = {
     mutationActivity: (runId) =>
       Effect.gen(function* () {
         const [run] = yield* database
@@ -897,6 +905,6 @@ function executorError(operation: string, cause: unknown): ToolExecutorError {
   return new ToolExecutorError({ operation, cause })
 }
 
-export function toolExecutorLayer(executor: ToolExecutorShape) {
+export function toolExecutorLayer(executor: ToolExecutorService) {
   return Layer.succeed(ToolExecutor, executor)
 }

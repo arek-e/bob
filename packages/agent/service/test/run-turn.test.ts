@@ -198,8 +198,8 @@ const makeAgent = (
   executeTool: (command: ToolCommand, signal?: AbortSignal) => Promise<ToolResult>,
   now: () => number = () => 1,
   loadAttachment?: PiAgentOptions["loadAttachment"]
-) =>
-  createTestPiAgent({
+) => {
+  const options: PiAgentOptions = {
     catalogue: transitionalDeploymentProfile,
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     credentials: { read: async () => undefined } as never,
@@ -212,9 +212,11 @@ const makeAgent = (
         catch: (cause) => new AgentToolError({ message: "Test Tool failed", cause })
       }),
     now,
-    ...(loadAttachment === undefined ? {} : { loadAttachment }),
     dependencies
-  })
+  }
+  if (loadAttachment !== undefined) Object.assign(options, { loadAttachment })
+  return createTestPiAgent(options)
+}
 
 const okResult = (code = "test", message = "Done."): ToolResult => ({ ok: true, code, message })
 const confirmedResult = (code: string, message: string): ToolResult => ({

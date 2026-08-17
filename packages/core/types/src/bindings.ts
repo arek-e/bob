@@ -12,10 +12,7 @@ export interface GeneralCoreBindings {
   DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: string
   OUTBOUND_DEAD_LETTER_QUEUE_NAME: string
   OUTBOUND_QUEUE?: {
-    readonly send: (
-      job: OutboundJob,
-      options?: { readonly delaySeconds?: number }
-    ) => Promise<unknown>
+    readonly send: (job: OutboundJob, options?: { readonly delaySeconds?: number }) => Promise<void>
   }
   OWNER_ID: string
   OWNER_TIME_ZONE: string

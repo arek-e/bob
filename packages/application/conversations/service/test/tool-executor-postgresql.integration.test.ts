@@ -34,9 +34,11 @@ const protection: DataProtection = {
   contentHash: async (value) => value,
   contentHashBytes: async (value) => String(value.byteLength)
 }
+// SAFETY: Encryption is stubbed in this test, so no CryptoKey operation reads this value.
+const testCryptoKey = {} as CryptoKey
 const ownerDataKeys: OwnerDataKeyStoreAdapter = {
-  load: async () => ({ key: {} as CryptoKey, version: 1 }),
-  ensure: async () => ({ key: {} as CryptoKey, version: 1 })
+  load: async () => ({ key: testCryptoKey, version: 1 }),
+  ensure: async () => ({ key: testCryptoKey, version: 1 })
 }
 
 integration("PostgreSQL durable Tool execution", () => {

@@ -67,6 +67,7 @@ const dependencies: PiAgentDependencies = {
 
 const layer = piAgentLayerWithDependencies({
   catalogue: transitionalDeploymentProfile,
+  // SAFETY: This test credential store implements the only operation used by this test.
   credentials: { read: async () => undefined } as never,
   provider: "openai-codex",
   model: "gpt-test",

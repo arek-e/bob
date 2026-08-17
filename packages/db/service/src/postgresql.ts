@@ -21,7 +21,7 @@ export interface PostgresqlDatabaseOptions {
   readonly migrationsFolder: string
 }
 
-export interface PostgresqlDatabaseShape {
+export interface PostgresqlDatabaseService {
   readonly applicationStorage: CoreDatabase
   readonly authDatabase: NonNullable<BetterAuthOptions["database"]>
   readonly migrate: Effect.Effect<void, unknown>
@@ -30,7 +30,7 @@ export interface PostgresqlDatabaseShape {
 /** Scoped PostgreSQL resources for application storage and Better Auth. */
 export class PostgresqlDatabase extends Context.Service<
   PostgresqlDatabase,
-  PostgresqlDatabaseShape
+  PostgresqlDatabaseService
 >()("@bob/db/PostgresqlDatabase") {}
 
 function acquirePool(url: string, maximumConnections: number) {

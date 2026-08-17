@@ -3,7 +3,7 @@ import type { AlertInput, AlertStoreAdapter } from "@bob/operations-types/alerts
 
 import { operationalAlerts } from "@bob/db-service/schema/alerts"
 import { AlertStore, AlertStoreError } from "@bob/operations-types/alerts"
-import { liftPromiseAdapter } from "@bob/shared-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/shared-types/effect-adapter"
 import { and, desc, eq } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 
@@ -107,11 +107,15 @@ export function makeAlertStore(
 }
 
 export function alertStoreLayer(store: AlertStoreAdapter) {
+  const failure = (operation: keyof AlertStoreAdapter) => (cause: unknown) =>
+    new AlertStoreError({ operation: String(operation), cause })
   return Layer.succeed(
     AlertStore,
-    liftPromiseAdapter(
-      store,
-      (operation, cause) => new AlertStoreError({ operation: String(operation), cause })
-    )
+    AlertStore.of({
+      record: liftPromiseOperation(store.record, failure("record")),
+      list: liftPromiseOperation(store.list, failure("list")),
+      get: liftPromiseOperation(store.get, failure("get")),
+      setState: liftPromiseOperation(store.setState, failure("setState"))
+    })
   )
 }

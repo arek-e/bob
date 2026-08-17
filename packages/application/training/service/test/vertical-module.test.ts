@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 import { legacyTrainingArtifactReader } from "../src/legacy-artifact.ts"
 import { trainingVerticalModule } from "../src/vertical-module.ts"
 
-const context = {
+const contextFixture = {
   bindings: {},
   database: {},
   protection: {},
@@ -15,7 +15,9 @@ const context = {
   settings: {},
   ownerId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
   ownerTimeZone: "Europe/Stockholm"
-} as unknown as DeploymentProfileContext
+}
+// SAFETY: This focused test does not execute the infrastructure Adapters.
+const context = contextFixture as DeploymentProfileContext
 
 describe("Training Vertical Module", () => {
   it("prepares all Training runtime contributions", () => {

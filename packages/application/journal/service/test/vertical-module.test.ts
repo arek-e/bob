@@ -4,8 +4,15 @@ import { describe, expect, it } from "vitest"
 
 import { journalVerticalModule } from "../src/vertical-module.ts"
 
-const context = (bindings: unknown) =>
-  ({ bindings, database: {} }) as unknown as DeploymentProfileContext
+interface JournalBindings {
+  readonly UI_BASE_URL?: string
+}
+
+function context(bindings: JournalBindings): DeploymentProfileContext {
+  const fixture = { bindings, database: {} }
+  // SAFETY: This focused test does not execute the database Adapter.
+  return fixture as DeploymentProfileContext
+}
 
 describe("Journal Vertical Module", () => {
   it("prepares its complete privacy and runtime contribution set from owned configuration", () => {

@@ -22,7 +22,7 @@ import {
 } from "@bob/policy-service/effect-outcome"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { retrievalProjection } from "@bob/retrieval-service/projection"
-import { liftPromiseAdapter } from "@bob/shared-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/shared-types/effect-adapter"
 import { and, desc, eq, sql } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
 
@@ -832,11 +832,16 @@ export function makeMemoryStore(
 }
 
 export function memoryStoreLayer(store: MemoryStoreAdapter) {
+  const failure = (operation: keyof MemoryStoreAdapter) => (cause: unknown) =>
+    new MemoryStoreError({ operation: String(operation), cause })
   return Layer.succeed(
     MemoryStore,
-    liftPromiseAdapter(
-      store,
-      (operation, cause) => new MemoryStoreError({ operation: String(operation), cause })
-    )
+    MemoryStore.of({
+      propose: liftPromiseOperation(store.propose, failure("propose")),
+      confirm: liftPromiseOperation(store.confirm, failure("confirm")),
+      correct: liftPromiseOperation(store.correct, failure("correct")),
+      reject: liftPromiseOperation(store.reject, failure("reject")),
+      listCandidates: liftPromiseOperation(store.listCandidates, failure("listCandidates"))
+    })
   )
 }

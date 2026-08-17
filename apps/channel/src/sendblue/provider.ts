@@ -269,7 +269,7 @@ function providerLayer(options: SendblueProviderOptions) {
           ? Effect.succeed(response)
           : Effect.fail(new SendblueHttpError({ operation, status: response.status }))
 
-      const sendInteraction = (path: string, body: unknown) =>
+      const sendInteraction = (path: string, body: typeof Schema.Json.Type) =>
         execute(
           "interaction",
           HttpClientRequest.post(path).pipe(
@@ -297,13 +297,16 @@ function providerLayer(options: SendblueProviderOptions) {
         const messageBody = {
           number: claim.number,
           from_number: claim.fromNumber,
-          content: claim.smsSafeText,
-          ...(claim.replyToMessageHandle === undefined
-            ? {}
-            : { reply_to: { message_handle: claim.replyToMessageHandle } }),
-          ...(statusCallback === undefined ? {} : { status_callback: statusCallback })
+          content: claim.smsSafeText
         }
-        const send = (body: unknown) =>
+        if (claim.replyToMessageHandle !== undefined) {
+          Object.assign(messageBody, {
+            reply_to: { message_handle: claim.replyToMessageHandle }
+          })
+        }
+        if (statusCallback !== undefined)
+          Object.assign(messageBody, { status_callback: statusCallback })
+        const send = (body: typeof Schema.Json.Type) =>
           execute(
             "send_message",
             HttpClientRequest.post("/api/send-message").pipe(
@@ -323,12 +326,15 @@ function providerLayer(options: SendblueProviderOptions) {
           claim.replyToMessageHandle !== undefined &&
           isSafeInlineReplyRejection(response.status)
         ) {
-          const fallback = yield* send({
+          const fallbackBody = {
             number: claim.number,
             from_number: claim.fromNumber,
-            content: claim.smsSafeText,
-            ...(statusCallback === undefined ? {} : { status_callback: statusCallback })
-          }).pipe(Effect.result)
+            content: claim.smsSafeText
+          }
+          if (statusCallback !== undefined) {
+            Object.assign(fallbackBody, { status_callback: statusCallback })
+          }
+          const fallback = yield* send(fallbackBody).pipe(Effect.result)
           if (fallback._tag === "Failure") {
             return {
               state: "uncertain",
@@ -380,13 +386,17 @@ function providerLayer(options: SendblueProviderOptions) {
             message_handle: input.messageHandle,
             reaction: input.reaction
           }),
-        sendTypingIndicator: (input) =>
-          sendInteraction("/api/send-typing-indicator", {
+        sendTypingIndicator: (input) => {
+          const body = {
             number: input.number,
             from_number: input.fromNumber,
-            state: input.state,
-            ...(input.maxDurationMs === undefined ? {} : { max_duration_ms: input.maxDurationMs })
-          }),
+            state: input.state
+          }
+          if (input.maxDurationMs !== undefined) {
+            Object.assign(body, { max_duration_ms: input.maxDurationMs })
+          }
+          return sendInteraction("/api/send-typing-indicator", body)
+        },
         getStatus: (handle) =>
           execute(
             "get_status",

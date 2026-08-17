@@ -2,7 +2,7 @@ import type { PreparedVerticalModule, VerticalModule } from "@bob/deployment-pro
 
 import { makeRuntimeModules } from "@bob/core-types/runtime-module"
 import { reminderCapability } from "@bob/reminders-types/capability"
-import { Schema } from "effect"
+import { Predicate, Schema } from "effect"
 
 import { makeReminderConversationWorkflow } from "./conversation-workflow.ts"
 import { makeReminderDeliveryTarget } from "./delivery-target.ts"
@@ -13,7 +13,7 @@ import { makeReminderStore } from "./store.ts"
 import { makeReminderToolAdapter } from "./tool-adapter.ts"
 
 const Configuration = Schema.Struct({
-  REMINDER_CLOCK: Schema.Unknown,
+  REMINDER_CLOCK: Schema.Struct({ fetch: Schema.optionalKey(Schema.Any) }),
   REMINDER_QUIET_HOURS_START: Schema.String.check(Schema.isPattern(/^(?:[01]\d|2[0-3]):[0-5]\d$/)),
   REMINDER_QUIET_HOURS_END: Schema.String.check(Schema.isPattern(/^(?:[01]\d|2[0-3]):[0-5]\d$/)),
   REMINDER_DAILY_LIMIT: Schema.Number.check(
@@ -26,28 +26,16 @@ interface ReminderClock {
   readonly fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 }
 
-function reminderConfiguration(bindings: unknown): Omit<
-  typeof Configuration.Type,
-  "REMINDER_CLOCK"
-> & {
-  readonly REMINDER_CLOCK: ReminderClock
-} {
-  const config = Schema.decodeUnknownSync(Configuration)(bindings)
-  if (
-    config.REMINDER_CLOCK === null ||
-    typeof config.REMINDER_CLOCK !== "object" ||
-    typeof Reflect.get(config.REMINDER_CLOCK, "fetch") !== "function"
-  ) {
-    throw new TypeError("REMINDER_CLOCK.fetch is required")
-  }
-  return { ...config, REMINDER_CLOCK: config.REMINDER_CLOCK as ReminderClock }
-}
-
 export const reminderVerticalModule: VerticalModule = {
   id: reminderCapability.id,
   capability: reminderCapability,
   prepare(context): PreparedVerticalModule {
-    const config = reminderConfiguration(context.bindings)
+    const parsed = Schema.decodeUnknownSync(Configuration)(context.bindings)
+    if (!Predicate.isFunction(parsed.REMINDER_CLOCK.fetch)) {
+      throw new TypeError("REMINDER_CLOCK.fetch is required")
+    }
+    // SAFETY: The configuration schema checks the clock object, and Predicate checks its fetch member.
+    const config = { ...parsed, REMINDER_CLOCK: parsed.REMINDER_CLOCK as ReminderClock }
     const reminders = makeReminderStore(context.database, context.protection, {
       quietHours: {
         start: config.REMINDER_QUIET_HOURS_START,

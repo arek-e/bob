@@ -9,7 +9,7 @@ import {
   type OwnerDataKey,
   type OwnerDataKeyStoreOptions
 } from "@bob/policy-types/owner-data-key"
-import { liftPromiseAdapter } from "@bob/shared-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/shared-types/effect-adapter"
 import { and, eq, isNull } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 
@@ -137,11 +137,13 @@ export function makeOwnerDataKeyStore(
 }
 
 export function ownerDataKeyStoreLayer(store: OwnerDataKeyStoreAdapter) {
+  const failure = (operation: keyof OwnerDataKeyStoreAdapter) => (cause: unknown) =>
+    new OwnerDataKeyStoreError({ operation: String(operation), cause })
   return Layer.succeed(
     OwnerDataKeyStore,
-    liftPromiseAdapter(
-      store,
-      (operation, cause) => new OwnerDataKeyStoreError({ operation: String(operation), cause })
-    )
+    OwnerDataKeyStore.of({
+      load: liftPromiseOperation(store.load, failure("load")),
+      ensure: liftPromiseOperation(store.ensure, failure("ensure"))
+    })
   )
 }

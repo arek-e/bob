@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest"
-import { Effect, Redacted } from "effect"
+import { Effect, Redacted, Schema } from "effect"
 import { expect, vi } from "vitest"
 
 import {
@@ -24,9 +24,13 @@ const options = (overrides: Partial<SendblueProviderOptions> = {}): SendblueProv
   ...overrides
 })
 
-function decodeRequestBody(body: BodyInit | null | undefined): unknown {
-  if (typeof body === "string") return JSON.parse(body)
-  if (body instanceof Uint8Array) return JSON.parse(new TextDecoder().decode(body))
+function decodeRequestBody(body: BodyInit | null | undefined): typeof Schema.Json.Type {
+  if (Schema.is(Schema.String)(body)) {
+    return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(body))
+  }
+  if (body instanceof Uint8Array) {
+    return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(new TextDecoder().decode(body)))
+  }
   throw new TypeError("Expected a text request body")
 }
 
