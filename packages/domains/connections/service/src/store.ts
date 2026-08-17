@@ -3,11 +3,11 @@ import type {
   ConnectionSession,
   ConnectionView
 } from "@bob/connections-types/capability"
-import type { CoreDatabase } from "@bob/core-types/database"
+import type { CoreDatabase } from "@bob/db-types"
 
 import { externalConnections } from "@bob/db-service/schema/connections"
 import { and, eq } from "drizzle-orm"
-import { Context, Layer } from "effect"
+import { Effect, Context, Layer } from "effect"
 
 import type { ConnectionsGatewayClient, ProviderConnection } from "./gateway.ts"
 
@@ -42,10 +42,9 @@ export function makeConnectionStore(
   const providers: ReadonlyArray<ConnectionProvider> = ["google_calendar", "microsoft_calendar"]
 
   async function saved(ownerId: string) {
-    return database
-      .select()
-      .from(externalConnections)
-      .where(eq(externalConnections.ownerId, ownerId))
+    return Effect.runPromise(
+      database.select().from(externalConnections).where(eq(externalConnections.ownerId, ownerId))
+    )
   }
 
   return {
@@ -64,38 +63,42 @@ export function makeConnectionStore(
       for (const provider of providers) {
         const connection = newestConnection(live, provider)
         if (connection === undefined) {
-          await database
-            .delete(externalConnections)
-            .where(
-              and(
-                eq(externalConnections.ownerId, ownerId),
-                eq(externalConnections.provider, provider)
+          await Effect.runPromise(
+            database
+              .delete(externalConnections)
+              .where(
+                and(
+                  eq(externalConnections.ownerId, ownerId),
+                  eq(externalConnections.provider, provider)
+                )
               )
-            )
+          )
           continue
         }
-        await database
-          .insert(externalConnections)
-          .values({
-            id: randomUuid(),
-            ownerId,
-            provider,
-            integrationId: connection.provider,
-            connectionId: connection.connectionId,
-            status: connection.healthy ? "connected" : "unavailable",
-            connectedAt: connection.createdAt,
-            updatedAt: at
-          })
-          .onConflictDoUpdate({
-            target: [externalConnections.ownerId, externalConnections.provider],
-            set: {
+        await Effect.runPromise(
+          database
+            .insert(externalConnections)
+            .values({
+              id: randomUuid(),
+              ownerId,
+              provider,
               integrationId: connection.provider,
               connectionId: connection.connectionId,
               status: connection.healthy ? "connected" : "unavailable",
               connectedAt: connection.createdAt,
               updatedAt: at
-            }
-          })
+            })
+            .onConflictDoUpdate({
+              target: [externalConnections.ownerId, externalConnections.provider],
+              set: {
+                integrationId: connection.provider,
+                connectionId: connection.connectionId,
+                status: connection.healthy ? "connected" : "unavailable",
+                connectedAt: connection.createdAt,
+                updatedAt: at
+              }
+            })
+        )
       }
       const rows = await saved(ownerId)
       return providers.map((provider) => ({

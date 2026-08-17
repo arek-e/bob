@@ -1,14 +1,15 @@
 import type { SendOutcome } from "@bob/sendblue-runtime/client"
 
-import { OutboxClaim, type DeliveryResult } from "@bob/core-types/delivery"
 import { OutboundJob, type OutboundJob as OutboundJobValue } from "@bob/core-types/jobs"
-import { recordDecision, withBobSpan } from "@bob/observability/effect"
-import { observeHealth } from "@bob/observability/events"
-import { flushInvocationTelemetry } from "@bob/observability/invocation"
+import { OutboxClaim, type DeliveryResult } from "@bob/delivery-types/delivery"
 import {
+  recordDecision,
+  withBobSpan,
+  emitHealth,
+  flushInvocationTelemetry,
   externalParentFromTraceparent,
   injectCurrentTraceparent
-} from "@bob/observability/propagation"
+} from "@bob/observability"
 import { buildSendblueStatusCallback } from "@bob/sendblue-types/status-callback"
 import { Effect, Schema } from "effect"
 
@@ -117,17 +118,15 @@ function processOutboundJobEffect(job: OutboundJobValue, composition: EgressComp
       ).pipe(
         Effect.catchTag("ProviderOutcomeFailure", (failure) => Effect.succeed(failure.outcome))
       )
-      yield* Effect.promise(() =>
-        observeHealth(composition.events, {
-          type: "delivery",
-          correlationId: claim.correlationId,
-          outboxId: claim.outboxId,
-          attemptId: claim.attemptId,
-          status: outcome.state,
-          code: outcome.state === "accepted" ? "accepted" : outcome.code,
-          durationMs: Math.max(0, Date.now() - startedAt)
-        })
-      )
+      yield* emitHealth({
+        type: "delivery",
+        correlationId: claim.correlationId,
+        outboxId: claim.outboxId,
+        attemptId: claim.attemptId,
+        status: outcome.state,
+        code: outcome.state === "accepted" ? "accepted" : outcome.code,
+        durationMs: Math.max(0, Date.now() - startedAt)
+      })
 
       const occurredAt = new Date().toISOString()
       let result: DeliveryResult =

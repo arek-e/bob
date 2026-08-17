@@ -38,6 +38,14 @@ export function externalParentFromTraceparent(
   return context === undefined ? undefined : Tracer.externalSpan(context)
 }
 
+export function withTraceparent<A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  value: string | null | undefined
+): Effect.Effect<A, E, R> {
+  const parent = externalParentFromTraceparent(value)
+  return parent === undefined ? effect : Effect.withParentSpan(effect, parent)
+}
+
 export function injectTraceparent(
   headers: HeadersInit | undefined,
   context: Pick<Tracer.AnySpan, "traceId" | "spanId" | "sampled">

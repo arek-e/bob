@@ -1,10 +1,9 @@
-import type { ToolCommand, ToolResult } from "@bob/core-capabilities-types/tools"
-import type { AgentRunOperation, AgentRunRequest, AgentRunResult } from "@bob/core-types/agent"
+import type { AgentRunOperation, AgentRunRequest, AgentRunResult } from "@bob/agent-types/run"
+import type { ToolCommand, ToolResult } from "@bob/capabilities-types/tools"
 
 import { AgentCheckpointError, AgentToolError } from "@bob/agent-types"
 import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
-import { withBobSpan } from "@bob/observability/effect"
-import { makeCaptureTelemetry } from "@bob/observability/testing"
+import { withBobSpan, makeCaptureTelemetry } from "@bob/observability"
 import {
   fauxAssistantMessage,
   fauxToolCall,

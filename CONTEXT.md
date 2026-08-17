@@ -81,17 +81,31 @@ Package projects follow the system map:
 
 - `packages/domains/<domain>/types` owns one domain Module's public Interface and validation schemas.
 - `packages/domains/<domain>/service` owns that domain Module's rules, queries, workflows, and Adapters.
-- `packages/core/<module>/types` owns one General Agent Core Module's public Interface.
-- `packages/core/<module>/service` owns that General Agent Core Module's Implementation.
+- `packages/features/<feature>/types` owns one General Agent Core feature's public Interface and
+  validation schemas.
+- `packages/features/<feature>/service` owns that feature's rules, workflows, and Adapters.
+- General Agent Core features are conversations, context, memory, retrieval, delivery, artifacts,
+  settings, policy, skills, and operations.
+- `packages/features/capabilities/types` owns the shared Capability Module contracts and schemas.
+- `packages/core/types` owns the provider-neutral Core Module Interface.
+- `packages/core/service` owns reusable Core workflows and the provider-neutral Core Layer builder.
+- `apps/core` selects one Deployment Profile and Adapter set. It owns the Managed Runtime, hosting
+  entrypoints, and process lifecycle.
 - `packages/<runtime-system>/types` owns one provider-neutral Runtime Interface.
 - `packages/<runtime-system>/runtime` owns the reviewed Runtime Adapters for that Interface.
-- `packages/db/types` owns the Database Interface.
-- `packages/db/service` owns Drizzle schemas, migrations, and the PostgreSQL Adapter.
+- `packages/db/types` owns the Effect Drizzle Database Interface.
+- `packages/db/service` owns Drizzle schemas, Effect migrations, and the PostgreSQL Layer.
+- `packages/observability` owns telemetry Interfaces, safe span rules, propagation, and runtime Layers.
+- Runnable apps select one telemetry Adapter and merge its Layer into their Managed Runtime.
 - `packages/agent/types` owns the provider-neutral Agent Interface and credential schemas.
 - `packages/agent/service` owns the model loop and reviewed Model SDK Adapters.
 - `apps/agent-worker` composes the Agent Module with one model SDK and credential Adapter.
 - A `runtime` project can depend on its matching `types` project. A `types` project never depends on
   its matching `runtime` project.
+- A feature `service` project can depend on its matching `types` project. A feature `types` project
+  never depends on its matching `service` project.
+- A Deployment Profile owns its Capability catalogue, selected feature Adapters, and configuration
+  in one Core Runtime Module.
 - The Database `service` project can depend on `db/types`. The Database Interface never depends on
   `db/service`.
 - Model SDK types stay inside `packages/agent/service` and `apps/agent-worker`.
@@ -177,8 +191,11 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 ## System invariants
 
 - Database is authoritative for application records. The primary Runtime uses PostgreSQL.
-- The Database `service` project owns all Drizzle schemas, the PostgreSQL connection,
-  the migration registry, and Better Auth storage.
+- The Database `service` project owns all Drizzle schemas, migration files, the scoped PostgreSQL
+  pool, and Better Auth storage.
+- Drizzle owns the migration registry and applies each migration through its native Effect migrator.
+- The Core app packages the migration files and supplies their runtime path to the Database Layer.
+- The Effect Drizzle Adapter and Better Auth Adapter share one app-owned PostgreSQL pool.
 - Each owning domain or General Agent Core Module owns its Drizzle queries.
 - Better Auth owns the `auth_user`, `auth_session`, `auth_account`, `auth_verification`, and `auth_rate_limit` tables.
 - A one-time setup token protects owner setup in the primary Runtime.
@@ -231,7 +248,18 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - No runtime resource has two infrastructure owners.
 - Health observation is read-only, content-free, validated, and fail-open.
 - Effect composes I/O. Pure domain rules stay as normal TypeScript.
+- Each I/O feature defines its Effect service tag in its `types` project.
+- Each I/O feature provides its live Adapter through an Effect `Layer` in its `service` project.
+- Each I/O feature exposes one Effect service object for its public effectful operations.
+- Public service operations define coarse spans. Database helpers do not create spans.
+- Business Modules use the central telemetry Interface and Effect span functions. They do not own telemetry helpers.
+- The Core Layer builder composes feature Layers from the app's static Deployment Profile.
+- Core hosting entrypoints run Effects through one app-owned Managed Runtime.
+- A Layer can provide a hosting-owned Adapter when the hosting boundary must also use that Adapter.
+- The Core app owns the scoped PostgreSQL Layer and closes its pool during app shutdown.
 - Drizzle owns application schemas and queries. Better Auth uses the selected Database Adapter for auth tables.
+- Application Drizzle queries use the native Effect PostgreSQL driver.
+- Atomic query groups use the Effect SQL transaction context.
 - Drizzle schemas stay in the Database `service` project.
 - Drizzle queries stay with their owning domain or General Agent Core Modules.
 - Each Database Adapter preserves the reviewed atomic-write behavior.

@@ -1,7 +1,7 @@
-import type { ConversationStore } from "@bob/core-service/conversations/store"
+import type { ConversationStoreAdapter } from "@bob/conversations-types/store"
 import type { ConversationWorkflowModule } from "@bob/core-types/runtime-module"
 
-import { resolveShortReply } from "@bob/core-service/policy/rules"
+import { resolveShortReply } from "@bob/policy-service/rules"
 
 import type { ReminderStore } from "./store.ts"
 
@@ -19,7 +19,7 @@ const commandAliases = new Map<string, "done" | "seen">([
 ])
 
 export function makeReminderConversationWorkflow(
-  conversations: ConversationStore,
+  conversations: ConversationStoreAdapter,
   reminders: ReminderStore
 ): ConversationWorkflowModule {
   return {

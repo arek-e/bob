@@ -9,13 +9,6 @@ import {
   type CredentialStore
 } from "@bob/agent-types"
 import {
-  ToolResult as ToolResultSchema,
-  type CapabilityCatalogue,
-  type ToolCommand,
-  type ToolName,
-  type ToolResult
-} from "@bob/core-capabilities-types/tools"
-import {
   AgentRunOperation as AgentRunOperationSchema,
   AgentRunResult as AgentRunResultSchema,
   type AgentRunOperation,
@@ -24,15 +17,23 @@ import {
   type AgentSmokeResult,
   type AgentSteerResult,
   type DeviceLoginEvent
-} from "@bob/core-types/agent"
-import { featureForToolName, featureForTools } from "@bob/observability/attribution"
+} from "@bob/agent-types/run"
 import {
+  ToolResult as ToolResultSchema,
+  type CapabilityCatalogue,
+  type ToolCommand,
+  type ToolName,
+  type ToolResult
+} from "@bob/capabilities-types/tools"
+import {
+  featureForToolName,
+  featureForTools,
   annotateModelUsage,
   recordDecision,
   withBobSpan,
   type BobDecision,
   type BobTurnPhase
-} from "@bob/observability/effect"
+} from "@bob/observability"
 import {
   contentText,
   createModels,

@@ -1,10 +1,9 @@
 import type { ReminderBindings } from "@bob/core-types/bindings"
-import type { CoreDatabase } from "@bob/core-types/database"
 import type { ScheduledTaskModule } from "@bob/core-types/runtime-module"
+import type { CoreDatabase } from "@bob/db-types"
 
 import { schedulerOutbox } from "@bob/db-service/schema/reminders"
-import { withBobSpan } from "@bob/observability/effect"
-import { injectCurrentTraceparent } from "@bob/observability/propagation"
+import { withBobSpan, injectCurrentTraceparent } from "@bob/observability"
 import { and, eq, isNull } from "drizzle-orm"
 import { Effect } from "effect"
 
@@ -37,12 +36,14 @@ export function makeReminderScheduledWorkflow(input: {
 
       const clock = input.bindings.REMINDER_CLOCK
       const clockBaseUrl = `https://reminder-clock.internal/owners/${encodeURIComponent(input.ownerId)}`
-      const pending = await input.database
-        .select()
-        .from(schedulerOutbox)
-        .where(isNull(schedulerOutbox.processedAt))
-        .orderBy(schedulerOutbox.createdAt)
-        .limit(100)
+      const pending = await Effect.runPromise(
+        input.database
+          .select()
+          .from(schedulerOutbox)
+          .where(isNull(schedulerOutbox.processedAt))
+          .orderBy(schedulerOutbox.createdAt)
+          .limit(100)
+      )
       for (const item of pending) {
         await recover(async () => {
           const response = await context.runPromise(
@@ -73,10 +74,12 @@ export function makeReminderScheduledWorkflow(input: {
             )
           )
           if (!response.ok) throw new Error("reminder_clock_command_failed")
-          await input.database
-            .update(schedulerOutbox)
-            .set({ processedAt: new Date().toISOString() })
-            .where(and(eq(schedulerOutbox.id, item.id), isNull(schedulerOutbox.processedAt)))
+          await Effect.runPromise(
+            input.database
+              .update(schedulerOutbox)
+              .set({ processedAt: new Date().toISOString() })
+              .where(and(eq(schedulerOutbox.id, item.id), isNull(schedulerOutbox.processedAt)))
+          )
         })
       }
 

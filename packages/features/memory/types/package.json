@@ -1,0 +1,19 @@
+{
+  "name": "@bob/memory-types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./capability": "./src/capability.ts",
+    "./evidence": "./src/evidence.ts",
+    "./store": "./src/store.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/capabilities-types": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  }
+}

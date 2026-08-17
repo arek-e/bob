@@ -1,4 +1,4 @@
-import { AgentRunRequest } from "@bob/core-types/agent"
+import { AgentRunRequest } from "@bob/agent-types/run"
 import { coreDeploymentProfile, transitionalDeploymentProfile } from "@bob/core-types/profiles"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"

@@ -1,4 +1,7 @@
-import type { NormalizedInboundEvent, NormalizedStatusEvent } from "@bob/core-types/channel"
+import type {
+  NormalizedInboundEvent,
+  NormalizedStatusEvent
+} from "@bob/conversations-types/channel"
 
 import { Schema } from "effect"
 

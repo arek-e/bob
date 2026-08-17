@@ -1,20 +1,12 @@
 import { Effect, Layer, Tracer } from "effect"
 
 import type { SafeSpanProcessor } from "./effect.ts"
-import type { EventSink, HealthEvent } from "./events.ts"
+import type { HealthEvent } from "./events.ts"
 import type { OtlpHttpSpanProcessorOptions } from "./otlp.ts"
 
 import { makeSafeTracer, Telemetry } from "./effect.ts"
 import { parseHealthEvent } from "./events.ts"
 import { makeOtlpHttpSpanProcessor } from "./otlp.ts"
-
-export function invocationEventSink(write: (line: string) => void = console.log): EventSink {
-  return {
-    emit(event: HealthEvent): void {
-      write(JSON.stringify(parseHealthEvent(event)))
-    }
-  }
-}
 
 export type InvocationSpanProcessorOptions = Omit<
   OtlpHttpSpanProcessorOptions,

@@ -1,6 +1,6 @@
-import type { CapabilityModule, ToolInputSchema } from "@bob/core-capabilities-types/definitions"
+import type { CapabilityModule, ToolInputSchema } from "@bob/capabilities-types/definitions"
 
-import { idInputSchema } from "@bob/core-capabilities-types/definitions"
+import { idInputSchema } from "@bob/capabilities-types/definitions"
 import { Schema } from "effect"
 
 export const TrainingLookupArguments = Schema.Struct({

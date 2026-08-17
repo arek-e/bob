@@ -15,7 +15,8 @@
   "dependencies": {
     "@bob/agent-service": "workspace:*",
     "@bob/agent-types": "workspace:*",
-    "@bob/core-capabilities-types": "workspace:*",
+    "@bob/capabilities-types": "workspace:*",
+    "@bob/core-service": "workspace:*",
     "@bob/core-types": "workspace:*",
     "@bob/observability": "workspace:*",
     "@effect/platform-node": "4.0.0-beta.107",

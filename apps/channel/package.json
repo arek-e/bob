@@ -8,8 +8,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@bob/core-capabilities-types": "workspace:*",
     "@bob/core-types": "workspace:*",
+    "@bob/delivery-types": "workspace:*",
     "@bob/job-queue-runtime": "workspace:*",
     "@bob/job-queue-types": "workspace:*",
     "@bob/sendblue-channel-runtime": "workspace:*",

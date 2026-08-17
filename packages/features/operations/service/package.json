@@ -1,0 +1,26 @@
+{
+  "name": "@bob/operations-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./alerts/store": "./src/alerts/store.ts",
+    "./usage/reporting": "./src/usage/reporting.ts",
+    "./usage/store": "./src/usage/store.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/agent-types": "workspace:*",
+    "@bob/capabilities-types": "workspace:*",
+    "@bob/db-service": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/observability": "workspace:*",
+    "@bob/operations-types": "workspace:*",
+    "@effect/sql-pg": "4.0.0-beta.107",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "4.0.0-beta.107"
+  }
+}

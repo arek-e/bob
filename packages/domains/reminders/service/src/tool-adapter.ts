@@ -1,14 +1,10 @@
 import type {
   ToolCommandAdapter,
   ToolCommandAdapterContext
-} from "@bob/core-service/conversations/tool-adapter"
+} from "@bob/conversations-types/tool-adapter"
 
-import {
-  capabilityToolNames,
-  type ToolName,
-  type ToolResult
-} from "@bob/core-capabilities-types/tools"
-import { jsonObject } from "@bob/core-types/json"
+import { jsonObject } from "@bob/capabilities-types/json"
+import { capabilityToolNames, type ToolName, type ToolResult } from "@bob/capabilities-types/tools"
 import {
   reminderCapability,
   ReminderCancelArguments,

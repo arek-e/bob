@@ -1,0 +1,55 @@
+{
+  "name": "@bob/core-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./composition": "./src/core-composition.ts",
+    "./deployment-profile": "./src/deployment-profile.ts",
+    "./process-inbound": "./src/process-inbound.ts"
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2023 --outfile=dist/index.js",
+    "env:check": "varlock load --agent --path . --skip-cache",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/agent-types": "workspace:*",
+    "@bob/artifacts-service": "workspace:*",
+    "@bob/artifacts-types": "workspace:*",
+    "@bob/capabilities-types": "workspace:*",
+    "@bob/connections-service": "workspace:*",
+    "@bob/context-service": "workspace:*",
+    "@bob/context-types": "workspace:*",
+    "@bob/conversations-service": "workspace:*",
+    "@bob/conversations-types": "workspace:*",
+    "@bob/core-types": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/delivery-service": "workspace:*",
+    "@bob/delivery-types": "workspace:*",
+    "@bob/job-queue-runtime": "workspace:*",
+    "@bob/job-queue-types": "workspace:*",
+    "@bob/journal-service": "workspace:*",
+    "@bob/journal-types": "workspace:*",
+    "@bob/memory-service": "workspace:*",
+    "@bob/memory-types": "workspace:*",
+    "@bob/observability": "workspace:*",
+    "@bob/operations-service": "workspace:*",
+    "@bob/operations-types": "workspace:*",
+    "@bob/policy-service": "workspace:*",
+    "@bob/policy-types": "workspace:*",
+    "@bob/reminders-service": "workspace:*",
+    "@bob/retrieval-service": "workspace:*",
+    "@bob/retrieval-types": "workspace:*",
+    "@bob/settings-service": "workspace:*",
+    "@bob/settings-types": "workspace:*",
+    "@bob/skills-service": "workspace:*",
+    "@bob/training-service": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9",
+    "vitest": "4.1.9"
+  }
+}

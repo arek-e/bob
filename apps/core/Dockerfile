@@ -11,8 +11,8 @@ RUN --mount=type=cache,id=bob-pnpm-store,target=/pnpm/store,sharing=locked \
 
 FROM ${NODE_IMAGE}
 WORKDIR /app
-COPY --from=build --chown=node:node /app/apps/core/dist/index.cjs /app/index.cjs
+COPY --from=build --chown=node:node /app/apps/core/dist /app/dist
 COPY --from=build --chown=node:node /app/apps/ui/dist /app/ui
 USER node
 EXPOSE 8788
-CMD ["node", "index.cjs"]
+CMD ["node", "dist/index.cjs"]

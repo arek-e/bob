@@ -1,4 +1,4 @@
-import type { AgentRunRequest } from "@bob/core-types/agent"
+import type { AgentRunRequest } from "@bob/agent-types/run"
 
 import { AgentToolError, BobAgent } from "@bob/agent-types"
 import { transitionalDeploymentProfile } from "@bob/core-types/profiles"

@@ -1,11 +1,12 @@
-import { InboundAcceptance, type NormalizedInboundEvent } from "@bob/core-types/channel"
-import { recordDecision, withBobSpan } from "@bob/observability/effect"
-import { observeHealth } from "@bob/observability/events"
-import { flushInvocationTelemetry } from "@bob/observability/invocation"
+import { InboundAcceptance, type NormalizedInboundEvent } from "@bob/conversations-types/channel"
 import {
+  recordDecision,
+  withBobSpan,
+  emitHealth,
+  flushInvocationTelemetry,
   externalParentFromTraceparent,
   injectCurrentTraceparent
-} from "@bob/observability/propagation"
+} from "@bob/observability"
 import { readSendblueStatusCallback } from "@bob/sendblue-types/status-callback"
 import {
   decodeWebhookPayload,
@@ -219,18 +220,20 @@ export async function handleIngressHttp(
         resultBody.code === "enqueue_record_failed"
           ? resultBody.code
           : "unknown"
-      await observeHealth(composition.events, {
-        type: "webhook",
-        correlationId: event.correlationId,
-        status:
-          resultBody.code === "accepted"
-            ? "accepted"
-            : resultBody.code === "duplicate"
-              ? "duplicate"
-              : "failed",
-        code: healthCode,
-        durationMs: Math.max(0, Date.now() - startedAt)
-      })
+      await Effect.runPromise(
+        emitHealth({
+          type: "webhook",
+          correlationId: event.correlationId,
+          status:
+            resultBody.code === "accepted"
+              ? "accepted"
+              : resultBody.code === "duplicate"
+                ? "duplicate"
+                : "failed",
+          code: healthCode,
+          durationMs: Math.max(0, Date.now() - startedAt)
+        }).pipe(Effect.provide(composition.layer))
+      )
       return result
     }
     if (url.pathname === "/webhooks/outbound") {

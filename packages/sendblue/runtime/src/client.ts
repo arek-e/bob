@@ -1,4 +1,4 @@
-import type { OutboxClaim } from "@bob/core-types/delivery"
+import type { OutboxClaim } from "@bob/delivery-types/delivery"
 
 import { Schema } from "effect"
 

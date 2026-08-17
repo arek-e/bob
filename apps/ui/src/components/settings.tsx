@@ -1,15 +1,15 @@
 import {
   DeviceLoginEvent,
   type DeviceLoginEvent as DeviceLoginEventType
-} from "@bob/core-types/agent"
+} from "@bob/agent-types/run"
+import { AdminStatus } from "@bob/operations-types/ui"
 import {
   HourCycle,
   OwnerSettingsUpdate,
   OwnerSettingsView,
   type HourCycle as HourCycleValue,
   type SettingsConnection
-} from "@bob/core-types/settings"
-import { AdminStatus } from "@bob/core-types/ui/core"
+} from "@bob/settings-types/settings"
 import { Schema } from "effect"
 import {
   createEffect,

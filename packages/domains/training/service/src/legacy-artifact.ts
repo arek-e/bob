@@ -1,6 +1,6 @@
-import type { LegacyArtifactReader } from "@bob/core-service/artifacts/store"
+import type { LegacyArtifactReader } from "@bob/artifacts-service/store"
 
-import { PlanArtifact, type AgentArtifact } from "@bob/core-types/agent"
+import { PlanArtifact, type AgentArtifact } from "@bob/artifacts-types/artifact"
 import { Option, Schema } from "effect"
 
 const JsonRecord = Schema.Record(Schema.String, Schema.Json)

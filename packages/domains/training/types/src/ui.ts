@@ -1,4 +1,4 @@
-import { IsoDateTime, JsonObject, NonEmptyText, Uuid } from "@bob/core-capabilities-types/shared"
+import { IsoDateTime, JsonObject, NonEmptyText, Uuid } from "@bob/capabilities-types/shared"
 import { Schema } from "effect"
 
 export const TrainingProposalReview = Schema.Struct({

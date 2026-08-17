@@ -1,4 +1,4 @@
-import type { AgentRunRequest } from "@bob/core-types/agent"
+import type { AgentRunRequest } from "@bob/agent-types/run"
 
 import {
   conversationMutationIdempotencyKey,
@@ -6,7 +6,7 @@ import {
   type ToolCommand,
   type ToolInputSchema,
   type ToolName
-} from "@bob/core-capabilities-types/tools"
+} from "@bob/capabilities-types/tools"
 import { Type, type TSchema, type Tool } from "@earendil-works/pi-ai"
 import { Schema } from "effect"
 

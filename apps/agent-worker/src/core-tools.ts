@@ -1,15 +1,14 @@
 import {
-  ToolResult,
-  type CapabilityCatalogue,
-  type ToolCommand
-} from "@bob/core-capabilities-types/tools"
-import {
   AgentRunOperationAppendResult,
   AgentRunOperationsLoadResult,
   type AgentRunOperation
-} from "@bob/core-types/agent"
-import { currentBobCorrelationId, Telemetry } from "@bob/observability/effect"
-import { injectCurrentTraceparent } from "@bob/observability/propagation"
+} from "@bob/agent-types/run"
+import {
+  ToolResult,
+  type CapabilityCatalogue,
+  type ToolCommand
+} from "@bob/capabilities-types/tools"
+import { currentBobCorrelationId, Telemetry, injectCurrentTraceparent } from "@bob/observability"
 import { Context, Effect, Exit, Layer, Option, Schema } from "effect"
 
 export class CoreToolClientError extends Schema.TaggedError<CoreToolClientError>()(
@@ -132,7 +131,7 @@ export function createCoreToolClient(options: {
 
   return {
     execute,
-    loadRunOperations: Effect.fn("CoreToolClient.loadRunOperations")(function* (runId, attemptId) {
+    loadRunOperations: Effect.fnUntraced(function* (runId, attemptId) {
       const response = yield* requestResponse(
         "load_operations",
         "/internal/agent/operations/load",
@@ -153,24 +152,22 @@ export function createCoreToolClient(options: {
       )
       return result.operations
     }),
-    appendRunOperation: Effect.fn("CoreToolClient.appendRunOperation")(
-      function* (operation, attemptId) {
-        const response = yield* requestResponse(
-          "append_operation",
-          "/internal/agent/operations",
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-bob-caller-token": options.callerSecret
-            },
-            body: JSON.stringify({ operation, attemptId })
+    appendRunOperation: Effect.fnUntraced(function* (operation, attemptId) {
+      const response = yield* requestResponse(
+        "append_operation",
+        "/internal/agent/operations",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-bob-caller-token": options.callerSecret
           },
-          15_000
-        )
-        yield* decodeResponse("append_operation", AgentRunOperationAppendResult, response)
-      }
-    ),
+          body: JSON.stringify({ operation, attemptId })
+        },
+        15_000
+      )
+      yield* decodeResponse("append_operation", AgentRunOperationAppendResult, response)
+    }),
     checkReadiness: () =>
       requestResponse(
         "readiness",

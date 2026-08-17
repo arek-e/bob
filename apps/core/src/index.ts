@@ -1,29 +1,31 @@
-import { makeCoreJobConsumerRoutes } from "@bob/core-runtime/job-processors"
-import {
-  composeCoreWithRuntime,
-  handleScheduled,
-  handleHttp,
-  makeOwnerWakeJobProcessor,
-  makeQueuedOwnerRunCoordinator,
-  makeOwnerTurnEngine,
-  processConversationTurn,
-  type CoreBindings,
-  type CoreRuntimeAdapters
-} from "@bob/core-runtime/runtime"
-import { InboundAcceptance } from "@bob/core-types/channel"
+import type { CoreAdapters } from "@bob/core-types/adapters"
+import type { CoreBindings } from "@bob/core-types/bindings"
+
+import { InboundAcceptance } from "@bob/conversations-types/channel"
+import { ConversationStore } from "@bob/conversations-types/store"
+import { makeOwnerTurnEngine, processConversationTurnEffect } from "@bob/core-service"
 import { OwnerWakeJob } from "@bob/core-types/jobs"
-import { connectPostgresqlDatabase } from "@bob/db-service/postgresql"
+import { PostgresqlDatabase, postgresqlDatabaseLayer } from "@bob/db-service/postgresql"
 import { makeBullMqJobPublisher } from "@bob/job-queue-runtime/bullmq"
 import { startBullMqWorkerHost } from "@bob/job-queue-runtime/bullmq-host"
 import { decodeJobProcessor, retryJob } from "@bob/job-queue-types"
 import { makeFilesystemPrivateObjectStore } from "@bob/object-store-runtime/filesystem"
-import { nodeEventSink } from "@bob/observability/node"
+import { nodeTelemetryLayer } from "@bob/observability"
 import { Queue, type ConnectionOptions } from "bullmq"
-import { Schema } from "effect"
+import { Effect, ManagedRuntime, Schema } from "effect"
 import { createServer } from "node:http"
+import { resolve } from "node:path"
 
+import { composeCore } from "./composition.ts"
 import { readCoreRuntimeConfiguration } from "./configuration.ts"
+import { handleHttp } from "./entrypoints/http.ts"
+import { makeCoreJobConsumerRoutes } from "./entrypoints/queue.ts"
+import { handleScheduled } from "./entrypoints/scheduled.ts"
 import { webRequest, writeWebResponse } from "./node-http.ts"
+import {
+  makeOwnerWakeJobProcessor,
+  makeQueuedOwnerRunCoordinator
+} from "./runtime/run-coordinator.ts"
 import { makeFilesystemAssetFetcher } from "./static-assets.ts"
 
 const queueNames = {
@@ -62,8 +64,13 @@ function applicationStorageErrorQuery(error: Error): string | undefined {
 
 async function main(): Promise<void> {
   const config = readCoreRuntimeConfiguration(process.env)
-  const database = connectPostgresqlDatabase(config.DATABASE_URL)
-  await database.migrate()
+  const databaseRuntime = ManagedRuntime.make(
+    postgresqlDatabaseLayer(config.DATABASE_URL, {
+      migrationsFolder: resolve(process.cwd(), "dist/migrations")
+    })
+  )
+  const database = await databaseRuntime.runPromise(PostgresqlDatabase)
+  await databaseRuntime.runPromise(database.migrate)
   const connection = redisConnection(config.JOB_QUEUE_URL)
   const queueOptions = { connection, prefix: "bob" }
   const inboundQueue = new Queue(queueNames.inbound, queueOptions)
@@ -98,19 +105,19 @@ async function main(): Promise<void> {
     AGENT_ADMIN_URL: config.AGENT_URL,
     UI_BASE_URL: config.UI_BASE_URL,
     BOB_MODEL: config.BOB_MODEL,
+    BOB_RELEASE_SHA: config.BOB_RELEASE_SHA,
+    OTEL_EXPORTER_OTLP_ENDPOINT: config.OTEL_EXPORTER_OTLP_ENDPOINT,
     BOB_PROVIDER: "openai-codex",
     BOB_RUN_TOKEN_BUDGET: config.BOB_RUN_TOKEN_BUDGET,
     BOB_DAILY_TOKEN_BUDGET: config.BOB_DAILY_TOKEN_BUDGET
   }
-  let composition: ReturnType<typeof composeCoreWithRuntime>
+  let composition: ReturnType<typeof composeCore>
   let ownerTurnEngine: ReturnType<typeof makeOwnerTurnEngine>
   const runCoordinator = makeQueuedOwnerRunCoordinator({
     wakeJobs: makeBullMqJobPublisher(ownerWakeQueue, "owner-wake"),
     async accept(request) {
-      const offered = await ownerTurnEngine.accept(
-        request.job,
-        request.correlationId,
-        request.traceparent
+      const offered = await composition.runtime.runPromise(
+        ownerTurnEngine.accept(request.job, request.correlationId, request.traceparent)
       )
       return Response.json(
         { ok: true, turnId: offered.turnId, revision: offered.revision },
@@ -118,20 +125,29 @@ async function main(): Promise<void> {
       )
     }
   })
-  const runtime: CoreRuntimeAdapters = {
+  const runtime: CoreAdapters = {
     applicationStorage,
     channelProviderId: "sendblue",
-    events: nodeEventSink(),
     jobQueue,
     objectStorage: makeFilesystemPrivateObjectStore(config.OBJECT_STORAGE_DIRECTORY),
     runCoordinator
   }
-  composition = composeCoreWithRuntime(bindings, runtime)
+  composition = composeCore(
+    bindings,
+    runtime,
+    nodeTelemetryLayer({
+      endpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT,
+      serviceName: "bob-core-runtime",
+      serviceVersion: config.BOB_RELEASE_SHA,
+      deploymentEnvironment: "prod"
+    })
+  )
   ownerTurnEngine = makeOwnerTurnEngine({
-    turns: composition.services.turns,
-    serialize: (operation) => operation(),
     schedule: (at) => runCoordinator.wake({ ownerId: config.OWNER_ID, wakeAt: at.toISOString() }),
-    process: (snapshot) => processConversationTurn(snapshot, bindings, composition),
+    process: (snapshot) =>
+      composition.runtime.runPromise(
+        processConversationTurnEffect(snapshot, bindings, composition)
+      ),
     async steer(runId, correlationId, traceparent) {
       try {
         const headers = new Headers({
@@ -160,7 +176,9 @@ async function main(): Promise<void> {
       queueName: queueNames.ownerWake,
       processor: decodeJobProcessor(
         { decode: (input) => Schema.decodeUnknownSync(OwnerWakeJob)(input) },
-        makeOwnerWakeJobProcessor({ wake: () => ownerTurnEngine.wake() }),
+        makeOwnerWakeJobProcessor({
+          wake: () => composition.runtime.runPromise(ownerTurnEngine.wake())
+        }),
         retryJob(30_000)
       )
     }
@@ -190,7 +208,6 @@ async function main(): Promise<void> {
     void handleScheduled(
       bindings,
       { correlationId: crypto.randomUUID(), scheduledAt },
-      undefined,
       () => composition
     )
       .catch((error: Error) =>
@@ -204,7 +221,7 @@ async function main(): Promise<void> {
   const server = createServer(async (incoming, outgoing) => {
     try {
       const request = await webRequest(incoming)
-      const response = await handleHttp(request, bindings, undefined, () => composition)
+      const response = await handleHttp(request, bindings, () => composition)
       if (
         config.AUTO_ENQUEUE_INBOUND === "true" &&
         request.method === "POST" &&
@@ -216,9 +233,10 @@ async function main(): Promise<void> {
         )
         if (acceptance.shouldEnqueue) {
           await jobQueue.inbound.publish({ eventId: acceptance.eventId })
-          await composition.services.conversations.markEnqueued(
-            acceptance.eventId,
-            new Date().toISOString()
+          await composition.runtime.runPromise(
+            Effect.flatMap(ConversationStore, (conversations) =>
+              conversations.markEnqueued(acceptance.eventId, new Date().toISOString())
+            )
           )
         }
       }
@@ -240,8 +258,9 @@ async function main(): Promise<void> {
     clearInterval(schedulerTimer)
     server.close()
     await workers.close()
+    await composition.runtime.dispose()
     await Promise.all([inboundQueue.close(), outboundQueue.close(), ownerWakeQueue.close()])
-    await database.close()
+    await databaseRuntime.dispose()
   }
   process.once("SIGTERM", () => void shutdown())
   process.once("SIGINT", () => void shutdown())

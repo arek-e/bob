@@ -1,22 +1,23 @@
-import type { DataProtection } from "@bob/core-service/policy/data-protection"
-import type { OwnerDataKeyStore } from "@bob/core-service/policy/owner-data-key"
-import type { RetrievalProjectionInput } from "@bob/core-service/retrieval/projection"
-import type { CoreBatchQuery, CoreDatabase } from "@bob/core-types/database"
+import type { CoreDatabase, DatabaseQuery } from "@bob/db-types"
 import type { JournalEntry, JournalMetadata } from "@bob/journal-types/ui"
+import type { DataProtection } from "@bob/policy-types/data-protection"
+import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
+import type { RetrievalProjectionInput } from "@bob/retrieval-service/projection"
 
-import { prepareMemorySourceWithdrawal } from "@bob/core-service/memory/source-withdrawal"
+import { journalEntries, journalHandoffs } from "@bob/db-service/schema/journal"
+import { searchDocuments } from "@bob/db-service/schema/retrieval"
+import { allInTransaction } from "@bob/db-types"
+import { prepareMemorySourceWithdrawal } from "@bob/memory-service/source-withdrawal"
 import {
   completeEffect,
   completedEffect,
   completedEffectAfterConflict,
   type EffectIdentity
-} from "@bob/core-service/policy/effect-outcome"
-import { makeOwnerDataKeyStore } from "@bob/core-service/policy/owner-data-key"
-import { retrievalProjection } from "@bob/core-service/retrieval/projection"
-import { journalEntries, journalHandoffs } from "@bob/db-service/schema/journal"
-import { searchDocuments } from "@bob/db-service/schema/retrieval"
+} from "@bob/policy-service/effect-outcome"
+import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { retrievalProjection } from "@bob/retrieval-service/projection"
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm"
-import { Context, Layer, Schema } from "effect"
+import { Effect, Context, Layer, Schema } from "effect"
 
 export interface JournalStore {
   createHandoff(
@@ -98,7 +99,7 @@ export function makeJournalStore(
   options: {
     readonly now?: () => Date
     readonly randomUuid?: () => string
-    readonly ownerDataKeys?: OwnerDataKeyStore
+    readonly ownerDataKeys?: OwnerDataKeyStoreAdapter
   }
 ): JournalStore {
   const now = options.now ?? (() => new Date())
@@ -112,11 +113,13 @@ export function makeJournalStore(
       const effect: EffectIdentity = { ownerId, kind: "journal_handoff_create", idempotencyKey }
       const previous = await completedEffect(database, effect)
       if (previous !== undefined) {
-        const [handoff] = await database
-          .select({ id: journalHandoffs.id, expiresAt: journalHandoffs.expiresAt })
-          .from(journalHandoffs)
-          .where(eq(journalHandoffs.id, previous))
-          .limit(1)
+        const [handoff] = await Effect.runPromise(
+          database
+            .select({ id: journalHandoffs.id, expiresAt: journalHandoffs.expiresAt })
+            .from(journalHandoffs)
+            .where(eq(journalHandoffs.id, previous))
+            .limit(1)
+        )
         if (handoff === undefined) throw new Error("The prior journal handoff is unavailable")
         return handoff
       }
@@ -124,22 +127,26 @@ export function makeJournalStore(
       const createdAt = now()
       const expiresAt = new Date(createdAt.getTime() + ttlMs).toISOString()
       try {
-        await database.batch([
-          database.insert(journalHandoffs).values({
-            id,
-            userId: ownerId,
-            expiresAt,
-            createdAt: createdAt.toISOString()
-          }),
-          completeEffect(database, effect, id, randomUuid(), createdAt.toISOString())
-        ])
+        await Effect.runPromise(
+          allInTransaction(database, [
+            database.insert(journalHandoffs).values({
+              id,
+              userId: ownerId,
+              expiresAt,
+              createdAt: createdAt.toISOString()
+            }),
+            completeEffect(database, effect, id, randomUuid(), createdAt.toISOString())
+          ])
+        )
       } catch (error) {
         const winner = await completedEffectAfterConflict(database, effect, error)
-        const [handoff] = await database
-          .select({ id: journalHandoffs.id, expiresAt: journalHandoffs.expiresAt })
-          .from(journalHandoffs)
-          .where(eq(journalHandoffs.id, winner))
-          .limit(1)
+        const [handoff] = await Effect.runPromise(
+          database
+            .select({ id: journalHandoffs.id, expiresAt: journalHandoffs.expiresAt })
+            .from(journalHandoffs)
+            .where(eq(journalHandoffs.id, winner))
+            .limit(1)
+        )
         if (handoff === undefined) throw new Error("The prior journal handoff is unavailable")
         return handoff
       }
@@ -156,18 +163,20 @@ export function makeJournalStore(
       if (previous !== undefined) return previous
       const normalized = normalizeJournalEntry(input)
       const at = now().toISOString()
-      const [handoff] = await database
-        .select({ id: journalHandoffs.id })
-        .from(journalHandoffs)
-        .where(
-          and(
-            eq(journalHandoffs.id, input.handoffId),
-            eq(journalHandoffs.userId, input.ownerId),
-            isNull(journalHandoffs.consumedAt),
-            gt(journalHandoffs.expiresAt, at)
+      const [handoff] = await Effect.runPromise(
+        database
+          .select({ id: journalHandoffs.id })
+          .from(journalHandoffs)
+          .where(
+            and(
+              eq(journalHandoffs.id, input.handoffId),
+              eq(journalHandoffs.userId, input.ownerId),
+              isNull(journalHandoffs.consumedAt),
+              gt(journalHandoffs.expiresAt, at)
+            )
           )
-        )
-        .limit(1)
+          .limit(1)
+      )
       if (handoff === undefined) throw new Error("Journal handoff is invalid or expired")
       const owner = await ownerDataKeys.load(input.ownerId)
       const encrypted = await protection.encryptText(owner.key, normalized.text)
@@ -224,22 +233,26 @@ export function makeJournalStore(
           Object.assign(projectionInput, { contentHash: summaryContentHash })
         }
         try {
-          await database.batch([
-            ...statements,
-            database.insert(searchDocuments).values(retrievalProjection(projectionInput)),
-            consumeHandoff,
-            completeEffect(database, effect, entryId, randomUuid(), at)
-          ])
+          await Effect.runPromise(
+            allInTransaction(database, [
+              ...statements,
+              database.insert(searchDocuments).values(retrievalProjection(projectionInput)),
+              consumeHandoff,
+              completeEffect(database, effect, entryId, randomUuid(), at)
+            ])
+          )
         } catch (error) {
           return completedEffectAfterConflict(database, effect, error)
         }
       } else {
         try {
-          await database.batch([
-            ...statements,
-            consumeHandoff,
-            completeEffect(database, effect, entryId, randomUuid(), at)
-          ])
+          await Effect.runPromise(
+            allInTransaction(database, [
+              ...statements,
+              consumeHandoff,
+              completeEffect(database, effect, entryId, randomUuid(), at)
+            ])
+          )
         } catch (error) {
           return completedEffectAfterConflict(database, effect, error)
         }
@@ -249,31 +262,33 @@ export function makeJournalStore(
 
     async searchMetadata(ownerId, tag) {
       const normalizedTag = tag === undefined ? undefined : normalizeJournalTag(tag)
-      const rows = await database
-        .select({
-          id: journalEntries.id,
-          createdAt: journalEntries.createdAt,
-          tagsJson: journalEntries.tagsJson,
-          approvedSummary: journalEntries.approvedSummary
-        })
-        .from(journalEntries)
-        .where(
-          and(
-            eq(journalEntries.userId, ownerId),
-            isNull(journalEntries.redactedAt),
-            ...(normalizedTag === undefined
-              ? []
-              : [
-                  sql<boolean>`exists (
+      const rows = await Effect.runPromise(
+        database
+          .select({
+            id: journalEntries.id,
+            createdAt: journalEntries.createdAt,
+            tagsJson: journalEntries.tagsJson,
+            approvedSummary: journalEntries.approvedSummary
+          })
+          .from(journalEntries)
+          .where(
+            and(
+              eq(journalEntries.userId, ownerId),
+              isNull(journalEntries.redactedAt),
+              ...(normalizedTag === undefined
+                ? []
+                : [
+                    sql<boolean>`exists (
                     select 1
           from jsonb_array_elements_text(${journalEntries.tagsJson}::jsonb) as journal_tag(value)
                     where journal_tag.value = ${normalizedTag}
                   )`
-                ])
+                  ])
+            )
           )
-        )
-        .orderBy(desc(journalEntries.createdAt))
-        .limit(100)
+          .orderBy(desc(journalEntries.createdAt))
+          .limit(100)
+      )
       return rows.map((row) => {
         const metadata = {
           id: row.id,
@@ -287,17 +302,19 @@ export function makeJournalStore(
     },
 
     async readEntry(ownerId, entryId) {
-      const [row] = await database
-        .select()
-        .from(journalEntries)
-        .where(
-          and(
-            eq(journalEntries.id, entryId),
-            eq(journalEntries.userId, ownerId),
-            isNull(journalEntries.redactedAt)
+      const [row] = await Effect.runPromise(
+        database
+          .select()
+          .from(journalEntries)
+          .where(
+            and(
+              eq(journalEntries.id, entryId),
+              eq(journalEntries.userId, ownerId),
+              isNull(journalEntries.redactedAt)
+            )
           )
-        )
-        .limit(1)
+          .limit(1)
+      )
       if (row === undefined) return undefined
       const key = (await ownerDataKeys.load(ownerId)).key
       const entry = {
@@ -317,17 +334,19 @@ export function makeJournalStore(
     async updateEntry(ownerId, entryId, input, idempotencyKey) {
       const effect: EffectIdentity = { ownerId, kind: "journal_entry_update", idempotencyKey }
       if ((await completedEffect(database, effect)) !== undefined) return
-      const [entry] = await database
-        .select({ id: journalEntries.id, createdAt: journalEntries.createdAt })
-        .from(journalEntries)
-        .where(
-          and(
-            eq(journalEntries.id, entryId),
-            eq(journalEntries.userId, ownerId),
-            isNull(journalEntries.redactedAt)
+      const [entry] = await Effect.runPromise(
+        database
+          .select({ id: journalEntries.id, createdAt: journalEntries.createdAt })
+          .from(journalEntries)
+          .where(
+            and(
+              eq(journalEntries.id, entryId),
+              eq(journalEntries.userId, ownerId),
+              isNull(journalEntries.redactedAt)
+            )
           )
-        )
-        .limit(1)
+          .limit(1)
+      )
       if (entry === undefined) throw new Error("Journal entry not found")
       const { text, tags, approvedSummary } = normalizeJournalEntry(input)
       const at = now().toISOString()
@@ -338,16 +357,18 @@ export function makeJournalStore(
         approvedSummary === undefined
           ? Promise.resolve(undefined)
           : protection.contentHash(approvedSummary),
-        database
-          .select({ id: searchDocuments.id })
-          .from(searchDocuments)
-          .where(
-            and(
-              eq(searchDocuments.sourceType, "journal_summary"),
-              eq(searchDocuments.sourceId, entryId)
+        Effect.runPromise(
+          database
+            .select({ id: searchDocuments.id })
+            .from(searchDocuments)
+            .where(
+              and(
+                eq(searchDocuments.sourceType, "journal_summary"),
+                eq(searchDocuments.sourceId, entryId)
+              )
             )
-          )
-          .limit(1)
+            .limit(1)
+        )
       ])
       const memoryStatements = await prepareMemorySourceWithdrawal(database, {
         ownerId,
@@ -356,7 +377,7 @@ export function makeJournalStore(
         reason: "source_changed",
         at
       })
-      const statements: [CoreBatchQuery, ...CoreBatchQuery[]] = [
+      const statements: [DatabaseQuery, ...DatabaseQuery[]] = [
         database
           .update(journalEntries)
           .set({
@@ -430,7 +451,7 @@ export function makeJournalStore(
       }
       statements.push(completeEffect(database, effect, entryId, randomUuid(), at))
       try {
-        await database.batch(statements)
+        await Effect.runPromise(allInTransaction(database, statements))
       } catch (error) {
         await completedEffectAfterConflict(database, effect, error)
       }
@@ -440,13 +461,17 @@ export function makeJournalStore(
       const effect: EffectIdentity = { ownerId, kind: "journal_entry_delete", idempotencyKey }
       if ((await completedEffect(database, effect)) !== undefined) return
       const at = now().toISOString()
-      const [entry] = await database
-        .select({ id: journalEntries.id })
-        .from(journalEntries)
-        .where(and(eq(journalEntries.id, entryId), eq(journalEntries.userId, ownerId)))
-        .limit(1)
+      const [entry] = await Effect.runPromise(
+        database
+          .select({ id: journalEntries.id })
+          .from(journalEntries)
+          .where(and(eq(journalEntries.id, entryId), eq(journalEntries.userId, ownerId)))
+          .limit(1)
+      )
       if (entry === undefined) {
-        await database.batch([completeEffect(database, effect, entryId, randomUuid(), at)])
+        await Effect.runPromise(
+          allInTransaction(database, [completeEffect(database, effect, entryId, randomUuid(), at)])
+        )
         return
       }
       const [tombstone, memoryStatements] = await Promise.all([
@@ -459,7 +484,7 @@ export function makeJournalStore(
           at
         })
       ])
-      const statements: [CoreBatchQuery, ...CoreBatchQuery[]] = [
+      const statements: [DatabaseQuery, ...DatabaseQuery[]] = [
         database
           .update(journalEntries)
           .set({
@@ -483,7 +508,7 @@ export function makeJournalStore(
       ]
       statements.push(completeEffect(database, effect, entryId, randomUuid(), at))
       try {
-        await database.batch(statements)
+        await Effect.runPromise(allInTransaction(database, statements))
       } catch (error) {
         await completedEffectAfterConflict(database, effect, error)
       }

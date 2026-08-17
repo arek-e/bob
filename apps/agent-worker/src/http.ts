@@ -7,10 +7,15 @@ import {
   AgentSteerResult,
   DeviceLoginEvent,
   type AgentRunOperation
-} from "@bob/core-types/agent"
-import { featureForTools } from "@bob/observability/attribution"
-import { emitHealth, recordDecision, withBobSpan } from "@bob/observability/effect"
-import { externalParentFromTraceparent, formatTraceparent } from "@bob/observability/propagation"
+} from "@bob/agent-types/run"
+import {
+  featureForTools,
+  emitHealth,
+  recordDecision,
+  withBobSpan,
+  externalParentFromTraceparent,
+  formatTraceparent
+} from "@bob/observability"
 import { Effect, Option, Schema } from "effect"
 
 import type { AgentComposition } from "./composition.ts"
