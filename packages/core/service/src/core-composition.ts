@@ -4,6 +4,7 @@ import type { GeneralCoreBindings } from "@bob/core-types/bindings"
 import { artifactStoreLayer, makeArtifactStore } from "@bob/artifacts-service/store"
 import { makePrivateTextReader } from "@bob/context-service/private-text"
 import { contextStoreLayer } from "@bob/context-service/store"
+import { messageAttachmentStoreLayer } from "@bob/conversations-service/attachment-store"
 import { makeConversationEvidenceSource } from "@bob/conversations-service/evidence-source"
 import { agentRunStoreLayer, makeAgentRunStore } from "@bob/conversations-service/run-store"
 import { conversationStoreLayer, makeConversationStore } from "@bob/conversations-service/store"
@@ -151,10 +152,15 @@ export function composeGeneralCore<Extensions extends object>(
   })
   const agentExperience = makeAgentExperienceRegistry(runtimeProfile.catalogue.profileId, [])
   const reviewedSkills = makeReviewedSkillRegistry(runtimeProfile.catalogue.profileId, [])
+  const ownerDataKeysLayer = ownerDataKeyStoreLayer(ownerDataKeys)
+  const attachmentsLayer = messageAttachmentStoreLayer(applicationStorage, protection).pipe(
+    Layer.provide(Layer.merge(ownerDataKeysLayer, adapters.objectStorage))
+  )
   const layer = Layer.mergeAll(
     conversationStoreLayer(conversations),
     conversationTurnStoreLayer(turns),
-    ownerDataKeyStoreLayer(ownerDataKeys),
+    ownerDataKeysLayer,
+    attachmentsLayer,
     alertStoreLayer(alerts),
     artifactStoreLayer(artifacts),
     deliveryStoreLayer(delivery),
@@ -173,7 +179,6 @@ export function composeGeneralCore<Extensions extends object>(
     extensions: prepared.extensions,
     memoryClasses: Object.freeze({ agentExperience, reviewedSkills }),
     jobQueue: adapters.jobQueue,
-    objectStorage: adapters.objectStorage,
     runCoordinator: adapters.runCoordinator,
     applicationStorage
   }

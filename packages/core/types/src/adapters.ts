@@ -1,6 +1,7 @@
 import type { CoreDatabase } from "@bob/db-types"
 import type { JobPublisher } from "@bob/job-queue-types"
-import type { PrivateObjectStore } from "@bob/object-store-types"
+import type { ObjectStorage } from "@bob/object-store-types"
+import type { Layer } from "effect"
 
 import type { InboundJob, OutboundJob } from "./jobs.ts"
 
@@ -30,6 +31,6 @@ export interface CoreAdapters {
   readonly applicationStorage: CoreDatabase
   readonly channelProviderId: string
   readonly jobQueue: CoreJobQueue
-  readonly objectStorage: PrivateObjectStore
+  readonly objectStorage: Layer.Layer<ObjectStorage>
   readonly runCoordinator: OwnerRunCoordinator
 }

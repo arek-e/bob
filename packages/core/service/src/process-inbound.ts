@@ -918,7 +918,8 @@ export function processConversationTurnEffect(
           conversationTurnRevision: conversationTurn.revision,
           currentTurnMessages: turnMessages.map((message) => ({
             sourceMessageId: message.messageId,
-            text: message.text
+            text: message.text,
+            ...(message.attachments === undefined ? {} : { attachments: message.attachments })
           })),
           limits: {
             maxTurns: 4,

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./attachment-store": "./src/attachment-store.ts",
     "./channel": "./src/channel.ts",
     "./interactions": "./src/interactions.ts",
     "./run-store": "./src/run-store.ts",

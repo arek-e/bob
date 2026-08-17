@@ -9,6 +9,7 @@ import { ConversationStore, ConversationStoreError } from "@bob/conversations-ty
 import {
   channels,
   inboundEvents,
+  messageAttachments,
   messages,
   shortReplyBindings
 } from "@bob/db-service/schema/conversations"
@@ -39,6 +40,23 @@ export function makeConversationStore(
   const ownerDataKeys =
     options.ownerDataKeys ??
     makeOwnerDataKeyStore(database, protection, { defaultTimeZone: options.ownerTimeZone, now })
+
+  async function pendingAttachmentOrdinals(
+    eventId: string,
+    attachmentCount: number
+  ): Promise<readonly number[]> {
+    if (attachmentCount === 0) return []
+    const stored = await Effect.runPromise(
+      database
+        .select({ ordinal: messageAttachments.ordinal })
+        .from(messageAttachments)
+        .where(eq(messageAttachments.inboundEventId, eventId))
+    )
+    const ordinals = new Set(stored.map((attachment) => attachment.ordinal))
+    return Array.from({ length: attachmentCount }, (_, ordinal) => ordinal).filter(
+      (ordinal) => !ordinals.has(ordinal)
+    )
+  }
 
   async function ensureChannel(event: NormalizedInboundEvent, key: CryptoKey): Promise<string> {
     const senderHash = await protection.hashLookup(event.senderE164)
@@ -106,7 +124,8 @@ export function makeConversationStore(
           .select({
             id: inboundEvents.id,
             enqueuedAt: inboundEvents.enqueuedAt,
-            processedAt: inboundEvents.processedAt
+            processedAt: inboundEvents.processedAt,
+            attachmentCount: inboundEvents.attachmentCount
           })
           .from(inboundEvents)
           .where(
@@ -119,10 +138,12 @@ export function makeConversationStore(
           .limit(1)
       )
       if (existing !== undefined) {
+        const pending = await pendingAttachmentOrdinals(existing.id, existing.attachmentCount)
         return {
           eventId: existing.id,
           duplicate: true,
-          shouldEnqueue: existing.enqueuedAt === null && existing.processedAt === null
+          shouldEnqueue: existing.enqueuedAt === null && existing.processedAt === null,
+          ...(pending.length === 0 ? {} : { pendingAttachmentOrdinals: pending })
         }
       }
 
@@ -158,6 +179,7 @@ export function makeConversationStore(
           replyToProviderMessageHandle: event.replyToMessageHandle,
           service: event.service,
           isGroup: event.isGroup,
+          attachmentCount: event.attachmentCount ?? 0,
           correlationId: event.correlationId,
           processedAt: consumedControl ? createdAt : null,
           createdAt
@@ -186,7 +208,8 @@ export function makeConversationStore(
             .select({
               id: inboundEvents.id,
               enqueuedAt: inboundEvents.enqueuedAt,
-              processedAt: inboundEvents.processedAt
+              processedAt: inboundEvents.processedAt,
+              attachmentCount: inboundEvents.attachmentCount
             })
             .from(inboundEvents)
             .where(
@@ -199,16 +222,20 @@ export function makeConversationStore(
             .limit(1)
         )
         if (winner === undefined) throw new Error("Inbound event insert failed")
+        const pending = await pendingAttachmentOrdinals(winner.id, winner.attachmentCount)
         return {
           eventId: winner.id,
           duplicate: true,
-          shouldEnqueue: winner.enqueuedAt === null && winner.processedAt === null
+          shouldEnqueue: winner.enqueuedAt === null && winner.processedAt === null,
+          ...(pending.length === 0 ? {} : { pendingAttachmentOrdinals: pending })
         }
       }
+      const pending = Array.from({ length: event.attachmentCount ?? 0 }, (_, ordinal) => ordinal)
       return {
         eventId: event.id,
         duplicate: false,
-        shouldEnqueue: !consumedControl
+        shouldEnqueue: !consumedControl,
+        ...(pending.length === 0 ? {} : { pendingAttachmentOrdinals: pending })
       }
     },
 

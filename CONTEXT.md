@@ -84,8 +84,8 @@ Package projects follow the system map:
 - `packages/features/<feature>/types` owns one General Agent Core feature's public Interface and
   validation schemas.
 - `packages/features/<feature>/service` owns that feature's rules, workflows, and Adapters.
-- General Agent Core features are conversations, context, memory, retrieval, delivery, artifacts,
-  settings, policy, skills, and operations.
+- General Agent Core features are conversations (including message attachments), context, memory,
+  retrieval, delivery, artifacts, settings, policy, skills, and operations.
 - `packages/features/capabilities/types` owns the shared Capability Module contracts and schemas.
 - `packages/core/types` owns the provider-neutral Core Module Interface.
 - `packages/core/service` owns reusable Core workflows and the provider-neutral Core Layer builder.
@@ -136,6 +136,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Channel event:** One normalized provider event from a Channel Adapter.
 - **Conversation:** Ordered messages for one owner and channel session.
 - **Conversation turn:** One revisioned message burst with one latest response target.
+- **Message attachment:** One private media object associated with a Conversation message through
+  durable Database metadata and an opaque Object Storage key.
 - **Agent run:** One bounded Bob-owned model and Tool loop over an immutable input snapshot.
 - **External action attempt:** One durable attempt to change state or call an external system.
 - **Context pack:** Confirmed and policy-cleared data supplied to one agent run.
@@ -193,6 +195,9 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 ## System invariants
 
 - Database is authoritative for application records. The primary Runtime uses PostgreSQL.
+- Database is authoritative for Message attachment identity, ownership, metadata, and lifecycle.
+- Object Storage contains encrypted Message attachment bytes only.
+- Provider media URLs never enter Conversation records, Agent run snapshots, or model input.
 - The Database `service` project owns all Drizzle schemas, migration files, the scoped PostgreSQL
   pool, and Better Auth storage.
 - Drizzle owns the migration registry and applies each migration through its native Effect migrator.

@@ -39,6 +39,9 @@ const Environment = Config.all({
     "SENDBLUE_ALLOWED_USER_NUMBER"
   ),
   SENDBLUE_STATUS_CALLBACK_URL: Config.url("SENDBLUE_STATUS_CALLBACK_URL"),
+  SENDBLUE_MEDIA_HOSTS: Config.nonEmptyString("SENDBLUE_MEDIA_HOSTS").pipe(
+    Config.withDefault("cdn.sendblue.co,storage.googleapis.com")
+  ),
   BOB_RELEASE_SHA: Config.schema(
     Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/)),
     "BOB_RELEASE_SHA"
@@ -108,13 +111,15 @@ async function main(): Promise<void> {
   const webhookSecret = Redacted.value(config.SENDBLUE_WEBHOOK_SIGNING_SECRET)
   const ingressBindings: IngressBindings = {
     CORE: core,
+    MEDIA: { fetch: (input, init) => fetch(input, init) },
     INBOUND_QUEUE: inboundQueueBinding,
     SENDBLUE_ACCOUNT_ID: config.SENDBLUE_ACCOUNT_ID,
     SENDBLUE_LINE_ID: config.SENDBLUE_LINE_ID,
     SENDBLUE_WEBHOOK_SIGNING_SECRET: webhookSecret,
     SENDBLUE_FROM_NUMBER: config.SENDBLUE_FROM_NUMBER,
     SENDBLUE_ALLOWED_USER_NUMBER: config.SENDBLUE_ALLOWED_USER_NUMBER,
-    CORE_CALLER_SECRET: callerSecret
+    CORE_CALLER_SECRET: callerSecret,
+    SENDBLUE_MEDIA_HOSTS: config.SENDBLUE_MEDIA_HOSTS
   }
   const egressBindings: EgressBindings = {
     CORE: core,

@@ -19,9 +19,18 @@ export { ContextItem, ContextSource } from "@bob/context-types/item"
 
 export const CurrentTurnMessage = Schema.Struct({
   sourceMessageId: Uuid,
-  text: NonEmptyText
+  text: Schema.String.check(Schema.isMaxLength(8_000)),
+  attachments: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        id: Uuid,
+        mediaType: Schema.Literals(["image/jpeg", "image/png"]),
+        byteLength: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 5 * 1024 * 1024 })),
+        contentHash: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128))
+      })
+    ).check(Schema.isMaxLength(1))
+  )
 })
-
 export { PriorToolReceipt, PriorToolReceiptOrigin } from "@bob/capabilities-types/receipts"
 
 export const AgentRunRequest = Schema.Struct({
@@ -41,7 +50,7 @@ export const AgentRunRequest = Schema.Struct({
   timeZone: TimeZone,
   locale: Schema.optionalKey(Locale),
   hourCycle: Schema.optionalKey(HourCycle),
-  userText: NonEmptyText,
+  userText: Schema.String.check(Schema.isMaxLength(8_000)),
   currentTurnMessages: Schema.optionalKey(
     Schema.Array(CurrentTurnMessage).check(Schema.isMaxLength(12))
   ),
@@ -79,6 +88,16 @@ export const AgentRunRequest = Schema.Struct({
       }
     }
     const target = messages.at(-1)
+    if (
+      target !== undefined &&
+      target.text.length === 0 &&
+      (target.attachments?.length ?? 0) === 0
+    ) {
+      return {
+        path: ["currentTurnMessages"],
+        issue: "final message requires text or an attachment"
+      }
+    }
     if (target?.text !== request.userText) {
       return { path: ["currentTurnMessages"], issue: "final message must match userText" }
     }

@@ -1,72 +1,42 @@
 import {
-  S3ServiceException,
-  type DeleteObjectCommand,
-  type GetObjectCommand,
-  type PutObjectCommand
+  DeleteObjectCommand,
+  GetObjectCommand,
+  NoSuchKey,
+  PutObjectCommand
 } from "@aws-sdk/client-s3"
-import { describe, expect, it } from "vitest"
+import { ManagedRuntime } from "effect"
 
-import { makeS3PrivateObjectStore } from "../src/s3.ts"
+import { s3ObjectStorageLayer } from "../src/s3.ts"
+import { objectStorageConformance } from "./conformance.ts"
 
-describe("S3 private object store", () => {
-  it("maps the private object Interface to S3 commands", async () => {
-    type ObjectCommand = DeleteObjectCommand | GetObjectCommand | PutObjectCommand
-    const commands: ObjectCommand[] = []
-    // SAFETY: This test double implements the only S3Client method used by the Adapter.
-    const client = {
-      async send(command: ObjectCommand) {
-        commands.push(command)
-        if (command.constructor.name === "GetObjectCommand") {
-          return {
-            Body: { transformToByteArray: async () => new Uint8Array([1, 2]) },
-            ContentType: "application/octet-stream",
-            ETag: "etag"
-          }
-        }
+objectStorageConformance("S3", async () => {
+  const objects = new Map<string, Uint8Array>()
+  const client = {
+    async send(command: DeleteObjectCommand | GetObjectCommand | PutObjectCommand) {
+      const key = String(command.input.Key)
+      if (command instanceof PutObjectCommand) {
+        objects.set(key, new Uint8Array(command.input.Body as Uint8Array))
+        return { ETag: "stored" }
+      }
+      if (command instanceof DeleteObjectCommand) {
+        objects.delete(key)
         return {}
       }
-    } as never
-    const store = makeS3PrivateObjectStore({
-      bucket: "private",
-      keyPrefix: "bob",
-      client
-    })
-
-    await store.put("owners/one", new Uint8Array([1]), { contentType: "text/plain" })
-    await expect(store.get("owners/one")).resolves.toEqual({
-      body: new Uint8Array([1, 2]),
-      contentType: "application/octet-stream",
-      etag: "etag"
-    })
-    await store.delete("owners/one")
-
-    expect(commands.map((command) => command!.constructor.name)).toEqual([
-      "PutObjectCommand",
-      "GetObjectCommand",
-      "DeleteObjectCommand"
-    ])
-    expect(commands[0]?.input).toMatchObject({
-      Bucket: "private",
-      Key: "bob/owners/one",
-      ContentType: "text/plain"
-    })
-  })
-
-  it("returns undefined for a missing object", async () => {
-    // SAFETY: This test double exercises the Adapter's provider-error boundary.
-    const client = {
-      async send() {
-        throw new S3ServiceException({
-          name: "NoSuchKey",
-          $fault: "client",
-          $metadata: { httpStatusCode: 404 }
-        })
+      const body = objects.get(key)
+      if (body === undefined) {
+        throw new NoSuchKey({ message: "missing", $metadata: { httpStatusCode: 404 } })
       }
-    } as never
-    const store = makeS3PrivateObjectStore({
-      bucket: "private",
-      client
-    })
-    await expect(store.get("missing")).resolves.toBeUndefined()
-  })
+      return {
+        Body: { transformToByteArray: async () => body },
+        ETag: "stored"
+      }
+    }
+  } as never
+  const runtime = ManagedRuntime.make(
+    s3ObjectStorageLayer({ bucket: "private", keyPrefix: "bob", client })
+  )
+  return {
+    run: (effect) => runtime.runPromise(effect),
+    dispose: () => runtime.dispose()
+  }
 })

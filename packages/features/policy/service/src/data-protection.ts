@@ -104,6 +104,28 @@ export function createDataProtection(
     return new TextDecoder().decode(plain)
   }
 
+  async function encryptBytes(key: CryptoKey, value: Uint8Array) {
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const ciphertext = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      key,
+      Uint8Array.from(value)
+    )
+    return { ciphertext: new Uint8Array(ciphertext), iv: toBase64(iv) }
+  }
+
+  async function decryptBytes(
+    key: CryptoKey,
+    value: { readonly ciphertext: Uint8Array; readonly iv: string }
+  ): Promise<Uint8Array> {
+    const plain = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: fromBase64(value.iv) },
+      key,
+      Uint8Array.from(value.ciphertext)
+    )
+    return new Uint8Array(plain)
+  }
+
   async function hashLookup(value: string): Promise<string> {
     lookupKeyPromise ??= crypto.subtle.importKey(
       "raw",
@@ -125,5 +147,20 @@ export function createDataProtection(
     return toBase64(digest)
   }
 
-  return { createWrappedDataKey, unwrapDataKey, encryptText, decryptText, hashLookup, contentHash }
+  async function contentHashBytes(value: Uint8Array): Promise<string> {
+    const digest = await crypto.subtle.digest("SHA-256", Uint8Array.from(value))
+    return toBase64(digest)
+  }
+
+  return {
+    createWrappedDataKey,
+    unwrapDataKey,
+    encryptText,
+    decryptText,
+    encryptBytes,
+    decryptBytes,
+    hashLookup,
+    contentHash,
+    contentHashBytes
+  }
 }

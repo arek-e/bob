@@ -43,9 +43,9 @@ export function normalizeInbound(
   if (payload.is_outbound || payload.status !== "RECEIVED") {
     throw new WebhookValidationError({ message: "Webhook is not an inbound received message" })
   }
-  if (payload.content.length === 0) {
-    throw new WebhookValidationError({ message: "Inbound content is empty" })
-  }
+  const attachmentCount = payload.media_url.trim().length === 0 ? 0 : 1
+  if (payload.content.length === 0 && attachmentCount === 0)
+    throw new WebhookValidationError({ message: "Inbound message is empty" })
   const randomUuid = context.randomUuid ?? (() => crypto.randomUUID())
   const event: NormalizedInboundEvent = {
     id: randomUuid(),
@@ -62,6 +62,7 @@ export function normalizeInbound(
     receivedAt: new Date(payload.date_sent).toISOString(),
     correlationId: context.correlationId ?? randomUuid()
   }
+  if (attachmentCount > 0) Object.assign(event, { attachmentCount })
   if (payload.reply_to !== undefined && payload.reply_to !== null) {
     Object.assign(event, { replyToMessageHandle: payload.reply_to.message_handle })
   }

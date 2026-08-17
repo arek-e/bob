@@ -1,7 +1,8 @@
 import {
   AgentRunOperationAppendResult,
   AgentRunOperationsLoadResult,
-  type AgentRunOperation
+  type AgentRunOperation,
+  type CurrentTurnMessage
 } from "@bob/agent-types/run"
 import {
   ToolResult,
@@ -14,7 +15,13 @@ import { Context, Effect, Exit, Layer, Option, Schema } from "effect"
 export class CoreToolClientError extends Schema.TaggedError<CoreToolClientError>()(
   "CoreToolClientError",
   {
-    operation: Schema.Literals(["execute", "load_operations", "append_operation", "readiness"]),
+    operation: Schema.Literals([
+      "execute",
+      "load_operations",
+      "append_operation",
+      "load_attachment",
+      "readiness"
+    ]),
     message: Schema.String,
     cause: Schema.optionalKey(Schema.Unknown)
   }
@@ -32,6 +39,10 @@ export interface CoreToolClient {
     operation: AgentRunOperation,
     attemptId: string
   ) => Effect.Effect<void, CoreToolClientError>
+  readonly loadAttachment: (
+    runId: string,
+    attachment: NonNullable<CurrentTurnMessage["attachments"]>[number]
+  ) => Effect.Effect<{ readonly data: string; readonly mimeType: string }, CoreToolClientError>
   readonly checkReadiness: () => Effect.Effect<boolean, CoreToolClientError>
 }
 
@@ -167,6 +178,39 @@ export function createCoreToolClient(options: {
         15_000
       )
       yield* decodeResponse("append_operation", AgentRunOperationAppendResult, response)
+    }),
+    loadAttachment: Effect.fnUntraced(function* (runId, attachment) {
+      const response = yield* requestResponse(
+        "load_attachment",
+        `/internal/agent/runs/${encodeURIComponent(runId)}/attachments/${encodeURIComponent(attachment.id)}`,
+        { headers: { "x-bob-caller-token": options.callerSecret } },
+        15_000
+      )
+      if (!response.ok) {
+        return yield* new CoreToolClientError({
+          operation: "load_attachment",
+          message: `Core request failed with status ${response.status}`
+        })
+      }
+      const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim()
+      const body = new Uint8Array(yield* Effect.promise(() => response.arrayBuffer()))
+      if (contentType !== attachment.mediaType || body.byteLength !== attachment.byteLength) {
+        return yield* new CoreToolClientError({
+          operation: "load_attachment",
+          message: "Core attachment metadata does not match the run snapshot"
+        })
+      }
+      const digest = new Uint8Array(
+        yield* Effect.promise(() => crypto.subtle.digest("SHA-256", Uint8Array.from(body)))
+      )
+      const contentHash = Buffer.from(digest).toString("base64")
+      if (contentHash !== attachment.contentHash) {
+        return yield* new CoreToolClientError({
+          operation: "load_attachment",
+          message: "Core attachment hash does not match the run snapshot"
+        })
+      }
+      return { data: Buffer.from(body).toString("base64"), mimeType: attachment.mediaType }
     }),
     checkReadiness: () =>
       requestResponse(

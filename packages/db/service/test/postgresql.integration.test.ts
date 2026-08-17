@@ -29,7 +29,7 @@ integration("native PostgreSQL database", () => {
         .select({ count: sql<number>`count(*)::integer` })
         .from(sql`drizzle.__drizzle_migrations`)
     )
-    expect(migrationCount?.count).toBe(2)
+    expect(migrationCount?.count).toBe(3)
 
     const [fullTextIndex] = await runtime.runPromise(
       database.applicationStorage

@@ -6,6 +6,12 @@ import {
   AgentRunResult
 } from "@bob/agent-types/run"
 import { ToolCommand } from "@bob/capabilities-types/tools"
+import {
+  ImageMediaType,
+  MessageAttachmentReference,
+  MessageAttachmentStore,
+  type MessageAttachmentError
+} from "@bob/conversations-types/attachment-store"
 import { NormalizedInboundEvent, NormalizedStatusEvent } from "@bob/conversations-types/channel"
 import { AgentRunStore } from "@bob/conversations-types/run-store"
 import { ConversationStore } from "@bob/conversations-types/store"
@@ -57,6 +63,7 @@ async function wakeSettledConversationRun(
 }
 
 const MAX_BODY_BYTES = 64 * 1024
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 const securityHeaders = {
   "cache-control": "no-store",
   "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
@@ -104,6 +111,27 @@ async function readJson(request: Request): Promise<typeof Schema.Json.Type> {
   const bytes = new Uint8Array(await request.arrayBuffer())
   if (bytes.byteLength > MAX_BODY_BYTES) throw new Error("body_too_large")
   return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(new TextDecoder().decode(bytes)))
+}
+
+async function readAttachmentBytes(request: Request): Promise<Uint8Array> {
+  const declaredLength = Number(request.headers.get("content-length") ?? "0")
+  if (declaredLength > MAX_ATTACHMENT_BYTES) throw new Error("body_too_large")
+  const bytes = new Uint8Array(await request.arrayBuffer())
+  if (bytes.byteLength > MAX_ATTACHMENT_BYTES) throw new Error("body_too_large")
+  return bytes
+}
+
+function attachmentFailureStatus(error: MessageAttachmentError): number {
+  if (error.code === "too_large") return 413
+  if (error.code === "invalid_media") return 415
+  if (
+    error.code === "event_missing" ||
+    error.code === "attachment_missing" ||
+    error.code === "object_missing"
+  ) {
+    return 404
+  }
+  return 503
 }
 
 function idempotencyKey(request: Request): string {
@@ -260,6 +288,64 @@ export async function handleHttp(
           )
         )
       )
+    }
+
+    const inboundAttachment = url.pathname.match(
+      /^\/internal\/inbound\/([^/]+)\/attachments\/(\d+)$/
+    )
+    if (request.method === "PUT" && inboundAttachment !== null) {
+      const eventId = Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
+        decodeURIComponent(inboundAttachment[1]!)
+      )
+      const ordinal = Schema.decodeUnknownSync(
+        Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 0 }))
+      )(Number(inboundAttachment[2]))
+      const decodedMediaType = Schema.decodeUnknownExit(ImageMediaType)(
+        request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
+      )
+      if (decodedMediaType._tag === "Failure") return json({ code: "invalid_media" }, 415)
+      const mediaType = decodedMediaType.value
+      const body = await readAttachmentBytes(request)
+      try {
+        const attachment = await runTelemetry(
+          MessageAttachmentStore.use((store) =>
+            store.storeInbound(eventId, ordinal, mediaType, body)
+          )
+        )
+        return json(Schema.encodeSync(MessageAttachmentReference)(attachment), 201)
+      } catch (error) {
+        const failure = error as MessageAttachmentError
+        return json({ code: failure.code ?? "storage_failed" }, attachmentFailureStatus(failure))
+      }
+    }
+
+    const agentAttachment = url.pathname.match(
+      /^\/internal\/agent\/runs\/([^/]+)\/attachments\/([^/]+)$/
+    )
+    if (request.method === "GET" && agentAttachment !== null) {
+      const runId = Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
+        decodeURIComponent(agentAttachment[1]!)
+      )
+      const attachmentId = Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
+        decodeURIComponent(agentAttachment[2]!)
+      )
+      try {
+        const attachment = await runTelemetry(
+          MessageAttachmentStore.use((store) => store.loadForAgent(runId, attachmentId))
+        )
+        return secure(
+          new Response(Uint8Array.from(attachment.body).buffer, {
+            headers: {
+              "content-type": attachment.mediaType,
+              "content-length": String(attachment.byteLength),
+              "x-bob-content-hash": attachment.contentHash
+            }
+          })
+        )
+      } catch (error) {
+        const failure = error as MessageAttachmentError
+        return json({ code: failure.code ?? "storage_failed" }, attachmentFailureStatus(failure))
+      }
     }
 
     const inboundEnqueued = url.pathname.match(/^\/internal\/inbound\/([^/]+)\/enqueued$/)

@@ -789,6 +789,9 @@ importers:
       '@bob/memory-types':
         specifier: workspace:*
         version: link:../../memory/types
+      '@bob/object-store-types':
+        specifier: workspace:*
+        version: link:../../../object-store/types
       '@bob/policy-service':
         specifier: workspace:*
         version: link:../../policy/service
@@ -1118,8 +1121,15 @@ importers:
       '@bob/object-store-types':
         specifier: workspace:*
         version: link:../types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
 
-  packages/object-store/types: {}
+  packages/object-store/types:
+    dependencies:
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
 
   packages/observability:
     dependencies:

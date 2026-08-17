@@ -13,7 +13,8 @@ const ApplicationConfiguration = Schema.Struct({
   SENDBLUE_WEBHOOK_SIGNING_SECRET: Schema.String.check(Schema.isMinLength(32)),
   SENDBLUE_FROM_NUMBER: Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/)),
   SENDBLUE_ALLOWED_USER_NUMBER: Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/)),
-  CORE_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32))
+  CORE_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  SENDBLUE_MEDIA_HOSTS: Schema.String.check(Schema.isMinLength(1))
 })
 
 export class SendblueIngress extends Context.Service<
@@ -21,6 +22,8 @@ export class SendblueIngress extends Context.Service<
   {
     readonly config: typeof ApplicationConfiguration.Type
     readonly core: RuntimeFetcher
+    readonly media: RuntimeFetcher
+    readonly allowedMediaHosts: ReadonlySet<string>
     readonly queue: JobPublisher<InboundJob>
   }
 >()("bob/sendblue-channel/SendblueIngress") {}
@@ -33,6 +36,12 @@ export function sendblueIngressLayer(bindings: IngressBindings) {
         SendblueIngress.of({
           config,
           core: bindings.CORE,
+          media: bindings.MEDIA,
+          allowedMediaHosts: new Set(
+            config.SENDBLUE_MEDIA_HOSTS.split(",")
+              .map((host) => host.trim().toLowerCase())
+              .filter((host) => host.length > 0)
+          ),
           queue: makeQueueBindingJobPublisher(bindings.INBOUND_QUEUE)
         })
       )

@@ -99,6 +99,19 @@ describe("Sendblue webhook normalization", () => {
     })
   })
 
+  it("normalizes an image-only inbound message without retaining its provider URL", () => {
+    const event = normalizeInbound(
+      decode({ ...payload, content: "", media_url: "https://media.example.test/image.png" }),
+      {
+        accountId: "account-1",
+        lineId: "line-1",
+        randomUuid: () => "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
+      }
+    )
+    expect(event).toMatchObject({ text: "", attachmentCount: 1 })
+    expect(JSON.stringify(event)).not.toContain("media.example.test")
+  })
+
   it("preserves the immediate parent of an inbound inline reply", () => {
     const event = normalizeInbound(
       decode({ ...payload, reply_to: { message_handle: "outbound-parent", part_index: 0 } }),

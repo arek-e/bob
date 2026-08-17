@@ -9,6 +9,7 @@ const WebhookCode = Schema.Literals([
   "accepted",
   "duplicate",
   "durable_store_failed",
+  "media_store_failed",
   "queue_publish_failed",
   "enqueue_record_failed",
   "unknown"

@@ -30,7 +30,8 @@ function requiredCaller(pathname: string): CoreCaller | undefined {
   if (
     pathname === "/internal/inbound" ||
     pathname === "/internal/status" ||
-    /^\/internal\/inbound\/[^/]+\/enqueued$/.test(pathname)
+    /^\/internal\/inbound\/[^/]+\/enqueued$/.test(pathname) ||
+    /^\/internal\/inbound\/[^/]+\/attachments\/\d+$/.test(pathname)
   ) {
     return "ingress"
   }
@@ -40,7 +41,8 @@ function requiredCaller(pathname: string): CoreCaller | undefined {
     pathname === "/internal/agent/result" ||
     pathname === "/internal/agent/operations" ||
     pathname === "/internal/agent/operations/load" ||
-    pathname === "/internal/readiness"
+    pathname === "/internal/readiness" ||
+    /^\/internal\/agent\/runs\/[^/]+\/attachments\/[^/]+$/.test(pathname)
   ) {
     return "agent"
   }

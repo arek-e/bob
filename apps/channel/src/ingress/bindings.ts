@@ -4,6 +4,7 @@ import type { RuntimeFetcher, RuntimeQueue } from "../runtime.ts"
 
 export interface IngressBindings {
   CORE: RuntimeFetcher
+  MEDIA: RuntimeFetcher
   INBOUND_QUEUE: RuntimeQueue<InboundJob>
   SENDBLUE_ACCOUNT_ID: string
   SENDBLUE_LINE_ID: string
@@ -11,4 +12,5 @@ export interface IngressBindings {
   SENDBLUE_FROM_NUMBER: string
   SENDBLUE_ALLOWED_USER_NUMBER: string
   CORE_CALLER_SECRET: string
+  SENDBLUE_MEDIA_HOSTS: string
 }

@@ -2,6 +2,8 @@ import type { EffectAdapter } from "@bob/capabilities-types/effect-adapter"
 
 import { Context, Schema } from "effect"
 
+import type { MessageAttachmentReference } from "./attachment-store.ts"
+
 export interface OfferedConversationTurn {
   readonly turnId: string
   readonly revision: number
@@ -20,6 +22,7 @@ export interface ConversationTurnMessage {
   readonly messageId: string
   readonly text: string
   readonly ordinal: number
+  readonly attachments?: readonly MessageAttachmentReference[]
 }
 
 export interface ConversationTurnLatest extends ConversationTurnMessage {

@@ -6,6 +6,10 @@ import { agentRunStoreLayer } from "@bob/conversations-service/run-store"
 import { conversationStoreLayer } from "@bob/conversations-service/store"
 import { toolExecutorLayer } from "@bob/conversations-service/tool-executor"
 import { conversationTurnStoreLayer } from "@bob/conversations-service/turn-store"
+import {
+  MessageAttachmentStore,
+  type MessageAttachmentStoreShape
+} from "@bob/conversations-types/attachment-store"
 import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
 import { makeRuntimeModules } from "@bob/core-types/runtime-module"
 import { deliveryStoreLayer } from "@bob/delivery-service/store"
@@ -62,6 +66,7 @@ export function testFixture<
   const services = fixture.services
   const config = fixture.config
   const conversations = []
+  const attachmentService = services?.attachments as MessageAttachmentStoreShape | undefined
   if (services?.training !== undefined) {
     // SAFETY: The focused double implements the workflow methods exercised by its test.
     const training = services.training as Parameters<typeof makeTrainingConversationWorkflow>[0]
@@ -87,6 +92,15 @@ export function testFixture<
     contextStoreLayer(completeAdapter(services?.context)),
     agentRunStoreLayer(completeAdapter(services?.runs)),
     conversationStoreLayer(completeAdapter(services?.conversations)),
+    Layer.succeed(
+      MessageAttachmentStore,
+      MessageAttachmentStore.of({
+        storeInbound:
+          attachmentService?.storeInbound ?? (() => Effect.die("Missing attachment store")),
+        loadForAgent:
+          attachmentService?.loadForAgent ?? (() => Effect.die("Missing attachment store"))
+      })
+    ),
     toolExecutorLayer(completeAdapter(services?.tools)),
     conversationTurnStoreLayer(completeAdapter(services?.turns)),
     deliveryStoreLayer(completeAdapter(services?.delivery)),
