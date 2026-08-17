@@ -1,4 +1,4 @@
-import { IsoDateTime, NonEmptyText, ShortText } from "@bob/capabilities-types/shared"
+import { IsoDateTime, NonEmptyText, ShortText } from "@bob/shared-types/shared"
 import { Schema } from "effect"
 
 export const ContextSource = Schema.Struct({

@@ -1,6 +1,6 @@
 import { AgentArtifact } from "@bob/artifacts-types/artifact"
-import { DeploymentProfileId } from "@bob/capabilities-types/catalogue"
-import { PriorToolReceipt } from "@bob/capabilities-types/receipts"
+import { ContextItem, ContextSource } from "@bob/context-types/item"
+import { HourCycle } from "@bob/settings-types/settings"
 import {
   IsoDateTime,
   Locale,
@@ -8,10 +8,10 @@ import {
   ShortText,
   TimeZone,
   Uuid
-} from "@bob/capabilities-types/shared"
-import { CapabilityCatalogueGeneration, ToolName } from "@bob/capabilities-types/tools"
-import { ContextItem, ContextSource } from "@bob/context-types/item"
-import { HourCycle } from "@bob/settings-types/settings"
+} from "@bob/shared-types/shared"
+import { DeploymentProfileId } from "@bob/tools-types/catalogue"
+import { PriorToolReceipt } from "@bob/tools-types/receipts"
+import { CapabilityCatalogueGeneration, ToolName } from "@bob/tools-types/tools"
 import { Schema } from "effect"
 
 export { AgentArtifact, PlanArtifact } from "@bob/artifacts-types/artifact"
@@ -22,7 +22,7 @@ export const CurrentTurnMessage = Schema.Struct({
   text: NonEmptyText
 })
 
-export { PriorToolReceipt, PriorToolReceiptOrigin } from "@bob/capabilities-types/receipts"
+export { PriorToolReceipt, PriorToolReceiptOrigin } from "@bob/tools-types/receipts"
 
 export const AgentRunRequest = Schema.Struct({
   protocolVersion: Schema.Literal(1),

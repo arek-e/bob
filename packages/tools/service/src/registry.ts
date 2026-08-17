@@ -1,24 +1,23 @@
-import type { ToolAdapterRegistry, ToolCommandAdapter } from "@bob/conversations-types/tool-adapter"
+import type {
+  ToolAdapterRegistry,
+  ToolCommandAdapter,
+  ToolCommandAdapterContext
+} from "@bob/tools-types/adapter"
 
+import { withBobSpan } from "@bob/observability"
 import {
   capabilityToolNames,
   type CapabilityCatalogue,
   type ToolName
-} from "@bob/capabilities-types/tools"
+} from "@bob/tools-types/tools"
 
 export type {
   ToolAdapterRegistry,
   ToolCommandAdapter,
   ToolCommandAdapterContext,
   ToolRunContext
-} from "@bob/conversations-types/tool-adapter"
+} from "@bob/tools-types/adapter"
 
-/**
- * The context that a domain-owned Tool command Adapter may use.
- *
- * The ToolExecutorAdapter builds this value only after it has validated the Agent
- * run. Adapters therefore do not read Agent run or Tool call rows directly.
- */
 /**
  * Internal seam for domain-owned Tool command behavior.
  *
@@ -56,4 +55,23 @@ export function makeToolAdapterRegistry(
     catalogue,
     adapterFor: (name: ToolName) => adapterByName.get(name)
   })
+}
+
+/** Execute one statically registered domain Adapter inside its complete telemetry span. */
+export function executeRegisteredTool(
+  registry: ToolAdapterRegistry,
+  context: ToolCommandAdapterContext
+) {
+  const adapter = registry.adapterFor(context.command.name)
+  if (adapter === undefined) return undefined
+  return withBobSpan(
+    {
+      name: "bob.tool.domain",
+      correlationId: context.run.correlationId,
+      feature: registry.catalogue.moduleFor(context.command.name)?.feature ?? "assistant",
+      runId: context.command.runId,
+      toolName: context.command.name
+    },
+    adapter.execute(context)
+  )
 }

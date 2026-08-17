@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@bob/agent-types": "workspace:*",
-    "@bob/capabilities-types": "workspace:*",
     "@bob/connections-service": "workspace:*",
     "@bob/conversations-types": "workspace:*",
     "@bob/core-service": "workspace:*",
@@ -29,6 +28,7 @@
     "@bob/policy-types": "workspace:*",
     "@bob/reminders-service": "workspace:*",
     "@bob/settings-types": "workspace:*",
+    "@bob/tools-types": "workspace:*",
     "@bob/training-service": "workspace:*",
     "@effect/sql-pg": "4.0.0-beta.107",
     "bullmq": "6.1.2",

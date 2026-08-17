@@ -3,9 +3,9 @@ import type { PriorToolReceiptSource } from "@bob/context-service/store"
 import type { CoreDatabase } from "@bob/db-types"
 
 import { PriorToolReceipt } from "@bob/agent-types/run"
-import { ToolName, ToolResult } from "@bob/capabilities-types/tools"
 import { agentRuns, conversationTurns, toolCalls } from "@bob/db-service/schema/conversations"
 import { outboxMessages } from "@bob/db-service/schema/delivery"
+import { ToolName, ToolResult } from "@bob/tools-types/tools"
 import { and, desc, eq, gte, inArray, isNotNull, lt, lte, ne, or } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 

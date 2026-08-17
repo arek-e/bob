@@ -1,9 +1,9 @@
 import type { CoreDatabase } from "@bob/db-types"
 import type { AlertInput, AlertStoreAdapter } from "@bob/operations-types/alerts"
 
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
 import { operationalAlerts } from "@bob/db-service/schema/alerts"
 import { AlertStore, AlertStoreError } from "@bob/operations-types/alerts"
+import { liftPromiseAdapter } from "@bob/shared-types/effect-adapter"
 import { and, desc, eq } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 

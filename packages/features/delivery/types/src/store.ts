@@ -1,5 +1,5 @@
-import type { EffectAdapter } from "@bob/capabilities-types/effect-adapter"
 import type { NormalizedStatusEvent } from "@bob/conversations-types/channel"
+import type { EffectAdapter } from "@bob/shared-types/effect-adapter"
 
 import { Context, Schema } from "effect"
 

@@ -1,4 +1,4 @@
-import type { PriorToolReceipt } from "@bob/capabilities-types/receipts"
+import type { PriorToolReceipt } from "@bob/tools-types/receipts"
 
 import { Context, type Effect, Schema } from "effect"
 

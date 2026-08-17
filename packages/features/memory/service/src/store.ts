@@ -3,7 +3,6 @@ import type { MemoryStoreAdapter } from "@bob/memory-types/store"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
 import {
   factEvidence,
   factRelations,
@@ -23,6 +22,7 @@ import {
 } from "@bob/policy-service/effect-outcome"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { retrievalProjection } from "@bob/retrieval-service/projection"
+import { liftPromiseAdapter } from "@bob/shared-types/effect-adapter"
 import { and, desc, eq, sql } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
 

@@ -1,7 +1,7 @@
-import type { CapabilityModule } from "@bob/capabilities-types/definitions"
+import type { CapabilityModule } from "@bob/tools-types/definitions"
 
-import { emptyInputSchema } from "@bob/capabilities-types/definitions"
-import { ShortText } from "@bob/capabilities-types/shared"
+import { ShortText } from "@bob/shared-types/shared"
+import { emptyInputSchema } from "@bob/tools-types/definitions"
 import { Schema } from "effect"
 
 export const JournalSearchMetadataArguments = Schema.Struct({

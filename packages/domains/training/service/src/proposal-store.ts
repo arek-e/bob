@@ -2,11 +2,11 @@ import type { CoreDatabase } from "@bob/db-types"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
-import { JsonObject as JsonObjectSchema } from "@bob/capabilities-types/json"
-import { type ToolCommand, type ToolName, ToolResult } from "@bob/capabilities-types/tools"
 import { messages } from "@bob/db-service/schema/conversations"
 import { trainingProposals } from "@bob/db-service/schema/training"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { JsonObject as JsonObjectSchema } from "@bob/shared-types/json"
+import { type ToolCommand, type ToolName, ToolResult } from "@bob/tools-types/tools"
 import {
   EquipmentMapExerciseArguments,
   ExerciseCreateArguments,

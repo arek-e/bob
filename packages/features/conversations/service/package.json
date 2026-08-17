@@ -11,7 +11,6 @@
     "./run-store": "./src/run-store.ts",
     "./store": "./src/store.ts",
     "./timing": "./src/timing.ts",
-    "./tool-adapter": "./src/tool-adapter.ts",
     "./tool-executor": "./src/tool-executor.ts",
     "./turn-store": "./src/turn-store.ts"
   },
@@ -23,7 +22,6 @@
     "@bob/agent-types": "workspace:*",
     "@bob/artifacts-service": "workspace:*",
     "@bob/artifacts-types": "workspace:*",
-    "@bob/capabilities-types": "workspace:*",
     "@bob/context-service": "workspace:*",
     "@bob/context-types": "workspace:*",
     "@bob/conversations-types": "workspace:*",
@@ -31,8 +29,12 @@
     "@bob/db-types": "workspace:*",
     "@bob/memory-service": "workspace:*",
     "@bob/memory-types": "workspace:*",
+    "@bob/observability": "workspace:*",
     "@bob/policy-service": "workspace:*",
     "@bob/policy-types": "workspace:*",
+    "@bob/shared-types": "workspace:*",
+    "@bob/tools-service": "workspace:*",
+    "@bob/tools-types": "workspace:*",
     "@effect/sql-pg": "4.0.0-beta.107",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "4.0.0-beta.107"

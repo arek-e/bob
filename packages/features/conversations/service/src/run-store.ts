@@ -5,7 +5,6 @@ import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
 import { AgentRunOperation, AgentRunRequest } from "@bob/agent-types/run"
 import { makeArtifactPersistence } from "@bob/artifacts-service/persistence"
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
 import { AgentRunStore, AgentRunStoreError } from "@bob/conversations-types/run-store"
 import {
   agentRunAttempts,
@@ -18,6 +17,7 @@ import {
 import { outboxMessages } from "@bob/db-service/schema/delivery"
 import { allInTransaction } from "@bob/db-types"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { liftPromiseAdapter } from "@bob/shared-types/effect-adapter"
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
 

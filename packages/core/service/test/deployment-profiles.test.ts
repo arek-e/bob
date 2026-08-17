@@ -1,13 +1,10 @@
-import type { ToolDefinition } from "@bob/capabilities-types/definitions"
+import type { ToolDefinition } from "@bob/tools-types/definitions"
 
-import {
-  CapabilityCatalogueGeneration,
-  makeCapabilityCatalogue
-} from "@bob/capabilities-types/catalogue"
-import { capabilityToolNames } from "@bob/capabilities-types/definitions"
 import { coreDeploymentProfile, transitionalDeploymentProfile } from "@bob/core-types/profiles"
 import { JournalSearchMetadataArguments } from "@bob/journal-types/capability"
 import { memoryCapability } from "@bob/memory-types/capability"
+import { CapabilityCatalogueGeneration, makeCapabilityCatalogue } from "@bob/tools-types/catalogue"
+import { capabilityToolNames } from "@bob/tools-types/definitions"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 

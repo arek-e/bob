@@ -1,4 +1,4 @@
-import { IsoDateTime, Locale, TimeZone } from "@bob/capabilities-types/shared"
+import { IsoDateTime, Locale, TimeZone } from "@bob/shared-types/shared"
 import { Schema } from "effect"
 
 export const HourCycle = Schema.Literals(["auto", "h12", "h23"])

@@ -5,7 +5,6 @@ import {
   AgentRunOperationsLoadRequest,
   AgentRunResult
 } from "@bob/agent-types/run"
-import { ToolCommand } from "@bob/capabilities-types/tools"
 import { NormalizedInboundEvent, NormalizedStatusEvent } from "@bob/conversations-types/channel"
 import { AgentRunStore } from "@bob/conversations-types/run-store"
 import { ConversationStore } from "@bob/conversations-types/store"
@@ -30,6 +29,7 @@ import { createOwnerAuth, ownerSession } from "@bob/policy-service/auth/service"
 import { OwnerDataKeyStore } from "@bob/policy-types/owner-data-key"
 import { OwnerSettingsUpdate } from "@bob/settings-types/settings"
 import { OwnerSettingsStore } from "@bob/settings-types/store"
+import { ToolCommand } from "@bob/tools-types/tools"
 import { sql } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 
@@ -410,16 +410,7 @@ export async function handleHttp(
                 },
                 Effect.gen(function* () {
                   const tools = yield* ToolExecutor
-                  const result = yield* withBobSpan(
-                    {
-                      name: "bob.tool.domain",
-                      correlationId,
-                      feature: featureForToolName(composition.profile, command.name),
-                      runId: command.runId,
-                      toolName: command.name
-                    },
-                    tools.execute(command)
-                  )
+                  const result = yield* tools.execute(command)
                   status = result.ok ? "completed" : "failed"
                   yield* recordDecision({
                     name: "bob.decision.policy",

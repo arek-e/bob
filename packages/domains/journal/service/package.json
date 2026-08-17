@@ -11,7 +11,6 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@bob/capabilities-types": "workspace:*",
     "@bob/conversations-types": "workspace:*",
     "@bob/core-types": "workspace:*",
     "@bob/db-service": "workspace:*",
@@ -22,6 +21,8 @@
     "@bob/policy-service": "workspace:*",
     "@bob/policy-types": "workspace:*",
     "@bob/retrieval-service": "workspace:*",
+    "@bob/tools-service": "workspace:*",
+    "@bob/tools-types": "workspace:*",
     "@effect/sql-pg": "4.0.0-beta.107",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "4.0.0-beta.107"

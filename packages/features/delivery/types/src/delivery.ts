@@ -1,4 +1,4 @@
-import { E164, IsoDateTime, ShortText, Uuid } from "@bob/capabilities-types/shared"
+import { E164, IsoDateTime, ShortText, Uuid } from "@bob/shared-types/shared"
 import { Schema } from "effect"
 
 export const DeliveryAttemptState = Schema.Literals([

@@ -4,7 +4,6 @@ import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 import type { HourCycle, OwnerSettings } from "@bob/settings-types/settings"
 import type { OwnerSettingsStoreAdapter } from "@bob/settings-types/store"
 
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
 import { channels, users } from "@bob/db-service/schema/conversations"
 import { allInTransaction } from "@bob/db-types"
 import {
@@ -15,6 +14,7 @@ import {
 } from "@bob/policy-service/effect-outcome"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { OwnerSettingsStore, OwnerSettingsStoreError } from "@bob/settings-types/store"
+import { liftPromiseAdapter } from "@bob/shared-types/effect-adapter"
 import { and, eq } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 

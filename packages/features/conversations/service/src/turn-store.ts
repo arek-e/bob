@@ -3,7 +3,6 @@ import type { CoreDatabase } from "@bob/db-types"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
 import {
   ConversationTurnStore,
   ConversationTurnStoreError
@@ -17,6 +16,7 @@ import {
 } from "@bob/db-service/schema/conversations"
 import { allInTransaction } from "@bob/db-types"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { liftPromiseAdapter } from "@bob/shared-types/effect-adapter"
 import { and, asc, eq, isNull, lte, ne, or, sql } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 

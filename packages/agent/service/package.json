@@ -13,9 +13,9 @@
   "dependencies": {
     "@bob/agent-types": "workspace:*",
     "@bob/artifacts-types": "workspace:*",
-    "@bob/capabilities-types": "workspace:*",
     "@bob/observability": "workspace:*",
     "@bob/policy-types": "workspace:*",
+    "@bob/tools-types": "workspace:*",
     "@earendil-works/pi-ai": "0.84.1",
     "effect": "4.0.0-beta.107"
   },

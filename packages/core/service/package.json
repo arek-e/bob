@@ -18,7 +18,6 @@
     "@bob/agent-types": "workspace:*",
     "@bob/artifacts-service": "workspace:*",
     "@bob/artifacts-types": "workspace:*",
-    "@bob/capabilities-types": "workspace:*",
     "@bob/connections-service": "workspace:*",
     "@bob/context-service": "workspace:*",
     "@bob/context-types": "workspace:*",
@@ -45,6 +44,8 @@
     "@bob/settings-service": "workspace:*",
     "@bob/settings-types": "workspace:*",
     "@bob/skills-service": "workspace:*",
+    "@bob/tools-service": "workspace:*",
+    "@bob/tools-types": "workspace:*",
     "@bob/training-service": "workspace:*",
     "effect": "4.0.0-beta.107"
   },

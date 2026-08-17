@@ -1,7 +1,6 @@
 import type { CoreDatabase } from "@bob/db-types"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
 import { users } from "@bob/db-service/schema/conversations"
 import {
   OwnerDataKeyStore,
@@ -10,6 +9,7 @@ import {
   type OwnerDataKey,
   type OwnerDataKeyStoreOptions
 } from "@bob/policy-types/owner-data-key"
+import { liftPromiseAdapter } from "@bob/shared-types/effect-adapter"
 import { and, eq, isNull } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 

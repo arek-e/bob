@@ -1,7 +1,7 @@
-import type { CapabilityModule } from "@bob/capabilities-types/definitions"
+import type { CapabilityModule } from "@bob/tools-types/definitions"
 
-import { emptyInputSchema } from "@bob/capabilities-types/definitions"
-import { TimeZone } from "@bob/capabilities-types/shared"
+import { TimeZone } from "@bob/shared-types/shared"
+import { emptyInputSchema } from "@bob/tools-types/definitions"
 import { Schema } from "effect"
 
 export const SettingsUpdateArguments = Schema.Struct({

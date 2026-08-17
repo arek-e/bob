@@ -1,7 +1,7 @@
-import type { CapabilityModule } from "@bob/capabilities-types/definitions"
+import type { CapabilityModule } from "@bob/tools-types/definitions"
 
-import { emptyInputSchema, occurrenceInputSchema } from "@bob/capabilities-types/definitions"
-import { IsoDateTime, ShortText, TimeZone, Uuid } from "@bob/capabilities-types/shared"
+import { IsoDateTime, ShortText, TimeZone, Uuid } from "@bob/shared-types/shared"
+import { emptyInputSchema, occurrenceInputSchema } from "@bob/tools-types/definitions"
 import { Schema } from "effect"
 
 export const ReminderCreateArguments = Schema.Struct({

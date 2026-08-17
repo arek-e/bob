@@ -1,4 +1,4 @@
-import { E164, IsoDateTime, NonEmptyText, Uuid } from "@bob/capabilities-types/shared"
+import { E164, IsoDateTime, NonEmptyText, Uuid } from "@bob/shared-types/shared"
 import { Schema } from "effect"
 
 export const InboundMessageStatus = Schema.Literals(["RECEIVED"])

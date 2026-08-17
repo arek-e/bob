@@ -1,16 +1,12 @@
 {
-  "name": "@bob/capabilities-types",
+  "name": "@bob/shared-types",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": {
-    "./catalogue": "./src/catalogue.ts",
-    "./definitions": "./src/definitions.ts",
     "./effect-adapter": "./src/effect-adapter.ts",
     "./json": "./src/json.ts",
-    "./receipts": "./src/receipts.ts",
-    "./shared": "./src/shared.ts",
-    "./tools": "./src/tools.ts"
+    "./shared": "./src/shared.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

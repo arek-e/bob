@@ -1,7 +1,6 @@
-import type { EffectAdapter } from "@bob/capabilities-types/effect-adapter"
-import type { ToolResult } from "@bob/capabilities-types/tools"
+import type { ToolResult } from "@bob/tools-types/tools"
 
-import { Context, Schema } from "effect"
+import { Context, Effect, Schema } from "effect"
 
 export type MutationActivity =
   | { readonly status: "none" }
@@ -18,18 +17,17 @@ export type MutationActivity =
       readonly originRevision?: number
     }
 
-export interface ToolExecutorAdapter {
-  execute<Input>(input: Input): Promise<ToolResult>
-  mutationActivity(runId: string): Promise<MutationActivity>
-  expireMutationRecovery(runId: string): Promise<boolean>
-}
-
 export class ToolExecutorError extends Schema.TaggedError<ToolExecutorError>()(
   "ToolExecutorError",
   { operation: Schema.String, cause: Schema.Unknown }
 ) {}
 
-export class ToolExecutor extends Context.Service<
-  ToolExecutor,
-  EffectAdapter<ToolExecutorAdapter, ToolExecutorError>
->()("@bob/conversations/ToolExecutor") {}
+export interface ToolExecutorShape {
+  execute<Input>(input: Input): Effect.Effect<ToolResult, ToolExecutorError>
+  mutationActivity(runId: string): Effect.Effect<MutationActivity, ToolExecutorError>
+  expireMutationRecovery(runId: string): Effect.Effect<boolean, ToolExecutorError>
+}
+
+export class ToolExecutor extends Context.Service<ToolExecutor, ToolExecutorShape>()(
+  "@bob/conversations/ToolExecutor"
+) {}

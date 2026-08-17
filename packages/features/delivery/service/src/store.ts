@@ -3,7 +3,6 @@ import type { DeliveryStoreAdapter } from "@bob/delivery-types/store"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
 import {
   ProviderDeliveryStatus,
   type NormalizedStatusEvent
@@ -15,6 +14,7 @@ import { allInTransaction } from "@bob/db-types"
 import { DeliveryStore, DeliveryStoreError } from "@bob/delivery-types/store"
 import { recordOperationalAlert } from "@bob/operations-service/alerts/store"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { liftPromiseAdapter } from "@bob/shared-types/effect-adapter"
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
 

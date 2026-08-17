@@ -47,9 +47,6 @@ importers:
       '@bob/agent-types':
         specifier: workspace:*
         version: link:../../packages/agent/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../packages/features/capabilities/types
       '@bob/core-service':
         specifier: workspace:*
         version: link:../../packages/core/service
@@ -59,6 +56,9 @@ importers:
       '@bob/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../packages/tools/types
       '@effect/platform-node':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)(ioredis@5.11.1)
@@ -112,9 +112,6 @@ importers:
       '@bob/agent-types':
         specifier: workspace:*
         version: link:../../packages/agent/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../packages/features/capabilities/types
       '@bob/connections-service':
         specifier: workspace:*
         version: link:../../packages/domains/connections/service
@@ -169,6 +166,9 @@ importers:
       '@bob/settings-types':
         specifier: workspace:*
         version: link:../../packages/features/settings/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../packages/tools/types
       '@bob/training-service':
         specifier: workspace:*
         version: link:../../packages/domains/training/service
@@ -243,15 +243,15 @@ importers:
       '@bob/artifacts-types':
         specifier: workspace:*
         version: link:../../features/artifacts/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../features/capabilities/types
       '@bob/observability':
         specifier: workspace:*
         version: link:../../observability
       '@bob/policy-types':
         specifier: workspace:*
         version: link:../../features/policy/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../tools/types
       '@earendil-works/pi-ai':
         specifier: 0.84.1
         version: 0.84.1(ws@8.21.3)(zod@4.4.3)
@@ -274,15 +274,18 @@ importers:
       '@bob/artifacts-types':
         specifier: workspace:*
         version: link:../../features/artifacts/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../features/capabilities/types
       '@bob/context-types':
         specifier: workspace:*
         version: link:../../features/context/types
       '@bob/settings-types':
         specifier: workspace:*
         version: link:../../features/settings/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
@@ -298,9 +301,6 @@ importers:
       '@bob/artifacts-types':
         specifier: workspace:*
         version: link:../../features/artifacts/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../features/capabilities/types
       '@bob/connections-service':
         specifier: workspace:*
         version: link:../../domains/connections/service
@@ -379,6 +379,12 @@ importers:
       '@bob/skills-service':
         specifier: workspace:*
         version: link:../../features/skills/service
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../tools/types
       '@bob/training-service':
         specifier: workspace:*
         version: link:../../domains/training/service
@@ -395,9 +401,6 @@ importers:
 
   packages/core/types:
     dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../features/capabilities/types
       '@bob/connections-types':
         specifier: workspace:*
         version: link:../../domains/connections/types
@@ -425,6 +428,12 @@ importers:
       '@bob/settings-types':
         specifier: workspace:*
         version: link:../../features/settings/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../tools/types
       '@bob/training-types':
         specifier: workspace:*
         version: link:../../domains/training/types
@@ -474,9 +483,6 @@ importers:
 
   packages/domains/connections/service:
     dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../../features/capabilities/types
       '@bob/connections-types':
         specifier: workspace:*
         version: link:../types
@@ -492,6 +498,15 @@ importers:
       '@bob/db-types':
         specifier: workspace:*
         version: link:../../../db/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       '@effect/sql-pg':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)
@@ -504,18 +519,18 @@ importers:
 
   packages/domains/connections/types:
     dependencies:
-      '@bob/capabilities-types':
+      '@bob/shared-types':
         specifier: workspace:*
-        version: link:../../../features/capabilities/types
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
 
   packages/domains/journal/service:
     dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../../features/capabilities/types
       '@bob/conversations-types':
         specifier: workspace:*
         version: link:../../../features/conversations/types
@@ -546,6 +561,12 @@ importers:
       '@bob/retrieval-service':
         specifier: workspace:*
         version: link:../../../features/retrieval/service
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       '@effect/sql-pg':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)
@@ -558,18 +579,18 @@ importers:
 
   packages/domains/journal/types:
     dependencies:
-      '@bob/capabilities-types':
+      '@bob/shared-types':
         specifier: workspace:*
-        version: link:../../../features/capabilities/types
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
 
   packages/domains/reminders/service:
     dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../../features/capabilities/types
       '@bob/conversations-types':
         specifier: workspace:*
         version: link:../../../features/conversations/types
@@ -603,6 +624,15 @@ importers:
       '@bob/reminders-types':
         specifier: workspace:*
         version: link:../types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       '@effect/sql-pg':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)
@@ -618,9 +648,12 @@ importers:
 
   packages/domains/reminders/types:
     dependencies:
-      '@bob/capabilities-types':
+      '@bob/shared-types':
         specifier: workspace:*
-        version: link:../../../features/capabilities/types
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
@@ -633,9 +666,6 @@ importers:
       '@bob/artifacts-types':
         specifier: workspace:*
         version: link:../../../features/artifacts/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../../features/capabilities/types
       '@bob/conversations-types':
         specifier: workspace:*
         version: link:../../../features/conversations/types
@@ -660,6 +690,15 @@ importers:
       '@bob/policy-types':
         specifier: workspace:*
         version: link:../../../features/policy/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       '@bob/training-types':
         specifier: workspace:*
         version: link:../types
@@ -675,9 +714,12 @@ importers:
 
   packages/domains/training/types:
     dependencies:
-      '@bob/capabilities-types':
+      '@bob/shared-types':
         specifier: workspace:*
-        version: link:../../../features/capabilities/types
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
@@ -721,12 +763,6 @@ importers:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
 
-  packages/features/capabilities/types:
-    dependencies:
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
   packages/features/context/service:
     dependencies:
       '@bob/context-types':
@@ -747,9 +783,12 @@ importers:
 
   packages/features/context/types:
     dependencies:
-      '@bob/capabilities-types':
+      '@bob/shared-types':
         specifier: workspace:*
-        version: link:../../capabilities/types
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
@@ -765,9 +804,6 @@ importers:
       '@bob/artifacts-types':
         specifier: workspace:*
         version: link:../../artifacts/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
       '@bob/context-service':
         specifier: workspace:*
         version: link:../../context/service
@@ -789,12 +825,24 @@ importers:
       '@bob/memory-types':
         specifier: workspace:*
         version: link:../../memory/types
+      '@bob/observability':
+        specifier: workspace:*
+        version: link:../../../observability
       '@bob/policy-service':
         specifier: workspace:*
         version: link:../../policy/service
       '@bob/policy-types':
         specifier: workspace:*
         version: link:../../policy/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       '@effect/sql-pg':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)
@@ -810,18 +858,18 @@ importers:
       '@bob/agent-types':
         specifier: workspace:*
         version: link:../../../agent/types
-      '@bob/capabilities-types':
+      '@bob/shared-types':
         specifier: workspace:*
-        version: link:../../capabilities/types
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
 
   packages/features/delivery/service:
     dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
       '@bob/conversations-types':
         specifier: workspace:*
         version: link:../../conversations/types
@@ -849,6 +897,9 @@ importers:
       '@bob/policy-types':
         specifier: workspace:*
         version: link:../../policy/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
       '@effect/sql-pg':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)
@@ -861,21 +912,18 @@ importers:
 
   packages/features/delivery/types:
     dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
       '@bob/conversations-types':
         specifier: workspace:*
         version: link:../../conversations/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
 
   packages/features/memory/service:
     dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
       '@bob/context-service':
         specifier: workspace:*
         version: link:../../context/service
@@ -903,6 +951,15 @@ importers:
       '@bob/retrieval-types':
         specifier: workspace:*
         version: link:../../retrieval/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       '@effect/sql-pg':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)
@@ -919,9 +976,12 @@ importers:
 
   packages/features/memory/types:
     dependencies:
-      '@bob/capabilities-types':
+      '@bob/shared-types':
         specifier: workspace:*
-        version: link:../../capabilities/types
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
@@ -931,9 +991,6 @@ importers:
       '@bob/agent-types':
         specifier: workspace:*
         version: link:../../../agent/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
       '@bob/db-service':
         specifier: workspace:*
         version: link:../../../db/service
@@ -946,6 +1003,9 @@ importers:
       '@bob/operations-types':
         specifier: workspace:*
         version: link:../types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
       '@effect/sql-pg':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)
@@ -958,18 +1018,15 @@ importers:
 
   packages/features/operations/types:
     dependencies:
-      '@bob/capabilities-types':
+      '@bob/shared-types':
         specifier: workspace:*
-        version: link:../../capabilities/types
+        version: link:../../../shared/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
 
   packages/features/policy/service:
     dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
       '@bob/context-types':
         specifier: workspace:*
         version: link:../../context/types
@@ -985,6 +1042,9 @@ importers:
       '@bob/policy-types':
         specifier: workspace:*
         version: link:../types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
       '@effect/sql-pg':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)
@@ -1000,9 +1060,9 @@ importers:
 
   packages/features/policy/types:
     dependencies:
-      '@bob/capabilities-types':
+      '@bob/shared-types':
         specifier: workspace:*
-        version: link:../../capabilities/types
+        version: link:../../../shared/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
@@ -1051,9 +1111,6 @@ importers:
 
   packages/features/settings/service:
     dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
       '@bob/conversations-types':
         specifier: workspace:*
         version: link:../../conversations/types
@@ -1072,6 +1129,15 @@ importers:
       '@bob/settings-types':
         specifier: workspace:*
         version: link:../types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       '@effect/sql-pg':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)
@@ -1084,9 +1150,12 @@ importers:
 
   packages/features/settings/types:
     dependencies:
-      '@bob/capabilities-types':
+      '@bob/shared-types':
         specifier: workspace:*
-        version: link:../../capabilities/types
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
@@ -1123,12 +1192,12 @@ importers:
 
   packages/observability:
     dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../features/capabilities/types
       '@bob/policy-types':
         specifier: workspace:*
         version: link:../features/policy/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
@@ -1142,6 +1211,33 @@ importers:
       '@bob/training-types':
         specifier: workspace:*
         version: link:../domains/training/types
+
+  packages/shared/types:
+    dependencies:
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/tools/service:
+    dependencies:
+      '@bob/observability':
+        specifier: workspace:*
+        version: link:../../observability
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/tools/types:
+    dependencies:
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../shared/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
 
 packages:
 

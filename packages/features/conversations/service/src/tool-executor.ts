@@ -1,19 +1,15 @@
-import type { ToolExecutorAdapter } from "@bob/conversations-types/tool-executor"
+import type { ToolExecutorShape } from "@bob/conversations-types/tool-executor"
 import type { CoreDatabase } from "@bob/db-types"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
+import type {
+  ToolAdapterError,
+  ToolAdapterRegistry,
+  ToolCommandAdapterContext,
+  ToolRunContext
+} from "@bob/tools-types/adapter"
 
 import { AgentRunRequest } from "@bob/agent-types/run"
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
-import { JsonObject } from "@bob/capabilities-types/json"
-import {
-  type CapabilityCatalogue,
-  conversationMutationIdempotencyKey,
-  MAX_TOOL_RESULT_BYTES,
-  ToolCommand,
-  ToolName,
-  ToolResult
-} from "@bob/capabilities-types/tools"
 import { ToolExecutor, ToolExecutorError } from "@bob/conversations-types/tool-executor"
 import {
   agentRuns,
@@ -21,15 +17,20 @@ import {
   inboundEvents,
   toolCalls
 } from "@bob/db-service/schema/conversations"
+import { currentBobCorrelationId, withBobSpan } from "@bob/observability"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
-import { and, eq, exists, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm"
-import { Effect, Layer, Schema } from "effect"
-
+import { JsonObject } from "@bob/shared-types/json"
+import { executeRegisteredTool } from "@bob/tools-service/registry"
 import {
-  type ToolCommandAdapterContext,
-  type ToolAdapterRegistry,
-  type ToolRunContext
-} from "./tool-adapter.ts"
+  type CapabilityCatalogue,
+  conversationMutationIdempotencyKey,
+  MAX_TOOL_RESULT_BYTES,
+  ToolCommand,
+  ToolName,
+  ToolResult
+} from "@bob/tools-types/tools"
+import { and, eq, exists, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm"
+import { Effect, Layer, Option, Schema, Tracer } from "effect"
 
 export async function toolCommandHash(command: typeof ToolCommand.Type): Promise<string> {
   const digest = await crypto.subtle.digest(
@@ -67,7 +68,17 @@ function canonicalJson(value: typeof Schema.Json.Type): string {
 }
 
 export { ToolExecutor }
-export type { MutationActivity, ToolExecutorAdapter } from "@bob/conversations-types/tool-executor"
+export type { MutationActivity, ToolExecutorShape } from "@bob/conversations-types/tool-executor"
+
+type RunDomainTool = (effect: Effect.Effect<ToolResult, ToolAdapterError>) => Promise<ToolResult>
+
+interface PromiseToolExecutor {
+  execute<Input>(input: Input, runDomain: RunDomainTool): Promise<ToolResult>
+  mutationActivity(
+    runId: string
+  ): Promise<import("@bob/conversations-types/tool-executor").MutationActivity>
+  expireMutationRecovery(runId: string): Promise<boolean>
+}
 
 function denied(): ToolResult {
   return { ok: false, code: "policy_denied", message: "This tool is not allowed for this run." }
@@ -219,7 +230,7 @@ export function expiredToolCallOutcome(
   }
 }
 
-export function makeToolExecutor(
+function makePromiseToolExecutor(
   database: CoreDatabase,
   protection: DataProtection,
   registry: ToolAdapterRegistry,
@@ -229,7 +240,7 @@ export function makeToolExecutor(
     readonly toolLeaseMs?: number
     readonly ownerDataKeys?: OwnerDataKeyStoreAdapter
   }
-): ToolExecutorAdapter {
+): PromiseToolExecutor {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const toolLeaseMs = options.toolLeaseMs ?? 60_000
@@ -361,7 +372,10 @@ export function makeToolExecutor(
     return reserved !== undefined
   }
 
-  async function dispatch(command: typeof ToolCommand.Type): Promise<ToolResult> {
+  async function dispatch(
+    command: typeof ToolCommand.Type,
+    runDomain: RunDomainTool
+  ): Promise<ToolResult> {
     const context = await runContext(command.runId)
     if (
       context.runStatus !== "executing" ||
@@ -374,14 +388,24 @@ export function makeToolExecutor(
       return denied()
     }
     const run: ToolRunContext = {
-      request: { ...context.request, userText: conversationPolicyText(context.request) },
+      correlationId: context.request.correlationId,
+      userText: conversationPolicyText(context.request),
+      localTime: context.request.localTime,
+      timeZone: context.request.timeZone,
+      ...(context.request.locale === undefined ? {} : { locale: context.request.locale }),
+      ...(context.request.conversationTurnId === undefined
+        ? {}
+        : { conversationTurnId: context.request.conversationTurnId }),
+      ...(context.request.conversationTurnRevision === undefined
+        ? {}
+        : { conversationTurnRevision: context.request.conversationTurnRevision }),
       channelId: context.channelId,
       messageId: context.messageId
     }
     const adapterContext: ToolCommandAdapterContext = { command, run }
-    const adapter = registry.adapterFor(command.name)
-    if (adapter === undefined) return denied()
-    const result = await adapter.execute(adapterContext)
+    const execution = executeRegisteredTool(registry, adapterContext)
+    if (execution === undefined) return denied()
+    const result = await runDomain(execution)
     if (result.evidence?.actionOutcome !== undefined) return boundToolResult(result)
     const confirmedCodes = registry.catalogue.confirmedActionCodes(command.name)
     if (result.ok && confirmedCodes.includes(result.code)) {
@@ -399,7 +423,7 @@ export function makeToolExecutor(
     return boundToolResult(result)
   }
 
-  const executor: ToolExecutorAdapter = {
+  const executor: PromiseToolExecutor = {
     async mutationActivity(runId) {
       const [run] = await Effect.runPromise(
         database
@@ -537,7 +561,7 @@ export function makeToolExecutor(
       )
       return recovered.length > 0
     },
-    async execute(input) {
+    async execute(input, runDomain) {
       const command = Schema.decodeUnknownSync(ToolCommand)(input)
       const commandRun = await conversationTurnForRun(command.runId)
       if (commandRun !== undefined && commandRun.ownerId !== command.ownerId) return denied()
@@ -818,7 +842,7 @@ export function makeToolExecutor(
       }
 
       try {
-        const result = await dispatch(command)
+        const result = await dispatch(command, runDomain)
         await Effect.runPromise(
           database
             .update(toolCalls)
@@ -865,12 +889,70 @@ export function makeToolExecutor(
   return executor
 }
 
-export function toolExecutorLayer(executor: ToolExecutorAdapter) {
-  return Layer.succeed(
-    ToolExecutor,
-    liftPromiseAdapter(
-      executor,
-      (operation, cause) => new ToolExecutorError({ operation: String(operation), cause })
-    )
-  )
+function executorError(operation: string, cause: unknown): ToolExecutorError {
+  return new ToolExecutorError({ operation, cause })
+}
+
+export function makeToolExecutor(
+  database: CoreDatabase,
+  protection: DataProtection,
+  registry: ToolAdapterRegistry,
+  options: {
+    readonly now?: () => Date
+    readonly randomUuid?: () => string
+    readonly toolLeaseMs?: number
+    readonly ownerDataKeys?: OwnerDataKeyStoreAdapter
+  }
+): ToolExecutorShape {
+  const executor = makePromiseToolExecutor(database, protection, registry, options)
+  return {
+    execute: (input) =>
+      Effect.gen(function* () {
+        const command = yield* Schema.decodeUnknownEffect(ToolCommand)(input).pipe(
+          Effect.mapError((cause) => executorError("execute", cause))
+        )
+        const correlationId = (yield* currentBobCorrelationId) ?? command.runId
+        return yield* withBobSpan(
+          {
+            name: "bob.tool.claim",
+            correlationId,
+            feature: registry.catalogue.moduleFor(command.name)?.feature ?? "assistant",
+            runId: command.runId,
+            toolName: command.name
+          },
+          Effect.gen(function* () {
+            const tracer = yield* Effect.serviceOption(Tracer.Tracer)
+            const parent = yield* Effect.option(Effect.currentSpan)
+            const runDomain: RunDomainTool = (effect) => {
+              const withParent = Option.isSome(parent)
+                ? Effect.withParentSpan(effect, parent.value)
+                : effect
+              return Effect.runPromise(
+                Option.isSome(tracer)
+                  ? Effect.provideService(withParent, Tracer.Tracer, tracer.value)
+                  : withParent
+              )
+            }
+            return yield* Effect.tryPromise({
+              try: () => executor.execute(command, runDomain),
+              catch: (cause) => executorError("execute", cause)
+            })
+          })
+        )
+      }),
+    mutationActivity: (runId) =>
+      Effect.tryPromise({
+        try: () => executor.mutationActivity(runId),
+        catch: (cause) => executorError("mutationActivity", cause)
+      }),
+    expireMutationRecovery: (runId) =>
+      Effect.tryPromise({
+        try: () => executor.expireMutationRecovery(runId),
+        catch: (cause) => executorError("expireMutationRecovery", cause)
+      })
+  }
+}
+
+export function toolExecutorLayer(executor: ToolExecutorShape) {
+  return Layer.succeed(ToolExecutor, executor)
 }

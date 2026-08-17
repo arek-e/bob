@@ -4,7 +4,7 @@ import type {
   AgentRunRequest,
   AgentRunResult
 } from "@bob/agent-types/run"
-import type { EffectAdapter } from "@bob/capabilities-types/effect-adapter"
+import type { EffectAdapter } from "@bob/shared-types/effect-adapter"
 
 import { Context, Schema } from "effect"
 

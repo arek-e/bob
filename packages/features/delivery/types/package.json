@@ -12,8 +12,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@bob/capabilities-types": "workspace:*",
     "@bob/conversations-types": "workspace:*",
+    "@bob/shared-types": "workspace:*",
     "effect": "4.0.0-beta.107"
   }
 }

@@ -1,4 +1,4 @@
-import { IsoDateTime, NonEmptyText, TimeZone, Uuid } from "@bob/capabilities-types/shared"
+import { IsoDateTime, NonEmptyText, TimeZone, Uuid } from "@bob/shared-types/shared"
 import { Schema } from "effect"
 
 export const ReminderSummary = Schema.Struct({

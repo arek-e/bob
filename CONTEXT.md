@@ -86,7 +86,9 @@ Package projects follow the system map:
 - `packages/features/<feature>/service` owns that feature's rules, workflows, and Adapters.
 - General Agent Core features are conversations, context, memory, retrieval, delivery, artifacts,
   settings, policy, skills, and operations.
-- `packages/features/capabilities/types` owns the shared Capability Module contracts and schemas.
+- `packages/tools/types` owns provider-neutral Tool contracts, Capability catalogues, and schemas.
+- `packages/tools/service` owns static Adapter registration and Effect-native Tool dispatch.
+- `packages/shared/types` owns shared value schemas that do not belong to one Module.
 - `packages/core/types` owns the provider-neutral Core Module Interface.
 - `packages/core/service` owns reusable Core workflows and the provider-neutral Core Layer builder.
 - `apps/core` selects one Deployment Profile and Adapter set. It owns the Managed Runtime, hosting
@@ -140,6 +142,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **External action attempt:** One durable attempt to change state or call an external system.
 - **Context pack:** Confirmed and policy-cleared data supplied to one agent run.
 - **Tool command:** One typed request from Bob's Agent loop to an owning Capability Module.
+- **Tool Module:** Provider-neutral Tool contracts and static dispatch machinery. It grants no domain authority.
 - **Capability Module:** One statically registered group of Tool definitions, execution Adapters, and safety metadata.
 - **General Agent Core:** Domain-neutral Modules for conversation, the Agent harness, retrieval, memory, planning, policy, action evidence, and delivery.
 - **Vertical Module:** One optional domain-owned set of capability, Context source, workflow, storage, route, and schedule Implementations.

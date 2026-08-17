@@ -1,7 +1,7 @@
-import type { CapabilityModule } from "@bob/capabilities-types/definitions"
+import type { CapabilityModule } from "@bob/tools-types/definitions"
 
-import { emptyInputSchema } from "@bob/capabilities-types/definitions"
-import { IsoDateTime } from "@bob/capabilities-types/shared"
+import { IsoDateTime } from "@bob/shared-types/shared"
+import { emptyInputSchema } from "@bob/tools-types/definitions"
 import { Schema } from "effect"
 
 export const ConnectionProvider = Schema.Literals(["google_calendar", "microsoft_calendar"])

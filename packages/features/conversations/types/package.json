@@ -8,7 +8,6 @@
     "./interactions": "./src/interactions.ts",
     "./run-store": "./src/run-store.ts",
     "./store": "./src/store.ts",
-    "./tool-adapter": "./src/tool-adapter.ts",
     "./tool-executor": "./src/tool-executor.ts",
     "./turn-store": "./src/turn-store.ts"
   },
@@ -18,7 +17,8 @@
   },
   "dependencies": {
     "@bob/agent-types": "workspace:*",
-    "@bob/capabilities-types": "workspace:*",
+    "@bob/shared-types": "workspace:*",
+    "@bob/tools-types": "workspace:*",
     "effect": "4.0.0-beta.107"
   }
 }

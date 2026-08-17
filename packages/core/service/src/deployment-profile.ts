@@ -1,7 +1,5 @@
 import type { LegacyArtifactReader } from "@bob/artifacts-service/store"
-import type { CapabilityCatalogue } from "@bob/capabilities-types/tools"
 import type { ConversationStoreAdapter } from "@bob/conversations-types/store"
-import type { ToolCommandAdapter } from "@bob/conversations-types/tool-adapter"
 import type { ConversationTurnStoreAdapter } from "@bob/conversations-types/turn-store"
 import type { GeneralCoreBindings } from "@bob/core-types/bindings"
 import type { RuntimeModules } from "@bob/core-types/runtime-module"
@@ -13,6 +11,8 @@ import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 import type { RetrievalPipelineAdapter } from "@bob/retrieval-types/retrieval"
 import type { OwnerSettingsStoreAdapter } from "@bob/settings-types/store"
+import type { ToolCommandAdapter } from "@bob/tools-types/adapter"
+import type { CapabilityCatalogue } from "@bob/tools-types/tools"
 
 export interface DeploymentProfileContext {
   readonly bindings: GeneralCoreBindings

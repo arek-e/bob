@@ -18,12 +18,12 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@bob/capabilities-types": "workspace:*",
     "@bob/context-types": "workspace:*",
     "@bob/core-types": "workspace:*",
     "@bob/db-service": "workspace:*",
     "@bob/db-types": "workspace:*",
     "@bob/policy-types": "workspace:*",
+    "@bob/shared-types": "workspace:*",
     "@effect/sql-pg": "4.0.0-beta.107",
     "better-auth": "1.6.26",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",

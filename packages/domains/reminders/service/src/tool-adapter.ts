@@ -1,10 +1,5 @@
-import type {
-  ToolCommandAdapter,
-  ToolCommandAdapterContext
-} from "@bob/conversations-types/tool-adapter"
+import type { ToolCommandAdapter, ToolCommandAdapterContext } from "@bob/tools-types/adapter"
 
-import { jsonObject } from "@bob/capabilities-types/json"
-import { capabilityToolNames, type ToolName, type ToolResult } from "@bob/capabilities-types/tools"
 import {
   reminderCapability,
   ReminderCancelArguments,
@@ -12,6 +7,9 @@ import {
   ReminderOccurrenceArguments,
   ReminderSnoozeArguments
 } from "@bob/reminders-types/capability"
+import { jsonObject } from "@bob/shared-types/json"
+import { fromPromiseToolExecution } from "@bob/tools-service/adapter"
+import { capabilityToolNames, type ToolName, type ToolResult } from "@bob/tools-types/tools"
 import { Schema } from "effect"
 
 import type { ReminderStore } from "./store.ts"
@@ -120,9 +118,7 @@ async function validateMutationTarget(
   }
   const requestedTarget: ReminderRequestedTarget = { reminderId: requestedReminderId }
   if (requestedOccurrenceId !== undefined) requestedTarget.occurrenceId = requestedOccurrenceId
-  if (
-    resolveReminderMutationTarget(run.request.userText, requestedTarget, candidates) !== "matched"
-  ) {
+  if (resolveReminderMutationTarget(run.userText, requestedTarget, candidates) !== "matched") {
     return {
       ok: false,
       code: "choice_required",
@@ -136,187 +132,187 @@ export function makeReminderToolAdapter(reminders: ReminderStore): ToolCommandAd
   return {
     capabilityId: reminderCapability.id,
     names: capabilityToolNames(reminderCapability),
-    async execute(context) {
-      const { command, run } = context
-      const intent = reminderIntentForTool(command.name)
-      if (intent !== undefined) {
-        if (!reminderMutationMatchesRequest(run.request.userText, intent)) {
-          return confirmationRequired()
+    execute(context) {
+      return fromPromiseToolExecution(reminderCapability.id, async () => {
+        const { command, run } = context
+        const intent = reminderIntentForTool(command.name)
+        if (intent !== undefined) {
+          if (!reminderMutationMatchesRequest(run.userText, intent)) {
+            return confirmationRequired()
+          }
+
+          if (intent !== "create") {
+            const targetResult = await validateMutationTarget(context, reminders, intent)
+            if (targetResult !== undefined) return targetResult
+          }
         }
 
-        if (intent !== "create") {
-          const targetResult = await validateMutationTarget(context, reminders, intent)
-          if (targetResult !== undefined) return targetResult
-        }
-      }
-
-      switch (command.name) {
-        case "reminder_create": {
-          const args = Schema.decodeUnknownSync(ReminderCreateArguments)(command.arguments)
-          if (args.sourceMessageId !== run.messageId) {
-            return {
-              ok: false,
-              code: "source_mismatch",
-              message: "The reminder source is invalid."
-            }
-          }
-          if (args.timeZone !== run.request.timeZone) {
-            return {
-              ok: false,
-              code: "time_zone_mismatch",
-              message: "Use the owner's current time zone for this reminder."
-            }
-          }
-          const resolvedDueAt = resolveLocalDueAt(args.localDate, args.localTime, args.timeZone)
-          if (Date.parse(resolvedDueAt) !== Date.parse(args.dueAt)) {
-            return {
-              ok: false,
-              code: "due_time_mismatch",
-              message: "The reminder time does not match its local date and time."
-            }
-          }
-          if (Date.parse(resolvedDueAt) <= Date.parse(run.request.localTime)) {
-            return {
-              ok: false,
-              code: "invalid_due_time",
-              message: "Choose a reminder time after the current time."
-            }
-          }
-          if (
-            !reminderCreateTimeMatchesRequest(run.request.userText, args, run.request.localTime)
-          ) {
-            return {
-              ok: false,
-              code: "confirmation_required",
-              message: "Confirm the exact local date and time before Bob creates this reminder."
-            }
-          }
-          const result = await reminders.createOneShot(
-            command.ownerId,
-            run.channelId,
-            run.request.userText,
-            args,
-            command.idempotencyKey
-          )
-          return {
-            ok: true,
-            code: result.duplicate ? "reminder_exists" : "reminder_created",
-            message: `Reminder set for ${result.localDisplayTime} ${args.timeZone}.`,
-            data: jsonObject(result)
-          }
-        }
-        case "reminder_list": {
-          const list = await reminders.list(command.ownerId)
-          const emptyResponse =
-            run.request.locale?.toLocaleLowerCase().startsWith("sv") === true
-              ? "Du har inga aktiva påminnelser."
-              : "You have no active reminders."
-          const result = {
-            ok: true,
-            code: "reminder_list",
-            message: `${list.length} reminders found.`,
-            data: jsonObject({ reminders: list })
-          }
-          if (list.length === 0) {
-            Object.assign(result, {
-              evidence: {
-                sources: [
-                  {
-                    sourceId: "bob:active-reminders",
-                    sourceLabel: "Bob active reminders"
-                  }
-                ],
-                responseText: emptyResponse
+        switch (command.name) {
+          case "reminder_create": {
+            const args = Schema.decodeUnknownSync(ReminderCreateArguments)(command.arguments)
+            if (args.sourceMessageId !== run.messageId) {
+              return {
+                ok: false,
+                code: "source_mismatch",
+                message: "The reminder source is invalid."
               }
-            })
-          }
-          return result
-        }
-        case "reminder_acknowledge": {
-          const args = Schema.decodeUnknownSync(ReminderOccurrenceArguments)(command.arguments)
-          await reminders.acknowledge(command.ownerId, args.occurrenceId, command.idempotencyKey)
-          return {
-            ok: true,
-            code: "reminder_seen",
-            message: "The reminder was marked as seen.",
-            data: { occurrenceId: args.occurrenceId }
-          }
-        }
-        case "reminder_complete": {
-          const args = Schema.decodeUnknownSync(ReminderOccurrenceArguments)(command.arguments)
-          await reminders.complete(command.ownerId, args.occurrenceId, command.idempotencyKey)
-          return {
-            ok: true,
-            code: "reminder_done",
-            message: "The reminder was marked as done.",
-            data: { occurrenceId: args.occurrenceId }
-          }
-        }
-        case "reminder_snooze": {
-          const args = Schema.decodeUnknownSync(ReminderSnoozeArguments)(command.arguments)
-          if (args.timeZone !== run.request.timeZone) {
+            }
+            if (args.timeZone !== run.timeZone) {
+              return {
+                ok: false,
+                code: "time_zone_mismatch",
+                message: "Use the owner's current time zone for this reminder."
+              }
+            }
+            const resolvedDueAt = resolveLocalDueAt(args.localDate, args.localTime, args.timeZone)
+            if (Date.parse(resolvedDueAt) !== Date.parse(args.dueAt)) {
+              return {
+                ok: false,
+                code: "due_time_mismatch",
+                message: "The reminder time does not match its local date and time."
+              }
+            }
+            if (Date.parse(resolvedDueAt) <= Date.parse(run.localTime)) {
+              return {
+                ok: false,
+                code: "invalid_due_time",
+                message: "Choose a reminder time after the current time."
+              }
+            }
+            if (!reminderCreateTimeMatchesRequest(run.userText, args, run.localTime)) {
+              return {
+                ok: false,
+                code: "confirmation_required",
+                message: "Confirm the exact local date and time before Bob creates this reminder."
+              }
+            }
+            const result = await reminders.createOneShot(
+              command.ownerId,
+              run.channelId,
+              run.userText,
+              args,
+              command.idempotencyKey
+            )
             return {
-              ok: false,
-              code: "time_zone_mismatch",
-              message: "Use the owner's current time zone for this reminder."
+              ok: true,
+              code: result.duplicate ? "reminder_exists" : "reminder_created",
+              message: `Reminder set for ${result.localDisplayTime} ${args.timeZone}.`,
+              data: jsonObject(result)
             }
           }
-          const resolvedDueAt = resolveLocalDueAt(args.localDate, args.localTime, args.timeZone)
-          if (Date.parse(resolvedDueAt) !== Date.parse(args.dueAt)) {
+          case "reminder_list": {
+            const list = await reminders.list(command.ownerId)
+            const emptyResponse =
+              run.locale?.toLocaleLowerCase().startsWith("sv") === true
+                ? "Du har inga aktiva påminnelser."
+                : "You have no active reminders."
+            const result = {
+              ok: true,
+              code: "reminder_list",
+              message: `${list.length} reminders found.`,
+              data: jsonObject({ reminders: list })
+            }
+            if (list.length === 0) {
+              Object.assign(result, {
+                evidence: {
+                  sources: [
+                    {
+                      sourceId: "bob:active-reminders",
+                      sourceLabel: "Bob active reminders"
+                    }
+                  ],
+                  responseText: emptyResponse
+                }
+              })
+            }
+            return result
+          }
+          case "reminder_acknowledge": {
+            const args = Schema.decodeUnknownSync(ReminderOccurrenceArguments)(command.arguments)
+            await reminders.acknowledge(command.ownerId, args.occurrenceId, command.idempotencyKey)
             return {
-              ok: false,
-              code: "due_time_mismatch",
-              message: "The snooze time does not match its local date and time."
+              ok: true,
+              code: "reminder_seen",
+              message: "The reminder was marked as seen.",
+              data: { occurrenceId: args.occurrenceId }
             }
           }
-          if (Date.parse(args.dueAt) <= Date.parse(run.request.localTime)) {
+          case "reminder_complete": {
+            const args = Schema.decodeUnknownSync(ReminderOccurrenceArguments)(command.arguments)
+            await reminders.complete(command.ownerId, args.occurrenceId, command.idempotencyKey)
             return {
-              ok: false,
-              code: "invalid_due_time",
-              message: "Choose a snooze time after the current time."
+              ok: true,
+              code: "reminder_done",
+              message: "The reminder was marked as done.",
+              data: { occurrenceId: args.occurrenceId }
             }
           }
-          const occurrenceId = await reminders.snooze(
-            command.ownerId,
-            args.occurrenceId,
-            args.dueAt,
-            command.idempotencyKey
-          )
-          return {
-            ok: true,
-            code: "reminder_snoozed",
-            message: `The reminder was snoozed until ${args.localDate} ${args.localTime} ${args.timeZone}.`,
-            data: { occurrenceId, dueAt: args.dueAt }
+          case "reminder_snooze": {
+            const args = Schema.decodeUnknownSync(ReminderSnoozeArguments)(command.arguments)
+            if (args.timeZone !== run.timeZone) {
+              return {
+                ok: false,
+                code: "time_zone_mismatch",
+                message: "Use the owner's current time zone for this reminder."
+              }
+            }
+            const resolvedDueAt = resolveLocalDueAt(args.localDate, args.localTime, args.timeZone)
+            if (Date.parse(resolvedDueAt) !== Date.parse(args.dueAt)) {
+              return {
+                ok: false,
+                code: "due_time_mismatch",
+                message: "The snooze time does not match its local date and time."
+              }
+            }
+            if (Date.parse(args.dueAt) <= Date.parse(run.localTime)) {
+              return {
+                ok: false,
+                code: "invalid_due_time",
+                message: "Choose a snooze time after the current time."
+              }
+            }
+            const occurrenceId = await reminders.snooze(
+              command.ownerId,
+              args.occurrenceId,
+              args.dueAt,
+              command.idempotencyKey
+            )
+            return {
+              ok: true,
+              code: "reminder_snoozed",
+              message: `The reminder was snoozed until ${args.localDate} ${args.localTime} ${args.timeZone}.`,
+              data: { occurrenceId, dueAt: args.dueAt }
+            }
           }
+          case "reminder_cancel": {
+            const args = Schema.decodeUnknownSync(ReminderCancelArguments)(command.arguments)
+            await reminders.cancel(
+              command.ownerId,
+              args.reminderId,
+              args.occurrenceId,
+              command.idempotencyKey
+            )
+            return {
+              ok: true,
+              code:
+                args.occurrenceId === undefined
+                  ? "reminder_cancelled"
+                  : "reminder_occurrence_cancelled",
+              message:
+                args.occurrenceId === undefined
+                  ? "The reminder was cancelled."
+                  : "The reminder occurrence was cancelled.",
+              data: jsonObject({ reminderId: args.reminderId, occurrenceId: args.occurrenceId })
+            }
+          }
+          default:
+            return {
+              ok: false,
+              code: "domain_error",
+              message: "Bob could not complete this action safely."
+            }
         }
-        case "reminder_cancel": {
-          const args = Schema.decodeUnknownSync(ReminderCancelArguments)(command.arguments)
-          await reminders.cancel(
-            command.ownerId,
-            args.reminderId,
-            args.occurrenceId,
-            command.idempotencyKey
-          )
-          return {
-            ok: true,
-            code:
-              args.occurrenceId === undefined
-                ? "reminder_cancelled"
-                : "reminder_occurrence_cancelled",
-            message:
-              args.occurrenceId === undefined
-                ? "The reminder was cancelled."
-                : "The reminder occurrence was cancelled.",
-            data: jsonObject({ reminderId: args.reminderId, occurrenceId: args.occurrenceId })
-          }
-        }
-        default:
-          return {
-            ok: false,
-            code: "domain_error",
-            message: "Bob could not complete this action safely."
-          }
-      }
+      })
     }
   }
 }

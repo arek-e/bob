@@ -1,33 +1,32 @@
-import type { AgentRunRequest } from "@bob/agent-types/run"
 import type { ConnectionStore } from "@bob/connections-service/store"
-import type {
-  ToolCommandAdapter,
-  ToolCommandAdapterContext,
-  ToolRunContext
-} from "@bob/conversations-types/tool-adapter"
 import type { JournalStore } from "@bob/journal-service/store"
 import type { MemoryStoreAdapter } from "@bob/memory-types/store"
 import type { ReminderStore } from "@bob/reminders-service/store"
 import type { RetrievalPipelineAdapter } from "@bob/retrieval-types/retrieval"
 import type { OwnerSettingsStoreAdapter } from "@bob/settings-types/store"
+import type {
+  ToolCommandAdapter,
+  ToolCommandAdapterContext,
+  ToolRunContext
+} from "@bob/tools-types/adapter"
 import type { TrainingModule } from "@bob/training-service/module"
 
-import {
-  capabilityToolNames,
-  type CapabilityModule,
-  type ToolCommand,
-  type ToolName
-} from "@bob/capabilities-types/tools"
 import { makeConnectionsToolAdapter } from "@bob/connections-service/tool-adapter"
-import { makeToolAdapterRegistry } from "@bob/conversations-service/tool-adapter"
 import { expiredToolCallOutcome } from "@bob/conversations-service/tool-executor"
 import { coreDeploymentProfile, transitionalDeploymentProfile } from "@bob/core-types/profiles"
 import { makeJournalToolAdapter } from "@bob/journal-service/tool-adapter"
 import { makeMemoryToolAdapter } from "@bob/memory-service/tool-adapter"
 import { makeReminderToolAdapter } from "@bob/reminders-service/tool-adapter"
 import { makeSettingsToolAdapter } from "@bob/settings-service/tool-adapter"
+import { makeToolAdapterRegistry } from "@bob/tools-service/registry"
+import {
+  capabilityToolNames,
+  type CapabilityModule,
+  type ToolCommand,
+  type ToolName
+} from "@bob/tools-types/tools"
 import { makeTrainingToolAdapter } from "@bob/training-service/tool-adapter"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
 import { testFixture } from "./test-fixture.ts"
@@ -37,30 +36,19 @@ const runId = "00000000-0000-4000-8000-000000000002"
 
 function run(userText: string): ToolRunContext {
   return {
-    // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-    request: {
-      runId,
-      ownerId,
-      userText,
-      sourceMessageId: "00000000-0000-4000-8000-000000000003",
-      timeZone: "Europe/Stockholm",
-      localTime: "2026-08-11T10:00:00.000Z",
-      allowedTools: [],
-      protocolVersion: 1,
-      correlationId: "00000000-0000-4000-8000-000000000004",
-      conversationTurnId: "00000000-0000-4000-8000-000000000005",
-      conversationTurnRevision: 1,
-      contextItems: [],
-      limits: {
-        maxTurns: 4,
-        maxToolCalls: 4,
-        maxDurationMs: 60_000,
-        maxResponseCharacters: 1_200
-      }
-    } as AgentRunRequest,
+    correlationId: "00000000-0000-4000-8000-000000000004",
+    userText,
+    timeZone: "Europe/Stockholm",
+    localTime: "2026-08-11T10:00:00.000Z",
+    conversationTurnId: "00000000-0000-4000-8000-000000000005",
+    conversationTurnRevision: 1,
     channelId: "channel",
     messageId: "00000000-0000-4000-8000-000000000003"
   }
+}
+
+function executeTool(adapter: ToolCommandAdapter, context: ToolCommandAdapterContext) {
+  return Effect.runPromise(adapter.execute(context))
 }
 
 function commandContext(
@@ -87,7 +75,7 @@ describe("domain-owned Tool command Adapters", () => {
     return {
       capabilityId: module.id,
       names: capabilityToolNames(module),
-      execute: vi.fn().mockResolvedValue({ ok: true, code: "ok", message: "Done." })
+      execute: vi.fn(() => Effect.succeed({ ok: true, code: "ok", message: "Done." }))
     }
   }
 
@@ -125,7 +113,8 @@ describe("domain-owned Tool command Adapters", () => {
   it("keeps reminder list behavior in the Reminder Adapter", async () => {
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const reminders = testFixture<ReminderStore>({ list: vi.fn().mockResolvedValue([]) })
-    const result = await makeReminderToolAdapter(reminders).execute(
+    const result = await executeTool(
+      makeReminderToolAdapter(reminders),
       commandContext("reminder_list", {})
     )
 
@@ -141,7 +130,8 @@ describe("domain-owned Tool command Adapters", () => {
     })
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const training = testFixture<TrainingModule>({ proposeTraining })
-    const result = await makeTrainingToolAdapter(training).execute(
+    const result = await executeTool(
+      makeTrainingToolAdapter(training),
       commandContext("gym_create", { name: "Home gym" }, "Please create a gym called Home gym.")
     )
 
@@ -164,11 +154,14 @@ describe("domain-owned Tool command Adapters", () => {
       })
     })
     const excludeFromContext = vi.fn().mockResolvedValue(true)
-    const result = await makeJournalToolAdapter(
-      journal,
-      { excludeFromContext },
-      { uiBaseUrl: "https://bob.example.invalid" }
-    ).execute(commandContext("journal_link_create", {}))
+    const result = await executeTool(
+      makeJournalToolAdapter(
+        journal,
+        { excludeFromContext },
+        { uiBaseUrl: "https://bob.example.invalid" }
+      ),
+      commandContext("journal_link_create", {})
+    )
 
     expect(result).toMatchObject({
       ok: true,
@@ -181,11 +174,14 @@ describe("domain-owned Tool command Adapters", () => {
   it("fails a private Tool before execution when turn exclusion fails", async () => {
     const createHandoff = vi.fn()
     const journal = testFixture<JournalStore>({ createHandoff })
-    const result = await makeJournalToolAdapter(
-      journal,
-      { excludeFromContext: vi.fn().mockResolvedValue(false) },
-      { uiBaseUrl: "https://bob.example.invalid" }
-    ).execute(commandContext("journal_link_create", {}))
+    const result = await executeTool(
+      makeJournalToolAdapter(
+        journal,
+        { excludeFromContext: vi.fn().mockResolvedValue(false) },
+        { uiBaseUrl: "https://bob.example.invalid" }
+      ),
+      commandContext("journal_link_create", {})
+    )
 
     expect(result).toMatchObject({ ok: false, code: "privacy_policy_failed" })
     expect(createHandoff).not.toHaveBeenCalled()
@@ -202,7 +198,8 @@ describe("domain-owned Tool command Adapters", () => {
       temporal: { mode: "current", at: "2026-08-11T10:00:00.000Z" }
     })
     const retrieval = testFixture<RetrievalPipelineAdapter>({ retrieve })
-    const result = await makeMemoryToolAdapter(memory, retrieval).execute(
+    const result = await executeTool(
+      makeMemoryToolAdapter(memory, retrieval),
       commandContext("memory_search", { query: "gym" })
     )
 
@@ -239,7 +236,8 @@ describe("domain-owned Tool command Adapters", () => {
       })
     })
 
-    const result = await makeMemoryToolAdapter(memory, retrieval).execute(
+    const result = await executeTool(
+      makeMemoryToolAdapter(memory, retrieval),
       commandContext("memory_search", { query: "desk" })
     )
 
@@ -276,10 +274,12 @@ describe("domain-owned Tool command Adapters", () => {
       })
     })
 
-    const settingsResult = await makeSettingsToolAdapter(settings).execute(
+    const settingsResult = await executeTool(
+      makeSettingsToolAdapter(settings),
       commandContext("settings_get", {})
     )
-    const connectionResult = await makeConnectionsToolAdapter(connections).execute(
+    const connectionResult = await executeTool(
+      makeConnectionsToolAdapter(connections),
       commandContext("connection_list", {})
     )
 

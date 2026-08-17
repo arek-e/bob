@@ -1,4 +1,4 @@
-import { E164, NonEmptyText } from "@bob/capabilities-types/shared"
+import { E164, NonEmptyText } from "@bob/shared-types/shared"
 import { Schema } from "effect"
 
 export const StartMessageInteraction = Schema.Struct({

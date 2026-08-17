@@ -102,7 +102,12 @@ describe("Core HTTP telemetry", () => {
     )
     const wake = vi.fn(async () => new Response(null, { status: 200 }))
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-    compositionHarness.current = testFixture<CoreComposition>({
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-core-runtime",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const baseComposition = testFixture<CoreComposition>({
       runCoordinator: { wake },
       services: {
         tools: {
@@ -112,6 +117,12 @@ describe("Core HTTP telemetry", () => {
         turns: { releaseSettlingForRun }
       }
     })
+    const layer = Layer.merge(baseComposition.layer, telemetry.layer)
+    compositionHarness.current = {
+      ...baseComposition,
+      layer,
+      runtime: ManagedRuntime.make(layer)
+    }
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const bindings = testFixture<CoreBindings>({
       INGRESS_CALLER_SECRET: "i".repeat(64),
@@ -141,5 +152,8 @@ describe("Core HTTP telemetry", () => {
     expect(response.status).toBe(200)
     expect(releaseSettlingForRun).toHaveBeenCalledTimes(testCase.releases ? 1 : 0)
     expect(wake).toHaveBeenCalledTimes(testCase.releases ? 1 : 0)
+    const execute = telemetry.finishedSpans().find((span) => span.name === "bob.tool.execute")
+    expect(execute?.outcome).toBe("completed")
+    expect(execute?.endTimeUnixNano).toBeGreaterThanOrEqual(execute!.startTimeUnixNano)
   })
 })

@@ -1,6 +1,6 @@
-import type { CapabilityModule } from "@bob/capabilities-types/definitions"
+import type { CapabilityModule } from "@bob/tools-types/definitions"
 
-import { idInputSchema } from "@bob/capabilities-types/definitions"
+import { idInputSchema } from "@bob/tools-types/definitions"
 import { Schema } from "effect"
 
 export const MemorySearchArguments = Schema.Struct({ query: Schema.String })

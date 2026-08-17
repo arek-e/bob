@@ -8,7 +8,6 @@ import { makeConversationEvidenceSource } from "@bob/conversations-service/evide
 import { agentRunStoreLayer, makeAgentRunStore } from "@bob/conversations-service/run-store"
 import { conversationStoreLayer, makeConversationStore } from "@bob/conversations-service/store"
 import { conversationTiming } from "@bob/conversations-service/timing"
-import { makeToolAdapterRegistry } from "@bob/conversations-service/tool-adapter"
 import { makeToolExecutor, toolExecutorLayer } from "@bob/conversations-service/tool-executor"
 import {
   conversationTurnStoreLayer,
@@ -27,6 +26,7 @@ import { makeRetrievalPipeline, retrievalPipelineLayer } from "@bob/retrieval-se
 import { makeOwnerSettingsStore, ownerSettingsStoreLayer } from "@bob/settings-service/store"
 import { makeSettingsToolAdapter } from "@bob/settings-service/tool-adapter"
 import { makeReviewedSkillRegistry } from "@bob/skills-service/registry"
+import { makeToolAdapterRegistry } from "@bob/tools-service/registry"
 import { Layer, Schema } from "effect"
 
 import type { CoreDeploymentProfile } from "./deployment-profile.ts"

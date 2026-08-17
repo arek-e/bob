@@ -1,5 +1,5 @@
-import { MAX_TOOL_RESULT_BYTES } from "@bob/capabilities-types/tools"
 import { boundToolResult } from "@bob/conversations-service/tool-executor"
+import { MAX_TOOL_RESULT_BYTES } from "@bob/tools-types/tools"
 import { describe, expect, it } from "vitest"
 
 const oversizedData = { text: "x".repeat(MAX_TOOL_RESULT_BYTES) }
