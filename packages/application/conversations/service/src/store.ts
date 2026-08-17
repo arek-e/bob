@@ -58,7 +58,11 @@ export function makeConversationStore(
     )
   }
 
-  async function ensureChannel(event: NormalizedInboundEvent, key: CryptoKey): Promise<string> {
+  async function ensureChannel(
+    event: NormalizedInboundEvent,
+    ownerId: string,
+    key: CryptoKey
+  ): Promise<string> {
     const senderHash = await protection.hashLookup(event.senderE164)
     const destinationHash = await protection.hashLookup(event.destinationE164)
     let [channel] = await Effect.runPromise(
@@ -67,6 +71,7 @@ export function makeConversationStore(
         .from(channels)
         .where(
           and(
+            eq(channels.userId, ownerId),
             eq(channels.provider, options.channelProviderId),
             eq(channels.accountId, event.accountId),
             eq(channels.lineId, event.lineId),
@@ -85,7 +90,7 @@ export function makeConversationStore(
         .insert(channels)
         .values({
           id,
-          userId: options.ownerId,
+          userId: ownerId,
           provider: options.channelProviderId,
           accountId: event.accountId,
           lineId: event.lineId,
@@ -105,6 +110,7 @@ export function makeConversationStore(
         .from(channels)
         .where(
           and(
+            eq(channels.userId, ownerId),
             eq(channels.provider, options.channelProviderId),
             eq(channels.accountId, event.accountId),
             eq(channels.lineId, event.lineId),
@@ -118,7 +124,8 @@ export function makeConversationStore(
   }
 
   return {
-    async acceptInbound(event) {
+    async acceptInbound(event, suppliedOwnerId) {
+      const ownerId = suppliedOwnerId ?? options.ownerId
       const [existing] = await Effect.runPromise(
         database
           .select({
@@ -148,8 +155,8 @@ export function makeConversationStore(
         return acceptance
       }
 
-      const ownerDataKey = await ownerDataKeys.ensure(options.ownerId)
-      const channelId = await ensureChannel(event, ownerDataKey.key)
+      const ownerDataKey = await ownerDataKeys.ensure(ownerId)
+      const channelId = await ensureChannel(event, ownerId, ownerDataKey.key)
       const encrypted = await protection.encryptText(ownerDataKey.key, event.text)
       const messageId = randomUuid()
       const createdAt = now().toISOString()
@@ -160,7 +167,7 @@ export function makeConversationStore(
       const statements: [DatabaseQuery, ...DatabaseQuery[]] = [
         database.insert(messages).values({
           id: messageId,
-          userId: options.ownerId,
+          userId: ownerId,
           channelId,
           direction: "inbound",
           textCiphertext: encrypted.ciphertext,
@@ -171,7 +178,7 @@ export function makeConversationStore(
         }),
         database.insert(inboundEvents).values({
           id: event.id,
-          userId: options.ownerId,
+          userId: ownerId,
           channelId,
           messageId,
           accountId: event.accountId,

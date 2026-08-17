@@ -5,7 +5,7 @@ Updated: 2026-08-17
 
 ## Product
 
-Bob is a private general continuity agent for one owner.
+Bob is a private general continuity agent for each Owner in a shared Runtime Cluster.
 
 Bob's core purpose is continuity through retrieval, memory, and a bounded agent harness.
 
@@ -58,6 +58,7 @@ Provider names appear only in Runtime Adapter details, configuration, and implem
 | ---------------------- | ---------------------------------------------------------------------- | -------------------------------------------- |
 | Core Runtime           | Serves the API and UI. Owns core conversation and workflow invariants. | Node process                                 |
 | Agent Worker           | Runs the bounded model and Tool loop.                                  | Compose Adapter: Node process                |
+| Agent Runs             | Owns durable Agent Run admission, execution, and completion.           | PostgreSQL with BullMQ wake signals          |
 | Channel Runtime        | Receives normalized events and sends replies.                          | Sendblue Adapter; Compose Adapter: HTTP host |
 | Job Queue              | Publishes durable work and tracks attempts.                            | BullMQ over Redis                            |
 | Database               | Stores durable relational records and atomic changes.                  | PostgreSQL with Drizzle ORM                  |
@@ -109,6 +110,8 @@ Package projects follow the system map:
 - `packages/agent/types` owns the provider-neutral Agent Interface and credential schemas.
 - `packages/agent/service` owns the model loop and reviewed Model SDK Adapters.
 - `apps/agent-worker` composes the Agent Module with one model SDK and credential Adapter.
+- `packages/application/agent-runs` owns Agent Run state, attempts, leases, checkpoints, and outboxes.
+- `packages/runtime-control/types` owns the Runtime release contract and content-free observations.
 - A `runtime` project can depend on its matching `types` project. A `types` project never depends on
   its matching `runtime` project.
 - An Application Module `service` project can depend on its matching `types` project. An Application
@@ -133,13 +136,15 @@ Bob is not an unbounded computer-control agent.
 
 Bob does not receive arbitrary access or authorize new capabilities for itself.
 
-Bob is not a multi-user assistant in the first release.
+Bob does not share one Owner's data, credentials, memory, or authority with another Owner.
 
 Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 
 ## Domain language
 
-- **Owner:** The one person Bob serves.
+- **Owner:** One person served by Bob through an isolated application scope.
+- **Runtime Cluster:** One managed deployment with shared Runtime services and horizontally scalable roles.
+- **Execution pool:** A set of Agent Workers with one compatible release and Capability catalogue generation.
 - **Owner data key:** One per-Owner encryption key wrapped by the active data key-encryption key.
 - **Owner settings:** The owner's time zone, locale, and time format.
 - **Channel Adapter:** One reviewed transport Adapter that converts provider traffic to and from Bob's channel Interface.
@@ -249,7 +254,15 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Message wording does not grant Tool authority. Owning Capability Modules enforce each action invariant.
 - The agent never calls Sendblue directly.
 - A Bob Instance never receives a shared Nango environment secret.
-- One managed Owner runs in one Bob Instance.
+- Many managed Owners can run in one Runtime Cluster.
+- Every application query derives its Owner scope from trusted identity and durable records.
+- PostgreSQL is authoritative for Agent Run state. BullMQ only carries replay-safe work pointers.
+- Queue delivery does not grant Agent Run authority.
+- One active Agent Run attempt holds one renewable Database lease and monotonic fence.
+- A stale Agent Run attempt cannot checkpoint, call a Tool, or record an outcome.
+- Agent Run submission and dispatch intent enter PostgreSQL in one atomic operation.
+- Agent Run outcome and continuation intent enter PostgreSQL in one atomic operation.
+- Each Agent Run stays pinned to one compatible execution pool until it becomes terminal.
 - The Managed Channel Router stores sender mappings and Staged channel events outside the Control Plane.
 - Unknown or unauthorized senders do not start provisioning.
 - A managed Warm Sandbox contains no Owner state, credentials, storage, messages, or Secret Projection.

@@ -87,6 +87,7 @@ export function makeConversationTurnStore(
           if (turn === undefined) throw new Error("Conversation turn membership is orphaned")
           const offered = {
             turnId: turn.id,
+            ownerId: turn.userId,
             revision: turn.revision,
             status: turn.status,
             quietUntil: turn.quietUntil,
@@ -215,6 +216,7 @@ export function makeConversationTurnStore(
           if (appendedMembership === undefined) continue
           const offered = {
             turnId: winner.id,
+            ownerId: winner.userId,
             revision,
             status: appendedStatus,
             quietUntil: winnerQuietUntil,
@@ -224,11 +226,18 @@ export function makeConversationTurnStore(
             ? offered
             : { ...offered, activeRunId: winner.activeRunId }
         }
-        return { turnId, revision: 1, status: "collecting", quietUntil, appended: true }
+        return {
+          turnId,
+          ownerId: event.ownerId,
+          revision: 1,
+          status: "collecting",
+          quietUntil,
+          appended: true
+        }
       }
     },
 
-    async claimReady(turnId?: string, leaseMs = claimLeaseMs) {
+    async claimReady(turnId?: string, leaseMs = claimLeaseMs, ownerId = options.ownerId) {
       const at = now()
       await Effect.runPromise(
         database
@@ -245,7 +254,7 @@ export function makeConversationTurnStore(
           })
           .where(
             and(
-              eq(conversationTurns.userId, options.ownerId),
+              eq(conversationTurns.userId, ownerId),
               eq(conversationTurns.status, "settling"),
               lte(conversationTurns.claimExpiresAt, at.toISOString())
             )
@@ -260,7 +269,7 @@ export function makeConversationTurnStore(
             .from(conversationTurns)
             .where(
               and(
-                eq(conversationTurns.userId, options.ownerId),
+                eq(conversationTurns.userId, ownerId),
                 sql`${conversationTurns.status} NOT IN ('settling', 'committing', 'replied')`,
                 lte(conversationTurns.quietUntil, at.toISOString()),
                 or(
@@ -288,7 +297,7 @@ export function makeConversationTurnStore(
           .where(
             and(
               eq(conversationTurns.id, selectedTurnId),
-              eq(conversationTurns.userId, options.ownerId),
+              eq(conversationTurns.userId, ownerId),
               sql`${conversationTurns.status} NOT IN ('settling', 'committing', 'replied')`,
               lte(conversationTurns.quietUntil, at.toISOString()),
               or(
@@ -449,7 +458,7 @@ export function makeConversationTurnStore(
       }
     },
 
-    async nextWakeAt() {
+    async nextWakeAt(ownerId = options.ownerId) {
       const open = await Effect.runPromise(
         database
           .select({
@@ -462,7 +471,7 @@ export function makeConversationTurnStore(
           .from(conversationTurns)
           .where(
             and(
-              eq(conversationTurns.userId, options.ownerId),
+              eq(conversationTurns.userId, ownerId),
               sql`${conversationTurns.status} NOT IN ('committing', 'replied')`
             )
           )

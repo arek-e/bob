@@ -9,12 +9,15 @@ import { makeOwnerTurnEngine } from "../src/owner-turn-engine.ts"
 import { testFixture } from "./test-fixture.ts"
 
 const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
+const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
 
 describe("OwnerTurnEngine", () => {
   it("offers a run and schedules its quiet deadline", async () => {
     const schedule = vi.fn(async () => undefined)
     const offer = vi.fn(async () => ({
       turnId: "turn",
+      ownerId,
+      status: "collecting" as const,
       revision: 1,
       quietUntil: "2026-08-16T10:00:01.000Z",
       appended: false
@@ -31,7 +34,7 @@ describe("OwnerTurnEngine", () => {
     )
 
     expect(offer).toHaveBeenCalledWith(eventId, undefined)
-    expect(schedule).toHaveBeenCalledWith(new Date("2026-08-16T10:00:01.000Z"))
+    expect(schedule).toHaveBeenCalledWith(new Date("2026-08-16T10:00:01.000Z"), ownerId)
   })
 
   it("claims and processes ready turns until the queue is empty", async () => {

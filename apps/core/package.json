@@ -9,6 +9,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@bob/agent-runs-service": "workspace:*",
+    "@bob/agent-runs-types": "workspace:*",
     "@bob/agent-types": "workspace:*",
     "@bob/conversations-types": "workspace:*",
     "@bob/core-service": "workspace:*",

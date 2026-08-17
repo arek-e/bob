@@ -296,7 +296,11 @@ export function makeToolExecutor(
         channelId: row.inbound.channelId,
         messageId: row.inbound.messageId,
         runStatus: row.run.status,
-        claimExpiresAt: row.run.claimExpiresAt
+        claimExpiresAt: row.run.claimExpiresAt,
+        activeAttemptId: row.run.activeAttemptId,
+        activeAttemptFence: row.run.activeAttemptFence,
+        controlRevision: row.run.controlRevision,
+        cancellationRequestedAt: row.run.cancellationRequestedAt
       }
     })
   }
@@ -374,11 +378,28 @@ export function makeToolExecutor(
     })
   }
 
-  function dispatch(command: typeof ToolCommand.Type) {
+  function dispatch(
+    command: typeof ToolCommand.Type,
+    authority?: {
+      readonly runId: string
+      readonly attemptId: string
+      readonly attemptFence: number
+      readonly controlRevision: number
+    }
+  ) {
     return Effect.gen(function* () {
       const context = yield* runContext(command.runId)
+      const legacyAuthority = context.runStatus === "executing" && authority === undefined
+      const sharedWorkerAuthority =
+        context.runStatus === "running" &&
+        authority !== undefined &&
+        authority.runId === command.runId &&
+        context.activeAttemptId === authority.attemptId &&
+        context.activeAttemptFence === authority.attemptFence &&
+        context.controlRevision === authority.controlRevision &&
+        context.cancellationRequestedAt === null
       if (
-        context.runStatus !== "executing" ||
+        (!legacyAuthority && !sharedWorkerAuthority) ||
         context.claimExpiresAt === null ||
         Date.parse(context.claimExpiresAt) <= now().getTime() ||
         context.request.runId !== command.runId ||
@@ -561,7 +582,7 @@ export function makeToolExecutor(
           .returning({ id: toolCalls.id })
         return recovered.length > 0
       }).pipe(Effect.mapError((cause) => executorError("expireMutationRecovery", cause))),
-    execute: (input) =>
+    execute: (input, authority) =>
       Effect.gen(function* () {
         const command = yield* Schema.decodeUnknownEffect(ToolCommand)(input)
         const correlationId = (yield* currentBobCorrelationId) ?? command.runId
@@ -855,7 +876,7 @@ export function makeToolExecutor(
                   }
                 }
 
-                const domainExit = yield* Effect.exit(restore(dispatch(command)))
+                const domainExit = yield* Effect.exit(restore(dispatch(command, authority)))
                 const result = Exit.isSuccess(domainExit)
                   ? domainExit.value
                   : Cause.hasInterruptsOnly(domainExit.cause)

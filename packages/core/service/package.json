@@ -14,6 +14,8 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@bob/agent-runs-service": "workspace:*",
+    "@bob/agent-runs-types": "workspace:*",
     "@bob/agent-types": "workspace:*",
     "@bob/artifacts-service": "workspace:*",
     "@bob/artifacts-types": "workspace:*",

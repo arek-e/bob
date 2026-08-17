@@ -16,9 +16,19 @@ export interface StoredAgentRun {
     | "executing"
     | "completed"
     | "failed"
+    | "cancelled"
+    | "accepted"
+    | "queued"
+    | "running"
+    | "retry_wait"
+    | "waiting_effect"
+    | "awaiting_finalization"
+    | "indeterminate"
     | "unknown"
     | "superseded"
   readonly outboxId?: string
+  readonly activeAttemptId?: string
+  readonly result?: AgentRunResult
 }
 
 export interface ConversationRunCompletion {

@@ -17,7 +17,10 @@ describe("agent configuration", () => {
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.example.invalid:4318/",
       CORE_URL: "https://bob.example.invalid/",
       RUNTIME_SHARED_SECRET: "runtime-shared-secret-value-1234567890",
-      CORE_CALLER_SECRET: "core-caller-secret-value-123456789012"
+      CORE_CALLER_SECRET: "core-caller-secret-value-123456789012",
+      JOB_QUEUE_URL: "redis://localhost:6379",
+      AGENT_EXECUTION_POOL_ID: "core-v1",
+      AGENT_MAX_CONCURRENCY: "4"
     })
 
     expect(configuration.baoAddress).toBe("https://openbao.example.invalid")
@@ -47,7 +50,10 @@ describe("agent configuration", () => {
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.example.invalid:4318/",
       CORE_URL: "https://bob.example.invalid/",
       RUNTIME_SHARED_SECRET: "runtime-shared-secret-value-1234567890",
-      CORE_CALLER_SECRET: "core-caller-secret-value-123456789012"
+      CORE_CALLER_SECRET: "core-caller-secret-value-123456789012",
+      JOB_QUEUE_URL: "redis://localhost:6379",
+      AGENT_EXECUTION_POOL_ID: "core-v1",
+      AGENT_MAX_CONCURRENCY: "4"
     })
 
     expect(configuration.baoAuthentication).toEqual({
@@ -71,7 +77,10 @@ describe("agent configuration", () => {
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.example.invalid:4318/",
       CORE_URL: "https://bob.example.invalid/",
       RUNTIME_SHARED_SECRET: "runtime-shared-secret-value-1234567890",
-      CORE_CALLER_SECRET: "core-caller-secret-value-123456789012"
+      CORE_CALLER_SECRET: "core-caller-secret-value-123456789012",
+      JOB_QUEUE_URL: "redis://localhost:6379",
+      AGENT_EXECUTION_POOL_ID: "core-v1",
+      AGENT_MAX_CONCURRENCY: "4"
     })
 
     expect(configuration.baoAuthentication).toEqual({

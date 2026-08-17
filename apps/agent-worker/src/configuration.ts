@@ -18,7 +18,15 @@ const Environment = Schema.Struct({
   OTEL_EXPORTER_OTLP_ENDPOINT: Schema.URLFromString,
   RUNTIME_SHARED_SECRET: Schema.String.check(Schema.isMinLength(32)),
   CORE_URL: Schema.URLFromString,
-  CORE_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32))
+  CORE_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  JOB_QUEUE_URL: Schema.URLFromString,
+  AGENT_EXECUTION_POOL_ID: Schema.String.check(
+    Schema.isPattern(/^[a-z][a-z0-9-]{0,62}$/),
+    Schema.isMaxLength(63)
+  ),
+  AGENT_MAX_CONCURRENCY: Schema.NumberFromString.pipe(
+    Schema.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 256 }))
+  )
 })
 
 export interface AgentConfiguration {
@@ -50,6 +58,9 @@ export interface AgentConfiguration {
   readonly runtimeSharedSecret: string
   readonly coreUrl: string
   readonly coreCallerSecret: string
+  readonly jobQueueUrl: string
+  readonly executionPoolId: string
+  readonly maximumConcurrency: number
 }
 
 export function readAgentConfiguration(environment: NodeJS.ProcessEnv): AgentConfiguration {
@@ -77,7 +88,10 @@ export function readAgentConfiguration(environment: NodeJS.ProcessEnv): AgentCon
     otlpEndpoint: decoded.OTEL_EXPORTER_OTLP_ENDPOINT.toString().replace(/\/$/, ""),
     runtimeSharedSecret: decoded.RUNTIME_SHARED_SECRET,
     coreUrl: decoded.CORE_URL.toString().replace(/\/$/, ""),
-    coreCallerSecret: decoded.CORE_CALLER_SECRET
+    coreCallerSecret: decoded.CORE_CALLER_SECRET,
+    jobQueueUrl: decoded.JOB_QUEUE_URL.toString(),
+    executionPoolId: decoded.AGENT_EXECUTION_POOL_ID,
+    maximumConcurrency: decoded.AGENT_MAX_CONCURRENCY
   }
 }
 

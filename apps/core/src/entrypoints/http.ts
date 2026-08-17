@@ -1,6 +1,17 @@
 import type { CoreBindings } from "@bob/core-types/bindings"
 
 import {
+  AcquireAgentRun,
+  AgentRunAttemptAuthority,
+  AgentRunAuthorityLost,
+  AgentRunCheckpointConflict,
+  AgentRunGateway,
+  AgentRunGatewayUnavailable,
+  AppendAgentRunCheckpoint,
+  RecordAgentRunOutcome,
+  RenewAgentRunLease
+} from "@bob/agent-runs-types/worker-gateway"
+import {
   AgentRunOperationAppendRequest,
   AgentRunOperationsLoadRequest,
   AgentRunResult
@@ -16,6 +27,7 @@ import { AgentRunStore } from "@bob/conversations-types/run-store"
 import { ConversationStore } from "@bob/conversations-types/store"
 import { ToolExecutor } from "@bob/conversations-types/tool-executor"
 import { ConversationTurnStore } from "@bob/conversations-types/turn-store"
+import { agentRuns } from "@bob/db-service/schema/conversations"
 import { publishDeliveryFollowups } from "@bob/delivery-service/followups"
 import { DeliveryReconciliationResponse, DeliveryResult } from "@bob/delivery-types/delivery"
 import { DeliveryStore } from "@bob/delivery-types/store"
@@ -36,7 +48,7 @@ import { OwnerDataKeyStore } from "@bob/policy-types/owner-data-key"
 import { OwnerSettingsUpdate } from "@bob/settings-types/settings"
 import { OwnerSettingsStore } from "@bob/settings-types/store"
 import { ToolCommand } from "@bob/tools-types/tools"
-import { sql } from "drizzle-orm"
+import { and, eq, isNull, sql } from "drizzle-orm"
 import { Data, Effect, Schema } from "effect"
 
 import type { CoreComposer, CoreComposition, CoreRuntimeRequirements } from "../composition.ts"
@@ -109,6 +121,58 @@ function secure(response: Response): Response {
     statusText: response.statusText,
     headers
   })
+}
+
+function toolAuthority(request: Request) {
+  const runId = request.headers.get("x-bob-run-id")
+  const attemptId = request.headers.get("x-bob-run-attempt-id")
+  const fence = request.headers.get("x-bob-run-attempt-fence")
+  const revision = request.headers.get("x-bob-run-control-revision")
+  if (runId === null && attemptId === null && fence === null && revision === null) return undefined
+  return Schema.decodeUnknownSync(
+    Schema.Struct({
+      runId: Schema.String.check(Schema.isUUID()),
+      attemptId: Schema.String.check(Schema.isUUID()),
+      attemptFence: Schema.Int.check(Schema.isGreaterThan(0)),
+      controlRevision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+    })
+  )({ runId, attemptId, attemptFence: Number(fence), controlRevision: Number(revision) })
+}
+
+async function hasAgentRunResourceAuthority(
+  composition: CoreComposition,
+  request: Request,
+  runId: string
+): Promise<boolean> {
+  const authority = toolAuthority(request)
+  if (authority === undefined && composition.config?.ASYNC_AGENT_RUNS !== "true") return true
+  const [run] = await Effect.runPromise(
+    composition.applicationStorage
+      .select({ executionPoolId: agentRuns.executionPoolId })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, runId))
+      .limit(1)
+  )
+  if (run?.executionPoolId === null) return true
+  if (authority === undefined || authority.runId !== runId) return false
+  const [authorized] = await Effect.runPromise(
+    composition.applicationStorage
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, runId),
+          eq(agentRuns.status, "running"),
+          eq(agentRuns.activeAttemptId, authority.attemptId),
+          eq(agentRuns.activeAttemptFence, authority.attemptFence),
+          eq(agentRuns.controlRevision, authority.controlRevision),
+          isNull(agentRuns.cancellationRequestedAt),
+          sql`${agentRuns.claimExpiresAt}::timestamptz > clock_timestamp()`
+        )
+      )
+      .limit(1)
+  )
+  return authorized !== undefined
 }
 
 async function readJson(request: Request): Promise<typeof Schema.Json.Type> {
@@ -270,6 +334,9 @@ export async function handleHttp(
 
     if (request.method === "POST" && url.pathname === "/internal/inbound") {
       const event = Schema.decodeUnknownSync(NormalizedInboundEvent)(await readJson(request))
+      const ownerId = Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
+        request.headers.get("x-bob-owner-id") ?? bindings.OWNER_ID
+      )
       return json(
         await runTelemetry(
           withTraceparent(
@@ -286,7 +353,7 @@ export async function handleHttp(
                   feature: "assistant"
                 },
                 Effect.flatMap(ConversationStore, (conversations) =>
-                  conversations.acceptInbound(event)
+                  conversations.acceptInbound(event, ownerId)
                 )
               )
             ),
@@ -334,6 +401,8 @@ export async function handleHttp(
       const attachmentId = Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
         decodeURIComponent(agentAttachment[2]!)
       )
+      if (!(await hasAgentRunResourceAuthority(composition, request, runId)))
+        return json({ code: "authority_lost" }, 409)
       const loaded = await runTelemetry(
         MessageAttachmentStore.use((store) => store.loadForAgent(runId, attachmentId)).pipe(
           Effect.result
@@ -482,6 +551,7 @@ export async function handleHttp(
 
     if (request.method === "POST" && url.pathname === "/internal/tools") {
       const command = Schema.decodeUnknownSync(ToolCommand)(await readJson(request))
+      const authority = toolAuthority(request)
       const suppliedCorrelation = request.headers.get("x-bob-correlation-id")
       const correlationId =
         suppliedCorrelation === null
@@ -503,7 +573,7 @@ export async function handleHttp(
                 },
                 Effect.gen(function* () {
                   const tools = yield* ToolExecutor
-                  const result = yield* tools.execute(command)
+                  const result = yield* tools.execute(command, authority)
                   status = result.ok ? "completed" : "failed"
                   yield* recordDecision({
                     name: "bob.decision.policy",
@@ -552,6 +622,51 @@ export async function handleHttp(
           Effect.flatMap(AgentRunStore, (runs) =>
             runs.appendOperation(input.operation, input.attemptId)
           )
+        )
+      })
+    }
+
+    if (request.method === "POST" && url.pathname === "/internal/agent-runs/acquire") {
+      const input = Schema.decodeUnknownSync(AcquireAgentRun)(await readJson(request))
+      return json(
+        await composition.runtime.runPromise(
+          Effect.flatMap(AgentRunGateway, (gateway) => gateway.acquire(input))
+        )
+      )
+    }
+
+    if (request.method === "POST" && url.pathname === "/internal/agent-runs/renew") {
+      const input = Schema.decodeUnknownSync(RenewAgentRunLease)(await readJson(request))
+      return json(
+        await composition.runtime.runPromise(
+          Effect.flatMap(AgentRunGateway, (gateway) => gateway.renew(input))
+        )
+      )
+    }
+
+    if (request.method === "POST" && url.pathname === "/internal/agent-runs/control") {
+      const authority = Schema.decodeUnknownSync(AgentRunAttemptAuthority)(await readJson(request))
+      return json(
+        await composition.runtime.runPromise(
+          Effect.flatMap(AgentRunGateway, (gateway) => gateway.readControl(authority))
+        )
+      )
+    }
+
+    if (request.method === "POST" && url.pathname === "/internal/agent-runs/checkpoint") {
+      const input = Schema.decodeUnknownSync(AppendAgentRunCheckpoint)(await readJson(request))
+      return json({
+        status: await composition.runtime.runPromise(
+          Effect.flatMap(AgentRunGateway, (gateway) => gateway.appendCheckpoint(input))
+        )
+      })
+    }
+
+    if (request.method === "POST" && url.pathname === "/internal/agent-runs/outcome") {
+      const input = Schema.decodeUnknownSync(RecordAgentRunOutcome)(await readJson(request))
+      return json({
+        status: await composition.runtime.runPromise(
+          Effect.flatMap(AgentRunGateway, (gateway) => gateway.recordOutcome(input))
         )
       })
     }
@@ -811,7 +926,8 @@ export async function handleHttp(
     if (request.method === "GET" && url.pathname === "/api/agent/status") {
       const response = await fetch(`${composition.config.AGENT_ADMIN_URL}/v1/admin/auth/status`, {
         headers: {
-          "x-bob-caller-token": composition.config.AGENT_CALLER_SECRET
+          "x-bob-caller-token": composition.config.AGENT_CALLER_SECRET,
+          "x-bob-owner-id": composition.config.OWNER_ID
         }
       })
       return json(await response.json(), response.status)
@@ -823,7 +939,8 @@ export async function handleHttp(
         {
           method: "POST",
           headers: {
-            "x-bob-caller-token": composition.config.AGENT_CALLER_SECRET
+            "x-bob-caller-token": composition.config.AGENT_CALLER_SECRET,
+            "x-bob-owner-id": composition.config.OWNER_ID
           }
         }
       )
@@ -836,6 +953,11 @@ export async function handleHttp(
     }
     return json({ code: "not_found" }, 404)
   } catch (error) {
+    if (error instanceof AgentRunAuthorityLost) return json({ code: "authority_lost" }, 409)
+    if (error instanceof AgentRunCheckpointConflict)
+      return json({ code: "checkpoint_conflict" }, 409)
+    if (error instanceof AgentRunGatewayUnavailable)
+      return json({ code: "gateway_unavailable" }, 503)
     const status = error instanceof RequestBodyTooLargeError ? 413 : 400
     return json({ code: status === 413 ? "body_too_large" : "invalid_request" }, status)
   }

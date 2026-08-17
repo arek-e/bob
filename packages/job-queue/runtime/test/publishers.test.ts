@@ -36,6 +36,34 @@ describe("JobPublisher Adapters", () => {
     expect(add).toHaveBeenCalledWith("inbound", { id: "one" }, { delay: 1_001 })
   })
 
+  it("maps a stable deduplication key to a BullMQ job ID", async () => {
+    const add = vi.fn(async () => ({ id: "job" }))
+    const publisher = makeBullMqJobPublisher<ExampleJob, { id: string }>({ add }, "agent-run")
+
+    await publisher.publish(
+      { id: "one" },
+      { deduplicationKey: "agent-run-10000000-0000-4000-8000-000000000001-1" }
+    )
+
+    expect(add).toHaveBeenCalledWith(
+      "agent-run",
+      { id: "one" },
+      {
+        jobId: "agent-run-10000000-0000-4000-8000-000000000001-1"
+      }
+    )
+  })
+
+  it("rejects unsupported deduplication on a runtime queue binding", async () => {
+    const publisher = makeQueueBindingJobPublisher<ExampleJob, void>({
+      send: async () => undefined
+    })
+
+    await expect(publisher.publish({ id: "one" }, { deduplicationKey: "one" })).rejects.toThrow(
+      "does not support deduplication"
+    )
+  })
+
   it("rejects an empty BullMQ job name", () => {
     expect(() => makeBullMqJobPublisher({ add: async () => undefined }, "  ")).toThrow(TypeError)
   })

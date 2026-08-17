@@ -21,6 +21,7 @@ describe("OpenBao Pi credential store", () => {
     })
     const store = new OpenBaoCredentialStore({
       address: "https://bao.example",
+      fixedOwnerId: "00000000-0000-4000-8000-000000000001",
       kubernetesRole: "bob",
       getKubernetesJwt: async () => "jwt",
       fetch: request
@@ -28,7 +29,7 @@ describe("OpenBao Pi credential store", () => {
     await expect(store.list()).resolves.toEqual([{ providerId: "openai-codex", type: "oauth" }])
     expect(JSON.stringify(await store.list())).not.toContain("access")
     expect(request).toHaveBeenCalledWith(
-      "https://bao.example/v1/ops/data/apps/prod/bob/pi-auth/openai-codex",
+      "https://bao.example/v1/ops/data/apps/prod/bob/owners/00000000-0000-4000-8000-000000000001/pi-auth/openai-codex",
       expect.any(Object)
     )
   })
@@ -42,6 +43,7 @@ describe("OpenBao Pi credential store", () => {
     })
     const store = new OpenBaoCredentialStore({
       address: "https://bao.example",
+      fixedOwnerId: "00000000-0000-4000-8000-000000000001",
       authMethod: "approle",
       appRoleId: "role-id",
       getAppRoleSecretId: async () => "secret-id",
@@ -76,6 +78,7 @@ describe("OpenBao Pi credential store", () => {
     })
     const store = new OpenBaoCredentialStore({
       address: "https://bao.example",
+      fixedOwnerId: "00000000-0000-4000-8000-000000000001",
       kubernetesRole: "bob",
       getKubernetesJwt: async () => "jwt",
       fetch: request
@@ -104,6 +107,7 @@ describe("OpenBao Pi credential store", () => {
     })
     const store = new OpenBaoCredentialStore({
       address: "https://bao.example",
+      fixedOwnerId: "00000000-0000-4000-8000-000000000001",
       kubernetesRole: "bob",
       getKubernetesJwt: async () => "jwt",
       fetch: request

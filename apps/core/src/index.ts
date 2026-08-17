@@ -1,17 +1,25 @@
 import type { CoreAdapters } from "@bob/core-types/adapters"
 import type { CoreBindings } from "@bob/core-types/bindings"
 
+import {
+  makeAgentRunContinuationDispatcher,
+  makeAgentRunDispatcher
+} from "@bob/agent-runs-service/dispatcher"
+import { AgentRuns } from "@bob/agent-runs-types/agent-runs"
+import { AgentRunContinuationJob } from "@bob/agent-runs-types/worker-gateway"
 import { InboundAcceptance } from "@bob/conversations-types/channel"
 import { ConversationStore } from "@bob/conversations-types/store"
 import { makeOwnerTurnEngine, processConversationTurnEffect } from "@bob/core-service"
 import { OwnerWakeJob } from "@bob/core-types/jobs"
 import { PostgresqlDatabase, postgresqlDatabaseLayer } from "@bob/db-service/postgresql"
+import { agentRuns } from "@bob/db-service/schema/conversations"
 import { makeBullMqJobPublisher } from "@bob/job-queue-runtime/bullmq"
 import { startBullMqWorkerHost } from "@bob/job-queue-runtime/bullmq-host"
 import { decodeJobProcessor, retryJob } from "@bob/job-queue-types"
 import { filesystemObjectStorageLayer } from "@bob/object-store-runtime/filesystem"
 import { nodeTelemetryLayer } from "@bob/observability"
 import { Queue, type ConnectionOptions } from "bullmq"
+import { and, eq } from "drizzle-orm"
 import { Effect, ManagedRuntime, Schema } from "effect"
 import { createServer } from "node:http"
 import { resolve } from "node:path"
@@ -28,14 +36,15 @@ import {
 } from "./runtime/run-coordinator.ts"
 import { makeFilesystemAssetFetcher } from "./static-assets.ts"
 
-const queueNames = {
+const staticQueueNames = {
   inbound: "bob-inbound",
   inboundDeadLetter: "bob-inbound-dead-letter",
   outbound: "bob-outbound",
   outboundDeadLetter: "bob-outbound-dead-letter",
   deliveryResult: "bob-delivery-result",
   deliveryResultDeadLetter: "bob-delivery-result-dead-letter",
-  ownerWake: "bob-owner-wake"
+  ownerWake: "bob-owner-wake",
+  agentRunContinuation: "bob-agent-run-continuation"
 } as const
 
 function redisConnection(urlValue: string): ConnectionOptions {
@@ -64,6 +73,10 @@ function applicationStorageErrorQuery(error: Error): string | undefined {
 
 async function main(): Promise<void> {
   const config = readCoreRuntimeConfiguration(process.env)
+  const queueNames = {
+    ...staticQueueNames,
+    agentRun: `bob-agent-runs-${config.AGENT_EXECUTION_POOL_ID}`
+  } as const
   const databaseRuntime = ManagedRuntime.make(
     postgresqlDatabaseLayer(config.DATABASE_URL, {
       migrationsFolder: resolve(process.cwd(), "dist/migrations")
@@ -76,11 +89,25 @@ async function main(): Promise<void> {
   const inboundQueue = new Queue(queueNames.inbound, queueOptions)
   const outboundQueue = new Queue(queueNames.outbound, queueOptions)
   const ownerWakeQueue = new Queue(queueNames.ownerWake, queueOptions)
+  const agentRunQueue = new Queue(queueNames.agentRun, queueOptions)
+  const agentRunContinuationQueue = new Queue(queueNames.agentRunContinuation, queueOptions)
   const jobQueue = Object.freeze({
     inbound: makeBullMqJobPublisher(inboundQueue, "inbound"),
     outbound: makeBullMqJobPublisher(outboundQueue, "outbound")
   })
   const applicationStorage = database.applicationStorage
+  const agentRunDispatcher = makeAgentRunDispatcher(applicationStorage, {
+    forExecutionPool(executionPoolId) {
+      if (executionPoolId !== config.AGENT_EXECUTION_POOL_ID) {
+        throw new Error(`Unsupported Agent execution pool: ${executionPoolId}`)
+      }
+      return makeBullMqJobPublisher(agentRunQueue, "agent-run")
+    }
+  })
+  const agentRunContinuationDispatcher = makeAgentRunContinuationDispatcher(
+    applicationStorage,
+    makeBullMqJobPublisher(agentRunContinuationQueue, "agent-run-continuation")
+  )
   const bindings: CoreBindings = {
     AUTH_DATABASE: database.authDatabase,
     DB: applicationStorage,
@@ -103,6 +130,8 @@ async function main(): Promise<void> {
     AGENT_CALLER_SECRET: config.AGENT_CALLER_SECRET,
     AGENT_URL: config.AGENT_URL,
     AGENT_ADMIN_URL: config.AGENT_URL,
+    AGENT_EXECUTION_POOL_ID: config.AGENT_EXECUTION_POOL_ID,
+    ASYNC_AGENT_RUNS: "true",
     UI_BASE_URL: config.UI_BASE_URL,
     BOB_MODEL: config.BOB_MODEL,
     BOB_RELEASE_SHA: config.BOB_RELEASE_SHA,
@@ -143,12 +172,29 @@ async function main(): Promise<void> {
     })
   )
   ownerTurnEngine = makeOwnerTurnEngine({
-    schedule: (at) => runCoordinator.wake({ ownerId: config.OWNER_ID, wakeAt: at.toISOString() }),
+    schedule: (at, ownerId) => runCoordinator.wake({ ownerId, wakeAt: at.toISOString() }),
     process: (snapshot) =>
       composition.runtime.runPromise(
         processConversationTurnEffect(snapshot, bindings, composition)
       ),
-    async steer(runId, correlationId, traceparent) {
+    async steer(runId, ownerId, correlationId, traceparent, turn) {
+      if (bindings.ASYNC_AGENT_RUNS === "true") {
+        try {
+          await composition.runtime.runPromise(
+            AgentRuns.use((runs) =>
+              runs.cancel({
+                runId,
+                ownerId,
+                idempotencyKey: `turn-${turn.turnId}-${turn.revision}`,
+                reason: "superseded"
+              })
+            )
+          )
+          return "queued"
+        } catch {
+          return "missing"
+        }
+      }
       try {
         const headers = new Headers({
           "content-type": "application/json",
@@ -177,8 +223,34 @@ async function main(): Promise<void> {
       processor: decodeJobProcessor(
         { decode: (input) => Schema.decodeUnknownSync(OwnerWakeJob)(input) },
         makeOwnerWakeJobProcessor({
-          wake: () => composition.runtime.runPromise(ownerTurnEngine.wake())
+          wake: (job) => composition.runtime.runPromise(ownerTurnEngine.wake(job.ownerId))
         }),
+        retryJob(30_000)
+      )
+    },
+    {
+      queueName: queueNames.agentRunContinuation,
+      processor: decodeJobProcessor(
+        { decode: (input) => Schema.decodeUnknownSync(AgentRunContinuationJob)(input) },
+        {
+          async process(job) {
+            const [run] = await Effect.runPromise(
+              applicationStorage
+                .select({ ownerId: agentRuns.userId })
+                .from(agentRuns)
+                .where(
+                  and(
+                    eq(agentRuns.id, job.runId),
+                    eq(agentRuns.status, "awaiting_finalization"),
+                    eq(agentRuns.activeAttemptFence, job.generation)
+                  )
+                )
+                .limit(1)
+            )
+            if (run !== undefined) await runCoordinator.wake({ ownerId: run.ownerId })
+            return { state: "complete" as const }
+          }
+        },
         retryJob(30_000)
       )
     }
@@ -199,6 +271,22 @@ async function main(): Promise<void> {
     }
   })
   await workers.ready()
+
+  let agentRunDispatchActive = false
+  const agentRunDispatchTimer = setInterval(() => {
+    if (agentRunDispatchActive) return
+    agentRunDispatchActive = true
+    void Promise.all([
+      agentRunDispatcher.dispatchPending(),
+      agentRunContinuationDispatcher.dispatchPending()
+    ])
+      .catch((error: Error) =>
+        console.error(JSON.stringify({ type: "agent_run_dispatch_failure", errorName: error.name }))
+      )
+      .finally(() => {
+        agentRunDispatchActive = false
+      })
+  }, 1_000)
 
   let schedulerActive = false
   const schedulerTimer = setInterval(() => {
@@ -260,10 +348,17 @@ async function main(): Promise<void> {
 
   async function shutdown(): Promise<void> {
     clearInterval(schedulerTimer)
+    clearInterval(agentRunDispatchTimer)
     server.close()
     await workers.close()
     await composition.runtime.dispose()
-    await Promise.all([inboundQueue.close(), outboundQueue.close(), ownerWakeQueue.close()])
+    await Promise.all([
+      inboundQueue.close(),
+      outboundQueue.close(),
+      ownerWakeQueue.close(),
+      agentRunQueue.close(),
+      agentRunContinuationQueue.close()
+    ])
     await databaseRuntime.dispose()
   }
   process.once("SIGTERM", () => void shutdown())

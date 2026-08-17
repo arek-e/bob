@@ -3,12 +3,13 @@ import type { CoreDatabase, DatabaseQuery } from "@bob/db-types"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
-import { AgentRunOperation, AgentRunRequest } from "@bob/agent-types/run"
+import { AgentRunOperation, AgentRunRequest, AgentRunResult } from "@bob/agent-types/run"
 import { makeArtifactPersistence } from "@bob/artifacts-service/persistence"
 import { AgentRunStore, AgentRunStoreError } from "@bob/conversations-types/run-store"
 import {
   agentRunAttempts,
   agentRunOperations,
+  agentRunOutbox,
   agentRuns,
   conversationTurns,
   inboundEvents,
@@ -73,8 +74,25 @@ export function makeAgentRunStore(
         .where(eq(outboxMessages.idempotencyKey, `run:${row.id}:reply`))
         .limit(1)
     )
-    if (outbox === undefined) return { request, status: row.status }
-    return { request, status: row.status, outboxId: outbox.id }
+    let result: typeof AgentRunResult.Type | undefined
+    if (row.outcomeSnapshotJson !== null) {
+      const outcomeEnvelope = Schema.decodeUnknownSync(StoredRunEnvelope)(
+        JSON.parse(row.outcomeSnapshotJson)
+      )
+      result = Schema.decodeUnknownSync(AgentRunResult)(
+        JSON.parse(
+          await protection.decryptText(owner.key, {
+            ciphertext: outcomeEnvelope.ciphertext,
+            iv: outcomeEnvelope.iv
+          })
+        )
+      )
+    }
+    const stored = { request, status: row.status }
+    const withAttempt =
+      row.activeAttemptId === null ? stored : { ...stored, activeAttemptId: row.activeAttemptId }
+    const withResult = result === undefined ? withAttempt : { ...withAttempt, result }
+    return outbox === undefined ? withResult : { ...withResult, outboxId: outbox.id }
   }
 
   return {
@@ -182,6 +200,10 @@ export function makeAgentRunStore(
                 sql<number>`COALESCE((SELECT MAX(${agentRunAttempts.attemptNumber}) + 1 FROM ${agentRunAttempts} WHERE ${agentRunAttempts.runId} = ${runId}), 1)`.as(
                   "attempt_number"
                 ),
+              fence:
+                sql<number>`COALESCE((SELECT MAX(${agentRunAttempts.fence}) + 1 FROM ${agentRunAttempts} WHERE ${agentRunAttempts.runId} = ${runId}), 1)`.as(
+                  "fence"
+                ),
               status: sql<string>`${"executing"}`.as("status"),
               errorCode: sql<string | null>`NULL`.as("error_code"),
               startedAt: sql<string>`${atIso}`.as("started_at"),
@@ -200,7 +222,12 @@ export function makeAgentRunStore(
               status: "executing",
               claimedAt: atIso,
               claimExpiresAt: new Date(at.getTime() + leaseMs).toISOString(),
-              activeAttemptId: attemptId
+              activeAttemptId: attemptId,
+              activeAttemptFence: sql`(
+                SELECT ${agentRunAttempts.fence}
+                FROM ${agentRunAttempts}
+                WHERE ${agentRunAttempts.id} = ${attemptId}
+              )`
             })
             .where(
               and(
@@ -226,7 +253,7 @@ export function makeAgentRunStore(
           .where(
             and(
               eq(agentRuns.id, runId),
-              eq(agentRuns.status, "executing"),
+              or(eq(agentRuns.status, "executing"), eq(agentRuns.status, "awaiting_finalization")),
               eq(agentRuns.activeAttemptId, attemptId)
             )
           )
@@ -273,7 +300,7 @@ export function makeAgentRunStore(
           .where(
             and(
               eq(agentRuns.id, decoded.runId),
-              eq(agentRuns.status, "executing"),
+              or(eq(agentRuns.status, "executing"), eq(agentRuns.status, "awaiting_finalization")),
               eq(agentRuns.activeAttemptId, attemptId)
             )
           )
@@ -375,7 +402,9 @@ export function makeAgentRunStore(
         database
           .select({
             attemptNumber: agentRunAttempts.attemptNumber,
-            inboundEventId: agentRuns.inboundEventId
+            inboundEventId: agentRuns.inboundEventId,
+            executionPoolId: agentRuns.executionPoolId,
+            dispatchGeneration: agentRuns.dispatchGeneration
           })
           .from(agentRunAttempts)
           .innerJoin(agentRuns, eq(agentRunAttempts.runId, agentRuns.id))
@@ -384,7 +413,7 @@ export function makeAgentRunStore(
               eq(agentRunAttempts.id, attemptId),
               eq(agentRunAttempts.runId, result.runId),
               isNull(agentRunAttempts.finishedAt),
-              eq(agentRuns.status, "executing"),
+              or(eq(agentRuns.status, "executing"), eq(agentRuns.status, "awaiting_finalization")),
               eq(agentRuns.activeAttemptId, attemptId)
             )
           )
@@ -409,9 +438,90 @@ export function makeAgentRunStore(
                 AND ${conversationTurns.activeRunRevision} = ${conversation.conversationTurnRevision}
                 AND ${conversationTurns.replyOutboxId} IS NULL
             )`
+
+      if (active.executionPoolId !== null) {
+        const generation = active.dispatchGeneration + 1
+        const outboxId = randomUuid()
+        const releaseSharedRun = database
+          .update(agentRuns)
+          .set({
+            status: "retry_wait",
+            claimedAt: null,
+            claimExpiresAt: null,
+            activeAttemptId: null,
+            dispatchGeneration: generation,
+            outcomeSnapshotJson: null,
+            outcomeHash: null,
+            completedAt: null,
+            model: result.model
+          })
+          .where(
+            and(
+              eq(agentRuns.id, result.runId),
+              eq(agentRuns.status, "awaiting_finalization"),
+              eq(agentRuns.activeAttemptId, attemptId),
+              ...(conversationAuthority === undefined ? [] : [conversationAuthority])
+            )
+          )
+          .returning({ id: agentRuns.id })
+        const enqueueRetry = database
+          .insert(agentRunOutbox)
+          .select(
+            database
+              .select({
+                id: sql<string>`${outboxId}`.as("id"),
+                runId: agentRuns.id,
+                kind: sql<"dispatch">`${"dispatch"}`.as("kind"),
+                generation: agentRuns.dispatchGeneration,
+                state: sql<"pending">`${"pending"}`.as("state"),
+                availableAt: sql<string>`${retryAt}`.as("available_at"),
+                claimedAt: sql<string | null>`NULL`.as("claimed_at"),
+                claimToken: sql<string | null>`NULL`.as("claim_token"),
+                claimExpiresAt: sql<string | null>`NULL`.as("claim_expires_at"),
+                publishedAt: sql<string | null>`NULL`.as("published_at"),
+                failureCount: sql<number>`0`.as("failure_count"),
+                createdAt: sql<string>`${at}`.as("created_at")
+              })
+              .from(agentRuns)
+              .where(
+                and(
+                  eq(agentRuns.id, result.runId),
+                  eq(agentRuns.status, "retry_wait"),
+                  eq(agentRuns.dispatchGeneration, generation),
+                  isNull(agentRuns.activeAttemptId)
+                )
+              )
+          )
+          .onConflictDoNothing()
+          .returning({ id: agentRunOutbox.id })
+        const finishSharedAttempt = database
+          .update(agentRunAttempts)
+          .set({ status: "retryable", errorCode: result.errorCode, finishedAt: at })
+          .where(
+            and(
+              eq(agentRunAttempts.id, attemptId),
+              eq(agentRunAttempts.runId, result.runId),
+              isNull(agentRunAttempts.finishedAt),
+              sql`EXISTS (
+                SELECT 1 FROM ${agentRuns}
+                WHERE ${agentRuns.id} = ${result.runId}
+                  AND ${agentRuns.status} = 'retry_wait'
+                  AND ${agentRuns.dispatchGeneration} = ${generation}
+              )`
+            )
+          )
+          .returning({ id: agentRunAttempts.id })
+        const [released, enqueued, finished] = await Effect.runPromise(
+          allInTransaction(database, [releaseSharedRun, enqueueRetry, finishSharedAttempt])
+        )
+        return released[0] === undefined || enqueued[0] === undefined || finished[0] === undefined
+          ? { status: "lost" }
+          : { status: "released", wakeAt: retryAt }
+      }
+
       const activeAttempt = and(
         eq(agentRuns.id, result.runId),
-        eq(agentRuns.status, "executing"),
+        or(eq(agentRuns.status, "executing"), eq(agentRuns.status, "awaiting_finalization")),
         eq(agentRuns.activeAttemptId, attemptId),
         ...(conversationAuthority === undefined ? [] : [conversationAuthority])
       )
@@ -482,6 +592,7 @@ export function makeAgentRunStore(
           : { status: "released", wakeAt }
       }
 
+      if (active.inboundEventId === null) return { status: "lost" }
       const releaseInbound = database
         .update(inboundEvents)
         .set({ claimedAt: null, claimExpiresAt: null })
@@ -548,7 +659,7 @@ export function makeAgentRunStore(
           ? undefined
           : and(
               eq(agentRuns.id, result.runId),
-              eq(agentRuns.status, "executing"),
+              or(eq(agentRuns.status, "executing"), eq(agentRuns.status, "awaiting_finalization")),
               eq(agentRuns.activeAttemptId, attemptId)
             )
       const messageInsert =
@@ -647,7 +758,7 @@ export function makeAgentRunStore(
         ...artifactStatements
       ]
       const legacyStatements =
-        conversation === undefined
+        conversation === undefined && loadedRun.inboundEventId !== null
           ? [
               database
                 .update(inboundEvents)
@@ -710,7 +821,7 @@ export function makeAgentRunStore(
           .where(
             and(
               eq(agentRuns.id, result.runId),
-              eq(agentRuns.status, "executing"),
+              or(eq(agentRuns.status, "executing"), eq(agentRuns.status, "awaiting_finalization")),
               eq(agentRuns.activeAttemptId, attemptId)
             )
           )
@@ -757,7 +868,10 @@ export function makeAgentRunStore(
             .where(
               and(
                 eq(agentRuns.id, result.runId),
-                eq(agentRuns.status, "executing"),
+                or(
+                  eq(agentRuns.status, "executing"),
+                  eq(agentRuns.status, "awaiting_finalization")
+                ),
                 eq(agentRuns.activeAttemptId, attemptId),
                 eq(agentRuns.conversationTurnId, conversation.conversationTurnId),
                 eq(agentRuns.conversationTurnRevision, conversation.conversationTurnRevision)
@@ -809,7 +923,7 @@ export function makeAgentRunStore(
                 FROM agent_run_attempts AS reflected_attempt
                 WHERE reflected_attempt.id = ${attemptId}
                   AND reflected_attempt.run_id = ${result.runId}
-                  AND reflected_attempt.status = 'executing'
+                  AND reflected_attempt.status IN ('executing', 'executed')
                   AND reflected_attempt.finished_at IS NULL
               )`
               )
@@ -827,7 +941,10 @@ export function makeAgentRunStore(
               and(
                 eq(agentRunAttempts.id, attemptId),
                 eq(agentRunAttempts.runId, result.runId),
-                eq(agentRunAttempts.status, "executing"),
+                or(
+                  eq(agentRunAttempts.status, "executing"),
+                  eq(agentRunAttempts.status, "executed")
+                ),
                 isNull(agentRunAttempts.finishedAt),
                 sql`EXISTS (
                 SELECT 1

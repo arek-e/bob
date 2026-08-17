@@ -83,6 +83,7 @@ services:
       job-queue: { condition: service_healthy }
     environment:
       AGENT_CALLER_SECRET: ${AGENT_CALLER_SECRET:?}
+      AGENT_EXECUTION_POOL_ID: ${AGENT_EXECUTION_POOL_ID:-core-v1}
       AGENT_URL: http://agent:8787
       ASSETS_DIRECTORY: /app/ui
       AUTO_ENQUEUE_INBOUND: "false"
@@ -128,6 +129,7 @@ services:
       context: .
       dockerfile: apps/agent-worker/Dockerfile
     depends_on:
+      job-queue: { condition: service_healthy }
       openbao-bootstrap: { condition: service_completed_successfully }
       telemetry: { condition: service_started }
     environment:
@@ -139,8 +141,11 @@ services:
       BOB_MODEL: ${BOB_MODEL:?}
       BOB_PROVIDER: openai-codex
       BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
+      AGENT_EXECUTION_POOL_ID: ${AGENT_EXECUTION_POOL_ID:-core-v1}
+      AGENT_MAX_CONCURRENCY: ${AGENT_MAX_CONCURRENCY:-4}
       CORE_CALLER_SECRET: ${AGENT_CALLER_SECRET:?}
       CORE_URL: http://core:8788
+      JOB_QUEUE_URL: redis://job-queue:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://telemetry:4318
       PORT: "8787"
       RUNTIME_SHARED_SECRET: ${AGENT_CALLER_SECRET:?}

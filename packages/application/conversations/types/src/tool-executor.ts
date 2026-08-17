@@ -22,8 +22,18 @@ export class ToolExecutorError extends Schema.TaggedError<ToolExecutorError>()(
   { operation: Schema.String, cause: Schema.Unknown }
 ) {}
 
+export interface ToolExecutionAuthority {
+  readonly runId: string
+  readonly attemptId: string
+  readonly attemptFence: number
+  readonly controlRevision: number
+}
+
 export interface ToolExecutorService {
-  execute(input: ToolCommand): Effect.Effect<ToolResult, ToolExecutorError>
+  execute(
+    input: ToolCommand,
+    authority?: ToolExecutionAuthority
+  ): Effect.Effect<ToolResult, ToolExecutorError>
   mutationActivity(runId: string): Effect.Effect<MutationActivity, ToolExecutorError>
   expireMutationRecovery(runId: string): Effect.Effect<boolean, ToolExecutorError>
 }

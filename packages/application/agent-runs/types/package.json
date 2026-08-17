@@ -1,0 +1,23 @@
+{
+  "name": "@bob/agent-runs-types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./agent-runs": "./src/agent-runs.ts",
+    "./worker-gateway": "./src/worker-gateway.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/agent-types": "workspace:*",
+    "@bob/shared-types": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  },
+  "devDependencies": {
+    "vitest": "4.1.9"
+  }
+}
