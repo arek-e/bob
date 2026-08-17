@@ -75,6 +75,9 @@ importers:
 
   apps/channel:
     dependencies:
+      '@bob/conversations-types':
+        specifier: workspace:*
+        version: link:../../packages/features/conversations/types
       '@bob/core-types':
         specifier: workspace:*
         version: link:../../packages/core/types
@@ -87,9 +90,9 @@ importers:
       '@bob/job-queue-types':
         specifier: workspace:*
         version: link:../../packages/job-queue/types
-      '@bob/sendblue-channel-runtime':
+      '@bob/observability':
         specifier: workspace:*
-        version: link:../../packages/sendblue-channel
+        version: link:../../packages/observability
       bullmq:
         specifier: 6.1.2
         version: 6.1.2(ioredis@5.11.1)(pg@8.23.0)
@@ -97,6 +100,9 @@ importers:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
     devDependencies:
+      '@effect/vitest':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)(vitest@4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.25.9)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))
       esbuild:
         specifier: 0.25.9
         version: 0.25.9
@@ -1136,57 +1142,6 @@ importers:
       '@bob/training-types':
         specifier: workspace:*
         version: link:../domains/training/types
-
-  packages/sendblue-channel:
-    dependencies:
-      '@bob/conversations-types':
-        specifier: workspace:*
-        version: link:../features/conversations/types
-      '@bob/core-types':
-        specifier: workspace:*
-        version: link:../core/types
-      '@bob/delivery-types':
-        specifier: workspace:*
-        version: link:../features/delivery/types
-      '@bob/job-queue-runtime':
-        specifier: workspace:*
-        version: link:../job-queue/runtime
-      '@bob/job-queue-types':
-        specifier: workspace:*
-        version: link:../job-queue/types
-      '@bob/observability':
-        specifier: workspace:*
-        version: link:../observability
-      '@bob/sendblue-runtime':
-        specifier: workspace:*
-        version: link:../sendblue/runtime
-      '@bob/sendblue-types':
-        specifier: workspace:*
-        version: link:../sendblue/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/sendblue/runtime:
-    dependencies:
-      '@bob/delivery-types':
-        specifier: workspace:*
-        version: link:../../features/delivery/types
-      '@bob/sendblue-types':
-        specifier: workspace:*
-        version: link:../types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/sendblue/types:
-    dependencies:
-      '@bob/conversations-types':
-        specifier: workspace:*
-        version: link:../../features/conversations/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
 
 packages:
 
@@ -4894,6 +4849,11 @@ snapshots:
     dependencies:
       effect: 4.0.0-beta.107
     optional: true
+
+  '@effect/vitest@4.0.0-beta.107(effect@4.0.0-beta.107)(vitest@4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.25.9)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))':
+    dependencies:
+      effect: 4.0.0-beta.107
+      vitest: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.25.9)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
 
   '@effect/vitest@4.0.0-beta.107(effect@4.0.0-beta.107)(vitest@4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))':
     dependencies:
