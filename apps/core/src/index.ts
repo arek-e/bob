@@ -85,7 +85,7 @@ async function main(): Promise<void> {
     })
   )
   const database = await databaseRuntime.runPromise(PostgresqlDatabase)
-  await databaseRuntime.runPromise(database.migrate)
+  if (config.AUTO_MIGRATE === "true") await databaseRuntime.runPromise(database.migrate)
   const connection = redisConnection(config.JOB_QUEUE_URL)
   const queueOptions = { connection, prefix: "bob" }
   const inboundQueue = new Queue(queueNames.inbound, queueOptions)

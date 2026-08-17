@@ -4,6 +4,7 @@ const Environment = Schema.Struct({
   PORT: Schema.NumberFromString.pipe(
     Schema.check(Schema.isBetween({ minimum: 1, maximum: 65_535 }))
   ),
+  AUTO_MIGRATE: Schema.Literals(["true", "false"]),
   AUTO_ENQUEUE_INBOUND: Schema.Literals(["true", "false"]),
   DATABASE_URL: Schema.URLFromString,
   JOB_QUEUE_URL: Schema.URLFromString,
@@ -35,6 +36,7 @@ const Environment = Schema.Struct({
 export function readCoreRuntimeConfiguration(environment: NodeJS.ProcessEnv) {
   const value = Schema.decodeUnknownSync(Environment)({
     ...environment,
+    AUTO_MIGRATE: environment.AUTO_MIGRATE ?? "true",
     AUTO_ENQUEUE_INBOUND: environment.AUTO_ENQUEUE_INBOUND ?? "false",
     AGENT_EXECUTION_POOL_ID: environment.AGENT_EXECUTION_POOL_ID ?? "core-v1",
     ASSETS_DIRECTORY: environment.ASSETS_DIRECTORY ?? "/app/ui",

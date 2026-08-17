@@ -74,6 +74,7 @@ services:
     env_file:
       - ${RUNTIME_ENV_FILE:?}
     environment:
+      AUTO_MIGRATE: "false"
       AGENT_EXECUTION_POOL_ID: ${AGENT_EXECUTION_POOL_ID:?}
       BOB_MODEL: ${BOB_MODEL:?}
       BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
