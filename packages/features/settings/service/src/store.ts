@@ -4,7 +4,7 @@ import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 import type { HourCycle, OwnerSettings } from "@bob/settings-types/settings"
 import type { OwnerSettingsStoreAdapter } from "@bob/settings-types/store"
 
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/capabilities-types/effect-adapter"
 import { channels, users } from "@bob/db-service/schema/conversations"
 import { allInTransaction } from "@bob/db-types"
 import {
@@ -157,11 +157,14 @@ export function makeOwnerSettingsStore(
 }
 
 export function ownerSettingsStoreLayer(store: OwnerSettingsStoreAdapter) {
+  const failure = (operation: keyof OwnerSettingsStoreAdapter) => (cause: unknown) =>
+    new OwnerSettingsStoreError({ operation: String(operation), cause })
   return Layer.succeed(
     OwnerSettingsStore,
-    liftPromiseAdapter(
-      store,
-      (operation, cause) => new OwnerSettingsStoreError({ operation: String(operation), cause })
-    )
+    OwnerSettingsStore.of({
+      get: liftPromiseOperation(store.get, failure("get")),
+      update: liftPromiseOperation(store.update, failure("update")),
+      connections: liftPromiseOperation(store.connections, failure("connections"))
+    })
   )
 }

@@ -5,7 +5,7 @@ import {
   AgentToolError,
   BobAgent,
   type AgentRunDurability,
-  type BobAgentShape,
+  type BobAgentService,
   type CredentialStore
 } from "@bob/agent-types"
 import {
@@ -1744,7 +1744,7 @@ export function piAgentLayerWithDependencies(
       }),
       (agent) => Effect.sync(() => agent.dispose())
     ).pipe(
-      Effect.map((agent): BobAgentShape => ({
+      Effect.map((agent): BobAgentService => ({
         runTurn: (request, durability) =>
           Effect.suspend(() => {
             const startedAt = Date.now()

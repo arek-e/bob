@@ -4,7 +4,7 @@ import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
 import { AgentRunRequest } from "@bob/agent-types/run"
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/capabilities-types/effect-adapter"
 import { JsonObject } from "@bob/capabilities-types/json"
 import {
   type CapabilityCatalogue,
@@ -866,11 +866,24 @@ export function makeToolExecutor(
 }
 
 export function toolExecutorLayer(executor: ToolExecutorAdapter) {
+  const failure = (operation: keyof ToolExecutorAdapter) => (cause: unknown) =>
+    new ToolExecutorError({ operation: String(operation), cause })
   return Layer.succeed(
     ToolExecutor,
-    liftPromiseAdapter(
-      executor,
-      (operation, cause) => new ToolExecutorError({ operation: String(operation), cause })
-    )
+    ToolExecutor.of({
+      execute: (input) =>
+        Effect.tryPromise({
+          try: () => executor.execute(input),
+          catch: failure("execute")
+        }),
+      mutationActivity: liftPromiseOperation(
+        executor.mutationActivity,
+        failure("mutationActivity")
+      ),
+      expireMutationRecovery: liftPromiseOperation(
+        executor.expireMutationRecovery,
+        failure("expireMutationRecovery")
+      )
+    })
   )
 }

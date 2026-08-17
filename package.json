@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@effect/vitest": "4.0.0-beta.107",
+    "@oxlint/plugins": "1.78.0",
     "@tanstack/router-generator": "1.167.27",
     "@types/node": "22.18.0",
     "@varlock/hashicorp-vault-plugin": "2.1.0",

@@ -5,7 +5,7 @@ import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
 import { AgentRunOperation, AgentRunRequest } from "@bob/agent-types/run"
 import { makeArtifactPersistence } from "@bob/artifacts-service/persistence"
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/capabilities-types/effect-adapter"
 import { AgentRunStore, AgentRunStoreError } from "@bob/conversations-types/run-store"
 import {
   agentRunAttempts,
@@ -872,11 +872,31 @@ export function makeAgentRunStore(
 }
 
 export function agentRunStoreLayer(store: AgentRunStoreAdapter) {
+  const failure = (operation: keyof AgentRunStoreAdapter) => (cause: unknown) =>
+    new AgentRunStoreError({ operation: String(operation), cause })
   return Layer.succeed(
     AgentRunStore,
-    liftPromiseAdapter(
-      store,
-      (operation, cause) => new AgentRunStoreError({ operation: String(operation), cause })
-    )
+    AgentRunStore.of({
+      create: liftPromiseOperation(store.create, failure("create")),
+      loadForInbound: liftPromiseOperation(store.loadForInbound, failure("loadForInbound")),
+      loadForTurn: liftPromiseOperation(store.loadForTurn, failure("loadForTurn")),
+      claim: liftPromiseOperation(store.claim, failure("claim")),
+      loadOperations: liftPromiseOperation(store.loadOperations, failure("loadOperations")),
+      appendOperation: liftPromiseOperation(store.appendOperation, failure("appendOperation")),
+      releaseForRetry: liftPromiseOperation(store.releaseForRetry, failure("releaseForRetry")),
+      completeWithResponse: liftPromiseOperation(
+        store.completeWithResponse,
+        failure("completeWithResponse")
+      ),
+      completeWithoutResponse: liftPromiseOperation(
+        store.completeWithoutResponse,
+        failure("completeWithoutResponse")
+      ),
+      completeForReflection: liftPromiseOperation(
+        store.completeForReflection,
+        failure("completeForReflection")
+      ),
+      channelForRun: liftPromiseOperation(store.channelForRun, failure("channelForRun"))
+    })
   )
 }

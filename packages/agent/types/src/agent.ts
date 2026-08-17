@@ -68,7 +68,7 @@ export interface AgentRunDurability {
   readonly append: (operation: AgentRunOperation) => Effect.Effect<void, AgentCheckpointError>
 }
 
-export interface BobAgentShape {
+export interface BobAgentService {
   readonly runTurn: (
     request: AgentRunRequest,
     durability?: AgentRunDurability
@@ -79,6 +79,6 @@ export interface BobAgentShape {
   readonly startDeviceLogin: () => Effect.Effect<DeviceLoginEvent>
 }
 
-export class BobAgent extends Context.Service<BobAgent, BobAgentShape>()("@bob/agent/BobAgent") {}
+export class BobAgent extends Context.Service<BobAgent, BobAgentService>()("@bob/agent/BobAgent") {}
 
 export type ExecuteTool = (command: ToolCommand) => Effect.Effect<ToolResult, AgentToolError>

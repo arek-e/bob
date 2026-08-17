@@ -3,7 +3,7 @@ import type { MemoryStoreAdapter } from "@bob/memory-types/store"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/capabilities-types/effect-adapter"
 import {
   factEvidence,
   factRelations,
@@ -832,11 +832,16 @@ export function makeMemoryStore(
 }
 
 export function memoryStoreLayer(store: MemoryStoreAdapter) {
+  const failure = (operation: keyof MemoryStoreAdapter) => (cause: unknown) =>
+    new MemoryStoreError({ operation: String(operation), cause })
   return Layer.succeed(
     MemoryStore,
-    liftPromiseAdapter(
-      store,
-      (operation, cause) => new MemoryStoreError({ operation: String(operation), cause })
-    )
+    MemoryStore.of({
+      propose: liftPromiseOperation(store.propose, failure("propose")),
+      confirm: liftPromiseOperation(store.confirm, failure("confirm")),
+      correct: liftPromiseOperation(store.correct, failure("correct")),
+      reject: liftPromiseOperation(store.reject, failure("reject")),
+      listCandidates: liftPromiseOperation(store.listCandidates, failure("listCandidates"))
+    })
   )
 }

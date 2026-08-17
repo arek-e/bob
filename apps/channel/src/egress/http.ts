@@ -1,5 +1,5 @@
 import { MessageInteractionCommand } from "@bob/conversations-types/interactions"
-import { DeliveryReconciliationRequest } from "@bob/delivery-types/delivery"
+import { DeliveryReconciliationRequest, type DeliveryResult } from "@bob/delivery-types/delivery"
 import { Effect, Schema } from "effect"
 
 import { SendblueProvider, timingSafeEqual } from "../sendblue/provider.ts"
@@ -121,17 +121,18 @@ export function handleDeliveryReconciliationRequest(request: Request) {
       }
     }
     const state = deliveryState(provider.status)
+    const result: DeliveryResult = {
+      outboxId: target.outboxId,
+      attemptId: target.attemptId,
+      correlationId: target.correlationId,
+      state,
+      providerMessageHandle: provider.messageHandle,
+      occurredAt: provider.at
+    }
+    if (state === "failed") Object.assign(result, { errorCode: provider.status.toLowerCase() })
     return Response.json({
       status: "resolved",
-      result: {
-        outboxId: target.outboxId,
-        attemptId: target.attemptId,
-        correlationId: target.correlationId,
-        state,
-        providerMessageHandle: provider.messageHandle,
-        occurredAt: provider.at,
-        ...(state === "failed" ? { errorCode: provider.status.toLowerCase() } : {})
-      }
+      result
     })
   }).pipe(Effect.catch(() => Effect.succeed(Response.json({ status: "pending" }, { status: 502 }))))
 }

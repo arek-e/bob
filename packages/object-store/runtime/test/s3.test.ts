@@ -15,7 +15,10 @@ objectStorageConformance("S3", async () => {
     async send(command: DeleteObjectCommand | GetObjectCommand | PutObjectCommand) {
       const key = String(command.input.Key)
       if (command instanceof PutObjectCommand) {
-        objects.set(key, new Uint8Array(command.input.Body as Uint8Array))
+        if (!(command.input.Body instanceof Uint8Array)) {
+          throw new TypeError("Test S3 body must be a Uint8Array")
+        }
+        objects.set(key, Uint8Array.from(command.input.Body))
         return { ETag: "stored" }
       }
       if (command instanceof DeleteObjectCommand) {
@@ -31,9 +34,11 @@ objectStorageConformance("S3", async () => {
         ETag: "stored"
       }
     }
-  } as never
+  }
+  // SAFETY: This test double implements the S3 send behavior used by the Object Storage Layer.
+  const s3Client = client as never
   const runtime = ManagedRuntime.make(
-    s3ObjectStorageLayer({ bucket: "private", keyPrefix: "bob", client })
+    s3ObjectStorageLayer({ bucket: "private", keyPrefix: "bob", client: s3Client })
   )
   return {
     run: (effect) => runtime.runPromise(effect),

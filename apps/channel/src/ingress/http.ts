@@ -1,10 +1,13 @@
+import type { InboundJob } from "@bob/core-types/jobs"
+
 import { InboundAcceptance, type NormalizedInboundEvent } from "@bob/conversations-types/channel"
 import {
   emitHealth,
   externalParentFromTraceparent,
   injectCurrentTraceparent,
   recordDecision,
-  withBobSpan
+  withBobSpan,
+  type BobSpan
 } from "@bob/observability"
 import { Data, Effect, Schema } from "effect"
 
@@ -22,10 +25,9 @@ class RequestBodyTooLargeError extends Data.TaggedError("RequestBodyTooLargeErro
   }
 }
 
-class WorkflowResponseFailure extends Schema.TaggedError<WorkflowResponseFailure>()(
-  "WorkflowResponseFailure",
-  { response: Schema.Defect() }
-) {}
+class WorkflowResponseFailure extends Data.TaggedError("WorkflowResponseFailure")<{
+  readonly response: Response
+}> {}
 
 const response = (code: string, status: number): Response =>
   Response.json(
@@ -40,7 +42,7 @@ function readJson(request: Request) {
       if (declaredLength > MAX_BODY_BYTES) throw new RequestBodyTooLargeError()
       const bytes = new Uint8Array(await request.arrayBuffer())
       if (bytes.byteLength > MAX_BODY_BYTES) throw new RequestBodyTooLargeError()
-      return JSON.parse(new TextDecoder().decode(bytes)) as unknown
+      return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(new TextDecoder().decode(bytes)))
     },
     catch: (cause) => cause
   })
@@ -139,11 +141,11 @@ function persistInbound(event: NormalizedInboundEvent, mediaUrl?: string) {
         Effect.gen(function* () {
           const headers = yield* injectCurrentTraceparent()
           const traceparent = headers.get("traceparent")
-          const job = {
+          const job: InboundJob = {
             eventId: acceptance.eventId,
-            correlationId: event.correlationId,
-            ...(traceparent === null ? {} : { traceparent })
+            correlationId: event.correlationId
           }
+          if (traceparent !== null) Object.assign(job, { traceparent })
           yield* Effect.tryPromise(() => ingress.queue.publish(job))
         })
       ).pipe(
@@ -179,7 +181,7 @@ function persistInbound(event: NormalizedInboundEvent, mediaUrl?: string) {
   })
 }
 
-const receiveWebhook = (request: Request, payload: unknown) =>
+const receiveWebhook = (request: Request, payload: typeof Schema.Json.Type) =>
   Effect.gen(function* () {
     const ingress = yield* SendblueIngress
     const decoded = yield* decodeWebhookPayload(payload)
@@ -219,9 +221,7 @@ const receiveWebhook = (request: Request, payload: unknown) =>
     const result = yield* (
       parent === undefined ? effect : effect.pipe(Effect.withParentSpan(parent))
     ).pipe(
-      Effect.catchTag("WorkflowResponseFailure", (failure) =>
-        Effect.succeed(failure.response as Response)
-      )
+      Effect.catchTag("WorkflowResponseFailure", (failure) => Effect.succeed(failure.response))
     )
     const resultBody = yield* Effect.tryPromise(() => result.clone().json()).pipe(
       Effect.flatMap(
@@ -253,7 +253,7 @@ const receiveWebhook = (request: Request, payload: unknown) =>
     return result
   })
 
-const outboundWebhook = (request: Request, url: URL, payload: unknown) =>
+const outboundWebhook = (request: Request, url: URL, payload: typeof Schema.Json.Type) =>
   Effect.gen(function* () {
     const ingress = yield* SendblueIngress
     const decoded = yield* decodeWebhookPayload(payload)
@@ -277,12 +277,14 @@ const outboundWebhook = (request: Request, url: URL, payload: unknown) =>
         }),
       catch: (cause) => cause
     })
-    const spanInput = {
-      name: "bob.delivery_result.invoke" as const,
+    const spanInput: BobSpan = {
+      name: "bob.delivery_result.invoke",
       correlationId: event.correlationId,
-      feature: "delivery" as const,
-      ...(event.outboxId === undefined ? {} : { outboxId: event.outboxId }),
-      ...(event.attemptId === undefined ? {} : { deliveryAttemptId: event.attemptId })
+      feature: "delivery"
+    }
+    if (event.outboxId !== undefined) Object.assign(spanInput, { outboxId: event.outboxId })
+    if (event.attemptId !== undefined) {
+      Object.assign(spanInput, { deliveryAttemptId: event.attemptId })
     }
     const effect = withBobSpan(
       {
@@ -316,9 +318,7 @@ const outboundWebhook = (request: Request, url: URL, payload: unknown) =>
     const stored = yield* (
       parent === undefined ? effect : effect.pipe(Effect.withParentSpan(parent))
     ).pipe(
-      Effect.catchTag("WorkflowResponseFailure", (failure) =>
-        Effect.succeed(failure.response as Response)
-      )
+      Effect.catchTag("WorkflowResponseFailure", (failure) => Effect.succeed(failure.response))
     )
     return stored.ok ? response("accepted", 202) : response("durable_store_failed", 503)
   })

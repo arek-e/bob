@@ -43,7 +43,7 @@ const payload = {
   group_display_name: null
 } as const
 
-const decode = (input: unknown) => Effect.runSync(decodeWebhookPayload(input))
+const decode = (input: typeof Schema.Json.Type) => Effect.runSync(decodeWebhookPayload(input))
 
 const required = {
   receiveUrl: "https://bob.example/webhooks/receive",
@@ -51,7 +51,7 @@ const required = {
   globalSecret: "secret"
 }
 
-function plan(input: unknown, secretMatches = true) {
+function plan(input: typeof Schema.Json.Type, secretMatches = true) {
   return planWebhookReconciliation(
     Schema.decodeUnknownSync(SendblueWebhookList)(input),
     required,

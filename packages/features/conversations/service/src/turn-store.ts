@@ -1,9 +1,13 @@
-import type { ConversationTurnStoreAdapter } from "@bob/conversations-types/turn-store"
+import type {
+  ConversationTurnLatest,
+  ConversationTurnMessage,
+  ConversationTurnStoreAdapter
+} from "@bob/conversations-types/turn-store"
 import type { CoreDatabase } from "@bob/db-types"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/capabilities-types/effect-adapter"
 import {
   ConversationTurnStore,
   ConversationTurnStoreError
@@ -376,14 +380,20 @@ export function makeConversationTurnStore(
               byteLength: attachment.byteLength,
               contentHash: attachment.contentHash
             }))
-            return {
+            const decryptedRow: Omit<typeof row, "textCiphertext" | "textIv"> & {
+              text: string
+              attachments?: NonNullable<ConversationTurnMessage["attachments"]>
+            } = {
               ...row,
               text: await protection.decryptText(key, {
                 ciphertext: row.textCiphertext,
                 iv: row.textIv
-              }),
-              ...(attachments === undefined || attachments.length === 0 ? {} : { attachments })
+              })
             }
+            if (attachments !== undefined && attachments.length > 0) {
+              Object.assign(decryptedRow, { attachments })
+            }
+            return decryptedRow
           })
         ),
         protection.decryptText(key, {
@@ -398,7 +408,7 @@ export function makeConversationTurnStore(
       const ordered = decrypted.map((row, index) => ({ ...row, ordinal: index + 1 }))
       const latest = ordered.at(-1)
       if (latest === undefined) throw new Error("Conversation turn target is missing")
-      const latestMessage = {
+      const latestMessage: ConversationTurnLatest = {
         eventId: latest.eventId,
         messageId: latest.messageId,
         text: latest.text,
@@ -408,8 +418,10 @@ export function makeConversationTurnStore(
         isGroup: latest.isGroup,
         correlationId: latest.correlationId,
         number,
-        fromNumber,
-        ...(latest.attachments === undefined ? {} : { attachments: latest.attachments })
+        fromNumber
+      }
+      if (latest.attachments !== undefined) {
+        Object.assign(latestMessage, { attachments: latest.attachments })
       }
       const latestWithTrace =
         latest.traceparent === null
@@ -422,13 +434,18 @@ export function makeConversationTurnStore(
         revision: claimed.revision,
         claimExpiresAt: expiresAt,
         latest: latestWithTrace,
-        messages: ordered.map((row) => ({
-          eventId: row.eventId,
-          messageId: row.messageId,
-          text: row.text,
-          ordinal: row.ordinal,
-          ...(row.attachments === undefined ? {} : { attachments: row.attachments })
-        }))
+        messages: ordered.map((row) => {
+          const message: ConversationTurnMessage = {
+            eventId: row.eventId,
+            messageId: row.messageId,
+            text: row.text,
+            ordinal: row.ordinal
+          }
+          if (row.attachments !== undefined) {
+            Object.assign(message, { attachments: row.attachments })
+          }
+          return message
+        })
       }
     },
 
@@ -730,11 +747,35 @@ export function makeConversationTurnStore(
 }
 
 export function conversationTurnStoreLayer(store: ConversationTurnStoreAdapter) {
+  const failure = (operation: keyof ConversationTurnStoreAdapter) => (cause: unknown) =>
+    new ConversationTurnStoreError({ operation: String(operation), cause })
   return Layer.succeed(
     ConversationTurnStore,
-    liftPromiseAdapter(
-      store,
-      (operation, cause) => new ConversationTurnStoreError({ operation: String(operation), cause })
-    )
+    ConversationTurnStore.of({
+      offer: liftPromiseOperation(store.offer, failure("offer")),
+      claimReady: liftPromiseOperation(store.claimReady, failure("claimReady")),
+      nextWakeAt: liftPromiseOperation(store.nextWakeAt, failure("nextWakeAt")),
+      currentRevision: liftPromiseOperation(store.currentRevision, failure("currentRevision")),
+      excludeFromContext: liftPromiseOperation(
+        store.excludeFromContext,
+        failure("excludeFromContext")
+      ),
+      excludeMessageFromContext: liftPromiseOperation(
+        store.excludeMessageFromContext,
+        failure("excludeMessageFromContext")
+      ),
+      markRunning: liftPromiseOperation(store.markRunning, failure("markRunning")),
+      markSettling: liftPromiseOperation(store.markSettling, failure("markSettling")),
+      releaseSettling: liftPromiseOperation(store.releaseSettling, failure("releaseSettling")),
+      releaseSettlingForRun: liftPromiseOperation(
+        store.releaseSettlingForRun,
+        failure("releaseSettlingForRun")
+      ),
+      commitReply: liftPromiseOperation(store.commitReply, failure("commitReply")),
+      markEventsProcessed: liftPromiseOperation(
+        store.markEventsProcessed,
+        failure("markEventsProcessed")
+      )
+    })
   )
 }
