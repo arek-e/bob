@@ -10,7 +10,6 @@ export interface IngressBindings {
   SENDBLUE_LINE_ID: string
   SENDBLUE_WEBHOOK_SIGNING_SECRET: string
   SENDBLUE_FROM_NUMBER: string
-  SENDBLUE_ALLOWED_USER_NUMBER: string
   CORE_CALLER_SECRET: string
   SENDBLUE_MEDIA_HOSTS: string
 }

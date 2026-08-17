@@ -38,7 +38,7 @@ export type {
 } from "@bob/conversations-types/turn-store"
 
 export interface ConversationTurnStoreOptions {
-  readonly ownerId: string
+  readonly ownerId?: string | undefined
   readonly quietWindowMs?: number
   readonly burstWindowMs?: number
   readonly claimLeaseMs?: number
@@ -238,6 +238,7 @@ export function makeConversationTurnStore(
     },
 
     async claimReady(turnId?: string, leaseMs = claimLeaseMs, ownerId = options.ownerId) {
+      if (ownerId === undefined) throw new Error("Conversation owner is required")
       const at = now()
       await Effect.runPromise(
         database
@@ -459,6 +460,7 @@ export function makeConversationTurnStore(
     },
 
     async nextWakeAt(ownerId = options.ownerId) {
+      if (ownerId === undefined) throw new Error("Conversation owner is required")
       const open = await Effect.runPromise(
         database
           .select({

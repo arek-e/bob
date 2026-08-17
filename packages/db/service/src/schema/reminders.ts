@@ -1,8 +1,12 @@
 import { boolean, index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
 
+import { users } from "./conversations.ts"
+
 export const reminders = pgTable("reminders", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   sourceMessageId: text("source_message_id").notNull(),
   originalWordingCiphertext: text("original_wording_ciphertext").notNull(),
   originalWordingIv: text("original_wording_iv").notNull(),
@@ -89,7 +93,9 @@ export const schedulerOutbox = pgTable(
   "scheduler_outbox",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     reminderId: text("reminder_id").notNull(),
     scheduleRevision: integer("schedule_revision").notNull(),
     command: text("command", { enum: ["upsert", "remove", "reconcile"] }).notNull(),

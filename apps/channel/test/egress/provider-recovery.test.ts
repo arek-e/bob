@@ -61,8 +61,7 @@ describe("Sendblue provider recovery", () => {
       SENDBLUE_API_KEY_ID: "key-id",
       SENDBLUE_API_SECRET_KEY: "secret-key",
       SENDBLUE_WEBHOOK_SIGNING_SECRET: "s".repeat(64),
-      SENDBLUE_FROM_NUMBER: "+46711111111",
-      SENDBLUE_ALLOWED_USER_NUMBER: "+46700000000"
+      SENDBLUE_FROM_NUMBER: "+46711111111"
     } as never)
 
     expect(result).toEqual({ retrieved: 1, replayed: 1, skipped: 0 })
@@ -98,8 +97,7 @@ describe("Sendblue provider recovery", () => {
         SENDBLUE_API_KEY_ID: "key-id",
         SENDBLUE_API_SECRET_KEY: "secret-key",
         SENDBLUE_WEBHOOK_SIGNING_SECRET: "s".repeat(64),
-        SENDBLUE_FROM_NUMBER: "+46711111111",
-        SENDBLUE_ALLOWED_USER_NUMBER: "+46700000000"
+        SENDBLUE_FROM_NUMBER: "+46711111111"
       } as never)
     ).rejects.toMatchObject({
       _tag: "InboundReconciliationError",

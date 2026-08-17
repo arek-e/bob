@@ -100,8 +100,17 @@ function persistInbound(event: NormalizedInboundEvent, mediaUrl?: string) {
         if (!result.ok) return yield* new WorkflowResponseFailure({ response: result })
         return result
       })
-    ).pipe(Effect.catch(() => Effect.succeed(response("durable_store_failed", 503))))
-    if (!stored.ok) return response("durable_store_failed", 503)
+    ).pipe(
+      Effect.catchTag("WorkflowResponseFailure", ({ response: upstream }) =>
+        Effect.succeed(
+          upstream.status === 403
+            ? response("not_allowed", 403)
+            : response("durable_store_failed", 503)
+        )
+      ),
+      Effect.catch(() => Effect.succeed(response("durable_store_failed", 503)))
+    )
+    if (!stored.ok) return stored
 
     const acceptance = yield* Effect.tryPromise(() => stored.json()).pipe(
       Effect.flatMap(Schema.decodeUnknownEffect(InboundAcceptance)),
@@ -185,10 +194,7 @@ const receiveWebhook = (request: Request, payload: typeof Schema.Json.Type) =>
   Effect.gen(function* () {
     const ingress = yield* SendblueIngress
     const decoded = yield* decodeWebhookPayload(payload)
-    if (
-      decoded.to_number !== ingress.config.SENDBLUE_FROM_NUMBER ||
-      decoded.from_number !== ingress.config.SENDBLUE_ALLOWED_USER_NUMBER
-    ) {
+    if (decoded.to_number !== ingress.config.SENDBLUE_FROM_NUMBER) {
       return response("not_allowed", 403)
     }
     const event = yield* Effect.try({
@@ -257,10 +263,7 @@ const outboundWebhook = (request: Request, url: URL, payload: typeof Schema.Json
   Effect.gen(function* () {
     const ingress = yield* SendblueIngress
     const decoded = yield* decodeWebhookPayload(payload)
-    if (
-      decoded.from_number !== ingress.config.SENDBLUE_FROM_NUMBER ||
-      decoded.to_number !== ingress.config.SENDBLUE_ALLOWED_USER_NUMBER
-    ) {
+    if (decoded.from_number !== ingress.config.SENDBLUE_FROM_NUMBER) {
       return response("unknown_line", 403)
     }
     const callback = readSendblueStatusCallback(url)

@@ -1,7 +1,8 @@
 import { Schema } from "effect"
+import { readFile } from "node:fs/promises"
 import { describe, expect, it } from "vitest"
 
-import { RuntimeReleaseContract } from "../src/contract.ts"
+import { RuntimeCompatibilityContract, RuntimeReleaseContract } from "../src/contract.ts"
 
 const digest = `sha256:${"a".repeat(64)}`
 
@@ -36,10 +37,32 @@ const contract = {
     minimumRollbackSchemaVersion: 1,
     migrationMode: "expand"
   },
-  requiredSharedServices: ["postgresql", "redis", "object-storage"]
+  requiredSharedServices: ["postgresql", "redis", "object-storage"],
+  composeDigest: digest,
+  configurationDigest: digest,
+  backup: {
+    formatVersion: 1,
+    maximumAgeSeconds: 18_000,
+    restoreVerificationRequired: true
+  },
+  rollout: {
+    drainTimeoutSeconds: 600,
+    observationSeconds: 1_800,
+    retainPreviousRelease: true
+  }
 } as const
 
 describe("Runtime release contract", () => {
+  it("decodes the published Runtime compatibility contract", async () => {
+    const document = JSON.parse(
+      await readFile(
+        new URL("../../../../deployment/runtime-control.json", import.meta.url),
+        "utf8"
+      )
+    )
+    expect(Schema.decodeUnknownSync(RuntimeCompatibilityContract)(document)).toEqual(document)
+  })
+
   it("accepts one complete compatible release description", () => {
     expect(Schema.decodeUnknownSync(RuntimeReleaseContract)(contract)).toEqual(contract)
   })

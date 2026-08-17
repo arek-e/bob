@@ -59,8 +59,7 @@ export const reminderVerticalModule: VerticalModule = {
           makeReminderScheduledWorkflow({
             clock: config.REMINDER_CLOCK,
             database: context.database,
-            reminders,
-            ownerId: context.ownerId
+            reminders
           })
         ]
       }),

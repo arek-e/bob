@@ -34,10 +34,6 @@ const Environment = Config.all({
     Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/)),
     "SENDBLUE_FROM_NUMBER"
   ),
-  SENDBLUE_ALLOWED_USER_NUMBER: Config.schema(
-    Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/)),
-    "SENDBLUE_ALLOWED_USER_NUMBER"
-  ),
   SENDBLUE_STATUS_CALLBACK_URL: Config.url("SENDBLUE_STATUS_CALLBACK_URL"),
   SENDBLUE_MEDIA_HOSTS: Config.nonEmptyString("SENDBLUE_MEDIA_HOSTS").pipe(
     Config.withDefault("cdn.sendblue.co,storage.googleapis.com")
@@ -117,7 +113,6 @@ async function main(): Promise<void> {
     SENDBLUE_LINE_ID: config.SENDBLUE_LINE_ID,
     SENDBLUE_WEBHOOK_SIGNING_SECRET: webhookSecret,
     SENDBLUE_FROM_NUMBER: config.SENDBLUE_FROM_NUMBER,
-    SENDBLUE_ALLOWED_USER_NUMBER: config.SENDBLUE_ALLOWED_USER_NUMBER,
     CORE_CALLER_SECRET: callerSecret,
     SENDBLUE_MEDIA_HOSTS: config.SENDBLUE_MEDIA_HOSTS
   }
@@ -127,7 +122,6 @@ async function main(): Promise<void> {
     DELIVERY_RESULT_QUEUE: deliveryResultQueueBinding,
     SENDBLUE_WEBHOOK_SIGNING_SECRET: webhookSecret,
     SENDBLUE_FROM_NUMBER: config.SENDBLUE_FROM_NUMBER,
-    SENDBLUE_ALLOWED_USER_NUMBER: config.SENDBLUE_ALLOWED_USER_NUMBER,
     SENDBLUE_STATUS_CALLBACK_URL: config.SENDBLUE_STATUS_CALLBACK_URL.toString(),
     CORE_CALLER_SECRET: callerSecret
   }

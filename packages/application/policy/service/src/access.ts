@@ -10,6 +10,10 @@ export interface SetupAccessConfiguration {
   readonly setupToken: string
 }
 
+export interface OwnerEnrollmentAccessConfiguration {
+  readonly ownerEnrollmentSecret: string
+}
+
 async function secretMatches(supplied: string | null, expected: string): Promise<boolean> {
   if (supplied === null) return false
   const encoder = new TextEncoder()
@@ -77,6 +81,20 @@ export async function authorizeSetupRequest(
   configuration: SetupAccessConfiguration
 ): Promise<void> {
   if (!(await secretMatches(request.headers.get("x-bob-setup-token"), configuration.setupToken))) {
+    throw new Error("access_denied")
+  }
+}
+
+export async function authorizeOwnerEnrollmentRequest(
+  request: Request,
+  configuration: OwnerEnrollmentAccessConfiguration
+): Promise<void> {
+  if (
+    !(await secretMatches(
+      request.headers.get("x-bob-owner-enrollment-token"),
+      configuration.ownerEnrollmentSecret
+    ))
+  ) {
     throw new Error("access_denied")
   }
 }

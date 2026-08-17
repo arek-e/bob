@@ -1,10 +1,14 @@
 import { index, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
 
+import { users } from "./conversations.ts"
+
 export const operationalAlerts = pgTable(
   "operational_alerts",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     code: text("code").notNull(),
     objectType: text("object_type").notNull(),
     objectId: text("object_id").notNull(),

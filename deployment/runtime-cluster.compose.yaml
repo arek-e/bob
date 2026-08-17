@@ -1,0 +1,229 @@
+name: bob-runtime-cluster
+
+x-runtime: &runtime
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  networks: [runtime]
+
+services:
+  postgresql:
+    image: docker.io/library/postgres@${POSTGRES_IMAGE_DIGEST:?}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bob
+      POSTGRES_USER: bob
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U bob -d bob]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+    networks: [runtime]
+    volumes: [postgresql-data:/var/lib/postgresql/data]
+    stop_grace_period: 60s
+    labels: { bob_service: postgresql }
+
+  redis:
+    image: docker.io/library/redis@${REDIS_IMAGE_DIGEST:?}
+    restart: unless-stopped
+    command: [redis-server, --appendonly, "yes", --appendfsync, everysec]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+    networks: [runtime]
+    volumes: [redis-data:/data]
+    stop_grace_period: 30s
+    labels: { bob_service: redis }
+
+  otel-collector:
+    image: docker.io/otel/opentelemetry-collector-contrib@${OTEL_COLLECTOR_IMAGE_DIGEST:?}
+    restart: unless-stopped
+    command: [--config=/etc/otelcol-contrib/config.yaml]
+    env_file:
+      - ${RUNTIME_ENV_FILE:?}
+    healthcheck:
+      test: [CMD, /otelcol-contrib, validate, --config=/etc/otelcol-contrib/config.yaml]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks: [runtime]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    tmpfs: [/tmp]
+    labels: { bob_service: otel-collector }
+
+  migration:
+    <<: *runtime
+    image: ghcr.io/arek-e/bob-migration@${MIGRATION_IMAGE_DIGEST:?}
+    restart: "no"
+    env_file:
+      - ${RUNTIME_ENV_FILE:?}
+    depends_on:
+      postgresql: { condition: service_healthy }
+    tmpfs: [/tmp]
+    labels: { bob_service: migration }
+
+  core:
+    <<: *runtime
+    image: ghcr.io/arek-e/bob-core@${CORE_IMAGE_DIGEST:?}
+    env_file:
+      - ${RUNTIME_ENV_FILE:?}
+    environment:
+      AUTO_MIGRATE: "false"
+      AGENT_EXECUTION_POOL_ID: ${AGENT_EXECUTION_POOL_ID:?}
+      BOB_MODEL: ${BOB_MODEL:?}
+      BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    depends_on:
+      migration: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      otel-collector: { condition: service_healthy }
+    expose: [8788]
+    networks: [runtime, ingress]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:8788/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+    volumes: [object-storage:/data/object-storage]
+    tmpfs: [/tmp]
+    stop_grace_period: 90s
+    labels: { bob_service: core }
+
+  agent-worker:
+    <<: *runtime
+    image: ghcr.io/arek-e/bob-agent-worker@${AGENT_WORKER_IMAGE_DIGEST:?}
+    env_file:
+      - ${RUNTIME_ENV_FILE:?}
+    environment:
+      AGENT_EXECUTION_POOL_ID: ${AGENT_EXECUTION_POOL_ID:?}
+      BOB_MODEL: ${BOB_MODEL:?}
+      BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    depends_on:
+      core: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      otel-collector: { condition: service_healthy }
+    expose: [8787]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+    tmpfs: [/tmp]
+    stop_grace_period: 660s
+    labels: { bob_service: agent-worker }
+
+  channel:
+    <<: *runtime
+    image: ghcr.io/arek-e/bob-channel@${CHANNEL_IMAGE_DIGEST:?}
+    env_file:
+      - ${RUNTIME_ENV_FILE:?}
+    environment:
+      BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    depends_on:
+      core: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      otel-collector: { condition: service_healthy }
+    expose: [8786]
+    networks: [runtime, ingress]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:8786/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+    tmpfs: [/tmp]
+    labels: { bob_service: channel }
+
+  backup:
+    <<: *runtime
+    image: ghcr.io/arek-e/bob-backup@${BACKUP_IMAGE_DIGEST:?}
+    restart: "no"
+    env_file:
+      - ${RUNTIME_ENV_FILE:?}
+    environment:
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
+    depends_on:
+      postgresql: { condition: service_healthy }
+    secrets: [restic_password]
+    volumes:
+      - object-storage:/data/object-storage:ro
+    tmpfs: [/tmp]
+    profiles: [operations]
+    labels: { bob_service: backup }
+
+  postgresql-restore:
+    image: docker.io/library/postgres@${POSTGRES_IMAGE_DIGEST:?}
+    restart: "no"
+    environment:
+      POSTGRES_DB: bob_restore
+      POSTGRES_USER: bob
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U bob -d bob_restore]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    networks: [runtime]
+    tmpfs: [/var/lib/postgresql/data]
+    profiles: [operations]
+    labels: { bob_service: postgresql-restore }
+
+  restore-verifier:
+    <<: *runtime
+    image: ghcr.io/arek-e/bob-backup@${BACKUP_IMAGE_DIGEST:?}
+    entrypoint: [/usr/local/bin/bob-restore-verify]
+    restart: "no"
+    env_file:
+      - ${RUNTIME_ENV_FILE:?}
+    environment:
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
+    depends_on:
+      postgresql-restore: { condition: service_healthy }
+    secrets: [restic_password]
+    tmpfs: [/tmp]
+    profiles: [operations]
+    labels: { bob_service: restore-verifier }
+
+networks:
+  runtime:
+    internal: true
+  ingress:
+    name: bob-runtime-ingress
+    external: true
+
+volumes:
+  postgresql-data:
+  redis-data:
+  object-storage:
+
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:?}
+  restic_password:
+    file: ${RESTIC_PASSWORD_FILE:?}

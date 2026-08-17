@@ -17,7 +17,6 @@ export class InboundReconciliationError extends Data.TaggedError("InboundReconci
 
 interface ReconcileInboundHistoryOptions {
   readonly sendblueNumber: string
-  readonly ownerNumber: string
   readonly signingSecret: string
   readonly scheduledAt: Date
   readonly accept: (request: {
@@ -43,7 +42,6 @@ export function reconcileInboundHistory(options: ReconcileInboundHistoryOptions)
         (message) =>
           !message.is_outbound &&
           message.status === "RECEIVED" &&
-          message.from_number === options.ownerNumber &&
           message.to_number === options.sendblueNumber
       )
       .toSorted((left, right) => left.date_sent.localeCompare(right.date_sent))

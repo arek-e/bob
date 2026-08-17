@@ -1,10 +1,14 @@
 import { index, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
 
+import { users } from "./conversations.ts"
+
 export const externalConnections = pgTable(
   "external_connections",
   {
     id: text("id").primaryKey(),
-    ownerId: text("owner_id").notNull(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     provider: text("provider", { enum: ["google_calendar", "microsoft_calendar"] }).notNull(),
     integrationId: text("integration_id").notNull(),
     connectionId: text("connection_id").notNull(),

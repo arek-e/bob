@@ -1,0 +1,153 @@
+name: Release Runtime cluster
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full main branch commit SHA
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      release_sha:
+        required: true
+        type: string
+    outputs:
+      bundle_reference:
+        value: ${{ jobs.bundle.outputs.reference }}
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+concurrency:
+  group: runtime-release-${{ inputs.release_sha }}
+  cancel-in-progress: false
+
+jobs:
+  images:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: core
+            dockerfile: apps/core/Dockerfile
+          - name: agent-worker
+            dockerfile: apps/agent-worker/Dockerfile
+          - name: channel
+            dockerfile: apps/channel/Dockerfile
+          - name: migration
+            dockerfile: apps/migration/Dockerfile
+          - name: backup
+            dockerfile: apps/backup/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
+      - name: Verify source identity
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/arek-e/bob-${{ matrix.name }}:sha-${{ inputs.release_sha }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=min,scope=${{ matrix.name }}
+      - name: Record digest
+        env:
+          IMAGE_NAME: ${{ matrix.name }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          test -n "$IMAGE_DIGEST"
+          mkdir -p digests
+          printf '%s' "$IMAGE_DIGEST" >"digests/$IMAGE_NAME"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.name }}
+          path: digests/${{ matrix.name }}
+          retention-days: 7
+
+  bundle:
+    needs: [images]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      reference: ${{ steps.publish.outputs.reference }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+      - uses: oras-project/setup-oras@v1
+        with: { version: 1.3.0 }
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: publish
+        env:
+          SOURCE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -euo pipefail
+          export CORE_DIGEST="$(cat digests/core)"
+          export AGENT_WORKER_DIGEST="$(cat digests/agent-worker)"
+          export CHANNEL_DIGEST="$(cat digests/channel)"
+          export MIGRATION_DIGEST="$(cat digests/migration)"
+          export BACKUP_DIGEST="$(cat digests/backup)"
+          node scripts/release-bundle.mjs create release-bundle.json
+          tag="ghcr.io/arek-e/bob-release:sha-${SOURCE_SHA}"
+          oras push "$tag" \
+            --artifact-type application/vnd.bob.runtime-release.v1+json \
+            release-bundle.json:application/vnd.bob.runtime-release.v1+json \
+            deployment/runtime-cluster.compose.yaml:application/vnd.docker.compose.project+yaml \
+            deployment/runtime-control.json:application/vnd.bob.runtime-control.v1+json \
+            deployment/otel-collector.yaml:application/vnd.bob.telemetry-config.v1+yaml
+          reference="ghcr.io/arek-e/bob-release@$(oras resolve "$tag")"
+          echo "reference=$reference" >>"$GITHUB_OUTPUT"
+          echo "Runtime release: $reference" >>"$GITHUB_STEP_SUMMARY"
+
+  verify:
+    needs: [bundle]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: oras-project/setup-oras@v1
+        with: { version: 1.3.0 }
+      - name: Verify immutable artifact
+        env:
+          REFERENCE: ${{ needs.bundle.outputs.reference }}
+        run: |
+          set -euo pipefail
+          [[ "$REFERENCE" =~ ^ghcr.io/arek-e/bob-release@sha256:[0-9a-f]{64}$ ]]
+          oras manifest fetch "$REFERENCE" | jq -e '
+            .artifactType == "application/vnd.bob.runtime-release.v1+json" and
+            (.layers | length) == 4
+          '

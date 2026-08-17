@@ -25,7 +25,6 @@ export function handleScheduledReconcile(scheduledAt: Date) {
     const egress = yield* SendblueEgress
     const result = yield* reconcileInboundHistory({
       sendblueNumber: egress.config.SENDBLUE_FROM_NUMBER,
-      ownerNumber: egress.config.SENDBLUE_ALLOWED_USER_NUMBER,
       signingSecret: egress.config.SENDBLUE_WEBHOOK_SIGNING_SECRET,
       scheduledAt,
       accept: ({ headers, body, signal }) => {

@@ -4,13 +4,15 @@ const Environment = Schema.Struct({
   PORT: Schema.NumberFromString.pipe(
     Schema.check(Schema.isBetween({ minimum: 1, maximum: 65_535 }))
   ),
+  AUTO_MIGRATE: Schema.Literals(["true", "false"]),
   AUTO_ENQUEUE_INBOUND: Schema.Literals(["true", "false"]),
   DATABASE_URL: Schema.URLFromString,
   JOB_QUEUE_URL: Schema.URLFromString,
   OBJECT_STORAGE_DIRECTORY: Schema.String.check(Schema.isMinLength(1)),
   ASSETS_DIRECTORY: Schema.String.check(Schema.isMinLength(1)),
-  OWNER_ID: Schema.String.check(Schema.isUUID()),
-  OWNER_ACCESS_EMAIL: Schema.String.check(Schema.isMinLength(3)),
+  OWNER_ID: Schema.optionalKey(Schema.String.check(Schema.isUUID())),
+  OWNER_ACCESS_EMAIL: Schema.optionalKey(Schema.String.check(Schema.isMinLength(3))),
+  OWNER_ENROLLMENT_SECRET: Schema.String.check(Schema.isMinLength(32)),
   OWNER_TIME_ZONE: Schema.String.check(Schema.isMinLength(1)),
   DATA_KEK_ACTIVE_VERSION: Schema.String,
   DATA_KEK_KEYRING_JSON: Schema.String,
@@ -34,6 +36,7 @@ const Environment = Schema.Struct({
 export function readCoreRuntimeConfiguration(environment: NodeJS.ProcessEnv) {
   const value = Schema.decodeUnknownSync(Environment)({
     ...environment,
+    AUTO_MIGRATE: environment.AUTO_MIGRATE ?? "true",
     AUTO_ENQUEUE_INBOUND: environment.AUTO_ENQUEUE_INBOUND ?? "false",
     AGENT_EXECUTION_POOL_ID: environment.AGENT_EXECUTION_POOL_ID ?? "core-v1",
     ASSETS_DIRECTORY: environment.ASSETS_DIRECTORY ?? "/app/ui",

@@ -19,6 +19,14 @@ export interface ClaimedInbound {
 }
 
 export interface ConversationStoreAdapter {
+  bindChannel(input: {
+    ownerId: string
+    accountId: string
+    lineId: string
+    senderE164: string
+    destinationE164: string
+  }): Promise<void>
+  resolveOwner(event: NormalizedInboundEvent): Promise<string | undefined>
   acceptInbound(event: NormalizedInboundEvent, ownerId?: string): Promise<InboundAcceptance>
   markEnqueued(eventId: string, at: string): Promise<void>
   getInboundOwner(eventId: string): Promise<string | undefined>

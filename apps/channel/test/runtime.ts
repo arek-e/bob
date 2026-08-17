@@ -67,7 +67,6 @@ function egressRuntimeLayer(bindings: LegacyEgressBindings) {
     ...bindings,
     SENDBLUE_WEBHOOK_SIGNING_SECRET: bindings.SENDBLUE_WEBHOOK_SIGNING_SECRET ?? "s".repeat(64),
     SENDBLUE_FROM_NUMBER: bindings.SENDBLUE_FROM_NUMBER ?? "+46711111111",
-    SENDBLUE_ALLOWED_USER_NUMBER: bindings.SENDBLUE_ALLOWED_USER_NUMBER ?? "+46700000000",
     SENDBLUE_STATUS_CALLBACK_URL:
       bindings.SENDBLUE_STATUS_CALLBACK_URL ?? "https://bob.example/webhooks/outbound",
     CORE_CALLER_SECRET: bindings.CORE_CALLER_SECRET
@@ -165,7 +164,6 @@ export function reconcileInboundHistory(options: {
     }) => Promise<readonly SendblueWebhookPayload[]>
   }
   readonly sendblueNumber: string
-  readonly ownerNumber: string
   readonly signingSecret: string
   readonly scheduledAt: Date
   readonly accept: (request: {

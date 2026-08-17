@@ -32,7 +32,9 @@ import { handleScheduled } from "./entrypoints/scheduled.ts"
 import { webRequest, writeWebResponse } from "./node-http.ts"
 import {
   makeOwnerWakeJobProcessor,
-  makeQueuedOwnerRunCoordinator
+  makePostgresqlOwnerWakeOutbox,
+  makeQueuedOwnerRunCoordinator,
+  repairOwnerWakeOutbox
 } from "./runtime/run-coordinator.ts"
 import { makeFilesystemAssetFetcher } from "./static-assets.ts"
 
@@ -83,7 +85,7 @@ async function main(): Promise<void> {
     })
   )
   const database = await databaseRuntime.runPromise(PostgresqlDatabase)
-  await databaseRuntime.runPromise(database.migrate)
+  if (config.AUTO_MIGRATE === "true") await databaseRuntime.runPromise(database.migrate)
   const connection = redisConnection(config.JOB_QUEUE_URL)
   const queueOptions = { connection, prefix: "bob" }
   const inboundQueue = new Queue(queueNames.inbound, queueOptions)
@@ -93,9 +95,11 @@ async function main(): Promise<void> {
   const agentRunContinuationQueue = new Queue(queueNames.agentRunContinuation, queueOptions)
   const jobQueue = Object.freeze({
     inbound: makeBullMqJobPublisher(inboundQueue, "inbound"),
-    outbound: makeBullMqJobPublisher(outboundQueue, "outbound")
+    outbound: makeBullMqJobPublisher(outboundQueue, "outbound"),
+    ownerWake: makeBullMqJobPublisher(ownerWakeQueue, "owner-wake")
   })
   const applicationStorage = database.applicationStorage
+  const ownerWakeOutbox = makePostgresqlOwnerWakeOutbox(applicationStorage)
   const agentRunDispatcher = makeAgentRunDispatcher(applicationStorage, {
     forExecutionPool(executionPoolId) {
       if (executionPoolId !== config.AGENT_EXECUTION_POOL_ID) {
@@ -116,7 +120,6 @@ async function main(): Promise<void> {
     DELIVERY_RESULT_QUEUE_NAME: queueNames.deliveryResult,
     DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: queueNames.deliveryResultDeadLetter,
     OUTBOUND_DEAD_LETTER_QUEUE_NAME: queueNames.outboundDeadLetter,
-    OWNER_ID: config.OWNER_ID,
     OWNER_TIME_ZONE: config.OWNER_TIME_ZONE,
     DATA_KEK_ACTIVE_VERSION: config.DATA_KEK_ACTIVE_VERSION,
     DATA_KEK_KEYRING_JSON: config.DATA_KEK_KEYRING_JSON,
@@ -126,7 +129,7 @@ async function main(): Promise<void> {
     CHANNEL_EGRESS_URL: config.CHANNEL_EGRESS_URL,
     BETTER_AUTH_SECRET: config.AGENT_CALLER_SECRET,
     SETUP_TOKEN: config.SETUP_TOKEN,
-    OWNER_ACCESS_EMAIL: config.OWNER_ACCESS_EMAIL,
+    OWNER_ENROLLMENT_SECRET: config.OWNER_ENROLLMENT_SECRET,
     AGENT_CALLER_SECRET: config.AGENT_CALLER_SECRET,
     AGENT_URL: config.AGENT_URL,
     AGENT_ADMIN_URL: config.AGENT_URL,
@@ -140,10 +143,14 @@ async function main(): Promise<void> {
     BOB_RUN_TOKEN_BUDGET: config.BOB_RUN_TOKEN_BUDGET,
     BOB_DAILY_TOKEN_BUDGET: config.BOB_DAILY_TOKEN_BUDGET
   }
+  if (config.OWNER_ID !== undefined) bindings.OWNER_ID = config.OWNER_ID
+  if (config.OWNER_ACCESS_EMAIL !== undefined)
+    bindings.OWNER_ACCESS_EMAIL = config.OWNER_ACCESS_EMAIL
   let composition: ReturnType<typeof composeCore>
   let ownerTurnEngine: ReturnType<typeof makeOwnerTurnEngine>
   const runCoordinator = makeQueuedOwnerRunCoordinator({
-    wakeJobs: makeBullMqJobPublisher(ownerWakeQueue, "owner-wake"),
+    wakeJobs: jobQueue.ownerWake,
+    wakeOutbox: ownerWakeOutbox,
     async accept(request) {
       const offered = await composition.runtime.runPromise(
         ownerTurnEngine.accept(request.job, request.correlationId, request.traceparent)
@@ -223,7 +230,8 @@ async function main(): Promise<void> {
       processor: decodeJobProcessor(
         { decode: (input) => Schema.decodeUnknownSync(OwnerWakeJob)(input) },
         makeOwnerWakeJobProcessor({
-          wake: (job) => composition.runtime.runPromise(ownerTurnEngine.wake(job.ownerId))
+          wake: (job) => composition.runtime.runPromise(ownerTurnEngine.wake(job.ownerId)),
+          complete: (wakeId) => ownerWakeOutbox.markCompleted(wakeId, new Date().toISOString())
         }),
         retryJob(30_000)
       )
@@ -293,11 +301,14 @@ async function main(): Promise<void> {
     if (schedulerActive) return
     schedulerActive = true
     const scheduledAt = new Date()
-    void handleScheduled(
-      bindings,
-      { correlationId: crypto.randomUUID(), scheduledAt },
-      () => composition
-    )
+    void repairOwnerWakeOutbox(ownerWakeOutbox, jobQueue.ownerWake, scheduledAt)
+      .then(() =>
+        handleScheduled(
+          bindings,
+          { correlationId: crypto.randomUUID(), scheduledAt },
+          () => composition
+        )
+      )
       .catch((error: Error) =>
         console.error(JSON.stringify({ type: "scheduler_work_failure", errorName: error.name }))
       )

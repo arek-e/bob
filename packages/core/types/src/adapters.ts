@@ -3,7 +3,7 @@ import type { JobPublisher } from "@bob/job-queue-types"
 import type { ObjectStorage } from "@bob/object-store-types"
 import type { Layer } from "effect"
 
-import type { InboundJob, OutboundJob } from "./jobs.ts"
+import type { InboundJob, OutboundJob, OwnerWakeJob } from "./jobs.ts"
 
 export interface OwnerRunRequest {
   readonly ownerId: string
@@ -25,6 +25,7 @@ export interface OwnerRunCoordinator {
 export interface CoreJobQueue {
   readonly inbound: JobPublisher<InboundJob>
   readonly outbound: JobPublisher<OutboundJob>
+  readonly ownerWake: JobPublisher<OwnerWakeJob>
 }
 
 export interface CoreAdapters {

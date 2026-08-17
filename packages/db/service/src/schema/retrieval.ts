@@ -1,11 +1,15 @@
 import { sql } from "drizzle-orm"
 import { boolean, index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
 
+import { users } from "./conversations.ts"
+
 export const searchDocuments = pgTable(
   "search_documents",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     sourceType: text("source_type").notNull(),
     sourceId: text("source_id").notNull(),
     memoryClass: text("memory_class", {

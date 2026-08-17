@@ -1,5 +1,14 @@
 import { sql } from "drizzle-orm"
-import { boolean, check, index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
+import {
+  boolean,
+  check,
+  foreignKey,
+  index,
+  integer,
+  pgTable,
+  text,
+  uniqueIndex
+} from "drizzle-orm/pg-core"
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -19,7 +28,9 @@ export const channels = pgTable(
   "channels",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     provider: text("provider").notNull(),
     accountId: text("account_id").notNull(),
     lineId: text("line_id").notNull(),
@@ -34,8 +45,8 @@ export const channels = pgTable(
     createdAt: text("created_at").notNull()
   },
   (table) => [
+    uniqueIndex("channels_user_id_id_uq").on(table.userId, table.id),
     uniqueIndex("channels_provider_address_uq").on(
-      table.userId,
       table.provider,
       table.accountId,
       table.lineId,
@@ -48,7 +59,9 @@ export const messages = pgTable(
   "messages",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     channelId: text("channel_id").notNull(),
     direction: text("direction", { enum: ["inbound", "outbound"] }).notNull(),
     textCiphertext: text("text_ciphertext").notNull(),
@@ -57,7 +70,15 @@ export const messages = pgTable(
     occurredAt: text("occurred_at").notNull(),
     createdAt: text("created_at").notNull()
   },
-  (table) => [index("messages_conversation_idx").on(table.channelId, table.occurredAt)]
+  (table) => [
+    uniqueIndex("messages_user_id_id_uq").on(table.userId, table.id),
+    foreignKey({
+      columns: [table.userId, table.channelId],
+      foreignColumns: [channels.userId, channels.id],
+      name: "messages_owner_channel_fk"
+    }).onDelete("cascade"),
+    index("messages_conversation_idx").on(table.channelId, table.occurredAt)
+  ]
 )
 
 export const messageEvents = pgTable(
@@ -77,7 +98,9 @@ export const inboundEvents = pgTable(
   "inbound_events",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     channelId: text("channel_id").notNull(),
     messageId: text("message_id").notNull(),
     accountId: text("account_id").notNull(),
@@ -100,6 +123,17 @@ export const inboundEvents = pgTable(
     createdAt: text("created_at").notNull()
   },
   (table) => [
+    uniqueIndex("inbound_events_user_id_id_uq").on(table.userId, table.id),
+    foreignKey({
+      columns: [table.userId, table.channelId],
+      foreignColumns: [channels.userId, channels.id],
+      name: "inbound_events_owner_channel_fk"
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.userId, table.messageId],
+      foreignColumns: [messages.userId, messages.id],
+      name: "inbound_events_owner_message_fk"
+    }).onDelete("cascade"),
     uniqueIndex("inbound_events_provider_uq").on(
       table.accountId,
       table.lineId,
@@ -113,7 +147,9 @@ export const messageAttachments = pgTable(
   "message_attachments",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     messageId: text("message_id").notNull(),
     inboundEventId: text("inbound_event_id").notNull(),
     ordinal: integer("ordinal").notNull(),
@@ -126,6 +162,16 @@ export const messageAttachments = pgTable(
     createdAt: text("created_at").notNull()
   },
   (table) => [
+    foreignKey({
+      columns: [table.userId, table.messageId],
+      foreignColumns: [messages.userId, messages.id],
+      name: "message_attachments_owner_message_fk"
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.userId, table.inboundEventId],
+      foreignColumns: [inboundEvents.userId, inboundEvents.id],
+      name: "message_attachments_owner_event_fk"
+    }).onDelete("cascade"),
     uniqueIndex("message_attachments_event_ordinal_uq").on(table.inboundEventId, table.ordinal),
     uniqueIndex("message_attachments_object_key_uq").on(table.objectKey),
     index("message_attachments_message_idx").on(table.messageId)
@@ -136,7 +182,9 @@ export const conversationTurns = pgTable(
   "conversation_turns",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     channelId: text("channel_id").notNull(),
     status: text("status", {
       enum: ["collecting", "running", "settling", "committing", "replied"]
@@ -159,6 +207,22 @@ export const conversationTurns = pgTable(
     repliedAt: text("replied_at")
   },
   (table) => [
+    uniqueIndex("conversation_turns_user_id_id_uq").on(table.userId, table.id),
+    foreignKey({
+      columns: [table.userId, table.channelId],
+      foreignColumns: [channels.userId, channels.id],
+      name: "conversation_turns_owner_channel_fk"
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.userId, table.latestInboundEventId],
+      foreignColumns: [inboundEvents.userId, inboundEvents.id],
+      name: "conversation_turns_owner_event_fk"
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.userId, table.latestMessageId],
+      foreignColumns: [messages.userId, messages.id],
+      name: "conversation_turns_owner_message_fk"
+    }).onDelete("cascade"),
     uniqueIndex("conversation_turns_open_uq")
       .on(table.userId, table.channelId)
       .where(sql`${table.status} <> 'replied'`),
@@ -193,7 +257,9 @@ export const agentRuns = pgTable(
   "agent_runs",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     inboundEventId: text("inbound_event_id"),
     originType: text("origin_type", {
       enum: ["conversation_turn", "scheduled", "proactive", "legacy_inbound"]
@@ -248,6 +314,22 @@ export const agentRuns = pgTable(
     createdAt: text("created_at").notNull()
   },
   (table) => [
+    uniqueIndex("agent_runs_user_id_id_uq").on(table.userId, table.id),
+    foreignKey({
+      columns: [table.userId, table.inboundEventId],
+      foreignColumns: [inboundEvents.userId, inboundEvents.id],
+      name: "agent_runs_owner_event_fk"
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.userId, table.conversationTurnId],
+      foreignColumns: [conversationTurns.userId, conversationTurns.id],
+      name: "agent_runs_owner_turn_fk"
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.userId, table.targetMessageId],
+      foreignColumns: [messages.userId, messages.id],
+      name: "agent_runs_owner_message_fk"
+    }).onDelete("cascade"),
     uniqueIndex("agent_runs_legacy_inbound_uq")
       .on(table.inboundEventId)
       .where(sql`${table.conversationTurnId} IS NULL`),
@@ -313,6 +395,22 @@ export const agentRunOutbox = pgTable(
   ]
 )
 
+export const ownerWakeOutbox = pgTable(
+  "owner_wake_outbox",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    requestedAt: text("requested_at").notNull(),
+    state: text("state", { enum: ["pending", "published", "completed"] }).notNull(),
+    publishedAt: text("published_at"),
+    completedAt: text("completed_at"),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [index("owner_wake_outbox_recovery_idx").on(table.state, table.requestedAt)]
+)
+
 export const agentRunOperations = pgTable(
   "agent_run_operations",
   {
@@ -341,7 +439,7 @@ export const toolCalls = pgTable(
     runId: text("run_id").notNull(),
     toolCallId: text("tool_call_id").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
-    ownerId: text("owner_id"),
+    ownerId: text("owner_id").references(() => users.id, { onDelete: "cascade" }),
     toolName: text("tool_name").notNull(),
     commandHash: text("command_hash"),
     argumentsJson: text("arguments_json").notNull(),
@@ -355,6 +453,11 @@ export const toolCalls = pgTable(
     completedAt: text("completed_at")
   },
   (table) => [
+    foreignKey({
+      columns: [table.ownerId, table.runId],
+      foreignColumns: [agentRuns.userId, agentRuns.id],
+      name: "tool_calls_owner_run_fk"
+    }).onDelete("cascade"),
     uniqueIndex("tool_calls_run_call_uq").on(table.runId, table.toolCallId),
     uniqueIndex("tool_calls_idempotency_uq").on(table.idempotencyKey)
   ]
@@ -364,7 +467,9 @@ export const effectAttempts = pgTable(
   "effect_attempts",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     kind: text("kind").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     state: text("state", {
@@ -381,7 +486,9 @@ export const shortReplyBindings = pgTable(
   "short_reply_bindings",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     outboundMessageId: text("outbound_message_id").notNull(),
     command: text("command").notNull(),
     targetType: text("target_type").notNull(),
@@ -392,6 +499,11 @@ export const shortReplyBindings = pgTable(
     createdAt: text("created_at").notNull()
   },
   (table) => [
+    foreignKey({
+      columns: [table.userId, table.outboundMessageId],
+      foreignColumns: [messages.userId, messages.id],
+      name: "short_reply_bindings_owner_message_fk"
+    }).onDelete("cascade"),
     index("short_reply_pending_idx").on(table.userId, table.command, table.expiresAt),
     uniqueIndex("short_reply_target_uq").on(
       table.outboundMessageId,
@@ -404,7 +516,7 @@ export const shortReplyBindings = pgTable(
 
 export const auditEvents = pgTable("audit_events", {
   id: text("id").primaryKey(),
-  userId: text("user_id"),
+  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   correlationId: text("correlation_id").notNull(),
   action: text("action").notNull(),
   objectType: text("object_type").notNull(),
