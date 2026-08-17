@@ -1,6 +1,7 @@
 import type { ScheduledTaskModule } from "@bob/core-types/runtime-module"
 import type { CoreDatabase } from "@bob/db-types"
 
+import { users } from "@bob/db-service/schema/conversations"
 import { schedulerOutbox } from "@bob/db-service/schema/reminders"
 import { withBobSpan, injectCurrentTraceparent } from "@bob/observability"
 import { and, eq, isNull } from "drizzle-orm"
@@ -14,7 +15,6 @@ export function makeReminderScheduledWorkflow(input: {
   }
   readonly database: CoreDatabase
   readonly reminders: ReminderStore
-  readonly ownerId: string
 }): ScheduledTaskModule {
   return {
     id: "reminder-scheduler",
@@ -36,7 +36,6 @@ export function makeReminderScheduledWorkflow(input: {
       })
 
       const clock = input.clock
-      const clockBaseUrl = `https://reminder-clock.internal/owners/${encodeURIComponent(input.ownerId)}`
       const pending = await Effect.runPromise(
         input.database
           .select()
@@ -47,6 +46,7 @@ export function makeReminderScheduledWorkflow(input: {
       )
       for (const item of pending) {
         await recover(async () => {
+          const clockBaseUrl = `https://reminder-clock.internal/owners/${encodeURIComponent(item.userId)}`
           const response = await context.runPromise(
             withBobSpan(
               {
@@ -84,26 +84,31 @@ export function makeReminderScheduledWorkflow(input: {
         })
       }
 
-      await recover(async () => {
-        const response = await context.runPromise(
-          withBobSpan(
-            {
-              name: "bob.reminder.invoke",
-              correlationId: context.correlationId,
-              feature: "reminders"
-            },
-            Effect.gen(function* () {
-              const headers = yield* injectCurrentTraceparent({
-                "x-bob-correlation-id": context.correlationId
+      const owners = await Effect.runPromise(input.database.select({ id: users.id }).from(users))
+      for (const owner of owners)
+        await recover(async () => {
+          const response = await context.runPromise(
+            withBobSpan(
+              {
+                name: "bob.reminder.invoke",
+                correlationId: context.correlationId,
+                feature: "reminders"
+              },
+              Effect.gen(function* () {
+                const headers = yield* injectCurrentTraceparent({
+                  "x-bob-correlation-id": context.correlationId
+                })
+                return yield* Effect.promise(() =>
+                  clock.fetch(
+                    `https://reminder-clock.internal/owners/${encodeURIComponent(owner.id)}/reconcile`,
+                    { method: "POST", headers }
+                  )
+                )
               })
-              return yield* Effect.promise(() =>
-                clock.fetch(`${clockBaseUrl}/reconcile`, { method: "POST", headers })
-              )
-            })
+            )
           )
-        )
-        if (!response.ok) throw new Error("reminder_clock_reconcile_failed")
-      })
+          if (!response.ok) throw new Error("reminder_clock_reconcile_failed")
+        })
       if (failures.length > 0) throw new Error("reminder_scheduled_workflow_failed")
     }
   }

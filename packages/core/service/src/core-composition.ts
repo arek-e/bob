@@ -40,7 +40,7 @@ import { Layer, Schema } from "effect"
 import { makeApplicationContextStore } from "./context-composition.ts"
 
 const Configuration = Schema.Struct({
-  OWNER_ID: Schema.String.check(Schema.isUUID()),
+  OWNER_ID: Schema.optionalKey(Schema.String.check(Schema.isUUID())),
   OWNER_TIME_ZONE: Schema.String,
   DATA_KEK_ACTIVE_VERSION: Schema.String,
   DATA_KEK_KEYRING_JSON: Schema.String.check(Schema.isMinLength(1)),
@@ -50,7 +50,7 @@ const Configuration = Schema.Struct({
   CHANNEL_EGRESS_URL: Schema.String,
   BETTER_AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
   SETUP_TOKEN: Schema.String.check(Schema.isMinLength(32)),
-  OWNER_ACCESS_EMAIL: Schema.String.check(Schema.isMinLength(3)),
+  OWNER_ACCESS_EMAIL: Schema.optionalKey(Schema.String.check(Schema.isMinLength(3))),
   AGENT_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   AGENT_URL: Schema.String,
   AGENT_ADMIN_URL: Schema.String,
@@ -114,7 +114,6 @@ export function composeGeneralCore(
     conversations,
     turns,
     settings,
-    ownerId: config.OWNER_ID,
     ownerTimeZone: config.OWNER_TIME_ZONE
   })
   const alerts = makeAlertStore(applicationStorage, {})

@@ -22,7 +22,7 @@ export { ConversationStore }
 export type { ClaimedInbound, ConversationStoreAdapter } from "@bob/conversations-types/store"
 
 export interface ConversationStoreOptions {
-  readonly ownerId: string
+  readonly ownerId?: string | undefined
   readonly ownerTimeZone: string
   readonly ownerDataKeys?: OwnerDataKeyStoreAdapter
   readonly channelProviderId: string
@@ -59,7 +59,7 @@ export function makeConversationStore(
   }
 
   async function ensureChannel(
-    event: NormalizedInboundEvent,
+    event: Pick<NormalizedInboundEvent, "accountId" | "lineId" | "senderE164" | "destinationE164">,
     ownerId: string,
     key: CryptoKey
   ): Promise<string> {
@@ -124,8 +124,31 @@ export function makeConversationStore(
   }
 
   return {
+    async bindChannel(input) {
+      const owner = await ownerDataKeys.ensure(input.ownerId)
+      await ensureChannel(input, input.ownerId, owner.key)
+    },
+    async resolveOwner(event) {
+      const senderHash = await protection.hashLookup(event.senderE164)
+      const [channel] = await Effect.runPromise(
+        database
+          .select({ ownerId: channels.userId })
+          .from(channels)
+          .where(
+            and(
+              eq(channels.provider, options.channelProviderId),
+              eq(channels.accountId, event.accountId),
+              eq(channels.lineId, event.lineId),
+              eq(channels.senderHash, senderHash)
+            )
+          )
+          .limit(1)
+      )
+      return channel?.ownerId
+    },
     async acceptInbound(event, suppliedOwnerId) {
       const ownerId = suppliedOwnerId ?? options.ownerId
+      if (ownerId === undefined) throw new Error("Inbound owner is required")
       const [existing] = await Effect.runPromise(
         database
           .select({
@@ -412,6 +435,8 @@ export function conversationStoreLayer(store: ConversationStoreAdapter) {
   return Layer.succeed(
     ConversationStore,
     ConversationStore.of({
+      bindChannel: liftPromiseOperation(store.bindChannel, failure("bindChannel")),
+      resolveOwner: liftPromiseOperation(store.resolveOwner, failure("resolveOwner")),
       acceptInbound: liftPromiseOperation(store.acceptInbound, failure("acceptInbound")),
       markEnqueued: liftPromiseOperation(store.markEnqueued, failure("markEnqueued")),
       getInboundOwner: liftPromiseOperation(store.getInboundOwner, failure("getInboundOwner")),

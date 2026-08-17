@@ -29,7 +29,7 @@ integration("native PostgreSQL database", () => {
         .select({ count: sql<number>`count(*)::integer` })
         .from(sql`drizzle.__drizzle_migrations`)
     )
-    expect(migrationCount?.count).toBe(6)
+    expect(migrationCount?.count).toBe(10)
 
     const [fullTextIndex] = await runtime.runPromise(
       database.applicationStorage
@@ -89,5 +89,37 @@ integration("native PostgreSQL database", () => {
         .where(sql`id = ${ownerId}`)
     )
     expect(selected).toEqual([{ id: ownerId }])
+
+    const otherOwnerId = "00000000-0000-4000-8000-000000000002"
+    await runtime.runPromise(
+      database.applicationStorage.execute(sql`
+        INSERT INTO users (id, time_zone, locale, hour_cycle, created_at, updated_at)
+        VALUES (${otherOwnerId}, 'Europe/Stockholm', 'en', 'auto', '2026-08-16', '2026-08-16')
+      `)
+    )
+    await runtime.runPromise(
+      database.applicationStorage.execute(sql`
+        INSERT INTO channels (
+          id, user_id, provider, account_id, line_id, sender_hash, sender_ciphertext,
+          sender_iv, destination_hash, destination_ciphertext, destination_iv, created_at
+        ) VALUES (
+          'channel-other', ${otherOwnerId}, 'sendblue', 'account', 'line', 'sender-other',
+          'ciphertext', 'iv', 'destination', 'ciphertext', 'iv', '2026-08-16'
+        )
+      `)
+    )
+    await expect(
+      runtime.runPromise(
+        database.applicationStorage.execute(sql`
+          INSERT INTO messages (
+            id, user_id, channel_id, direction, text_ciphertext, text_iv,
+            data_key_version, occurred_at, created_at
+          ) VALUES (
+            'cross-owner-message', ${ownerId}, 'channel-other', 'inbound', 'ciphertext',
+            'iv', 1, '2026-08-16', '2026-08-16'
+          )
+        `)
+      )
+    ).rejects.toThrow()
   })
 })

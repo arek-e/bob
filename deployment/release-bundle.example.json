@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "bob.runtime-release.v1",
+  "sourceRevision": "0000000000000000000000000000000000000000",
+  "composeDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "runtimeControlDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "telemetryConfigDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "images": [
+    {
+      "name": "agent-worker",
+      "repository": "ghcr.io/arek-e/bob-agent-worker",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "backup",
+      "repository": "ghcr.io/arek-e/bob-backup",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "channel",
+      "repository": "ghcr.io/arek-e/bob-channel",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "core",
+      "repository": "ghcr.io/arek-e/bob-core",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "migration",
+      "repository": "ghcr.io/arek-e/bob-migration",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "externalImages": [],
+  "database": {
+    "schemaVersion": 10,
+    "minimumCompatibleSchemaVersion": 9,
+    "minimumRollbackSchemaVersion": 9,
+    "migrationMode": "expand"
+  }
+}

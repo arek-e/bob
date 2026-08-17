@@ -19,7 +19,9 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "db:generate": "pnpm --filter @bob/db-service db:generate",
     "agent:check": "pnpm --filter @bob/agent-types typecheck && pnpm --filter @bob/agent-service typecheck && pnpm --filter @bob/agent-worker typecheck && pnpm exec vitest run packages/agent/service/test apps/agent-worker/test && pnpm --filter @bob/agent-worker build",
-    "agent:start": "pnpm --filter @bob/agent-worker start"
+    "agent:start": "pnpm --filter @bob/agent-worker start",
+    "release:verify": "node scripts/release-bundle.mjs verify deployment/release-bundle.example.json",
+    "secrets:scan:trusted": "varlock scan ."
   },
   "devDependencies": {
     "@effect/vitest": "4.0.0-beta.107",

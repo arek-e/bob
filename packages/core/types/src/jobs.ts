@@ -23,6 +23,7 @@ export const SchedulerJob = Schema.Struct({
 })
 
 export const OwnerWakeJob = Schema.Struct({
+  wakeId: Uuid,
   ownerId: Uuid,
   requestedAt: IsoDateTime
 })

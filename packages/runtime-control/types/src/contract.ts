@@ -35,6 +35,57 @@ export const RuntimeProtocolRange = Schema.Struct({
   )
 )
 
+export const RuntimeCompatibilityContract = Schema.Struct({
+  schemaVersion: Schema.Literal("bob.runtime-control.v1"),
+  executionProfile: Schema.Struct({
+    deploymentProfileId: Identifier,
+    capabilityCatalogueGeneration: Schema.String.check(
+      Schema.isPattern(/^capability-v2:[0-9a-f]{16}$/)
+    )
+  }),
+  database: Schema.Struct({
+    schemaVersion: PositiveInt,
+    minimumCompatibleSchemaVersion: PositiveInt,
+    minimumRollbackSchemaVersion: PositiveInt,
+    migrationMode: Schema.Literals(["expand", "contract", "none"])
+  }).check(
+    Schema.makeFilter((database) =>
+      database.minimumCompatibleSchemaVersion > database.schemaVersion ||
+      database.minimumRollbackSchemaVersion > database.schemaVersion
+        ? { path: ["schemaVersion"], issue: "database compatibility exceeds the schema" }
+        : undefined
+    )
+  ),
+  protocols: Schema.Struct({
+    agentRunJob: RuntimeProtocolRange,
+    coreGateway: RuntimeProtocolRange,
+    checkpointLoop: RuntimeProtocolRange
+  }),
+  backup: Schema.Struct({
+    formatVersion: PositiveInt,
+    maximumAgeSeconds: PositiveInt,
+    restoreVerificationRequired: Schema.Boolean
+  }),
+  rollout: Schema.Struct({
+    drainTimeoutSeconds: PositiveInt,
+    observationSeconds: PositiveInt,
+    retainPreviousRelease: Schema.Boolean
+  }),
+  externalImages: Schema.Array(
+    Schema.Struct({
+      name: Identifier,
+      repository: Schema.String.check(Schema.isMinLength(1)),
+      digest: Digest
+    })
+  ).check(
+    Schema.makeFilter((images) =>
+      images.length === new Set(images.map((image) => image.name)).size
+        ? undefined
+        : { path: [], issue: "external image names must be unique" }
+    )
+  )
+})
+
 export const RuntimeRoleContract = Schema.Struct({
   roleId: RuntimeRoleId,
   imageName: Identifier,
@@ -103,7 +154,19 @@ export const RuntimeReleaseContract = Schema.Struct({
         ? undefined
         : { path: [], issue: "services must be unique" }
     )
-  )
+  ),
+  composeDigest: Digest,
+  configurationDigest: Digest,
+  backup: Schema.Struct({
+    formatVersion: PositiveInt,
+    maximumAgeSeconds: PositiveInt,
+    restoreVerificationRequired: Schema.Boolean
+  }),
+  rollout: Schema.Struct({
+    drainTimeoutSeconds: PositiveInt,
+    observationSeconds: PositiveInt,
+    retainPreviousRelease: Schema.Boolean
+  })
 })
 
 export const RuntimeRoleObservation = Schema.Struct({
@@ -144,6 +207,7 @@ export const RuntimeClusterObservation = Schema.Struct({
 
 export type RuntimeRoleId = typeof RuntimeRoleId.Type
 export type RuntimeProtocolRange = typeof RuntimeProtocolRange.Type
+export type RuntimeCompatibilityContract = typeof RuntimeCompatibilityContract.Type
 export type RuntimeRoleContract = typeof RuntimeRoleContract.Type
 export type RuntimeReleaseContract = typeof RuntimeReleaseContract.Type
 export type RuntimeRoleObservation = typeof RuntimeRoleObservation.Type

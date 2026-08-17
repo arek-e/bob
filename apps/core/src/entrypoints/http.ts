@@ -42,7 +42,11 @@ import {
 } from "@bob/observability"
 import { AlertStore } from "@bob/operations-types/alerts"
 import { MemoryCandidateCorrection } from "@bob/operations-types/ui"
-import { authorizeCoreRequest, authorizeSetupRequest } from "@bob/policy-service/access"
+import {
+  authorizeCoreRequest,
+  authorizeOwnerEnrollmentRequest,
+  authorizeSetupRequest
+} from "@bob/policy-service/access"
 import { createOwnerAuth, ownerSession } from "@bob/policy-service/auth/service"
 import { OwnerDataKeyStore } from "@bob/policy-types/owner-data-key"
 import { OwnerSettingsUpdate } from "@bob/settings-types/settings"
@@ -224,6 +228,11 @@ async function handleSetup(
   bindings: CoreBindings,
   compose: CoreComposer
 ): Promise<Response> {
+  const ownerId = bindings.OWNER_ID
+  const ownerEmail = bindings.OWNER_ACCESS_EMAIL
+  if (ownerId === undefined || ownerEmail === undefined) {
+    return json({ code: "legacy_setup_disabled" }, 404)
+  }
   try {
     await authorizeSetupRequest(request, { setupToken: bindings.SETUP_TOKEN })
   } catch {
@@ -253,7 +262,7 @@ async function handleSetup(
   const password = passwordResult.value.password
   const composition = compose(bindings)
   await composition.runtime.runPromise(
-    Effect.flatMap(OwnerDataKeyStore, (ownerDataKeys) => ownerDataKeys.ensure(bindings.OWNER_ID))
+    Effect.flatMap(OwnerDataKeyStore, (ownerDataKeys) => ownerDataKeys.ensure(ownerId))
   )
 
   const headers = new Headers(request.headers)
@@ -264,11 +273,17 @@ async function handleSetup(
     headers,
     body: JSON.stringify({
       name: "Owner",
-      email: bindings.OWNER_ACCESS_EMAIL,
+      email: ownerEmail,
       password
     })
   })
-  return secure(await createOwnerAuth(bindings, { allowSignUp: true }).handler(signupRequest))
+  return secure(
+    await createOwnerAuth(bindings, {
+      allowSignUp: true,
+      allowedEmail: ownerEmail,
+      ownerId
+    }).handler(signupRequest)
+  )
 }
 
 export async function handleHttp(
@@ -277,6 +292,7 @@ export async function handleHttp(
   compose?: CoreComposer
 ): Promise<Response> {
   const url = new URL(request.url)
+  let authenticatedOwnerId: string | undefined
   if (request.method === "GET" && url.pathname === "/health") {
     return json({ healthy: true, service: "core-runtime", version: 1 })
   }
@@ -290,11 +306,75 @@ export async function handleHttp(
     return handleSetup(request, bindings, compose)
   }
 
+  if (url.pathname === "/internal/owners/enroll") {
+    if (request.method !== "POST") return json({ code: "method_not_allowed" }, 405)
+    try {
+      await authorizeOwnerEnrollmentRequest(request, {
+        ownerEnrollmentSecret: bindings.OWNER_ENROLLMENT_SECRET
+      })
+    } catch {
+      return json({ code: "unauthorized" }, 401)
+    }
+    if (compose === undefined) throw new Error("Core composition is required")
+    const input = Schema.decodeUnknownSync(
+      Schema.Struct({
+        ownerId: Schema.String.check(Schema.isUUID()),
+        email: Schema.String.check(Schema.isMinLength(3), Schema.isMaxLength(320)),
+        password: Schema.String.check(Schema.isMinLength(12), Schema.isMaxLength(128)),
+        channel: Schema.Struct({
+          accountId: Schema.String.check(Schema.isMinLength(1)),
+          lineId: Schema.String.check(Schema.isMinLength(1)),
+          senderE164: Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/)),
+          destinationE164: Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/))
+        })
+      })
+    )(await readJson(request))
+    const normalizedEmail = input.email.trim().toLowerCase()
+    const existingOwners = await Effect.runPromise(
+      bindings.DB.execute<{ id: string; email: string }>(
+        sql`SELECT id, email FROM auth_user WHERE id = ${input.ownerId} OR lower(email) = ${normalizedEmail}`
+      )
+    )
+    const conflict = existingOwners.find(
+      (owner) => owner.id !== input.ownerId || owner.email.trim().toLowerCase() !== normalizedEmail
+    )
+    if (conflict !== undefined) return json({ code: "owner_identity_conflict" }, 409)
+    if (existingOwners.length === 0) {
+      const headers = new Headers(request.headers)
+      headers.delete("content-length")
+      headers.set("content-type", "application/json")
+      const response = await createOwnerAuth(bindings, {
+        allowSignUp: true,
+        allowedEmail: normalizedEmail,
+        ownerId: input.ownerId
+      }).handler(
+        new Request(new URL("/api/auth/sign-up/email", request.url), {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ name: "Owner", email: normalizedEmail, password: input.password })
+        })
+      )
+      if (!response.ok) return secure(response)
+    }
+    const composition = compose(bindings)
+    await composition.runtime.runPromise(
+      Effect.flatMap(OwnerDataKeyStore, (ownerDataKeys) => ownerDataKeys.ensure(input.ownerId))
+    )
+    await composition.runtime.runPromise(
+      Effect.flatMap(ConversationStore, (conversations) =>
+        conversations.bindChannel({ ownerId: input.ownerId, ...input.channel })
+      )
+    )
+    return json({ ownerId: input.ownerId, state: "active" }, 201)
+  }
+
   if (url.pathname.startsWith("/api/")) {
     try {
-      if ((await ownerSession(request, bindings)) === null) {
+      const session = await ownerSession(request, bindings)
+      if (session === null) {
         return json({ code: "unauthorized" }, 401)
       }
+      authenticatedOwnerId = session.user.id
     } catch {
       return json({ code: "unauthorized" }, 401)
     }
@@ -334,9 +414,10 @@ export async function handleHttp(
 
     if (request.method === "POST" && url.pathname === "/internal/inbound") {
       const event = Schema.decodeUnknownSync(NormalizedInboundEvent)(await readJson(request))
-      const ownerId = Schema.decodeUnknownSync(Schema.String.check(Schema.isUUID()))(
-        request.headers.get("x-bob-owner-id") ?? bindings.OWNER_ID
+      const ownerId = await runTelemetry(
+        Effect.flatMap(ConversationStore, (conversations) => conversations.resolveOwner(event))
       )
+      if (ownerId === undefined) return json({ code: "channel_not_bound" }, 403)
       return json(
         await runTelemetry(
           withTraceparent(
@@ -673,12 +754,10 @@ export async function handleHttp(
 
     if (request.method === "GET" && url.pathname === "/api/settings") {
       const settings = await composition.runtime.runPromise(
-        Effect.flatMap(OwnerSettingsStore, (store) => store.get(composition.config.OWNER_ID))
+        Effect.flatMap(OwnerSettingsStore, (store) => store.get(authenticatedOwnerId!))
       )
       const connections = await composition.runtime.runPromise(
-        Effect.flatMap(OwnerSettingsStore, (store) =>
-          store.connections(composition.config.OWNER_ID)
-        )
+        Effect.flatMap(OwnerSettingsStore, (store) => store.connections(authenticatedOwnerId!))
       )
       return json({
         settings,
@@ -690,13 +769,11 @@ export async function handleHttp(
       const input = Schema.decodeUnknownSync(OwnerSettingsUpdate)(await readJson(request))
       const settings = await composition.runtime.runPromise(
         Effect.flatMap(OwnerSettingsStore, (store) =>
-          store.update(composition.config.OWNER_ID, input, idempotencyKey(request))
+          store.update(authenticatedOwnerId!, input, idempotencyKey(request))
         )
       )
       const connections = await composition.runtime.runPromise(
-        Effect.flatMap(OwnerSettingsStore, (store) =>
-          store.connections(composition.config.OWNER_ID)
-        )
+        Effect.flatMap(OwnerSettingsStore, (store) => store.connections(authenticatedOwnerId!))
       )
       return json({
         settings,
@@ -708,7 +785,7 @@ export async function handleHttp(
       const result = await route.handle({
         request,
         url,
-        ownerId: composition.config.OWNER_ID,
+        ownerId: authenticatedOwnerId!,
         readJson: () => readJson(request),
         idempotencyKey: () => idempotencyKey(request)
       })
@@ -718,7 +795,7 @@ export async function handleHttp(
     if (request.method === "GET" && url.pathname === "/api/alerts") {
       return json({
         alerts: await composition.runtime.runPromise(
-          Effect.flatMap(AlertStore, (alerts) => alerts.list(composition.config.OWNER_ID))
+          Effect.flatMap(AlertStore, (alerts) => alerts.list(authenticatedOwnerId!))
         )
       })
     }
@@ -728,12 +805,12 @@ export async function handleHttp(
       idempotencyKey(request)
       const alertId = decodeURIComponent(alertReconcile[1]!)
       const alert = await composition.runtime.runPromise(
-        Effect.flatMap(AlertStore, (alerts) => alerts.get(composition.config.OWNER_ID, alertId))
+        Effect.flatMap(AlertStore, (alerts) => alerts.get(authenticatedOwnerId!, alertId))
       )
       if (alert === undefined) return json({ code: "not_found" }, 404)
       await composition.runtime.runPromise(
         Effect.flatMap(AlertStore, (alerts) =>
-          alerts.setState(composition.config.OWNER_ID, alert.id, "reconciling")
+          alerts.setState(authenticatedOwnerId!, alert.id, "reconciling")
         )
       )
       if (alert.code === "inbound_exhausted") {
@@ -751,7 +828,7 @@ export async function handleHttp(
           )
           await composition.runtime.runPromise(
             Effect.flatMap(AlertStore, (alerts) =>
-              alerts.setState(composition.config.OWNER_ID, alert.id, "resolved")
+              alerts.setState(authenticatedOwnerId!, alert.id, "resolved")
             )
           )
         }
@@ -779,13 +856,13 @@ export async function handleHttp(
           )
           await composition.runtime.runPromise(
             Effect.flatMap(AlertStore, (alerts) =>
-              alerts.setState(composition.config.OWNER_ID, alert.id, "resolved")
+              alerts.setState(authenticatedOwnerId!, alert.id, "resolved")
             )
           )
         } else if (decision.status === "resolved") {
           await composition.runtime.runPromise(
             Effect.flatMap(AlertStore, (alerts) =>
-              alerts.setState(composition.config.OWNER_ID, alert.id, "resolved")
+              alerts.setState(authenticatedOwnerId!, alert.id, "resolved")
             )
           )
         }
@@ -836,7 +913,7 @@ export async function handleHttp(
         if (status === "resolved") {
           await composition.runtime.runPromise(
             Effect.flatMap(AlertStore, (alerts) =>
-              alerts.setState(composition.config.OWNER_ID, alert.id, "resolved")
+              alerts.setState(authenticatedOwnerId!, alert.id, "resolved")
             )
           )
         }
@@ -854,7 +931,7 @@ export async function handleHttp(
         if (response.ok && status.configured === true) {
           await composition.runtime.runPromise(
             Effect.flatMap(AlertStore, (alerts) =>
-              alerts.setState(composition.config.OWNER_ID, alert.id, "resolved")
+              alerts.setState(authenticatedOwnerId!, alert.id, "resolved")
             )
           )
         }
@@ -862,7 +939,7 @@ export async function handleHttp(
       }
       await composition.runtime.runPromise(
         Effect.flatMap(AlertStore, (alerts) =>
-          alerts.setState(composition.config.OWNER_ID, alert.id, "resolved")
+          alerts.setState(authenticatedOwnerId!, alert.id, "resolved")
         )
       )
       return json({ status: "manual_action_required" })
@@ -871,9 +948,7 @@ export async function handleHttp(
     if (request.method === "GET" && url.pathname === "/api/memory/candidates") {
       return json({
         candidates: await composition.runtime.runPromise(
-          Effect.flatMap(MemoryStore, (memory) =>
-            memory.listCandidates(composition.config.OWNER_ID)
-          )
+          Effect.flatMap(MemoryStore, (memory) => memory.listCandidates(authenticatedOwnerId!))
         )
       })
     }
@@ -883,7 +958,7 @@ export async function handleHttp(
       const revisionId = await composition.runtime.runPromise(
         Effect.flatMap(MemoryStore, (memory) =>
           memory.confirm(
-            composition.config.OWNER_ID,
+            authenticatedOwnerId!,
             decodeURIComponent(memoryConfirm[1]!),
             "owner_ui",
             idempotencyKey(request)
@@ -899,7 +974,7 @@ export async function handleHttp(
       const candidateId = await composition.runtime.runPromise(
         Effect.flatMap(MemoryStore, (memory) =>
           memory.correct(
-            composition.config.OWNER_ID,
+            authenticatedOwnerId!,
             decodeURIComponent(memoryCorrect[1]!),
             input.canonicalText,
             idempotencyKey(request)
@@ -914,7 +989,7 @@ export async function handleHttp(
       await composition.runtime.runPromise(
         Effect.flatMap(MemoryStore, (memory) =>
           memory.reject(
-            composition.config.OWNER_ID,
+            authenticatedOwnerId!,
             decodeURIComponent(memoryReject[1]!),
             idempotencyKey(request)
           )
@@ -927,7 +1002,7 @@ export async function handleHttp(
       const response = await fetch(`${composition.config.AGENT_ADMIN_URL}/v1/admin/auth/status`, {
         headers: {
           "x-bob-caller-token": composition.config.AGENT_CALLER_SECRET,
-          "x-bob-owner-id": composition.config.OWNER_ID
+          "x-bob-owner-id": authenticatedOwnerId!
         }
       })
       return json(await response.json(), response.status)
@@ -940,7 +1015,7 @@ export async function handleHttp(
           method: "POST",
           headers: {
             "x-bob-caller-token": composition.config.AGENT_CALLER_SECRET,
-            "x-bob-owner-id": composition.config.OWNER_ID
+            "x-bob-owner-id": authenticatedOwnerId!
           }
         }
       )

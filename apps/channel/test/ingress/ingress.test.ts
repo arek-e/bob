@@ -97,7 +97,6 @@ function bindings(
       SENDBLUE_LINE_ID: "line",
       SENDBLUE_WEBHOOK_SIGNING_SECRET: "s".repeat(64),
       SENDBLUE_FROM_NUMBER: "+46711111111",
-      SENDBLUE_ALLOWED_USER_NUMBER: "+46700000000",
       CORE_CALLER_SECRET: "c".repeat(64),
       SENDBLUE_MEDIA_HOSTS: "media.example.test",
       OTEL_EXPORTER_OTLP_ENDPOINT: "https://otel.example.test",
@@ -300,7 +299,7 @@ describe("Sendblue ingress", () => {
     expect(target.coreFetch).not.toHaveBeenCalled()
   })
 
-  it("rejects an unknown sender", async () => {
+  it("forwards an unknown sender for trusted Core owner resolution", async () => {
     const target = bindings()
     const bad = { ...payload, from_number: "+46799999999", number: "+46799999999" }
     const response = await handleIngressHttp(
@@ -312,11 +311,27 @@ describe("Sendblue ingress", () => {
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       target.value as never
     )
-    expect(response.status).toBe(403)
-    expect(target.coreFetch).not.toHaveBeenCalled()
+    expect(response.status).toBe(202)
+    expect(target.coreFetch).toHaveBeenCalledTimes(2)
   })
 
-  it("rejects a status callback for another protected destination", async () => {
+  it("rejects a sender when Core has no owner binding", async () => {
+    const target = bindings()
+    target.coreFetch.mockResolvedValueOnce(Response.json({ code: "not_allowed" }, { status: 403 }))
+    const result = await handleIngressHttp(
+      request("s".repeat(64), {
+        ...payload,
+        from_number: "+46799999999",
+        number: "+46799999999"
+      }),
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+      target.value as never
+    )
+    expect(result.status).toBe(403)
+    expect(target.queueSend).not.toHaveBeenCalled()
+  })
+
+  it("accepts an uncorrelated status callback for the managed line", async () => {
     const target = bindings()
     const response = await handleIngressHttp(
       new Request("https://bob.example/webhooks/outbound", {
@@ -333,7 +348,7 @@ describe("Sendblue ingress", () => {
       // SAFETY: This controlled test fixture matches the asserted contract used by this test.
       target.value as never
     )
-    expect(response.status).toBe(403)
+    expect(response.status).toBe(202)
     expect(target.coreFetch).not.toHaveBeenCalled()
   })
 

@@ -10,7 +10,6 @@ import type { EgressBindings } from "./bindings.ts"
 const ApplicationConfiguration = Schema.Struct({
   SENDBLUE_WEBHOOK_SIGNING_SECRET: Schema.String.check(Schema.isMinLength(32)),
   SENDBLUE_FROM_NUMBER: Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/)),
-  SENDBLUE_ALLOWED_USER_NUMBER: Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/)),
   SENDBLUE_STATUS_CALLBACK_URL: Schema.URLFromString,
   CORE_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32))
 })

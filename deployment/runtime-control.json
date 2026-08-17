@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "bob.runtime-control.v1",
+  "executionProfile": {
+    "deploymentProfileId": "core",
+    "capabilityCatalogueGeneration": "capability-v2:14603f15de62d729"
+  },
+  "database": {
+    "schemaVersion": 10,
+    "minimumCompatibleSchemaVersion": 9,
+    "minimumRollbackSchemaVersion": 9,
+    "migrationMode": "expand"
+  },
+  "protocols": {
+    "agentRunJob": { "minimum": 1, "maximum": 1 },
+    "coreGateway": { "minimum": 1, "maximum": 1 },
+    "checkpointLoop": { "minimum": 1, "maximum": 1 }
+  },
+  "backup": {
+    "formatVersion": 1,
+    "maximumAgeSeconds": 18000,
+    "restoreVerificationRequired": true
+  },
+  "rollout": {
+    "drainTimeoutSeconds": 600,
+    "observationSeconds": 1800,
+    "retainPreviousRelease": true
+  },
+  "externalImages": [
+    {
+      "name": "postgresql",
+      "repository": "docker.io/library/postgres",
+      "digest": "sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94"
+    },
+    {
+      "name": "redis",
+      "repository": "docker.io/library/redis",
+      "digest": "sha256:987c376c727652f99625c7d205a1cba3cb2c53b92b0b62aade2bd48ee1593232"
+    },
+    {
+      "name": "otel-collector",
+      "repository": "docker.io/otel/opentelemetry-collector-contrib",
+      "digest": "sha256:45392d534c1edcc809c2d112394029246bc679d2ae5ea7081414a1fc74f2c621"
+    }
+  ]
+}

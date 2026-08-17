@@ -1,8 +1,12 @@
 import { index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
 
+import { users } from "./conversations.ts"
+
 export const journalHandoffs = pgTable("journal_handoffs", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   expiresAt: text("expires_at").notNull(),
   consumedAt: text("consumed_at"),
   createdAt: text("created_at").notNull()
@@ -12,7 +16,9 @@ export const journalEntries = pgTable(
   "journal_entries",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     handoffId: text("handoff_id").notNull(),
     textCiphertext: text("text_ciphertext").notNull(),
     textIv: text("text_iv").notNull(),
@@ -33,7 +39,9 @@ export const attachments = pgTable(
   "attachments",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     journalEntryId: text("journal_entry_id"),
     r2Key: text("r2_key").notNull(),
     contentType: text("content_type").notNull(),

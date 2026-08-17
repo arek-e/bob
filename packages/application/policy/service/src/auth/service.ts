@@ -6,10 +6,12 @@ const SESSION_SECONDS = 12 * 60 * 60
 
 export interface OwnerAuthOptions {
   readonly allowSignUp?: boolean
+  readonly allowedEmail?: string
+  readonly ownerId?: string
 }
 
 export function createOwnerAuth(bindings: CoreBindings, options: OwnerAuthOptions = {}) {
-  const ownerEmail = bindings.OWNER_ACCESS_EMAIL.trim().toLowerCase()
+  const allowedEmail = options.allowedEmail?.trim().toLowerCase()
   const origin = new URL(bindings.UI_BASE_URL).origin
 
   return betterAuth({
@@ -82,13 +84,14 @@ export function createOwnerAuth(bindings: CoreBindings, options: OwnerAuthOption
       user: {
         create: {
           before: async (user) => {
-            if (user.email.trim().toLowerCase() !== ownerEmail) return false
+            if (allowedEmail !== undefined && user.email.trim().toLowerCase() !== allowedEmail)
+              return false
             return {
               data: {
                 ...user,
-                id: bindings.OWNER_ID,
+                id: options.ownerId ?? user.id,
                 name: "Owner",
-                email: ownerEmail,
+                email: user.email.trim().toLowerCase(),
                 emailVerified: true
               }
             }
@@ -124,9 +127,5 @@ export function createOwnerAuth(bindings: CoreBindings, options: OwnerAuthOption
 export type OwnerAuth = ReturnType<typeof createOwnerAuth>
 
 export async function ownerSession(request: Request, bindings: CoreBindings) {
-  const session = await createOwnerAuth(bindings).api.getSession({ headers: request.headers })
-  if (session?.user.email.trim().toLowerCase() !== bindings.OWNER_ACCESS_EMAIL.toLowerCase()) {
-    return null
-  }
-  return session
+  return createOwnerAuth(bindings).api.getSession({ headers: request.headers })
 }

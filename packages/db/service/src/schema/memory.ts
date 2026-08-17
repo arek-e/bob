@@ -1,10 +1,14 @@
 import { boolean, index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
 
+import { users } from "./conversations.ts"
+
 export const memoryCandidates = pgTable(
   "memory_candidates",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     scope: text("scope").notNull(),
     key: text("key").notNull(),
     proposedValueEnvelope: text("proposed_value_envelope").notNull(),
@@ -50,7 +54,9 @@ export const facts = pgTable(
   "facts",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     scope: text("scope").notNull(),
     key: text("key").notNull(),
     currentRevisionId: text("current_revision_id"),

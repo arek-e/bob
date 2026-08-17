@@ -1,9 +1,13 @@
 import { sql } from "drizzle-orm"
 import { boolean, index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
 
+import { users } from "./conversations.ts"
+
 export const gyms = pgTable("gyms", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull()
@@ -25,7 +29,9 @@ export const equipment = pgTable(
 
 export const exercises = pgTable("exercises", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   instructions: text("instructions"),
   createdAt: text("created_at").notNull()
@@ -47,7 +53,9 @@ export const trainingProposals = pgTable(
   "training_proposals",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     runId: text("run_id").notNull(),
     toolCallId: text("tool_call_id").notNull(),
     toolName: text("tool_name").notNull(),
@@ -77,7 +85,9 @@ export const trainingProposals = pgTable(
 
 export const routines = pgTable("routines", {
   id: text("id").primaryKey(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   revision: integer("revision").notNull(),
   approvedAt: text("approved_at").notNull(),
@@ -108,7 +118,9 @@ export const workoutSessions = pgTable(
   "workout_sessions",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     routineId: text("routine_id").notNull(),
     gymId: text("gym_id"),
     status: text("status", {

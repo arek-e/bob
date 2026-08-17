@@ -1,10 +1,14 @@
 import { index, integer, pgTable, text } from "drizzle-orm/pg-core"
 
+import { users } from "./conversations.ts"
+
 export const agentUsage = pgTable(
   "agent_usage",
   {
     runId: text("run_id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     correlationId: text("correlation_id").notNull(),
     feature: text("feature").notNull(),
     workflow: text("workflow", { enum: ["agent_turn"] }).notNull(),

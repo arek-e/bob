@@ -19,7 +19,8 @@ export interface DeploymentProfileContext {
   readonly conversations: ConversationStoreAdapter
   readonly turns: ConversationTurnStoreAdapter
   readonly settings: OwnerSettingsStoreAdapter
-  readonly ownerId: string
+  /** Legacy setup owner. Runtime Modules must use request or record owner identity. */
+  readonly ownerId?: string
   readonly ownerTimeZone: string
 }
 

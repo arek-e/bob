@@ -31,7 +31,7 @@ const ownerInbound = {
 }
 
 describe("Sendblue inbound history reconciliation", () => {
-  it("replays only owner messages through the normal signed ingress path", async () => {
+  it("replays all line messages for trusted Core owner resolution", async () => {
     const history = {
       hasLine: vi.fn().mockResolvedValue(true),
       listInbound: vi
@@ -50,7 +50,6 @@ describe("Sendblue inbound history reconciliation", () => {
     const result = await reconcileInboundHistory({
       history,
       sendblueNumber: "+46711111111",
-      ownerNumber: "+46700000000",
       signingSecret: "s".repeat(64),
       scheduledAt: new Date("2026-08-13T10:32:00.000Z"),
       accept
@@ -62,18 +61,21 @@ describe("Sendblue inbound history reconciliation", () => {
       since: new Date("2026-08-13T10:17:00.000Z"),
       until: new Date("2026-08-13T10:33:00.000Z")
     })
-    expect(accept).toHaveBeenCalledTimes(2)
+    expect(accept).toHaveBeenCalledTimes(3)
     expect(JSON.parse(String(accept.mock.calls[0]?.[0].body))).toMatchObject({
       message_handle: "handle-1"
     })
     expect(JSON.parse(String(accept.mock.calls[1]?.[0].body))).toMatchObject({
+      message_handle: "other"
+    })
+    expect(JSON.parse(String(accept.mock.calls[2]?.[0].body))).toMatchObject({
       message_handle: "handle-2"
     })
     expect(accept.mock.calls[0]?.[0].headers).toEqual({
       "content-type": "application/json",
       "sb-signing-secret": "s".repeat(64)
     })
-    expect(result).toEqual({ retrieved: 3, replayed: 2, skipped: 1 })
+    expect(result).toEqual({ retrieved: 3, replayed: 3, skipped: 0 })
   })
 
   it("fails when the configured provider line is not assigned", async () => {
@@ -84,7 +86,6 @@ describe("Sendblue inbound history reconciliation", () => {
           listInbound: vi.fn()
         },
         sendblueNumber: "+46711111111",
-        ownerNumber: "+46700000000",
         signingSecret: "s".repeat(64),
         scheduledAt: new Date("2026-08-13T10:32:00.000Z"),
         accept: vi.fn()
@@ -104,7 +105,6 @@ describe("Sendblue inbound history reconciliation", () => {
           listInbound: vi.fn().mockResolvedValue([ownerInbound])
         },
         sendblueNumber: "+46711111111",
-        ownerNumber: "+46700000000",
         signingSecret: "s".repeat(64),
         scheduledAt: new Date("2026-08-13T10:32:00.000Z"),
         accept: vi.fn(async () => new Response(null, { status: 503 }))

@@ -17,7 +17,6 @@ const bindings = {
   SENDBLUE_API_KEY_ID: "key",
   SENDBLUE_API_SECRET_KEY: "secret",
   SENDBLUE_FROM_NUMBER: "+46711111111",
-  SENDBLUE_ALLOWED_USER_NUMBER: "+46700000000",
   SENDBLUE_WEBHOOK_SIGNING_SECRET: "s".repeat(64),
   SENDBLUE_STATUS_CALLBACK_URL: "https://ingress.example.invalid/webhooks/outbound",
   CORE_CALLER_SECRET: "c".repeat(64),

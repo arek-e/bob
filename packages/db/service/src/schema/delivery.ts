@@ -1,10 +1,14 @@
 import { index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
 
+import { users } from "./conversations.ts"
+
 export const outboxMessages = pgTable(
   "outbox_messages",
   {
     id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
     channelId: text("channel_id").notNull(),
     messageId: text("message_id").notNull(),
     reasonCode: text("reason_code").notNull(),

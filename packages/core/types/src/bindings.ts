@@ -14,7 +14,7 @@ export interface GeneralCoreBindings {
   OUTBOUND_QUEUE?: {
     readonly send: (job: OutboundJob, options?: { readonly delaySeconds?: number }) => Promise<void>
   }
-  OWNER_ID: string
+  OWNER_ID?: string
   OWNER_TIME_ZONE: string
   DATA_KEK_ACTIVE_VERSION: string
   DATA_KEK_KEYRING_JSON: string
@@ -24,7 +24,8 @@ export interface GeneralCoreBindings {
   CHANNEL_EGRESS_URL: string
   BETTER_AUTH_SECRET: string
   SETUP_TOKEN: string
-  OWNER_ACCESS_EMAIL: string
+  OWNER_ACCESS_EMAIL?: string
+  OWNER_ENROLLMENT_SECRET: string
   AGENT_CALLER_SECRET: string
   AGENT_URL: string
   AGENT_ADMIN_URL: string
