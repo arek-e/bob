@@ -1034,9 +1034,8 @@ export function processConversationTurnEffect(
           Effect.succeed(failedAgentResult(agentRequest, composition.config.BOB_MODEL, error))
         )
       )
-      let mutationActivity = yield* promiseEffect(
-        () =>
-          composition.interfaces.tools?.mutationActivity?.(agentRequest.runId) ?? { status: "none" }
+      let mutationActivity = yield* composition.interfaces.tools.mutationActivity(
+        agentRequest.runId
       )
       let mutationCompletedDuringRecovery = false
       if (
@@ -1047,12 +1046,10 @@ export function processConversationTurnEffect(
           (mutationActivity.originRevision !== undefined &&
             agentRequest.conversationTurnRevision > mutationActivity.originRevision))
       ) {
-        const expired = yield* promiseEffect(() =>
-          composition.interfaces.tools.expireMutationRecovery(agentRequest.runId)
+        const expired = yield* composition.interfaces.tools.expireMutationRecovery(
+          agentRequest.runId
         )
-        mutationActivity = yield* promiseEffect(() =>
-          composition.interfaces.tools.mutationActivity(agentRequest.runId)
-        )
+        mutationActivity = yield* composition.interfaces.tools.mutationActivity(agentRequest.runId)
         mutationCompletedDuringRecovery = mutationActivity.status === "completed"
         if (expired && mutationActivity.status === "none") {
           result = unknownMutationAgentResult(agentRequest, composition.config.BOB_MODEL)
@@ -1172,8 +1169,8 @@ export function processConversationTurnEffect(
         )
         if (transition.status === "lost") return
         if (transition.status === "settling") {
-          const settledActivity = yield* promiseEffect(() =>
-            composition.interfaces.tools.mutationActivity(agentRequest.runId)
+          const settledActivity = yield* composition.interfaces.tools.mutationActivity(
+            agentRequest.runId
           )
           if (settledActivity.status !== "active") {
             yield* releaseSettlingTurn(composition, {

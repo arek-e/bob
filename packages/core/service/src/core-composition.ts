@@ -1,5 +1,6 @@
 import type { CoreAdapters } from "@bob/core-types/adapters"
 import type { GeneralCoreBindings } from "@bob/core-types/bindings"
+import type { CoreDeploymentProfile } from "@bob/deployment-profile-types/runtime"
 
 import { artifactStoreLayer, makeArtifactStore } from "@bob/artifacts-service/store"
 import { makePrivateTextReader } from "@bob/context-service/private-text"
@@ -28,8 +29,6 @@ import { makeSettingsToolAdapter } from "@bob/settings-service/tool-adapter"
 import { makeReviewedSkillRegistry } from "@bob/skills-service/registry"
 import { makeToolAdapterRegistry } from "@bob/tools-service/registry"
 import { Layer, Schema } from "effect"
-
-import type { CoreDeploymentProfile } from "./deployment-profile.ts"
 
 import { makeApplicationContextStore } from "./context-composition.ts"
 
@@ -60,9 +59,9 @@ const Configuration = Schema.Struct({
   )
 })
 
-export function composeGeneralCore<Extensions extends object>(
+export function composeGeneralCore(
   bindings: GeneralCoreBindings,
-  runtimeProfile: CoreDeploymentProfile<Extensions>,
+  runtimeProfile: CoreDeploymentProfile,
   adapters: CoreAdapters
 ) {
   const config = Schema.decodeUnknownSync(Configuration)(bindings)
@@ -143,7 +142,7 @@ export function composeGeneralCore<Extensions extends object>(
   const toolAdapters = makeToolAdapterRegistry(runtimeProfile.catalogue, [
     makeMemoryToolAdapter(memory, retrieval),
     makeSettingsToolAdapter(settings),
-    ...prepared.toolAdapters({ memory, retrieval })
+    ...prepared.toolAdapters
   ])
   const tools = makeToolExecutor(applicationStorage, protection, toolAdapters, {
     toolLeaseMs: conversationTiming.mutationSettleLeaseMs,
@@ -168,9 +167,8 @@ export function composeGeneralCore<Extensions extends object>(
   return {
     config,
     profile: runtimeProfile.catalogue,
-    modules: prepared.modules,
+    modules: prepared.runtimeModules,
     layer,
-    extensions: prepared.extensions,
     memoryClasses: Object.freeze({ agentExperience, reviewedSkills }),
     jobQueue: adapters.jobQueue,
     objectStorage: adapters.objectStorage,

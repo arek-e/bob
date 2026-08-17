@@ -1,5 +1,4 @@
 import { boundContextItems } from "@bob/context-service/store"
-import { journalAgentMetadata, journalModelContext } from "@bob/journal-service/rules"
 import { decideCandidate, deriveMemoryPolicy } from "@bob/memory-service/rules"
 import {
   classifyDeterministicCommand,
@@ -8,46 +7,12 @@ import {
   urgentSafetyResponse
 } from "@bob/policy-service/rules"
 import {
-  nextRecurringDueAt,
-  resolveLocalDueAt,
-  transitionOccurrence
-} from "@bob/reminders-service/rules"
-import {
   isSettingsMutationRequest,
   settingsUpdateMatchesRequest
 } from "@bob/settings-service/rules"
-import {
-  hasExplicitRoutineApproval,
-  isTrainingMutationRequest,
-  trainingSafetyResponse,
-  trainingSafetySignal,
-  trainingSafetyDecision
-} from "@bob/training-service/rules"
 import { describe, expect, it } from "vitest"
 
 describe("deterministic domain rules", () => {
-  it("uses the earlier offset when Stockholm local time repeats", () => {
-    expect(resolveLocalDueAt("2026-10-25", "02:30", "Europe/Stockholm")).toBe(
-      "2026-10-25T00:30:00Z"
-    )
-  })
-
-  it("shifts forward when a local time does not exist", () => {
-    expect(resolveLocalDueAt("2026-03-29", "02:30", "Europe/Stockholm")).toBe(
-      "2026-03-29T01:30:00Z"
-    )
-  })
-
-  it("keeps recurring wall time over daylight-saving changes", () => {
-    expect(
-      nextRecurringDueAt("2026-03-28T08:00:00Z", "FREQ=DAILY;INTERVAL=1", "Europe/Stockholm")
-    ).toBe("2026-03-29T07:00:00Z")
-  })
-
-  it("rejects delivery as task acknowledgment", () => {
-    expect(() => transitionOccurrence("awaiting_delivery", "acknowledged")).toThrow()
-  })
-
   it("does not bind an ambiguous done reply", () => {
     const expiresAt = "2026-08-12T00:00:00.000Z"
     expect(
@@ -125,97 +90,6 @@ describe("deterministic domain rules", () => {
         originClass: "owner_input"
       })
     ).toEqual({ sensitivity: "private", modelEligible: false, channelEligible: false })
-  })
-
-  it("does not return raw journal text to the model", () => {
-    expect(
-      journalModelContext({
-        id: "entry",
-        createdAt: "2026-08-11T00:00:00.000Z",
-        tags: ["private"],
-        rawText: "secret"
-      })
-    ).toBeUndefined()
-  })
-
-  it("keeps journal summaries and entry IDs out of agent metadata", () => {
-    expect(
-      journalAgentMetadata({
-        id: "private-entry-id",
-        createdAt: "2026-08-11T00:00:00.000Z",
-        tags: ["training"],
-        approvedSummary: "Private approved summary",
-        rawText: "Private journal text"
-      })
-    ).toEqual({
-      createdAt: "2026-08-11T00:00:00.000Z",
-      tags: ["training"]
-    })
-  })
-
-  it("stops training guidance after machine confusion", () => {
-    expect(
-      trainingSafetyDecision({ painReported: false, injuryReported: false, machineConfusion: true })
-    ).toMatchObject({ stop: true, code: "machine_confusion" })
-  })
-
-  it("uses a fixed Swedish training safety response for Swedish owner text", () => {
-    expect(trainingSafetyResponse("Mitt knä gör ont efter setet.")).toBe(
-      "Avsluta övningen nu. Öka inte vikten. Be en kvalificerad tränare eller vårdpersonal om hjälp."
-    )
-    expect(trainingSafetyResponse("Jag förstår inte den här maskinen.")).toBe(
-      "Avsluta övningen nu. Öka inte vikten. Be en kvalificerad tränare eller vårdpersonal om hjälp."
-    )
-    expect(trainingSafetyResponse("My knee hurts after that set.")).toBe(
-      "Stop this exercise now. Do not increase the weight. Ask a qualified trainer or health professional for help."
-    )
-  })
-
-  it("requires owner words for routine approval", () => {
-    expect(hasExplicitRoutineApproval("Save this routine for me.")).toBe(true)
-    expect(hasExplicitRoutineApproval("What routine do you suggest?")).toBe(false)
-    expect(hasExplicitRoutineApproval("Do not save this routine.")).toBe(false)
-    expect(hasExplicitRoutineApproval("I do not approve this workout plan.")).toBe(false)
-    expect(hasExplicitRoutineApproval("Spara den här rutinen åt mig.")).toBe(true)
-    expect(hasExplicitRoutineApproval("Jag godkänner träningsplanen.")).toBe(true)
-    expect(hasExplicitRoutineApproval("Rutinen ser bra ut.")).toBe(true)
-    expect(hasExplicitRoutineApproval("Spara inte den här rutinen.")).toBe(false)
-    expect(hasExplicitRoutineApproval("Jag godkänner inte träningsplanen.")).toBe(false)
-    expect(hasExplicitRoutineApproval("Är rutinen godkänd?")).toBe(false)
-    expect(hasExplicitRoutineApproval("Vill du spara rutinen")).toBe(false)
-  })
-
-  it("creates training proposals only from affirmative owner commands", () => {
-    expect(isTrainingMutationRequest("Add this gym to my profile.")).toBe(true)
-    expect(isTrainingMutationRequest("Can you add this gym?")).toBe(false)
-    expect(isTrainingMutationRequest("Do not add this machine.")).toBe(false)
-    expect(isTrainingMutationRequest("I don't want to start the workout.")).toBe(false)
-    expect(isTrainingMutationRequest("Lägg till det här gymmet.")).toBe(true)
-    expect(isTrainingMutationRequest("Starta träningspasset.")).toBe(true)
-    expect(isTrainingMutationRequest("Kan du lägga till det här gymmet")).toBe(false)
-    expect(isTrainingMutationRequest("Vill du starta träningspasset")).toBe(false)
-    expect(isTrainingMutationRequest("Vilken maskin ska jag lägga till?")).toBe(false)
-    expect(isTrainingMutationRequest("Lägg inte till den här maskinen.")).toBe(false)
-    expect(isTrainingMutationRequest("Jag vill inte starta träningspasset.")).toBe(false)
-  })
-
-  it("detects training safety signals from trusted owner text", () => {
-    expect(trainingSafetySignal("My knee hurts after that set")).toBe("pain_or_injury")
-    expect(trainingSafetySignal("I do not understand this machine")).toBe("machine_confusion")
-    expect(trainingSafetySignal("Log ten reps")).toBeUndefined()
-    expect(trainingSafetySignal("Mitt knä gör ont efter setet.")).toBe("pain_or_injury")
-    expect(trainingSafetySignal("Jag skadade axeln under övningen.")).toBe("pain_or_injury")
-    expect(trainingSafetySignal("Jag är osäker på hur jag använder maskinen.")).toBe(
-      "machine_confusion"
-    )
-    expect(trainingSafetySignal("Jag förstår inte den här maskinen.")).toBe("machine_confusion")
-    expect(trainingSafetySignal("Mitt knä gör inte ont.")).toBeUndefined()
-    expect(trainingSafetySignal("Jag har ingen smärta.")).toBeUndefined()
-    expect(trainingSafetySignal("Jag är inte skadad.")).toBeUndefined()
-    expect(trainingSafetySignal("Jag skadade inte axeln.")).toBeUndefined()
-    expect(trainingSafetySignal("Jag är inte osäker på maskinen.")).toBeUndefined()
-    expect(trainingSafetySignal("I am not injured.")).toBeUndefined()
-    expect(trainingSafetySignal("I am not confused by this machine.")).toBeUndefined()
   })
 
   it("bounds each context item and the complete pack", () => {

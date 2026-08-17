@@ -2,7 +2,7 @@ import type { AgentRunOperation, AgentRunRequest, AgentRunResult } from "@bob/ag
 import type { ToolCommand, ToolResult } from "@bob/tools-types/tools"
 
 import { AgentCheckpointError, AgentToolError } from "@bob/agent-types"
-import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
+import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
 import { withBobSpan, makeCaptureTelemetry } from "@bob/observability"
 import {
   fauxAssistantMessage,

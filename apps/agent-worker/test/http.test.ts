@@ -1,7 +1,7 @@
 import type { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/agent-types/run"
 
 import { BobAgent, type AgentRunDurability, type BobAgentShape } from "@bob/agent-types"
-import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
+import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
 import { withBobSpan, makeCaptureTelemetry } from "@bob/observability"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"

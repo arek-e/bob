@@ -1,7 +1,7 @@
 import type { AgentRunRequest } from "@bob/agent-types/run"
 
 import { AgentToolError, BobAgent } from "@bob/agent-types"
-import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
+import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
 import { fauxAssistantMessage } from "@earendil-works/pi-ai"
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex"
 import { it } from "@effect/vitest"

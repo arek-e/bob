@@ -79,13 +79,18 @@ Each runnable app owns its Dockerfile.
 
 Package projects follow the system map:
 
-- `packages/domains/<domain>/types` owns one domain Module's public Interface and validation schemas.
-- `packages/domains/<domain>/service` owns that domain Module's rules, queries, workflows, and Adapters.
-- `packages/features/<feature>/types` owns one General Agent Core feature's public Interface and
-  validation schemas.
-- `packages/features/<feature>/service` owns that feature's rules, workflows, and Adapters.
-- General Agent Core features are conversations, context, memory, retrieval, delivery, artifacts,
+- `packages/application/<module>/types` owns one Application Module's public Interface and validation
+  schemas.
+- `packages/application/<module>/service` owns that Application Module's rules, queries, workflows,
+  and Adapters.
+- General Agent Core Application Modules are conversations, context, memory, retrieval, delivery, artifacts,
   settings, policy, skills, and operations.
+- Vertical Application Modules are connections, journal, reminders, and training. Each Vertical Module
+  exposes one prepared Interface for its runtime contributions.
+- `packages/deployment-profile/types` owns immutable Capability catalogue definitions. Agent Worker uses
+  this definition view.
+- `packages/deployment-profile/service` owns Core runtime profile views. It selects prepared Vertical
+  Modules and checks their conformance with the definition view.
 - `packages/tools/types` owns provider-neutral Tool contracts, Capability catalogues, and schemas.
 - `packages/tools/service` owns static Adapter registration and Effect-native Tool dispatch.
 - `packages/shared/types` owns shared value schemas that do not belong to one Module.
@@ -106,10 +111,13 @@ Package projects follow the system map:
 - `apps/agent-worker` composes the Agent Module with one model SDK and credential Adapter.
 - A `runtime` project can depend on its matching `types` project. A `types` project never depends on
   its matching `runtime` project.
-- A feature `service` project can depend on its matching `types` project. A feature `types` project
-  never depends on its matching `service` project.
-- A Deployment Profile owns its Capability catalogue, selected feature Adapters, and configuration
-  in one Core Runtime Module.
+- An Application Module `service` project can depend on its matching `types` project. An Application
+  Module `types` project never depends on its matching `service` project.
+- A General Agent Core Application Module cannot depend on a Vertical Module Implementation.
+- A Deployment Profile owns its Capability catalogue and selected Application Modules through one
+  definition view and one conforming runtime view.
+- A runnable app acquires raw configuration. Each selected Application Module validates and interprets
+  its own values.
 - The Database `service` project can depend on `db/types`. The Database Interface never depends on
   `db/service`.
 - Model SDK types stay inside `packages/agent/service` and `apps/agent-worker`.
@@ -143,10 +151,11 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Context pack:** Confirmed and policy-cleared data supplied to one agent run.
 - **Tool command:** One typed request from Bob's Agent loop to an owning Capability Module.
 - **Tool Module:** Provider-neutral Tool contracts and static dispatch machinery. It grants no domain authority.
+- **Application Module:** One business Module with a public Interface, rules, storage, workflows, and Adapters.
 - **Capability Module:** One statically registered group of Tool definitions, execution Adapters, and safety metadata.
 - **General Agent Core:** Domain-neutral Modules for conversation, the Agent harness, retrieval, memory, planning, policy, action evidence, and delivery.
 - **Vertical Module:** One optional domain-owned set of capability, Context source, workflow, storage, route, and schedule Implementations.
-- **Deployment profile:** One reviewed, immutable composition of the core profile and Vertical Modules for a release.
+- **Deployment profile:** One reviewed, immutable selection of Application Modules for a release. Its definition and runtime views share one catalogue identity.
 - **Core profile:** The minimum deployment profile. It contains the General Agent Core and no Vertical Module.
 - **Runtime profile:** One static composition of Tool, evidence, conversation, route, schedule, and delivery target Adapters.
 - **Capability catalogue:** The complete reviewed model tools selected by one deployment profile.
@@ -221,6 +230,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Only the current turn revision can commit and deliver its reply.
 - The Core Runtime enforces cross-capability invariants. Each Capability Module enforces its own invariants.
 - Every agent run in one deployment profile receives the same reviewed capability catalogue.
+- Each Deployment Profile runtime view matches its definition view and Capability Module order.
+- Each Vertical Module owns validation and assembly for its runtime contributions.
 - Every Tool belongs to exactly one statically registered Capability Module.
 - The capability catalogue and its safety metadata produce one deterministic generation.
 - Each new agent run records that generation. Core and Agent must agree before model execution.
