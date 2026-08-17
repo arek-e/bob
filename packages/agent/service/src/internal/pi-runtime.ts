@@ -45,7 +45,8 @@ import {
   type Message,
   type Tool,
   type ToolCall,
-  type ToolResultMessage
+  type ToolResultMessage,
+  type UserMessage
 } from "@earendil-works/pi-ai"
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth"
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex"
@@ -79,6 +80,12 @@ export interface PiAgentOptions {
   readonly model: string
   readonly allowedModels: readonly string[]
   readonly executeTool: (command: ToolCommand) => Effect.Effect<ToolResult, AgentToolError>
+  readonly loadAttachment?: (
+    runId: string,
+    attachment: NonNullable<
+      NonNullable<AgentRunRequest["currentTurnMessages"]>[number]["attachments"]
+    >[number]
+  ) => Effect.Effect<{ readonly data: string; readonly mimeType: string }, AgentProviderError>
   readonly now?: () => number
   readonly deviceLoginStartTimeoutMs?: number
   readonly dependencies?: PiAgentDependencies
@@ -491,7 +498,11 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
         )
         const trustedToolSources = new Map<string, TrustedToolSource>()
         const currentTurnMessages = request.currentTurnMessages ?? [
-          { sourceMessageId: request.sourceMessageId, text: request.userText }
+          {
+            sourceMessageId: request.sourceMessageId,
+            text: request.userText,
+            attachments: undefined
+          }
         ]
         const needsPersonalGrounding = request.grounding?.requiresSources === true
         const storedOperations = durability?.operations ?? []
@@ -545,6 +556,48 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
           })),
           tools: modelTools
         }
+        const prepareContext = Effect.forEach(currentTurnMessages, (message) => {
+          const attachments = message.attachments ?? []
+          if (attachments.length === 0) {
+            return Effect.succeed({
+              role: "user" as const,
+              content: message.text,
+              timestamp: now()
+            })
+          }
+          if (!model.input.includes("image") || options.loadAttachment === undefined) {
+            return Effect.fail(
+              new AgentProviderError({
+                code: "provider",
+                message: "Configured Agent runtime cannot load image attachments"
+              })
+            )
+          }
+          return Effect.forEach(attachments, (attachment) =>
+            options.loadAttachment!(request.runId, attachment)
+          ).pipe(
+            Effect.map((images): UserMessage => ({
+              role: "user",
+              content: [
+                ...(message.text.length === 0
+                  ? []
+                  : [{ type: "text" as const, text: message.text }]),
+                ...images.map((image) => ({
+                  type: "image" as const,
+                  data: image.data,
+                  mimeType: image.mimeType
+                }))
+              ],
+              timestamp: now()
+            }))
+          )
+        }).pipe(
+          Effect.map((messages) => {
+            context.messages = messages
+            return true
+          }),
+          Effect.catch(() => Effect.succeed(false))
+        )
 
         const appendOperation = (
           kind: AgentRunOperation["kind"],
@@ -1475,6 +1528,7 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
         )
 
         return Effect.gen(function* () {
+          if (!(yield* prepareContext)) return result("failed", undefined, "provider")
           const timeout = yield* Deferred.make<{ readonly type: "timeout" }>()
           timeoutEffect = Deferred.await(timeout)
           const timeoutFiber = yield* Effect.forkChild(

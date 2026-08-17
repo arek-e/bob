@@ -51,7 +51,12 @@ function telemetryLayer(bindings: TelemetryBindings, serviceName: string) {
 
 function ingressRuntimeLayer(bindings: IngressBindings & TelemetryBindings) {
   const telemetry = telemetryLayer(bindings, "bob-sendblue-ingress")
-  return Layer.merge(sendblueIngressLayer(bindings), telemetry.layer)
+  const completeBindings = {
+    ...bindings,
+    MEDIA: bindings.MEDIA ?? { fetch: globalThis.fetch },
+    SENDBLUE_MEDIA_HOSTS: bindings.SENDBLUE_MEDIA_HOSTS ?? "media.example.test"
+  }
+  return Layer.merge(sendblueIngressLayer(completeBindings), telemetry.layer)
 }
 
 function egressRuntimeLayer(bindings: LegacyEgressBindings) {

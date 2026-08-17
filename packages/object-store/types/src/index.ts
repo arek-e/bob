@@ -1,18 +1,30 @@
+import { Context, type Effect, Schema } from "effect"
+
 export interface StoredPrivateObject {
   readonly body: Uint8Array
-  readonly contentType?: string
   readonly etag?: string
 }
 
-export interface PutPrivateObjectOptions {
-  readonly contentType?: string
+export class ObjectStorageError extends Schema.TaggedError<ObjectStorageError>()(
+  "ObjectStorageError",
+  {
+    operation: Schema.Literals(["get", "put", "delete"]),
+    cause: Schema.Unknown
+  }
+) {}
+
+export interface ObjectStorageShape {
+  /** Return undefined only when the key does not exist. */
+  readonly get: (key: string) => Effect.Effect<StoredPrivateObject | undefined, ObjectStorageError>
+  /** Atomically replace the value stored at the key. */
+  readonly put: (key: string, body: Uint8Array) => Effect.Effect<void, ObjectStorageError>
+  /** Succeed when the key does not exist. */
+  readonly delete: (key: string) => Effect.Effect<void, ObjectStorageError>
 }
 
-export interface PrivateObjectStore {
-  readonly get: (key: string) => Promise<StoredPrivateObject | undefined>
-  readonly put: (key: string, body: Uint8Array, options?: PutPrivateObjectOptions) => Promise<void>
-  readonly delete: (key: string) => Promise<void>
-}
+export class ObjectStorage extends Context.Service<ObjectStorage, ObjectStorageShape>()(
+  "@bob/object-storage/ObjectStorage"
+) {}
 
 export function validatedObjectKey(key: string): string {
   if (

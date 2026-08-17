@@ -9,5 +9,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "effect": "4.0.0-beta.107"
   }
 }

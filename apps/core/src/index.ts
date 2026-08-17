@@ -9,7 +9,7 @@ import { PostgresqlDatabase, postgresqlDatabaseLayer } from "@bob/db-service/pos
 import { makeBullMqJobPublisher } from "@bob/job-queue-runtime/bullmq"
 import { startBullMqWorkerHost } from "@bob/job-queue-runtime/bullmq-host"
 import { decodeJobProcessor, retryJob } from "@bob/job-queue-types"
-import { makeFilesystemPrivateObjectStore } from "@bob/object-store-runtime/filesystem"
+import { filesystemObjectStorageLayer } from "@bob/object-store-runtime/filesystem"
 import { nodeTelemetryLayer } from "@bob/observability"
 import { Queue, type ConnectionOptions } from "bullmq"
 import { Effect, ManagedRuntime, Schema } from "effect"
@@ -129,7 +129,7 @@ async function main(): Promise<void> {
     applicationStorage,
     channelProviderId: "sendblue",
     jobQueue,
-    objectStorage: makeFilesystemPrivateObjectStore(config.OBJECT_STORAGE_DIRECTORY),
+    objectStorage: filesystemObjectStorageLayer(config.OBJECT_STORAGE_DIRECTORY),
     runCoordinator
   }
   composition = composeCore(
@@ -231,7 +231,7 @@ async function main(): Promise<void> {
         const acceptance = Schema.decodeUnknownSync(InboundAcceptance)(
           await response.clone().json()
         )
-        if (acceptance.shouldEnqueue) {
+        if (acceptance.shouldEnqueue && (acceptance.pendingAttachmentOrdinals?.length ?? 0) === 0) {
           await jobQueue.inbound.publish({ eventId: acceptance.eventId })
           await composition.runtime.runPromise(
             Effect.flatMap(ConversationStore, (conversations) =>
@@ -249,7 +249,11 @@ async function main(): Promise<void> {
           errorMessage: error instanceof Error ? error.message : "Unknown request failure"
         })
       )
-      outgoing.writeHead(500).end()
+      outgoing
+        .writeHead(
+          error instanceof RangeError && error.message === "request_body_too_large" ? 413 : 500
+        )
+        .end()
     }
   })
   server.listen(config.PORT, "0.0.0.0")

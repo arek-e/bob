@@ -73,7 +73,10 @@ function executionContext() {
   }
 }
 
-function bindings(queueSend = vi.fn().mockResolvedValue(undefined)) {
+function bindings(
+  queueSend = vi.fn().mockResolvedValue(undefined),
+  mediaFetch = vi.fn(async () => new Response(null, { status: 500 }))
+) {
   const coreFetch = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
     const url = String(input)
     if (url.endsWith("/internal/inbound")) {
@@ -88,6 +91,7 @@ function bindings(queueSend = vi.fn().mockResolvedValue(undefined)) {
   return {
     value: {
       CORE: { fetch: coreFetch },
+      MEDIA: { fetch: mediaFetch },
       INBOUND_QUEUE: { send: queueSend },
       SENDBLUE_ACCOUNT_ID: "account",
       SENDBLUE_LINE_ID: "line",
@@ -95,25 +99,65 @@ function bindings(queueSend = vi.fn().mockResolvedValue(undefined)) {
       SENDBLUE_FROM_NUMBER: "+46711111111",
       SENDBLUE_ALLOWED_USER_NUMBER: "+46700000000",
       CORE_CALLER_SECRET: "c".repeat(64),
+      SENDBLUE_MEDIA_HOSTS: "media.example.test",
       OTEL_EXPORTER_OTLP_ENDPOINT: "https://otel.example.test",
       BOB_RELEASE_SHA: releaseSha
     },
     coreFetch,
-    queueSend
+    queueSend,
+    mediaFetch
   }
 }
 
-function request(secret?: string) {
+function request(secret?: string, body: typeof payload = payload) {
   const headers = new Headers({ "content-type": "application/json" })
   if (secret !== undefined) headers.set("sb-signing-secret", secret)
   return new Request("https://bob.example/webhooks/receive", {
     method: "POST",
     headers,
-    body: JSON.stringify(payload)
+    body: JSON.stringify(body)
   })
 }
 
 describe("Sendblue ingress", () => {
+  it("stores an image before it publishes an image-only message", async () => {
+    const image = Uint8Array.from([0x89, 0x50, 0x4e, 0x47])
+    const target = bindings(
+      undefined,
+      vi.fn(
+        async () =>
+          new Response(image, {
+            headers: { "content-type": "image/png", "content-length": String(image.byteLength) }
+          })
+      )
+    )
+    target.coreFetch.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith("/internal/inbound")) {
+        return Response.json({
+          eventId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
+          duplicate: false,
+          shouldEnqueue: true,
+          pendingAttachmentOrdinals: [0]
+        })
+      }
+      return Response.json({ ok: true })
+    })
+    const body = {
+      ...payload,
+      content: "",
+      media_url: "https://media.example.test/image.png"
+    }
+
+    const result = await handleIngressHttp(request("s".repeat(64), body), target.value as never)
+
+    expect(result.status).toBe(202)
+    expect(target.mediaFetch).toHaveBeenCalledOnce()
+    expect(String(target.coreFetch.mock.calls[1]?.[0])).toContain("/attachments/0")
+    expect(target.queueSend).toHaveBeenCalledOnce()
+    expect(String(target.coreFetch.mock.calls[0]?.[1]?.body)).not.toContain(body.media_url)
+  })
+
   it("exports and propagates one safe inbound trace after durable acceptance", async () => {
     const health: string[] = []
     vi.spyOn(console, "log").mockImplementation((line) => health.push(String(line)))

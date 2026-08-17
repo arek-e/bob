@@ -8,6 +8,7 @@ import {
 } from "@bob/observability"
 import { Effect, Schema } from "effect"
 
+import { downloadSendblueImage } from "../sendblue/media.ts"
 import { timingSafeEqual } from "../sendblue/provider.ts"
 import { readSendblueStatusCallback } from "../sendblue/status-callback.ts"
 import { decodeWebhookPayload, normalizeInbound, normalizeStatus } from "../sendblue/webhooks.ts"
@@ -39,7 +40,34 @@ function readJson(request: Request) {
   })
 }
 
-function persistInbound(event: NormalizedInboundEvent) {
+function storePendingAttachment(
+  event: NormalizedInboundEvent,
+  eventId: string,
+  ordinal: number,
+  mediaUrl: string
+) {
+  return Effect.gen(function* () {
+    const ingress = yield* SendblueIngress
+    const media = yield* downloadSendblueImage(mediaUrl, {
+      fetcher: ingress.media,
+      allowedHosts: ingress.allowedMediaHosts
+    })
+    const headers = yield* injectCurrentTraceparent({
+      "content-type": media.mediaType,
+      "x-bob-caller-token": ingress.config.CORE_CALLER_SECRET,
+      "x-bob-correlation-id": event.correlationId
+    })
+    const stored = yield* Effect.tryPromise(() =>
+      ingress.core.fetch(
+        `https://core.internal/internal/inbound/${encodeURIComponent(eventId)}/attachments/${ordinal}`,
+        { method: "PUT", headers, body: Uint8Array.from(media.body).buffer }
+      )
+    )
+    if (!stored.ok) return yield* new WorkflowResponseFailure({ response: stored })
+  })
+}
+
+function persistInbound(event: NormalizedInboundEvent, mediaUrl?: string) {
   return Effect.gen(function* () {
     const ingress = yield* SendblueIngress
     const stored = yield* withBobSpan(
@@ -79,6 +107,23 @@ function persistInbound(event: NormalizedInboundEvent) {
       outcome: "selected"
     })
     if (acceptance.shouldEnqueue) {
+      for (const ordinal of acceptance.pendingAttachmentOrdinals ?? []) {
+        if (ordinal !== 0 || mediaUrl === undefined) {
+          return response("media_store_failed", 503)
+        }
+        const attachmentStored = yield* withBobSpan(
+          {
+            name: "bob.inbound.attachment.store",
+            correlationId: event.correlationId,
+            feature: "assistant"
+          },
+          storePendingAttachment(event, acceptance.eventId, ordinal, mediaUrl)
+        ).pipe(
+          Effect.as(true),
+          Effect.catch(() => Effect.succeed(false))
+        )
+        if (!attachmentStored) return response("media_store_failed", 503)
+      }
       const published = yield* withBobSpan(
         {
           name: "bob.inbound.publish",
@@ -153,7 +198,10 @@ const receiveWebhook = (request: Request, payload: unknown) =>
         correlationId: event.correlationId,
         feature: "assistant"
       },
-      persistInbound(event).pipe(
+      persistInbound(
+        event,
+        decoded.media_url.trim().length === 0 ? undefined : decoded.media_url
+      ).pipe(
         Effect.flatMap((result) =>
           result.ok
             ? Effect.succeed(result)
@@ -179,6 +227,7 @@ const receiveWebhook = (request: Request, payload: unknown) =>
       resultBody.code === "accepted" ||
       resultBody.code === "duplicate" ||
       resultBody.code === "durable_store_failed" ||
+      resultBody.code === "media_store_failed" ||
       resultBody.code === "queue_publish_failed" ||
       resultBody.code === "enqueue_record_failed"
         ? resultBody.code

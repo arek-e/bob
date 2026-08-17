@@ -18,6 +18,7 @@ describe("core route authorization", () => {
   it.each([
     ["/internal/inbound", "ingress", configuration.ingressSecret],
     ["/internal/inbound/event/enqueued", "ingress", configuration.ingressSecret],
+    ["/internal/inbound/event/attachments/0", "ingress", configuration.ingressSecret],
     ["/internal/status", "ingress", configuration.ingressSecret],
     ["/internal/outbox/id/claim", "egress", configuration.egressSecret],
     ["/internal/outbox/id/result", "egress", configuration.egressSecret],
@@ -25,6 +26,7 @@ describe("core route authorization", () => {
     ["/internal/agent/result", "agent", configuration.agentSecret],
     ["/internal/agent/operations", "agent", configuration.agentSecret],
     ["/internal/agent/operations/load", "agent", configuration.agentSecret],
+    ["/internal/agent/runs/run/attachments/attachment", "agent", configuration.agentSecret],
     ["/internal/readiness", "agent", configuration.agentSecret]
   ] as const)("allows only the scoped caller for %s", async (path, caller, secret) => {
     await expect(authorizeCoreRequest(request(path, secret), configuration)).resolves.toBe(caller)

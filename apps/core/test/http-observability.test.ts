@@ -1,7 +1,7 @@
 import type { CoreBindings } from "@bob/core-types/bindings"
 
 import { makeCaptureTelemetry } from "@bob/observability"
-import { Layer, ManagedRuntime } from "effect"
+import { Effect, Layer, ManagedRuntime } from "effect"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { CoreComposition } from "../src/composition.ts"
@@ -29,6 +29,59 @@ beforeEach(() => {
 })
 
 describe("Core HTTP telemetry", () => {
+  it("stores and serves a run-scoped image through the attachment Interface", async () => {
+    const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba3"
+    const runId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba4"
+    const attachmentId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba5"
+    const body = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    const reference = {
+      id: attachmentId,
+      mediaType: "image/png" as const,
+      byteLength: body.byteLength,
+      contentHash: "attachment-hash"
+    }
+    const storeInbound = vi.fn(() => Effect.succeed(reference))
+    const loadForAgent = vi.fn(() => Effect.succeed({ ...reference, body }))
+    compositionHarness.current = testFixture<CoreComposition>({
+      services: { attachments: { storeInbound, loadForAgent } }
+    })
+    const ingressSecret = "i".repeat(64)
+    const agentSecret = "a".repeat(64)
+    const bindings = testFixture<CoreBindings>({
+      INGRESS_CALLER_SECRET: ingressSecret,
+      EGRESS_CALLER_SECRET: "e".repeat(64),
+      AGENT_CALLER_SECRET: agentSecret
+    })
+
+    const stored = await handleHttp(
+      new Request(`https://core.test/internal/inbound/${eventId}/attachments/0`, {
+        method: "PUT",
+        headers: {
+          "content-type": "image/png",
+          "x-bob-caller-token": ingressSecret
+        },
+        body
+      }),
+      bindings,
+      composeTestCore
+    )
+    const loaded = await handleHttp(
+      new Request(`https://core.test/internal/agent/runs/${runId}/attachments/${attachmentId}`, {
+        headers: { "x-bob-caller-token": agentSecret }
+      }),
+      bindings,
+      composeTestCore
+    )
+
+    expect(stored.status).toBe(201)
+    expect(await stored.json()).toEqual(reference)
+    expect(storeInbound).toHaveBeenCalledWith(eventId, 0, "image/png", body)
+    expect(loaded.status).toBe(200)
+    expect(loaded.headers.get("cache-control")).toBe("no-store")
+    expect(new Uint8Array(await loaded.arrayBuffer())).toEqual(body)
+    expect(loadForAgent).toHaveBeenCalledWith(runId, attachmentId)
+  })
+
   it("continues inbound confirmation through one server span", async () => {
     const markEnqueued = vi.fn(async () => undefined)
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.

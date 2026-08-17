@@ -87,6 +87,7 @@ export const inboundEvents = pgTable(
       .notNull()
       .default("unknown"),
     isGroup: boolean("is_group").notNull().default(false),
+    attachmentCount: integer("attachment_count").notNull().default(0),
     reactionClaimedAt: text("reaction_claimed_at"),
     correlationId: text("correlation_id").notNull(),
     enqueuedAt: text("enqueued_at"),
@@ -104,6 +105,29 @@ export const inboundEvents = pgTable(
       table.providerMessageHandle
     ),
     index("inbound_events_work_idx").on(table.processedAt, table.claimExpiresAt)
+  ]
+)
+
+export const messageAttachments = pgTable(
+  "message_attachments",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    messageId: text("message_id").notNull(),
+    inboundEventId: text("inbound_event_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    objectKey: text("object_key").notNull(),
+    mediaType: text("media_type", { enum: ["image/jpeg", "image/png"] }).notNull(),
+    byteLength: integer("byte_length").notNull(),
+    contentHash: text("content_hash").notNull(),
+    objectIv: text("object_iv").notNull(),
+    dataKeyVersion: integer("data_key_version").notNull(),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => [
+    uniqueIndex("message_attachments_event_ordinal_uq").on(table.inboundEventId, table.ordinal),
+    uniqueIndex("message_attachments_object_key_uq").on(table.objectKey),
+    index("message_attachments_message_idx").on(table.messageId)
   ]
 )
 

@@ -67,6 +67,7 @@ function composition(authorized: boolean, allowedScope: "run" | "admin" | "both"
     execute: vi.fn(() => Effect.die("not implemented in HTTP boundary test")),
     loadRunOperations: vi.fn(() => Effect.succeed([])),
     appendRunOperation: vi.fn(() => Effect.void),
+    loadAttachment: vi.fn(() => Effect.die("not implemented in HTTP boundary test")),
     checkReadiness: vi.fn(() => Effect.succeed(true))
   }
   const agent: Mutable<BobAgentShape> = {

@@ -12,6 +12,7 @@ import {
 export const BobSpanName = Schema.Literals([
   "bob.webhook.receive",
   "bob.inbound.invoke",
+  "bob.inbound.attachment.store",
   "bob.inbound.accept",
   "bob.inbound.persist",
   "bob.inbound.publish",
@@ -213,6 +214,7 @@ const safeModelPattern = /^gpt-[a-z0-9][a-z0-9.-]{0,90}$/
 const spanSemantics = {
   "bob.webhook.receive": { kind: "server", workflow: "inbound_message" },
   "bob.inbound.invoke": { kind: "client", workflow: "inbound_message" },
+  "bob.inbound.attachment.store": { kind: "client", workflow: "inbound_message" },
   "bob.inbound.accept": { kind: "server", workflow: "inbound_message" },
   "bob.inbound.persist": { kind: "internal", workflow: "inbound_message" },
   "bob.inbound.publish": { kind: "producer", workflow: "inbound_message" },

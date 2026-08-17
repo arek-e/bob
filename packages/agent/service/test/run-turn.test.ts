@@ -196,7 +196,8 @@ function serializeTelemetry(value: readonly object[]): string {
 
 const makeAgent = (
   executeTool: (command: ToolCommand, signal?: AbortSignal) => Promise<ToolResult>,
-  now: () => number = () => 1
+  now: () => number = () => 1,
+  loadAttachment?: PiAgentOptions["loadAttachment"]
 ) =>
   createTestPiAgent({
     catalogue: transitionalDeploymentProfile,
@@ -211,6 +212,7 @@ const makeAgent = (
         catch: (cause) => new AgentToolError({ message: "Test Tool failed", cause })
       }),
     now,
+    ...(loadAttachment === undefined ? {} : { loadAttachment }),
     dependencies
   })
 
@@ -225,6 +227,7 @@ const confirmedResult = (code: string, message: string): ToolResult => ({
 describe("Bob's direct pi-ai loop", () => {
   beforeEach(() => {
     modelHarness.reset()
+    modelHarness.model.input = ["text"]
   })
 
   it("runs a fixed content-free operational model smoke", async () => {
@@ -293,6 +296,47 @@ describe("Bob's direct pi-ai loop", () => {
       { role: "user", content: "I lost my reminders." },
       { role: "user", content: "List them." }
     ])
+  })
+
+  it("loads an image reference into the model transcript", async () => {
+    modelHarness.model.input = ["text", "image"]
+    modelHarness.state.responses.push(structuredResponse({ responseText: "I see the image." }))
+    const loadAttachment = vi.fn(() =>
+      Effect.succeed({ data: "iVBORw0KGgo=", mimeType: "image/png" })
+    )
+    const agent = makeAgent(
+      async () => okResult(),
+      () => 1,
+      loadAttachment
+    )
+    const attachment = {
+      id: "00000000-0000-4000-8000-000000000006",
+      mediaType: "image/png" as const,
+      byteLength: 8,
+      contentHash: "hash"
+    }
+
+    await expect(
+      agent.runTurn(
+        baseRequest({
+          userText: "",
+          currentTurnMessages: [
+            {
+              sourceMessageId: "00000000-0000-4000-8000-000000000004",
+              text: "",
+              attachments: [attachment]
+            }
+          ],
+          allowedTools: []
+        })
+      )
+    ).resolves.toMatchObject({ status: "completed" })
+
+    expect(loadAttachment).toHaveBeenCalledWith(baseRequest().runId, attachment)
+    expect(modelHarness.state.contexts[0]?.messages[0]).toMatchObject({
+      role: "user",
+      content: [{ type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" }]
+    })
   })
 
   it("keeps one opaque mutation identity across revisions of the same conversation turn", async () => {

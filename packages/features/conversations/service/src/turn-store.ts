@@ -13,11 +13,12 @@ import {
   conversationTurnMessages,
   conversationTurns,
   inboundEvents,
+  messageAttachments,
   messages
 } from "@bob/db-service/schema/conversations"
 import { allInTransaction } from "@bob/db-types"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
-import { and, asc, eq, isNull, lte, ne, or, sql } from "drizzle-orm"
+import { and, asc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 
 import { conversationTiming } from "./timing.ts"
@@ -324,6 +325,35 @@ export function makeConversationTurnStore(
           .orderBy(asc(messages.occurredAt), asc(messages.createdAt), asc(messages.id))
       )
       const key = (await ownerDataKeys.load(claimed.userId)).key
+      const attachmentRows =
+        rows.length === 0
+          ? []
+          : await Effect.runPromise(
+              database
+                .select({
+                  messageId: messageAttachments.messageId,
+                  id: messageAttachments.id,
+                  mediaType: messageAttachments.mediaType,
+                  byteLength: messageAttachments.byteLength,
+                  contentHash: messageAttachments.contentHash,
+                  ordinal: messageAttachments.ordinal
+                })
+                .from(messageAttachments)
+                .where(
+                  inArray(
+                    messageAttachments.messageId,
+                    rows.map((row) => row.messageId)
+                  )
+                )
+                .orderBy(asc(messageAttachments.ordinal))
+            )
+      const attachmentsByMessage = new Map<string, typeof attachmentRows>()
+      for (const attachment of attachmentRows) {
+        attachmentsByMessage.set(attachment.messageId, [
+          ...(attachmentsByMessage.get(attachment.messageId) ?? []),
+          attachment
+        ])
+      }
       const [channel] = await Effect.runPromise(
         database
           .select({
@@ -339,13 +369,22 @@ export function makeConversationTurnStore(
       if (channel === undefined) throw new Error("Conversation turn channel is missing")
       const [decrypted, number, fromNumber] = await Promise.all([
         Promise.all(
-          rows.map(async (row) => ({
-            ...row,
-            text: await protection.decryptText(key, {
-              ciphertext: row.textCiphertext,
-              iv: row.textIv
-            })
-          }))
+          rows.map(async (row) => {
+            const attachments = attachmentsByMessage.get(row.messageId)?.map((attachment) => ({
+              id: attachment.id,
+              mediaType: attachment.mediaType,
+              byteLength: attachment.byteLength,
+              contentHash: attachment.contentHash
+            }))
+            return {
+              ...row,
+              text: await protection.decryptText(key, {
+                ciphertext: row.textCiphertext,
+                iv: row.textIv
+              }),
+              ...(attachments === undefined || attachments.length === 0 ? {} : { attachments })
+            }
+          })
         ),
         protection.decryptText(key, {
           ciphertext: channel.senderCiphertext,
@@ -369,7 +408,8 @@ export function makeConversationTurnStore(
         isGroup: latest.isGroup,
         correlationId: latest.correlationId,
         number,
-        fromNumber
+        fromNumber,
+        ...(latest.attachments === undefined ? {} : { attachments: latest.attachments })
       }
       const latestWithTrace =
         latest.traceparent === null
@@ -386,7 +426,8 @@ export function makeConversationTurnStore(
           eventId: row.eventId,
           messageId: row.messageId,
           text: row.text,
-          ordinal: row.ordinal
+          ordinal: row.ordinal,
+          ...(row.attachments === undefined ? {} : { attachments: row.attachments })
         }))
       }
     },
