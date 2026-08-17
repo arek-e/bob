@@ -1,9 +1,12 @@
 import { Effect } from "effect"
 
 import { SendblueEgress } from "./composition.ts"
-import { reconcileInboundHistory } from "./reconcile.ts"
+import { InboundReconciliationError, reconcileInboundHistory } from "./reconcile.ts"
 
 function recoveryErrorCode(cause: unknown): string {
+  if (cause instanceof InboundReconciliationError) {
+    return cause.status === undefined ? cause.code : `sendblue_history_replay_http_${cause.status}`
+  }
   if (
     cause instanceof Error &&
     /^sendblue_(?:history_http_[1-5]\d{2}|history_replay_http_[1-5]\d{2}|lines_http_[1-5]\d{2}|line_unavailable)$/u.test(

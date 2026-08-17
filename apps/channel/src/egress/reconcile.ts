@@ -1,9 +1,19 @@
-import { Effect } from "effect"
+import { Data, Effect } from "effect"
 
 import { SendblueProvider } from "../sendblue/provider.ts"
 
 const HISTORY_LOOKBACK_MS = 15 * 60 * 1_000
 const HISTORY_FUTURE_SKEW_MS = 60 * 1_000
+
+export class InboundReconciliationError extends Data.TaggedError("InboundReconciliationError")<{
+  readonly code: "sendblue_line_unavailable" | "sendblue_history_replay_failed"
+  readonly status?: number
+  readonly cause?: unknown
+}> {
+  override get message(): string {
+    return this.status === undefined ? this.code : `sendblue_history_replay_http_${this.status}`
+  }
+}
 
 interface ReconcileInboundHistoryOptions {
   readonly sendblueNumber: string
@@ -21,7 +31,7 @@ export function reconcileInboundHistory(options: ReconcileInboundHistoryOptions)
   return Effect.gen(function* () {
     const sendblue = yield* SendblueProvider
     if (!(yield* sendblue.hasLine(options.sendblueNumber))) {
-      return yield* Effect.fail(new Error("sendblue_line_unavailable"))
+      return yield* new InboundReconciliationError({ code: "sendblue_line_unavailable" })
     }
     const messages = yield* sendblue.listInbound({
       sendblueNumber: options.sendblueNumber,
@@ -49,10 +59,17 @@ export function reconcileInboundHistory(options: ReconcileInboundHistoryOptions)
             body: JSON.stringify(message),
             signal
           }),
-        catch: (cause) => cause
+        catch: (cause) =>
+          new InboundReconciliationError({
+            code: "sendblue_history_replay_failed",
+            cause
+          })
       }).pipe(Effect.timeout(10_000))
       if (!result.ok) {
-        return yield* Effect.fail(new Error(`sendblue_history_replay_http_${result.status}`))
+        return yield* new InboundReconciliationError({
+          code: "sendblue_history_replay_failed",
+          status: result.status
+        })
       }
     }
     return {

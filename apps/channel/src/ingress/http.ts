@@ -6,7 +6,7 @@ import {
   recordDecision,
   withBobSpan
 } from "@bob/observability"
-import { Effect, Schema } from "effect"
+import { Data, Effect, Schema } from "effect"
 
 import { downloadSendblueImage } from "../sendblue/media.ts"
 import { timingSafeEqual } from "../sendblue/provider.ts"
@@ -15,6 +15,12 @@ import { decodeWebhookPayload, normalizeInbound, normalizeStatus } from "../send
 import { SendblueIngress } from "./composition.ts"
 
 const MAX_BODY_BYTES = 16 * 1024
+
+class RequestBodyTooLargeError extends Data.TaggedError("RequestBodyTooLargeError") {
+  override get message(): string {
+    return "body_too_large"
+  }
+}
 
 class WorkflowResponseFailure extends Schema.TaggedError<WorkflowResponseFailure>()(
   "WorkflowResponseFailure",
@@ -31,9 +37,9 @@ function readJson(request: Request) {
   return Effect.tryPromise({
     try: async () => {
       const declaredLength = Number(request.headers.get("content-length") ?? "0")
-      if (declaredLength > MAX_BODY_BYTES) throw new Error("body_too_large")
+      if (declaredLength > MAX_BODY_BYTES) throw new RequestBodyTooLargeError()
       const bytes = new Uint8Array(await request.arrayBuffer())
-      if (bytes.byteLength > MAX_BODY_BYTES) throw new Error("body_too_large")
+      if (bytes.byteLength > MAX_BODY_BYTES) throw new RequestBodyTooLargeError()
       return JSON.parse(new TextDecoder().decode(bytes)) as unknown
     },
     catch: (cause) => cause
@@ -343,10 +349,8 @@ export function handleIngressHttp(request: Request) {
     Effect.catch((cause) =>
       Effect.succeed(
         response(
-          cause instanceof Error && cause.message === "body_too_large"
-            ? "body_too_large"
-            : "invalid_webhook",
-          cause instanceof Error && cause.message === "body_too_large" ? 413 : 400
+          cause instanceof RequestBodyTooLargeError ? "body_too_large" : "invalid_webhook",
+          cause instanceof RequestBodyTooLargeError ? 413 : 400
         )
       )
     )

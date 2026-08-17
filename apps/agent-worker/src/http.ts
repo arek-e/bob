@@ -22,6 +22,7 @@ import type { AgentComposition } from "./composition.ts"
 
 import { AccessVerifier } from "./access.ts"
 import { CoreToolClient } from "./core-tools.ts"
+import { RequestBodyTooLargeError } from "./http-errors.ts"
 
 const MAX_BODY_BYTES = 64 * 1024
 const securityHeaders = {
@@ -41,7 +42,7 @@ function json<Value>(
 
 async function readJson(request: Request): Promise<typeof Schema.Json.Type> {
   const declaredLength = Number(request.headers.get("content-length") ?? "0")
-  if (declaredLength > MAX_BODY_BYTES) throw new Error("body_too_large")
+  if (declaredLength > MAX_BODY_BYTES) throw new RequestBodyTooLargeError()
   if (request.body === null) throw new Error("invalid_body")
   const reader = request.body.getReader()
   const chunks: Uint8Array[] = []
@@ -53,7 +54,7 @@ async function readJson(request: Request): Promise<typeof Schema.Json.Type> {
       size += next.value.byteLength
       if (size > MAX_BODY_BYTES) {
         await reader.cancel()
-        throw new Error("body_too_large")
+        throw new RequestBodyTooLargeError()
       }
       chunks.push(next.value)
     }
@@ -280,7 +281,7 @@ export async function handleAgentHttp(
     }
     return json({ code: "not_found" }, 404)
   } catch (error) {
-    const tooLarge = error instanceof Error && error.message === "body_too_large"
+    const tooLarge = error instanceof RequestBodyTooLargeError
     return json({ code: tooLarge ? "body_too_large" : "invalid_request" }, tooLarge ? 413 : 400)
   }
 }

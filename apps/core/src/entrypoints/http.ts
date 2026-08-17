@@ -37,9 +37,15 @@ import { OwnerDataKeyStore } from "@bob/policy-types/owner-data-key"
 import { OwnerSettingsUpdate } from "@bob/settings-types/settings"
 import { OwnerSettingsStore } from "@bob/settings-types/store"
 import { sql } from "drizzle-orm"
-import { Effect, Schema } from "effect"
+import { Data, Effect, Schema } from "effect"
 
 import type { CoreComposer, CoreComposition, CoreRuntimeRequirements } from "../composition.ts"
+
+class RequestBodyTooLargeError extends Data.TaggedError("RequestBodyTooLargeError") {
+  override get message(): string {
+    return "body_too_large"
+  }
+}
 
 async function wakeSettledConversationRun(
   composition: CoreComposition,
@@ -107,9 +113,9 @@ function secure(response: Response): Response {
 
 async function readJson(request: Request): Promise<typeof Schema.Json.Type> {
   const declaredLength = Number(request.headers.get("content-length") ?? "0")
-  if (declaredLength > MAX_BODY_BYTES) throw new Error("body_too_large")
+  if (declaredLength > MAX_BODY_BYTES) throw new RequestBodyTooLargeError()
   const bytes = new Uint8Array(await request.arrayBuffer())
-  if (bytes.byteLength > MAX_BODY_BYTES) throw new Error("body_too_large")
+  if (bytes.byteLength > MAX_BODY_BYTES) throw new RequestBodyTooLargeError()
   return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(new TextDecoder().decode(bytes)))
 }
 
@@ -838,7 +844,7 @@ export async function handleHttp(
     }
     return json({ code: "not_found" }, 404)
   } catch (error) {
-    const status = error instanceof Error && error.message === "body_too_large" ? 413 : 400
+    const status = error instanceof RequestBodyTooLargeError ? 413 : 400
     return json({ code: status === 413 ? "body_too_large" : "invalid_request" }, status)
   }
 }

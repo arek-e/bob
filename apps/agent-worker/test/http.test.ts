@@ -544,4 +544,20 @@ describe("agent HTTP boundary", () => {
     expect(response.status).toBe(401)
     expect(target.agent.startDeviceLogin).not.toHaveBeenCalled()
   })
+
+  it("rejects an oversized request body", async () => {
+    const target = composition(true)
+    const response = await handleAgentHttp(
+      new Request("http://agent/v1/run", {
+        method: "POST",
+        headers: { "content-length": String(64 * 1024 + 1) },
+        body: "{}"
+      }),
+      target
+    )
+
+    expect(response.status).toBe(413)
+    expect(await response.json()).toEqual({ code: "body_too_large" })
+    expect(target.agent.runTurn).not.toHaveBeenCalled()
+  })
 })

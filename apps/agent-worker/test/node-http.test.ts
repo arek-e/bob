@@ -1,6 +1,6 @@
 import { once } from "node:events"
 import { createServer, request as httpRequest } from "node:http"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { createNodeHttpHandler } from "../src/node-http.ts"
 
@@ -54,5 +54,40 @@ describe("agent Node HTTP bridge", () => {
       server.close((error) => (error === undefined ? resolve() : reject(error)))
     )
     expect(outcome).toBe("cancelled")
+  })
+
+  it("rejects an oversized Node request before dispatch", async () => {
+    const handle = vi.fn(async () => new Response(null, { status: 204 }))
+    const server = createServer(createNodeHttpHandler(handle))
+    server.listen(0, "127.0.0.1")
+    await once(server, "listening")
+    const address = server.address()
+    if (address === null || !(address instanceof Object)) throw new Error("Server has no port")
+    const client = httpRequest({
+      host: "127.0.0.1",
+      port: address.port,
+      method: "POST",
+      path: "/v1/run",
+      headers: {
+        "content-length": String(64 * 1024 + 1),
+        "content-type": "application/json"
+      }
+    })
+    const responsePromise = once(client, "response")
+    client.end("{}")
+    const [response] = await responsePromise
+    const chunks: Uint8Array[] = []
+    for await (const chunk of response) chunks.push(new Uint8Array(chunk))
+
+    client.destroy()
+    server.closeAllConnections()
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error === undefined ? resolve() : reject(error)))
+    )
+    expect(response.statusCode).toBe(413)
+    expect(JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)))).toEqual({
+      code: "body_too_large"
+    })
+    expect(handle).not.toHaveBeenCalled()
   })
 })

@@ -627,4 +627,20 @@ describe("Sendblue ingress", () => {
       traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
     })
   })
+
+  it("rejects an oversized webhook body", async () => {
+    const target = bindings()
+    const oversized = request("s".repeat(64))
+    oversized.headers.set("content-length", String(16 * 1024 + 1))
+
+    const response = await handleIngressHttp(
+      oversized,
+      // SAFETY: This controlled test fixture matches the asserted contract used by this test.
+      target.value as never
+    )
+
+    expect(response.status).toBe(413)
+    expect(await response.json()).toEqual({ code: "body_too_large" })
+    expect(target.coreFetch).not.toHaveBeenCalled()
+  })
 })
