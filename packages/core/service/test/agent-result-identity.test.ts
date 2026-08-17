@@ -39,12 +39,16 @@ const result = {
 describe("agent result identity", () => {
   it("accepts only the requested run and correlation IDs", () => {
     expect(assertAgentResultIdentity(request, result)).toBe(result)
-    expect(() =>
+    try {
       assertAgentResultIdentity(request, {
         ...result,
         runId: "00000000-0000-4000-8000-000000000099"
       })
-    ).toThrow("policy")
+      expect.fail("Expected an agent call identity failure")
+    } catch (error) {
+      expect(error).toMatchObject({ _tag: "AgentCallError", code: "policy" })
+      expect(error).toHaveProperty("message", "Agent host request failed: policy")
+    }
     expect(() =>
       assertAgentResultIdentity(request, {
         ...result,

@@ -39,7 +39,7 @@ import {
 } from "@bob/policy-service/rules"
 import { requiresPersonalGrounding } from "@bob/policy-types/output-safety"
 import { OwnerSettingsStore } from "@bob/settings-types/store"
-import { Effect, Schema } from "effect"
+import { Data, Effect, Schema } from "effect"
 
 import type { CoreComposition } from "./composition.ts"
 
@@ -56,11 +56,11 @@ type CoreServiceSet = {
 }
 
 type CoreWorkflowComposition = CoreComposition & { readonly interfaces: CoreServiceSet }
-class AgentCallError extends Error {
-  readonly _tag = "AgentCallError"
-
-  constructor(readonly code: NonNullable<AgentRunResult["errorCode"]>) {
-    super(`Agent host request failed: ${code}`)
+class AgentCallError extends Data.TaggedError("AgentCallError")<{
+  readonly code: NonNullable<AgentRunResult["errorCode"]>
+}> {
+  override get message(): string {
+    return `Agent host request failed: ${this.code}`
   }
 }
 
@@ -69,7 +69,7 @@ export function assertAgentResultIdentity(
   result: AgentRunResult
 ): AgentRunResult {
   if (result.runId !== request.runId || result.correlationId !== request.correlationId) {
-    throw new AgentCallError("policy")
+    throw new AgentCallError({ code: "policy" })
   }
   return result
 }
@@ -612,14 +612,15 @@ function invokeAgent(
                     : response.status >= 400 && response.status < 500
                       ? "policy"
                       : "provider"
-            throw new AgentCallError(code)
+            throw new AgentCallError({ code })
           }
           return assertAgentResultIdentity(
             request,
             Schema.decodeUnknownSync(AgentRunResult)(await response.json())
           )
         },
-        catch: (error) => (error instanceof AgentCallError ? error : new AgentCallError("provider"))
+        catch: (error) =>
+          error instanceof AgentCallError ? error : new AgentCallError({ code: "provider" })
       }).pipe(
         Effect.timeout(conversationTiming.coreAgentTimeoutMs),
         Effect.tap((result) =>
