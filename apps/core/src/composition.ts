@@ -3,10 +3,9 @@ import type { CoreBindings } from "@bob/core-types/bindings"
 import type { Telemetry } from "@bob/observability"
 
 import { composeGeneralCore } from "@bob/core-service/composition"
+import { coreRuntimeProfile } from "@bob/deployment-profile-service/profiles"
 import { noopTelemetryLayer } from "@bob/observability"
 import { Layer, ManagedRuntime } from "effect"
-
-import { coreRuntimeProfile } from "./profiles/core.ts"
 
 export const defaultRuntimeProfile = coreRuntimeProfile
 

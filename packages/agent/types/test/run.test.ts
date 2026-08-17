@@ -1,4 +1,4 @@
-import { MAX_TOOL_RESULT_BYTES, ToolResult } from "@bob/capabilities-types/tools"
+import { MAX_TOOL_RESULT_BYTES, ToolResult } from "@bob/tools-types/tools"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 

@@ -1,0 +1,33 @@
+{
+  "name": "@bob/deployment-profile-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./profiles": "./src/profiles.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/connections-service": "workspace:*",
+    "@bob/conversations-service": "workspace:*",
+    "@bob/core-types": "workspace:*",
+    "@bob/deployment-profile-types": "workspace:*",
+    "@bob/journal-service": "workspace:*",
+    "@bob/memory-service": "workspace:*",
+    "@bob/memory-types": "workspace:*",
+    "@bob/reminders-service": "workspace:*",
+    "@bob/retrieval-types": "workspace:*",
+    "@bob/settings-service": "workspace:*",
+    "@bob/settings-types": "workspace:*",
+    "@bob/tools-service": "workspace:*",
+    "@bob/tools-types": "workspace:*",
+    "@bob/training-service": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  },
+  "devDependencies": {
+    "vitest": "4.1.9"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@bob/tools-types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./adapter": "./src/adapter.ts",
+    "./catalogue": "./src/catalogue.ts",
+    "./definitions": "./src/definitions.ts",
+    "./receipts": "./src/receipts.ts",
+    "./tools": "./src/tools.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/shared-types": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  }
+}

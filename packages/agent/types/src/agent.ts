@@ -1,4 +1,4 @@
-import type { ToolCommand, ToolResult } from "@bob/capabilities-types/tools"
+import type { ToolCommand, ToolResult } from "@bob/tools-types/tools"
 
 import { Context, Effect, Schema } from "effect"
 

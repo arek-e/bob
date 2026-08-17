@@ -1,4 +1,5 @@
 import type { ConversationTurnSnapshot } from "@bob/conversations-service/turn-store"
+import type { ToolCommand, ToolResult } from "@bob/tools-types/tools"
 
 import { artifactStoreLayer } from "@bob/artifacts-service/store"
 import { contextStoreLayer } from "@bob/context-service/store"
@@ -10,9 +11,14 @@ import {
   MessageAttachmentStore,
   type MessageAttachmentStoreService
 } from "@bob/conversations-types/attachment-store"
-import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
+import {
+  type MutationActivity,
+  type ToolExecutorService,
+  ToolExecutorError
+} from "@bob/conversations-types/tool-executor"
 import { makeRuntimeModules } from "@bob/core-types/runtime-module"
 import { deliveryStoreLayer } from "@bob/delivery-service/store"
+import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
 import { makeJournalConversationWorkflow } from "@bob/journal-service/conversation-workflow"
 import { noopTelemetryLayer } from "@bob/observability"
 import { alertStoreLayer } from "@bob/operations-service/alerts/store"
@@ -34,12 +40,20 @@ interface CompatibilityServices {
   readonly events?: object
   readonly runs?: TestFixture<Parameters<typeof agentRunStoreLayer>[0]>
   readonly settings?: TestFixture<Parameters<typeof ownerSettingsStoreLayer>[0]>
-  readonly tools?: TestFixture<Parameters<typeof toolExecutorLayer>[0]>
+  readonly tools?: ToolExecutorFixture
   readonly training?: TestFixture<Parameters<typeof makeTrainingConversationWorkflow>[0]>
   readonly journal?: TestFixture<Parameters<typeof makeJournalConversationWorkflow>[0]>
   readonly turns?: TestFixture<Parameters<typeof conversationTurnStoreLayer>[0]>
   readonly reminders?: TestFixture<Parameters<typeof makeReminderConversationWorkflow>[1]>
   readonly conversations?: TestFixture<Parameters<typeof conversationStoreLayer>[0]>
+}
+
+type FixtureResult<Value> = Value | Promise<Value>
+
+interface ToolExecutorFixture {
+  readonly execute?: (input: ToolCommand) => FixtureResult<ToolResult>
+  readonly mutationActivity?: (runId: string) => FixtureResult<MutationActivity>
+  readonly expireMutationRecovery?: (runId: string) => FixtureResult<boolean>
 }
 
 interface CompatibilityComposition {
@@ -64,6 +78,49 @@ function completeAdapter<Adapter extends object>(value: TestFixture<Adapter> | u
   })
   // SAFETY: The Proxy supplies a failing async operation for each omitted Adapter method.
   return completed as Adapter
+}
+
+function fixtureOperation<Value>(
+  operation: keyof ToolExecutorService,
+  execute: (() => FixtureResult<Value>) | undefined,
+  fallback: Value
+) {
+  if (execute === undefined) return Effect.succeed(fallback)
+  return Effect.tryPromise({
+    try: () => Promise.resolve(execute()),
+    catch: (cause) => new ToolExecutorError({ operation, cause })
+  })
+}
+
+function completeToolExecutor(value: ToolExecutorFixture | undefined): ToolExecutorService {
+  return {
+    execute: (input) =>
+      fixtureOperation(
+        "execute",
+        value?.execute === undefined ? undefined : () => value.execute?.(input) ?? neverFixture(),
+        { ok: true, code: "unused", message: "Unused." }
+      ),
+    mutationActivity: (runId) =>
+      fixtureOperation(
+        "mutationActivity",
+        value?.mutationActivity === undefined
+          ? undefined
+          : () => value.mutationActivity?.(runId) ?? neverFixture(),
+        { status: "none" }
+      ),
+    expireMutationRecovery: (runId) =>
+      fixtureOperation(
+        "expireMutationRecovery",
+        value?.expireMutationRecovery === undefined
+          ? undefined
+          : () => value.expireMutationRecovery?.(runId) ?? neverFixture(),
+        false
+      )
+  }
+}
+
+function neverFixture(): never {
+  throw new Error("The checked fixture operation is missing")
 }
 
 export function testFixture<
@@ -110,7 +167,7 @@ export function testFixture<
           attachmentService?.loadForAgent ?? (() => Effect.die("Missing attachment store"))
       })
     ),
-    toolExecutorLayer(completeAdapter(services?.tools)),
+    toolExecutorLayer(completeToolExecutor(services?.tools)),
     conversationTurnStoreLayer(completeAdapter(services?.turns)),
     deliveryStoreLayer(completeAdapter(services?.delivery)),
     alertStoreLayer(completeAdapter(services?.alerts)),

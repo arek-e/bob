@@ -15,10 +15,9 @@
   "dependencies": {
     "@bob/agent-service": "workspace:*",
     "@bob/agent-types": "workspace:*",
-    "@bob/capabilities-types": "workspace:*",
-    "@bob/core-service": "workspace:*",
-    "@bob/core-types": "workspace:*",
+    "@bob/deployment-profile-types": "workspace:*",
     "@bob/observability": "workspace:*",
+    "@bob/tools-types": "workspace:*",
     "@effect/platform-node": "4.0.0-beta.107",
     "effect": "4.0.0-beta.107",
     "varlock": "1.16.1"

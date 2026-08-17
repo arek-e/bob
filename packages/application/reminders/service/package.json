@@ -1,0 +1,42 @@
+{
+  "name": "@bob/reminders-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./conversation-workflow": "./src/conversation-workflow.ts",
+    "./delivery-target": "./src/delivery-target.ts",
+    "./evidence-source": "./src/evidence-source.ts",
+    "./owner-routes": "./src/owner-routes.ts",
+    "./rules": "./src/rules.ts",
+    "./scheduled-workflow": "./src/scheduled-workflow.ts",
+    "./store": "./src/store.ts",
+    "./tool-adapter": "./src/tool-adapter.ts",
+    "./vertical-module": "./src/vertical-module.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/conversations-types": "workspace:*",
+    "@bob/core-types": "workspace:*",
+    "@bob/db-service": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/delivery-types": "workspace:*",
+    "@bob/deployment-profile-types": "workspace:*",
+    "@bob/memory-service": "workspace:*",
+    "@bob/memory-types": "workspace:*",
+    "@bob/observability": "workspace:*",
+    "@bob/policy-service": "workspace:*",
+    "@bob/policy-types": "workspace:*",
+    "@bob/reminders-types": "workspace:*",
+    "@bob/shared-types": "workspace:*",
+    "@bob/tools-service": "workspace:*",
+    "@bob/tools-types": "workspace:*",
+    "@effect/sql-pg": "4.0.0-beta.107",
+    "@js-temporal/polyfill": "0.5.1",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "4.0.0-beta.107"
+  }
+}

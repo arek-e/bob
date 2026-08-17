@@ -19,13 +19,6 @@ import {
   type DeviceLoginEvent
 } from "@bob/agent-types/run"
 import {
-  ToolResult as ToolResultSchema,
-  type CapabilityCatalogue,
-  type ToolCommand,
-  type ToolName,
-  type ToolResult
-} from "@bob/capabilities-types/tools"
-import {
   featureForToolName,
   featureForTools,
   annotateModelUsage,
@@ -34,6 +27,13 @@ import {
   type BobDecision,
   type BobTurnPhase
 } from "@bob/observability"
+import {
+  ToolResult as ToolResultSchema,
+  type CapabilityCatalogue,
+  type ToolCommand,
+  type ToolName,
+  type ToolResult
+} from "@bob/tools-types/tools"
 import {
   contentText,
   createModels,

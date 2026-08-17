@@ -1,9 +1,9 @@
 import type { ArtifactStoreAdapter } from "@bob/artifacts-types/store"
-import type { CapabilityCatalogue } from "@bob/capabilities-types/tools"
 import type { CoreDatabase } from "@bob/db-types"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 import type { RetrievalPipelineAdapter } from "@bob/retrieval-types/retrieval"
+import type { CapabilityCatalogue } from "@bob/tools-types/tools"
 
 import { makeArtifactContextSource } from "@bob/artifacts-service/context-source"
 import { makePrivateTextReader } from "@bob/context-service/private-text"

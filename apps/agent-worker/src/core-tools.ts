@@ -4,12 +4,8 @@ import {
   type AgentRunOperation,
   type CurrentTurnMessage
 } from "@bob/agent-types/run"
-import {
-  ToolResult,
-  type CapabilityCatalogue,
-  type ToolCommand
-} from "@bob/capabilities-types/tools"
 import { currentBobCorrelationId, Telemetry, injectCurrentTraceparent } from "@bob/observability"
+import { ToolResult, type CapabilityCatalogue, type ToolCommand } from "@bob/tools-types/tools"
 import { Context, Effect, Exit, Layer, Option, Schema } from "effect"
 
 export class CoreToolClientError extends Schema.TaggedError<CoreToolClientError>()(

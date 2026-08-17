@@ -1,0 +1,42 @@
+{
+  "name": "@bob/training-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./conversation-workflow": "./src/conversation-workflow.ts",
+    "./evidence-source": "./src/evidence-source.ts",
+    "./legacy-artifact": "./src/legacy-artifact.ts",
+    "./module": "./src/module.ts",
+    "./owner-routes": "./src/owner-routes.ts",
+    "./proposal-store": "./src/proposal-store.ts",
+    "./rules": "./src/rules.ts",
+    "./store": "./src/store.ts",
+    "./tool-adapter": "./src/tool-adapter.ts",
+    "./vertical-module": "./src/vertical-module.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/artifacts-service": "workspace:*",
+    "@bob/artifacts-types": "workspace:*",
+    "@bob/conversations-types": "workspace:*",
+    "@bob/core-types": "workspace:*",
+    "@bob/db-service": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/deployment-profile-types": "workspace:*",
+    "@bob/memory-service": "workspace:*",
+    "@bob/memory-types": "workspace:*",
+    "@bob/policy-service": "workspace:*",
+    "@bob/policy-types": "workspace:*",
+    "@bob/shared-types": "workspace:*",
+    "@bob/tools-service": "workspace:*",
+    "@bob/tools-types": "workspace:*",
+    "@bob/training-types": "workspace:*",
+    "@effect/sql-pg": "4.0.0-beta.107",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "4.0.0-beta.107"
+  }
+}

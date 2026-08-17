@@ -1,4 +1,4 @@
-import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
+import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
 import { withBobSpan, parseTraceparent, makeCaptureTelemetry } from "@bob/observability"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"

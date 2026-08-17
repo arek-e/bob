@@ -3,7 +3,7 @@ import type { CoreBindings } from "@bob/core-types/bindings"
 import type { OutboundJob } from "@bob/core-types/jobs"
 
 import { AgentRunRequest } from "@bob/agent-types/run"
-import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
+import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
 import { makeCaptureTelemetry } from "@bob/observability"
 import { Effect, Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"

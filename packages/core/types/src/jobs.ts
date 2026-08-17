@@ -1,4 +1,4 @@
-import { IsoDateTime, Uuid } from "@bob/capabilities-types/shared"
+import { IsoDateTime, Uuid } from "@bob/shared-types/shared"
 import { Schema } from "effect"
 
 const Traceparent = Schema.String.check(Schema.isPattern(/^00-[0-9a-f]{32}-[0-9a-f]{16}-(00|01)$/))

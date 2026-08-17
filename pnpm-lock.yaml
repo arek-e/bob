@@ -50,18 +50,15 @@ importers:
       '@bob/agent-types':
         specifier: workspace:*
         version: link:../../packages/agent/types
-      '@bob/capabilities-types':
+      '@bob/deployment-profile-types':
         specifier: workspace:*
-        version: link:../../packages/features/capabilities/types
-      '@bob/core-service':
-        specifier: workspace:*
-        version: link:../../packages/core/service
-      '@bob/core-types':
-        specifier: workspace:*
-        version: link:../../packages/core/types
+        version: link:../../packages/deployment-profile/types
       '@bob/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../packages/tools/types
       '@effect/platform-node':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)(ioredis@5.11.1)
@@ -80,13 +77,13 @@ importers:
     dependencies:
       '@bob/conversations-types':
         specifier: workspace:*
-        version: link:../../packages/features/conversations/types
+        version: link:../../packages/application/conversations/types
       '@bob/core-types':
         specifier: workspace:*
         version: link:../../packages/core/types
       '@bob/delivery-types':
         specifier: workspace:*
-        version: link:../../packages/features/delivery/types
+        version: link:../../packages/application/delivery/types
       '@bob/job-queue-runtime':
         specifier: workspace:*
         version: link:../../packages/job-queue/runtime
@@ -115,15 +112,9 @@ importers:
       '@bob/agent-types':
         specifier: workspace:*
         version: link:../../packages/agent/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../packages/features/capabilities/types
-      '@bob/connections-service':
-        specifier: workspace:*
-        version: link:../../packages/domains/connections/service
       '@bob/conversations-types':
         specifier: workspace:*
-        version: link:../../packages/features/conversations/types
+        version: link:../../packages/application/conversations/types
       '@bob/core-service':
         specifier: workspace:*
         version: link:../../packages/core/service
@@ -135,22 +126,22 @@ importers:
         version: link:../../packages/db/service
       '@bob/delivery-service':
         specifier: workspace:*
-        version: link:../../packages/features/delivery/service
+        version: link:../../packages/application/delivery/service
       '@bob/delivery-types':
         specifier: workspace:*
-        version: link:../../packages/features/delivery/types
+        version: link:../../packages/application/delivery/types
+      '@bob/deployment-profile-service':
+        specifier: workspace:*
+        version: link:../../packages/deployment-profile/service
       '@bob/job-queue-runtime':
         specifier: workspace:*
         version: link:../../packages/job-queue/runtime
       '@bob/job-queue-types':
         specifier: workspace:*
         version: link:../../packages/job-queue/types
-      '@bob/journal-service':
-        specifier: workspace:*
-        version: link:../../packages/domains/journal/service
       '@bob/memory-types':
         specifier: workspace:*
-        version: link:../../packages/features/memory/types
+        version: link:../../packages/application/memory/types
       '@bob/object-store-runtime':
         specifier: workspace:*
         version: link:../../packages/object-store/runtime
@@ -159,22 +150,19 @@ importers:
         version: link:../../packages/observability
       '@bob/operations-types':
         specifier: workspace:*
-        version: link:../../packages/features/operations/types
+        version: link:../../packages/application/operations/types
       '@bob/policy-service':
         specifier: workspace:*
-        version: link:../../packages/features/policy/service
+        version: link:../../packages/application/policy/service
       '@bob/policy-types':
         specifier: workspace:*
-        version: link:../../packages/features/policy/types
-      '@bob/reminders-service':
-        specifier: workspace:*
-        version: link:../../packages/domains/reminders/service
+        version: link:../../packages/application/policy/types
       '@bob/settings-types':
         specifier: workspace:*
-        version: link:../../packages/features/settings/types
-      '@bob/training-service':
+        version: link:../../packages/application/settings/types
+      '@bob/tools-types':
         specifier: workspace:*
-        version: link:../../packages/domains/training/service
+        version: link:../../packages/tools/types
       '@effect/sql-pg':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)
@@ -199,10 +187,10 @@ importers:
         version: link:../../packages/agent/types
       '@bob/operations-types':
         specifier: workspace:*
-        version: link:../../packages/features/operations/types
+        version: link:../../packages/application/operations/types
       '@bob/settings-types':
         specifier: workspace:*
-        version: link:../../packages/features/settings/types
+        version: link:../../packages/application/settings/types
       '@tanstack/solid-router':
         specifier: 1.170.24
         version: 1.170.24(solid-js@1.9.14)
@@ -245,16 +233,16 @@ importers:
         version: link:../types
       '@bob/artifacts-types':
         specifier: workspace:*
-        version: link:../../features/artifacts/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../features/capabilities/types
+        version: link:../../application/artifacts/types
       '@bob/observability':
         specifier: workspace:*
         version: link:../../observability
       '@bob/policy-types':
         specifier: workspace:*
-        version: link:../../features/policy/types
+        version: link:../../application/policy/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../tools/types
       '@earendil-works/pi-ai':
         specifier: 0.84.1
         version: 0.84.1(ws@8.21.3)(zod@4.4.3)
@@ -262,12 +250,9 @@ importers:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
     devDependencies:
-      '@bob/core-service':
+      '@bob/deployment-profile-types':
         specifier: workspace:*
-        version: link:../../core/service
-      '@bob/core-types':
-        specifier: workspace:*
-        version: link:../../core/types
+        version: link:../../deployment-profile/types
       '@effect/vitest':
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107(effect@4.0.0-beta.107)(vitest@4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))
@@ -276,16 +261,724 @@ importers:
     dependencies:
       '@bob/artifacts-types':
         specifier: workspace:*
-        version: link:../../features/artifacts/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../features/capabilities/types
+        version: link:../../application/artifacts/types
       '@bob/context-types':
         specifier: workspace:*
-        version: link:../../features/context/types
+        version: link:../../application/context/types
       '@bob/settings-types':
         specifier: workspace:*
-        version: link:../../features/settings/types
+        version: link:../../application/settings/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../tools/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/artifacts/service:
+    dependencies:
+      '@bob/artifacts-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/context-service':
+        specifier: workspace:*
+        version: link:../../context/service
+      '@bob/context-types':
+        specifier: workspace:*
+        version: link:../../context/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/policy-service':
+        specifier: workspace:*
+        version: link:../../policy/service
+      '@bob/policy-types':
+        specifier: workspace:*
+        version: link:../../policy/types
+      '@effect/sql-pg':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/artifacts/types:
+    dependencies:
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/connections/service:
+    dependencies:
+      '@bob/connections-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/conversations-types':
+        specifier: workspace:*
+        version: link:../../conversations/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../../core/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/deployment-profile-types':
+        specifier: workspace:*
+        version: link:../../../deployment-profile/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      '@effect/sql-pg':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/connections/types:
+    dependencies:
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/context/service:
+    dependencies:
+      '@bob/context-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/policy-service':
+        specifier: workspace:*
+        version: link:../../policy/service
+      '@bob/policy-types':
+        specifier: workspace:*
+        version: link:../../policy/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/context/types:
+    dependencies:
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/conversations/service:
+    dependencies:
+      '@bob/agent-types':
+        specifier: workspace:*
+        version: link:../../../agent/types
+      '@bob/artifacts-service':
+        specifier: workspace:*
+        version: link:../../artifacts/service
+      '@bob/artifacts-types':
+        specifier: workspace:*
+        version: link:../../artifacts/types
+      '@bob/context-service':
+        specifier: workspace:*
+        version: link:../../context/service
+      '@bob/context-types':
+        specifier: workspace:*
+        version: link:../../context/types
+      '@bob/conversations-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/memory-service':
+        specifier: workspace:*
+        version: link:../../memory/service
+      '@bob/memory-types':
+        specifier: workspace:*
+        version: link:../../memory/types
+      '@bob/object-store-types':
+        specifier: workspace:*
+        version: link:../../../object-store/types
+      '@bob/observability':
+        specifier: workspace:*
+        version: link:../../../observability
+      '@bob/policy-service':
+        specifier: workspace:*
+        version: link:../../policy/service
+      '@bob/policy-types':
+        specifier: workspace:*
+        version: link:../../policy/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      '@effect/sql-pg':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/conversations/types:
+    dependencies:
+      '@bob/agent-types':
+        specifier: workspace:*
+        version: link:../../../agent/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/delivery/service:
+    dependencies:
+      '@bob/conversations-types':
+        specifier: workspace:*
+        version: link:../../conversations/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../../core/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/delivery-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/job-queue-types':
+        specifier: workspace:*
+        version: link:../../../job-queue/types
+      '@bob/operations-service':
+        specifier: workspace:*
+        version: link:../../operations/service
+      '@bob/policy-service':
+        specifier: workspace:*
+        version: link:../../policy/service
+      '@bob/policy-types':
+        specifier: workspace:*
+        version: link:../../policy/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@effect/sql-pg':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/delivery/types:
+    dependencies:
+      '@bob/conversations-types':
+        specifier: workspace:*
+        version: link:../../conversations/types
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/journal/service:
+    dependencies:
+      '@bob/conversations-types':
+        specifier: workspace:*
+        version: link:../../conversations/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../../core/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/deployment-profile-types':
+        specifier: workspace:*
+        version: link:../../../deployment-profile/types
+      '@bob/journal-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/memory-service':
+        specifier: workspace:*
+        version: link:../../memory/service
+      '@bob/memory-types':
+        specifier: workspace:*
+        version: link:../../memory/types
+      '@bob/policy-service':
+        specifier: workspace:*
+        version: link:../../policy/service
+      '@bob/policy-types':
+        specifier: workspace:*
+        version: link:../../policy/types
+      '@bob/retrieval-service':
+        specifier: workspace:*
+        version: link:../../retrieval/service
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      '@effect/sql-pg':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/journal/types:
+    dependencies:
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/memory/service:
+    dependencies:
+      '@bob/context-service':
+        specifier: workspace:*
+        version: link:../../context/service
+      '@bob/conversations-types':
+        specifier: workspace:*
+        version: link:../../conversations/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/memory-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/policy-service':
+        specifier: workspace:*
+        version: link:../../policy/service
+      '@bob/policy-types':
+        specifier: workspace:*
+        version: link:../../policy/types
+      '@bob/retrieval-service':
+        specifier: workspace:*
+        version: link:../../retrieval/service
+      '@bob/retrieval-types':
+        specifier: workspace:*
+        version: link:../../retrieval/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      '@effect/sql-pg':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+    devDependencies:
+      '@bob/skills-service':
+        specifier: workspace:*
+        version: link:../../skills/service
+
+  packages/application/memory/types:
+    dependencies:
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/operations/service:
+    dependencies:
+      '@bob/agent-types':
+        specifier: workspace:*
+        version: link:../../../agent/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/observability':
+        specifier: workspace:*
+        version: link:../../../observability
+      '@bob/operations-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@effect/sql-pg':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/operations/types:
+    dependencies:
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/policy/service:
+    dependencies:
+      '@bob/context-types':
+        specifier: workspace:*
+        version: link:../../context/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../../core/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/policy-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@effect/sql-pg':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
+      better-auth:
+        specifier: 1.6.26
+        version: 1.6.26(@cloudflare/workers-types@5.20260810.1)(@opentelemetry/api@1.9.0)(@tanstack/solid-start@1.168.41(esbuild@0.28.2)(rolldown@1.2.4)(rollup@4.62.4)(solid-js@1.9.14)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3))(pg@8.23.0)(react@19.2.8)(solid-js@1.9.14)(vitest@4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/policy/types:
+    dependencies:
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/reminders/service:
+    dependencies:
+      '@bob/conversations-types':
+        specifier: workspace:*
+        version: link:../../conversations/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../../core/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/delivery-types':
+        specifier: workspace:*
+        version: link:../../delivery/types
+      '@bob/deployment-profile-types':
+        specifier: workspace:*
+        version: link:../../../deployment-profile/types
+      '@bob/memory-service':
+        specifier: workspace:*
+        version: link:../../memory/service
+      '@bob/memory-types':
+        specifier: workspace:*
+        version: link:../../memory/types
+      '@bob/observability':
+        specifier: workspace:*
+        version: link:../../../observability
+      '@bob/policy-service':
+        specifier: workspace:*
+        version: link:../../policy/service
+      '@bob/policy-types':
+        specifier: workspace:*
+        version: link:../../policy/types
+      '@bob/reminders-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      '@effect/sql-pg':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
+      '@js-temporal/polyfill':
+        specifier: 0.5.1
+        version: 0.5.1
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/reminders/types:
+    dependencies:
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/retrieval/service:
+    dependencies:
+      '@bob/context-service':
+        specifier: workspace:*
+        version: link:../../context/service
+      '@bob/context-types':
+        specifier: workspace:*
+        version: link:../../context/types
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/memory-types':
+        specifier: workspace:*
+        version: link:../../memory/types
+      '@bob/policy-types':
+        specifier: workspace:*
+        version: link:../../policy/types
+      '@bob/retrieval-types':
+        specifier: workspace:*
+        version: link:../types
+      '@effect/sql-pg':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
+      '@js-temporal/polyfill':
+        specifier: 0.5.1
+        version: 0.5.1
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/retrieval/types:
+    dependencies:
+      '@bob/memory-types':
+        specifier: workspace:*
+        version: link:../../memory/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/settings/service:
+    dependencies:
+      '@bob/conversations-types':
+        specifier: workspace:*
+        version: link:../../conversations/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/policy-service':
+        specifier: workspace:*
+        version: link:../../policy/service
+      '@bob/policy-types':
+        specifier: workspace:*
+        version: link:../../policy/types
+      '@bob/settings-types':
+        specifier: workspace:*
+        version: link:../types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      '@effect/sql-pg':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/settings/types:
+    dependencies:
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/skills/service:
+    dependencies:
+      '@bob/skills-types':
+        specifier: workspace:*
+        version: link:../types
+
+  packages/application/skills/types: {}
+
+  packages/application/training/service:
+    dependencies:
+      '@bob/artifacts-service':
+        specifier: workspace:*
+        version: link:../../artifacts/service
+      '@bob/artifacts-types':
+        specifier: workspace:*
+        version: link:../../artifacts/types
+      '@bob/conversations-types':
+        specifier: workspace:*
+        version: link:../../conversations/types
+      '@bob/core-types':
+        specifier: workspace:*
+        version: link:../../../core/types
+      '@bob/db-service':
+        specifier: workspace:*
+        version: link:../../../db/service
+      '@bob/db-types':
+        specifier: workspace:*
+        version: link:../../../db/types
+      '@bob/deployment-profile-types':
+        specifier: workspace:*
+        version: link:../../../deployment-profile/types
+      '@bob/memory-service':
+        specifier: workspace:*
+        version: link:../../memory/service
+      '@bob/memory-types':
+        specifier: workspace:*
+        version: link:../../memory/types
+      '@bob/policy-service':
+        specifier: workspace:*
+        version: link:../../policy/service
+      '@bob/policy-types':
+        specifier: workspace:*
+        version: link:../../policy/types
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
+      '@bob/training-types':
+        specifier: workspace:*
+        version: link:../types
+      '@effect/sql-pg':
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
+      drizzle-orm:
+        specifier: 1.0.0-rc.5-ab785fc
+        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/application/training/types:
+    dependencies:
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../../shared/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
@@ -297,28 +990,22 @@ importers:
         version: link:../../agent/types
       '@bob/artifacts-service':
         specifier: workspace:*
-        version: link:../../features/artifacts/service
+        version: link:../../application/artifacts/service
       '@bob/artifacts-types':
         specifier: workspace:*
-        version: link:../../features/artifacts/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../features/capabilities/types
-      '@bob/connections-service':
-        specifier: workspace:*
-        version: link:../../domains/connections/service
+        version: link:../../application/artifacts/types
       '@bob/context-service':
         specifier: workspace:*
-        version: link:../../features/context/service
+        version: link:../../application/context/service
       '@bob/context-types':
         specifier: workspace:*
-        version: link:../../features/context/types
+        version: link:../../application/context/types
       '@bob/conversations-service':
         specifier: workspace:*
-        version: link:../../features/conversations/service
+        version: link:../../application/conversations/service
       '@bob/conversations-types':
         specifier: workspace:*
-        version: link:../../features/conversations/types
+        version: link:../../application/conversations/types
       '@bob/core-types':
         specifier: workspace:*
         version: link:../types
@@ -327,68 +1014,74 @@ importers:
         version: link:../../db/types
       '@bob/delivery-service':
         specifier: workspace:*
-        version: link:../../features/delivery/service
+        version: link:../../application/delivery/service
       '@bob/delivery-types':
         specifier: workspace:*
-        version: link:../../features/delivery/types
+        version: link:../../application/delivery/types
+      '@bob/deployment-profile-types':
+        specifier: workspace:*
+        version: link:../../deployment-profile/types
       '@bob/job-queue-runtime':
         specifier: workspace:*
         version: link:../../job-queue/runtime
       '@bob/job-queue-types':
         specifier: workspace:*
         version: link:../../job-queue/types
-      '@bob/journal-service':
-        specifier: workspace:*
-        version: link:../../domains/journal/service
-      '@bob/journal-types':
-        specifier: workspace:*
-        version: link:../../domains/journal/types
       '@bob/memory-service':
         specifier: workspace:*
-        version: link:../../features/memory/service
+        version: link:../../application/memory/service
       '@bob/memory-types':
         specifier: workspace:*
-        version: link:../../features/memory/types
+        version: link:../../application/memory/types
       '@bob/observability':
         specifier: workspace:*
         version: link:../../observability
       '@bob/operations-service':
         specifier: workspace:*
-        version: link:../../features/operations/service
+        version: link:../../application/operations/service
       '@bob/operations-types':
         specifier: workspace:*
-        version: link:../../features/operations/types
+        version: link:../../application/operations/types
       '@bob/policy-service':
         specifier: workspace:*
-        version: link:../../features/policy/service
+        version: link:../../application/policy/service
       '@bob/policy-types':
         specifier: workspace:*
-        version: link:../../features/policy/types
-      '@bob/reminders-service':
-        specifier: workspace:*
-        version: link:../../domains/reminders/service
+        version: link:../../application/policy/types
       '@bob/retrieval-service':
         specifier: workspace:*
-        version: link:../../features/retrieval/service
+        version: link:../../application/retrieval/service
       '@bob/retrieval-types':
         specifier: workspace:*
-        version: link:../../features/retrieval/types
+        version: link:../../application/retrieval/types
       '@bob/settings-service':
         specifier: workspace:*
-        version: link:../../features/settings/service
+        version: link:../../application/settings/service
       '@bob/settings-types':
         specifier: workspace:*
-        version: link:../../features/settings/types
+        version: link:../../application/settings/types
       '@bob/skills-service':
         specifier: workspace:*
-        version: link:../../features/skills/service
-      '@bob/training-service':
+        version: link:../../application/skills/service
+      '@bob/tools-service':
         specifier: workspace:*
-        version: link:../../domains/training/service
+        version: link:../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
     devDependencies:
+      '@bob/journal-service':
+        specifier: workspace:*
+        version: link:../../application/journal/service
+      '@bob/reminders-service':
+        specifier: workspace:*
+        version: link:../../application/reminders/service
+      '@bob/training-service':
+        specifier: workspace:*
+        version: link:../../application/training/service
       esbuild:
         specifier: 0.25.9
         version: 0.25.9
@@ -398,39 +1091,21 @@ importers:
 
   packages/core/types:
     dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../features/capabilities/types
-      '@bob/connections-types':
-        specifier: workspace:*
-        version: link:../../domains/connections/types
       '@bob/db-types':
         specifier: workspace:*
         version: link:../../db/types
       '@bob/job-queue-types':
         specifier: workspace:*
         version: link:../../job-queue/types
-      '@bob/journal-types':
-        specifier: workspace:*
-        version: link:../../domains/journal/types
-      '@bob/memory-types':
-        specifier: workspace:*
-        version: link:../../features/memory/types
       '@bob/object-store-types':
         specifier: workspace:*
         version: link:../../object-store/types
       '@bob/observability':
         specifier: workspace:*
         version: link:../../observability
-      '@bob/reminders-types':
+      '@bob/shared-types':
         specifier: workspace:*
-        version: link:../../domains/reminders/types
-      '@bob/settings-types':
-        specifier: workspace:*
-        version: link:../../features/settings/types
-      '@bob/training-types':
-        specifier: workspace:*
-        version: link:../../domains/training/types
+        version: link:../../shared/types
       better-auth:
         specifier: 1.6.26
         version: 1.6.26(@cloudflare/workers-types@5.20260810.1)(@opentelemetry/api@1.9.0)(@tanstack/solid-start@1.168.41(esbuild@0.28.2)(rolldown@1.2.4)(rollup@4.62.4)(solid-js@1.9.14)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(pg@8.23.0)(react@19.2.8)(solid-js@1.9.14)(vitest@4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))
@@ -475,635 +1150,106 @@ importers:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
 
-  packages/domains/connections/service:
+  packages/deployment-profile/service:
     dependencies:
-      '@bob/capabilities-types':
+      '@bob/connections-service':
         specifier: workspace:*
-        version: link:../../../features/capabilities/types
-      '@bob/connections-types':
+        version: link:../../application/connections/service
+      '@bob/conversations-service':
         specifier: workspace:*
-        version: link:../types
-      '@bob/conversations-types':
-        specifier: workspace:*
-        version: link:../../../features/conversations/types
+        version: link:../../application/conversations/service
       '@bob/core-types':
         specifier: workspace:*
-        version: link:../../../core/types
-      '@bob/db-service':
-        specifier: workspace:*
-        version: link:../../../db/service
-      '@bob/db-types':
-        specifier: workspace:*
-        version: link:../../../db/types
-      '@effect/sql-pg':
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
-      drizzle-orm:
-        specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/domains/connections/types:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../../features/capabilities/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/domains/journal/service:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../../features/capabilities/types
-      '@bob/conversations-types':
-        specifier: workspace:*
-        version: link:../../../features/conversations/types
-      '@bob/core-types':
-        specifier: workspace:*
-        version: link:../../../core/types
-      '@bob/db-service':
-        specifier: workspace:*
-        version: link:../../../db/service
-      '@bob/db-types':
-        specifier: workspace:*
-        version: link:../../../db/types
-      '@bob/journal-types':
+        version: link:../../core/types
+      '@bob/deployment-profile-types':
         specifier: workspace:*
         version: link:../types
+      '@bob/journal-service':
+        specifier: workspace:*
+        version: link:../../application/journal/service
       '@bob/memory-service':
         specifier: workspace:*
-        version: link:../../../features/memory/service
+        version: link:../../application/memory/service
       '@bob/memory-types':
         specifier: workspace:*
-        version: link:../../../features/memory/types
-      '@bob/policy-service':
+        version: link:../../application/memory/types
+      '@bob/reminders-service':
         specifier: workspace:*
-        version: link:../../../features/policy/service
-      '@bob/policy-types':
-        specifier: workspace:*
-        version: link:../../../features/policy/types
-      '@bob/retrieval-service':
-        specifier: workspace:*
-        version: link:../../../features/retrieval/service
-      '@effect/sql-pg':
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
-      drizzle-orm:
-        specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/domains/journal/types:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../../features/capabilities/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/domains/reminders/service:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../../features/capabilities/types
-      '@bob/conversations-types':
-        specifier: workspace:*
-        version: link:../../../features/conversations/types
-      '@bob/core-types':
-        specifier: workspace:*
-        version: link:../../../core/types
-      '@bob/db-service':
-        specifier: workspace:*
-        version: link:../../../db/service
-      '@bob/db-types':
-        specifier: workspace:*
-        version: link:../../../db/types
-      '@bob/delivery-service':
-        specifier: workspace:*
-        version: link:../../../features/delivery/service
-      '@bob/memory-service':
-        specifier: workspace:*
-        version: link:../../../features/memory/service
-      '@bob/memory-types':
-        specifier: workspace:*
-        version: link:../../../features/memory/types
-      '@bob/observability':
-        specifier: workspace:*
-        version: link:../../../observability
-      '@bob/policy-service':
-        specifier: workspace:*
-        version: link:../../../features/policy/service
-      '@bob/policy-types':
-        specifier: workspace:*
-        version: link:../../../features/policy/types
-      '@bob/reminders-types':
-        specifier: workspace:*
-        version: link:../types
-      '@effect/sql-pg':
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
-      '@js-temporal/polyfill':
-        specifier: 0.5.1
-        version: 0.5.1
-      drizzle-orm:
-        specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/domains/reminders/types:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../../features/capabilities/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/domains/training/service:
-    dependencies:
-      '@bob/artifacts-service':
-        specifier: workspace:*
-        version: link:../../../features/artifacts/service
-      '@bob/artifacts-types':
-        specifier: workspace:*
-        version: link:../../../features/artifacts/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../../features/capabilities/types
-      '@bob/conversations-types':
-        specifier: workspace:*
-        version: link:../../../features/conversations/types
-      '@bob/core-types':
-        specifier: workspace:*
-        version: link:../../../core/types
-      '@bob/db-service':
-        specifier: workspace:*
-        version: link:../../../db/service
-      '@bob/db-types':
-        specifier: workspace:*
-        version: link:../../../db/types
-      '@bob/memory-service':
-        specifier: workspace:*
-        version: link:../../../features/memory/service
-      '@bob/memory-types':
-        specifier: workspace:*
-        version: link:../../../features/memory/types
-      '@bob/policy-service':
-        specifier: workspace:*
-        version: link:../../../features/policy/service
-      '@bob/policy-types':
-        specifier: workspace:*
-        version: link:../../../features/policy/types
-      '@bob/training-types':
-        specifier: workspace:*
-        version: link:../types
-      '@effect/sql-pg':
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
-      drizzle-orm:
-        specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/domains/training/types:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../../features/capabilities/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/artifacts/service:
-    dependencies:
-      '@bob/artifacts-types':
-        specifier: workspace:*
-        version: link:../types
-      '@bob/context-service':
-        specifier: workspace:*
-        version: link:../../context/service
-      '@bob/context-types':
-        specifier: workspace:*
-        version: link:../../context/types
-      '@bob/db-service':
-        specifier: workspace:*
-        version: link:../../../db/service
-      '@bob/db-types':
-        specifier: workspace:*
-        version: link:../../../db/types
-      '@bob/policy-service':
-        specifier: workspace:*
-        version: link:../../policy/service
-      '@bob/policy-types':
-        specifier: workspace:*
-        version: link:../../policy/types
-      '@effect/sql-pg':
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
-      drizzle-orm:
-        specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/artifacts/types:
-    dependencies:
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/capabilities/types:
-    dependencies:
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/context/service:
-    dependencies:
-      '@bob/context-types':
-        specifier: workspace:*
-        version: link:../types
-      '@bob/db-types':
-        specifier: workspace:*
-        version: link:../../../db/types
-      '@bob/policy-service':
-        specifier: workspace:*
-        version: link:../../policy/service
-      '@bob/policy-types':
-        specifier: workspace:*
-        version: link:../../policy/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/context/types:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/conversations/service:
-    dependencies:
-      '@bob/agent-types':
-        specifier: workspace:*
-        version: link:../../../agent/types
-      '@bob/artifacts-service':
-        specifier: workspace:*
-        version: link:../../artifacts/service
-      '@bob/artifacts-types':
-        specifier: workspace:*
-        version: link:../../artifacts/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
-      '@bob/context-service':
-        specifier: workspace:*
-        version: link:../../context/service
-      '@bob/context-types':
-        specifier: workspace:*
-        version: link:../../context/types
-      '@bob/conversations-types':
-        specifier: workspace:*
-        version: link:../types
-      '@bob/db-service':
-        specifier: workspace:*
-        version: link:../../../db/service
-      '@bob/db-types':
-        specifier: workspace:*
-        version: link:../../../db/types
-      '@bob/memory-service':
-        specifier: workspace:*
-        version: link:../../memory/service
-      '@bob/memory-types':
-        specifier: workspace:*
-        version: link:../../memory/types
-      '@bob/object-store-types':
-        specifier: workspace:*
-        version: link:../../../object-store/types
-      '@bob/policy-service':
-        specifier: workspace:*
-        version: link:../../policy/service
-      '@bob/policy-types':
-        specifier: workspace:*
-        version: link:../../policy/types
-      '@effect/sql-pg':
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
-      drizzle-orm:
-        specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/conversations/types:
-    dependencies:
-      '@bob/agent-types':
-        specifier: workspace:*
-        version: link:../../../agent/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/delivery/service:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
-      '@bob/conversations-types':
-        specifier: workspace:*
-        version: link:../../conversations/types
-      '@bob/core-types':
-        specifier: workspace:*
-        version: link:../../../core/types
-      '@bob/db-service':
-        specifier: workspace:*
-        version: link:../../../db/service
-      '@bob/db-types':
-        specifier: workspace:*
-        version: link:../../../db/types
-      '@bob/delivery-types':
-        specifier: workspace:*
-        version: link:../types
-      '@bob/job-queue-types':
-        specifier: workspace:*
-        version: link:../../../job-queue/types
-      '@bob/operations-service':
-        specifier: workspace:*
-        version: link:../../operations/service
-      '@bob/policy-service':
-        specifier: workspace:*
-        version: link:../../policy/service
-      '@bob/policy-types':
-        specifier: workspace:*
-        version: link:../../policy/types
-      '@effect/sql-pg':
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
-      drizzle-orm:
-        specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/delivery/types:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
-      '@bob/conversations-types':
-        specifier: workspace:*
-        version: link:../../conversations/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/memory/service:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
-      '@bob/context-service':
-        specifier: workspace:*
-        version: link:../../context/service
-      '@bob/conversations-types':
-        specifier: workspace:*
-        version: link:../../conversations/types
-      '@bob/db-service':
-        specifier: workspace:*
-        version: link:../../../db/service
-      '@bob/db-types':
-        specifier: workspace:*
-        version: link:../../../db/types
-      '@bob/memory-types':
-        specifier: workspace:*
-        version: link:../types
-      '@bob/policy-service':
-        specifier: workspace:*
-        version: link:../../policy/service
-      '@bob/policy-types':
-        specifier: workspace:*
-        version: link:../../policy/types
-      '@bob/retrieval-service':
-        specifier: workspace:*
-        version: link:../../retrieval/service
+        version: link:../../application/reminders/service
       '@bob/retrieval-types':
         specifier: workspace:*
-        version: link:../../retrieval/types
-      '@effect/sql-pg':
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
-      drizzle-orm:
-        specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+        version: link:../../application/retrieval/types
+      '@bob/settings-service':
+        specifier: workspace:*
+        version: link:../../application/settings/service
+      '@bob/settings-types':
+        specifier: workspace:*
+        version: link:../../application/settings/types
+      '@bob/tools-service':
+        specifier: workspace:*
+        version: link:../../tools/service
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../tools/types
+      '@bob/training-service':
+        specifier: workspace:*
+        version: link:../../application/training/service
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
     devDependencies:
-      '@bob/skills-service':
-        specifier: workspace:*
-        version: link:../../skills/service
+      vitest:
+        specifier: 4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
 
-  packages/features/memory/types:
+  packages/deployment-profile/types:
     dependencies:
-      '@bob/capabilities-types':
+      '@bob/artifacts-types':
         specifier: workspace:*
-        version: link:../../capabilities/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/operations/service:
-    dependencies:
-      '@bob/agent-types':
+        version: link:../../application/artifacts/types
+      '@bob/connections-types':
         specifier: workspace:*
-        version: link:../../../agent/types
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
-      '@bob/db-service':
-        specifier: workspace:*
-        version: link:../../../db/service
-      '@bob/db-types':
-        specifier: workspace:*
-        version: link:../../../db/types
-      '@bob/observability':
-        specifier: workspace:*
-        version: link:../../../observability
-      '@bob/operations-types':
-        specifier: workspace:*
-        version: link:../types
-      '@effect/sql-pg':
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
-      drizzle-orm:
-        specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/operations/types:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/policy/service:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
-      '@bob/context-types':
-        specifier: workspace:*
-        version: link:../../context/types
-      '@bob/core-types':
-        specifier: workspace:*
-        version: link:../../../core/types
-      '@bob/db-service':
-        specifier: workspace:*
-        version: link:../../../db/service
-      '@bob/db-types':
-        specifier: workspace:*
-        version: link:../../../db/types
-      '@bob/policy-types':
-        specifier: workspace:*
-        version: link:../types
-      '@effect/sql-pg':
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
-      better-auth:
-        specifier: 1.6.26
-        version: 1.6.26(@cloudflare/workers-types@5.20260810.1)(@opentelemetry/api@1.9.0)(@tanstack/solid-start@1.168.41(esbuild@0.28.2)(rolldown@1.2.4)(rollup@4.62.4)(solid-js@1.9.14)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))(drizzle-kit@1.0.0-rc.5-ab785fc)(drizzle-orm@1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3))(pg@8.23.0)(react@19.2.8)(solid-js@1.9.14)(vitest@4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0)))
-      drizzle-orm:
-        specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/policy/types:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/retrieval/service:
-    dependencies:
-      '@bob/context-service':
-        specifier: workspace:*
-        version: link:../../context/service
-      '@bob/context-types':
-        specifier: workspace:*
-        version: link:../../context/types
-      '@bob/db-types':
-        specifier: workspace:*
-        version: link:../../../db/types
-      '@bob/memory-types':
-        specifier: workspace:*
-        version: link:../../memory/types
-      '@bob/policy-types':
-        specifier: workspace:*
-        version: link:../../policy/types
-      '@bob/retrieval-types':
-        specifier: workspace:*
-        version: link:../types
-      '@effect/sql-pg':
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
-      '@js-temporal/polyfill':
-        specifier: 0.5.1
-        version: 0.5.1
-      drizzle-orm:
-        specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/retrieval/types:
-    dependencies:
-      '@bob/memory-types':
-        specifier: workspace:*
-        version: link:../../memory/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/settings/service:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
+        version: link:../../application/connections/types
       '@bob/conversations-types':
         specifier: workspace:*
-        version: link:../../conversations/types
-      '@bob/db-service':
+        version: link:../../application/conversations/types
+      '@bob/core-types':
         specifier: workspace:*
-        version: link:../../../db/service
+        version: link:../../core/types
       '@bob/db-types':
         specifier: workspace:*
-        version: link:../../../db/types
-      '@bob/policy-service':
+        version: link:../../db/types
+      '@bob/delivery-types':
         specifier: workspace:*
-        version: link:../../policy/service
+        version: link:../../application/delivery/types
+      '@bob/journal-types':
+        specifier: workspace:*
+        version: link:../../application/journal/types
+      '@bob/memory-types':
+        specifier: workspace:*
+        version: link:../../application/memory/types
       '@bob/policy-types':
         specifier: workspace:*
-        version: link:../../policy/types
+        version: link:../../application/policy/types
+      '@bob/reminders-types':
+        specifier: workspace:*
+        version: link:../../application/reminders/types
       '@bob/settings-types':
         specifier: workspace:*
-        version: link:../types
-      '@effect/sql-pg':
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107(effect@4.0.0-beta.107)
-      drizzle-orm:
-        specifier: 1.0.0-rc.5-ab785fc
-        version: 1.0.0-rc.5-ab785fc(@cloudflare/workers-types@5.20260810.1)(@effect/sql-d1@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-pg@4.0.0-beta.107(effect@4.0.0-beta.107))(@effect/sql-sqlite-do@4.0.0-beta.107(effect@4.0.0-beta.107))(@electric-sql/pglite@0.3.15)(@libsql/client@0.17.4)(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.52)(@types/pg@8.21.0)(effect@4.0.0-beta.107)(pg@8.23.0)(postgres@3.4.9)(typebox@1.3.7)(valibot@1.2.0(typescript@5.9.3))(zod@4.4.3)
+        version: link:../../application/settings/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../../tools/types
+      '@bob/training-types':
+        specifier: workspace:*
+        version: link:../../application/training/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
-
-  packages/features/settings/types:
-    dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../../capabilities/types
-      effect:
-        specifier: 4.0.0-beta.107
-        version: 4.0.0-beta.107
-
-  packages/features/skills/service:
-    dependencies:
-      '@bob/skills-types':
-        specifier: workspace:*
-        version: link:../types
-
-  packages/features/skills/types: {}
+    devDependencies:
+      vitest:
+        specifier: 4.1.9
+        version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@22.18.0)(vite@8.2.1(@types/node@22.18.0)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12)(yaml@2.9.0))
 
   packages/job-queue/runtime:
     dependencies:
@@ -1136,25 +1282,52 @@ importers:
 
   packages/observability:
     dependencies:
-      '@bob/capabilities-types':
-        specifier: workspace:*
-        version: link:../features/capabilities/types
       '@bob/policy-types':
         specifier: workspace:*
-        version: link:../features/policy/types
+        version: link:../application/policy/types
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../tools/types
       effect:
         specifier: 4.0.0-beta.107
         version: 4.0.0-beta.107
     devDependencies:
       '@bob/memory-types':
         specifier: workspace:*
-        version: link:../features/memory/types
+        version: link:../application/memory/types
       '@bob/reminders-types':
         specifier: workspace:*
-        version: link:../domains/reminders/types
+        version: link:../application/reminders/types
       '@bob/training-types':
         specifier: workspace:*
-        version: link:../domains/training/types
+        version: link:../application/training/types
+
+  packages/shared/types:
+    dependencies:
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/tools/service:
+    dependencies:
+      '@bob/observability':
+        specifier: workspace:*
+        version: link:../../observability
+      '@bob/tools-types':
+        specifier: workspace:*
+        version: link:../types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
+
+  packages/tools/types:
+    dependencies:
+      '@bob/shared-types':
+        specifier: workspace:*
+        version: link:../../shared/types
+      effect:
+        specifier: 4.0.0-beta.107
+        version: 4.0.0-beta.107
 
 packages:
 
