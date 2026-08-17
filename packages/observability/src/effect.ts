@@ -1,5 +1,5 @@
-import { ToolName } from "@bob/core-capabilities-types/tools"
-import { OutputValidationCode } from "@bob/core-types/output-safety"
+import { ToolName } from "@bob/capabilities-types/tools"
+import { OutputValidationCode } from "@bob/policy-types/output-safety"
 import { Context, Effect, Exit, Layer, Option, Schema, Tracer } from "effect"
 
 import {
@@ -554,6 +554,12 @@ export function telemetryLayer(options: {
     Layer.effect(Telemetry, service)
   )
 }
+
+/** A fail-open telemetry Layer for local tests and disabled exporters. */
+export const noopTelemetryLayer: Layer.Layer<Telemetry> = telemetryLayer({
+  processor: noopSpanProcessor,
+  writeHealth: () => undefined
+})
 
 function withBobSpanOptions<A, E, R>(
   input: BobSpan,

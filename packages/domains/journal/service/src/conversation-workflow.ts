@@ -1,4 +1,4 @@
-import type { ConversationTurnStore } from "@bob/core-service/conversations/turn-store"
+import type { ConversationTurnStoreAdapter } from "@bob/conversations-types/turn-store"
 import type { ConversationWorkflowModule } from "@bob/core-types/runtime-module"
 
 import type { JournalStore } from "./store.ts"
@@ -7,7 +7,7 @@ const commands = new Set(["journal", "dagbok"])
 
 export function makeJournalConversationWorkflow(
   journal: JournalStore,
-  turns: ConversationTurnStore,
+  turns: ConversationTurnStoreAdapter,
   uiBaseUrl: string
 ): ConversationWorkflowModule {
   return {

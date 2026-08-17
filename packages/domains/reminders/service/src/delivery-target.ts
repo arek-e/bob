@@ -1,10 +1,11 @@
-import type { DeliveryTargetAdapter } from "@bob/core-service/delivery/target-adapter"
-import type { CoreBatchQuery, CoreDatabase } from "@bob/core-types/database"
+import type { CoreDatabase, DatabaseQuery } from "@bob/db-types"
+import type { DeliveryTargetAdapter } from "@bob/delivery-service/target-adapter"
 
 import { operationalAlerts } from "@bob/db-service/schema/alerts"
 import { shortReplyBindings } from "@bob/db-service/schema/conversations"
 import { reminderOccurrences } from "@bob/db-service/schema/reminders"
 import { and, eq, inArray, isNull } from "drizzle-orm"
+import { Effect } from "effect"
 
 export function makeReminderDeliveryTarget(
   database: CoreDatabase,
@@ -14,14 +15,16 @@ export function makeReminderDeliveryTarget(
     targetType: "reminder_occurrence",
     async statements(event) {
       if (event.outcome === "accepted") {
-        const [occurrence] = await database
-          .select({
-            responseDeadlineAt: reminderOccurrences.responseDeadlineAt,
-            state: reminderOccurrences.state
-          })
-          .from(reminderOccurrences)
-          .where(eq(reminderOccurrences.id, event.targetId))
-          .limit(1)
+        const [occurrence] = await Effect.runPromise(
+          database
+            .select({
+              responseDeadlineAt: reminderOccurrences.responseDeadlineAt,
+              state: reminderOccurrences.state
+            })
+            .from(reminderOccurrences)
+            .where(eq(reminderOccurrences.id, event.targetId))
+            .limit(1)
+        )
         if (
           occurrence?.responseDeadlineAt === null ||
           occurrence?.responseDeadlineAt === undefined ||
@@ -62,7 +65,7 @@ export function makeReminderDeliveryTarget(
         event.outcome === "failed"
           ? (["awaiting_delivery", "awaiting_response"] as const)
           : (["claimed", "awaiting_delivery"] as const)
-      const statements: CoreBatchQuery[] = [
+      const statements: DatabaseQuery[] = [
         database
           .update(reminderOccurrences)
           .set({ state: terminalState, updatedAt: event.occurredAt })

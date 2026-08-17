@@ -11,12 +11,14 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@bob/capabilities-types": "workspace:*",
     "@bob/connections-types": "workspace:*",
-    "@bob/core-capabilities-types": "workspace:*",
-    "@bob/core-service": "workspace:*",
+    "@bob/conversations-types": "workspace:*",
     "@bob/core-types": "workspace:*",
     "@bob/db-service": "workspace:*",
-    "drizzle-orm": "1.0.0-rc.4",
+    "@bob/db-types": "workspace:*",
+    "@effect/sql-pg": "4.0.0-beta.107",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "4.0.0-beta.107"
   }
 }

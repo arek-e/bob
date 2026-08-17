@@ -23,6 +23,8 @@ const Environment = Schema.Struct({
   AGENT_URL: Schema.URLFromString,
   CHANNEL_EGRESS_URL: Schema.URLFromString,
   BOB_MODEL: Schema.String.check(Schema.isMinLength(1)),
+  BOB_RELEASE_SHA: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/)),
+  OTEL_EXPORTER_OTLP_ENDPOINT: Schema.URLFromString,
   BOB_RUN_TOKEN_BUDGET: Schema.NumberFromString,
   BOB_DAILY_TOKEN_BUDGET: Schema.NumberFromString,
   SCHEDULER_INTERVAL_MS: Schema.NumberFromString.pipe(Schema.check(Schema.isGreaterThan(0)))
@@ -42,6 +44,7 @@ export function readCoreRuntimeConfiguration(environment: NodeJS.ProcessEnv) {
     JOB_QUEUE_URL: value.JOB_QUEUE_URL.toString(),
     AGENT_URL: value.AGENT_URL.toString().replace(/\/$/u, ""),
     CHANNEL_EGRESS_URL: value.CHANNEL_EGRESS_URL.toString().replace(/\/$/u, ""),
+    OTEL_EXPORTER_OTLP_ENDPOINT: value.OTEL_EXPORTER_OTLP_ENDPOINT.toString().replace(/\/$/u, ""),
     UI_BASE_URL: value.UI_BASE_URL.toString().replace(/\/$/u, "")
   }
 }

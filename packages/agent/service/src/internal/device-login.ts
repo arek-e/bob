@@ -1,4 +1,4 @@
-import type { DeviceLoginEvent } from "@bob/core-types/agent"
+import type { DeviceLoginEvent } from "@bob/agent-types/run"
 
 import { Effect } from "effect"
 

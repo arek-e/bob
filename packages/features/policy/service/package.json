@@ -1,0 +1,32 @@
+{
+  "name": "@bob/policy-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./access": "./src/access.ts",
+    "./agent-response": "./src/agent-response.ts",
+    "./data-protection": "./src/data-protection.ts",
+    "./degraded-recall": "./src/degraded-recall.ts",
+    "./effect-outcome": "./src/effect-outcome.ts",
+    "./owner-data-key": "./src/owner-data-key.ts",
+    "./rules": "./src/rules.ts",
+    "./auth/service": "./src/auth/service.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/capabilities-types": "workspace:*",
+    "@bob/context-types": "workspace:*",
+    "@bob/core-types": "workspace:*",
+    "@bob/db-service": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/policy-types": "workspace:*",
+    "@effect/sql-pg": "4.0.0-beta.107",
+    "better-auth": "1.6.26",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "4.0.0-beta.107"
+  }
+}

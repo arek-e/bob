@@ -4,15 +4,18 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./run": "./src/run.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@bob/core-capabilities-types": "workspace:*",
-    "@bob/core-types": "workspace:*",
+    "@bob/artifacts-types": "workspace:*",
+    "@bob/capabilities-types": "workspace:*",
+    "@bob/context-types": "workspace:*",
+    "@bob/settings-types": "workspace:*",
     "effect": "4.0.0-beta.107"
   }
 }

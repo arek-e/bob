@@ -1,4 +1,4 @@
-import { IsoDateTime, NonEmptyText, ShortText, Uuid } from "@bob/core-capabilities-types/shared"
+import { IsoDateTime, NonEmptyText, ShortText, Uuid } from "@bob/capabilities-types/shared"
 import { Schema } from "effect"
 
 export const JournalHandoff = Schema.Struct({

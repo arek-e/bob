@@ -7,9 +7,8 @@ export default defineConfig({
     },
     include: [
       "apps/*/test/**/*.test.ts",
-      "packages/sendblue-channel/*/test/**/*.test.ts",
       "iac/*/test/**/*.test.ts",
-      "packages/*/test/**/*.test.ts"
+      "packages/**/test/**/*.test.ts"
     ],
     passWithNoTests: false
   }

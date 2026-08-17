@@ -11,14 +11,21 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@bob/core-capabilities-types": "workspace:*",
-    "@bob/core-service": "workspace:*",
+    "@bob/capabilities-types": "workspace:*",
+    "@bob/conversations-types": "workspace:*",
     "@bob/core-types": "workspace:*",
     "@bob/db-service": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/delivery-service": "workspace:*",
+    "@bob/memory-service": "workspace:*",
+    "@bob/memory-types": "workspace:*",
     "@bob/observability": "workspace:*",
+    "@bob/policy-service": "workspace:*",
+    "@bob/policy-types": "workspace:*",
     "@bob/reminders-types": "workspace:*",
+    "@effect/sql-pg": "4.0.0-beta.107",
     "@js-temporal/polyfill": "0.5.1",
-    "drizzle-orm": "1.0.0-rc.4",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
     "effect": "4.0.0-beta.107"
   }
 }

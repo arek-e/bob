@@ -1,6 +1,6 @@
-import type { DeliveryResult } from "@bob/core-types/delivery"
+import type { DeliveryResult } from "@bob/delivery-types/delivery"
 
-import { parseTraceparent } from "@bob/observability/propagation"
+import { parseTraceparent } from "@bob/observability"
 import { Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 

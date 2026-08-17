@@ -1,4 +1,4 @@
-import { coreDeploymentProfile } from "@bob/core-types/profiles/core"
+import { coreDeploymentProfile } from "@bob/core-types/profiles"
 import { describe, expect, it } from "vitest"
 
 import { defaultAgentProfile } from "../src/composition.ts"

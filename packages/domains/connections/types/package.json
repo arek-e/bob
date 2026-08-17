@@ -11,7 +11,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@bob/core-capabilities-types": "workspace:*",
+    "@bob/capabilities-types": "workspace:*",
     "effect": "4.0.0-beta.107"
   }
 }

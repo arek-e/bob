@@ -11,8 +11,9 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@bob/core-capabilities-types": "workspace:*",
-    "@bob/core-types": "workspace:*",
+    "@bob/agent-types": "workspace:*",
+    "@bob/operations-types": "workspace:*",
+    "@bob/settings-types": "workspace:*",
     "@tanstack/solid-router": "1.170.24",
     "@tanstack/solid-start": "1.168.41",
     "class-variance-authority": "0.7.1",

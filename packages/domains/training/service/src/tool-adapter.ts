@@ -1,11 +1,11 @@
 import type {
   ToolCommandAdapter,
   ToolCommandAdapterContext
-} from "@bob/core-service/conversations/tool-adapter"
+} from "@bob/conversations-types/tool-adapter"
 
-import { capabilityToolNames } from "@bob/core-capabilities-types/tools"
-import { type ToolResult } from "@bob/core-capabilities-types/tools"
-import { jsonObject } from "@bob/core-types/json"
+import { jsonObject } from "@bob/capabilities-types/json"
+import { capabilityToolNames } from "@bob/capabilities-types/tools"
+import { type ToolResult } from "@bob/capabilities-types/tools"
 import {
   RoutineGetArguments,
   trainingCapability,

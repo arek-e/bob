@@ -1,0 +1,32 @@
+{
+  "name": "@bob/core-types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./bindings": "./src/bindings.ts",
+    "./adapters": "./src/adapters.ts",
+    "./jobs": "./src/jobs.ts",
+    "./profiles": "./src/profiles.ts",
+    "./runtime-module": "./src/runtime-module.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/capabilities-types": "workspace:*",
+    "@bob/connections-types": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/job-queue-types": "workspace:*",
+    "@bob/journal-types": "workspace:*",
+    "@bob/memory-types": "workspace:*",
+    "@bob/object-store-types": "workspace:*",
+    "@bob/observability": "workspace:*",
+    "@bob/reminders-types": "workspace:*",
+    "@bob/settings-types": "workspace:*",
+    "@bob/training-types": "workspace:*",
+    "better-auth": "1.6.26",
+    "effect": "4.0.0-beta.107"
+  }
+}

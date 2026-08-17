@@ -1,5 +1,5 @@
-import { DeliveryReconciliationRequest } from "@bob/core-types/delivery"
-import { MessageInteractionCommand } from "@bob/core-types/interactions"
+import { MessageInteractionCommand } from "@bob/conversations-types/interactions"
+import { DeliveryReconciliationRequest } from "@bob/delivery-types/delivery"
 import { createSendblueHistoryClient } from "@bob/sendblue-runtime/history"
 import { timingSafeEqual } from "@bob/sendblue-types/webhooks"
 import { Schema } from "effect"

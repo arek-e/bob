@@ -1,4 +1,4 @@
-import type { DeliveryResult } from "@bob/core-types/delivery"
+import type { DeliveryResult } from "@bob/delivery-types/delivery"
 import type { EgressBindings } from "@bob/sendblue-channel-runtime/egress/bindings"
 import type { IngressBindings } from "@bob/sendblue-channel-runtime/ingress/bindings"
 

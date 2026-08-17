@@ -2,12 +2,11 @@ import type { InboundJob } from "@bob/core-types/jobs"
 import type { JobPublisher } from "@bob/job-queue-types"
 
 import { makeQueueBindingJobPublisher } from "@bob/job-queue-runtime/queue-binding"
-import { noopSpanProcessor } from "@bob/observability/effect"
 import {
-  invocationEventSink,
+  noopSpanProcessor,
   invocationTelemetryLayer,
   makeInvocationSpanProcessor
-} from "@bob/observability/invocation"
+} from "@bob/observability"
 import { Context, Effect, Layer, Schema } from "effect"
 
 import type { RuntimeFetcher } from "../../src/runtime.ts"
@@ -54,7 +53,6 @@ export function composeIngress(bindings: IngressBindings) {
     core: bindings.CORE,
     queue: makeQueueBindingJobPublisher(bindings.INBOUND_QUEUE)
   }
-  const events = invocationEventSink()
   const processor = telemetryProcessor(bindings)
   const layer = Layer.merge(
     Layer.succeed(IngressPorts, ports),
@@ -62,7 +60,6 @@ export function composeIngress(bindings: IngressBindings) {
   )
   return {
     config,
-    events,
     processor,
     ports: Effect.runSync(
       Effect.gen(function* () {

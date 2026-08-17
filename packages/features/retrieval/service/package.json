@@ -1,0 +1,28 @@
+{
+  "name": "@bob/retrieval-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./context-source": "./src/context-source.ts",
+    "./pipeline": "./src/pipeline.ts",
+    "./projection": "./src/projection.ts",
+    "./rules": "./src/rules.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/context-service": "workspace:*",
+    "@bob/context-types": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/memory-types": "workspace:*",
+    "@bob/policy-types": "workspace:*",
+    "@bob/retrieval-types": "workspace:*",
+    "@effect/sql-pg": "4.0.0-beta.107",
+    "@js-temporal/polyfill": "0.5.1",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "4.0.0-beta.107"
+  }
+}

@@ -1,12 +1,12 @@
-import type { DataProtection } from "@bob/core-service/policy/data-protection"
-import type { OwnerDataKeyStore } from "@bob/core-service/policy/owner-data-key"
-import type { CoreDatabase } from "@bob/core-types/database"
+import type { CoreDatabase } from "@bob/db-types"
+import type { DataProtection } from "@bob/policy-types/data-protection"
+import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
-import { type ToolCommand, type ToolName, ToolResult } from "@bob/core-capabilities-types/tools"
-import { makeOwnerDataKeyStore } from "@bob/core-service/policy/owner-data-key"
-import { JsonObject as JsonObjectSchema } from "@bob/core-types/json"
+import { JsonObject as JsonObjectSchema } from "@bob/capabilities-types/json"
+import { type ToolCommand, type ToolName, ToolResult } from "@bob/capabilities-types/tools"
 import { messages } from "@bob/db-service/schema/conversations"
 import { trainingProposals } from "@bob/db-service/schema/training"
+import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import {
   EquipmentMapExerciseArguments,
   ExerciseCreateArguments,
@@ -18,7 +18,7 @@ import {
   WorkoutStartArguments
 } from "@bob/training-types/capability"
 import { and, desc, eq } from "drizzle-orm"
-import { Context, Layer, Schema } from "effect"
+import { Effect, Context, Layer, Schema } from "effect"
 
 import type { TrainingStore } from "./store.ts"
 
@@ -121,7 +121,7 @@ export function makeTrainingProposalStore(
   options: {
     readonly now?: () => Date
     readonly randomUuid?: () => string
-    readonly ownerDataKeys?: OwnerDataKeyStore
+    readonly ownerDataKeys?: OwnerDataKeyStoreAdapter
   }
 ): TrainingProposalStore {
   const now = options.now ?? (() => new Date())
@@ -294,45 +294,51 @@ export function makeTrainingProposalStore(
 
   return {
     async propose(input) {
-      const [source] = await database
-        .select({ id: messages.id })
-        .from(messages)
-        .where(
-          and(
-            eq(messages.id, input.sourceMessageId),
-            eq(messages.userId, input.ownerId),
-            eq(messages.direction, "inbound")
+      const [source] = await Effect.runPromise(
+        database
+          .select({ id: messages.id })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.id, input.sourceMessageId),
+              eq(messages.userId, input.ownerId),
+              eq(messages.direction, "inbound")
+            )
           )
-        )
-        .limit(1)
+          .limit(1)
+      )
       if (source === undefined) throw new Error("Training proposal source is invalid")
       const proposalHash = await commandHash(input)
-      await database
-        .insert(trainingProposals)
-        .values({
-          id: randomUuid(),
-          userId: input.ownerId,
-          runId: input.runId,
-          toolCallId: input.toolCallId,
-          toolName: input.toolName,
-          commandIdempotencyKey: input.commandIdempotencyKey,
-          proposalHash,
-          argumentsJson: await encodePrivate(input.ownerId, input.arguments),
-          sourceMessageId: input.sourceMessageId,
-          status: "proposed",
-          createdAt: now().toISOString()
-        })
-        .onConflictDoNothing()
-      const [winner] = await database
-        .select()
-        .from(trainingProposals)
-        .where(
-          and(
-            eq(trainingProposals.runId, input.runId),
-            eq(trainingProposals.toolCallId, input.toolCallId)
+      await Effect.runPromise(
+        database
+          .insert(trainingProposals)
+          .values({
+            id: randomUuid(),
+            userId: input.ownerId,
+            runId: input.runId,
+            toolCallId: input.toolCallId,
+            toolName: input.toolName,
+            commandIdempotencyKey: input.commandIdempotencyKey,
+            proposalHash,
+            argumentsJson: await encodePrivate(input.ownerId, input.arguments),
+            sourceMessageId: input.sourceMessageId,
+            status: "proposed",
+            createdAt: now().toISOString()
+          })
+          .onConflictDoNothing()
+      )
+      const [winner] = await Effect.runPromise(
+        database
+          .select()
+          .from(trainingProposals)
+          .where(
+            and(
+              eq(trainingProposals.runId, input.runId),
+              eq(trainingProposals.toolCallId, input.toolCallId)
+            )
           )
-        )
-        .limit(1)
+          .limit(1)
+      )
       if (
         winner === undefined ||
         winner.userId !== input.ownerId ||
@@ -347,21 +353,25 @@ export function makeTrainingProposalStore(
     },
 
     async list(ownerId) {
-      const rows = await database
-        .select()
-        .from(trainingProposals)
-        .where(eq(trainingProposals.userId, ownerId))
-        .orderBy(desc(trainingProposals.createdAt))
-        .limit(50)
+      const rows = await Effect.runPromise(
+        database
+          .select()
+          .from(trainingProposals)
+          .where(eq(trainingProposals.userId, ownerId))
+          .orderBy(desc(trainingProposals.createdAt))
+          .limit(50)
+      )
       return Promise.all(rows.map((row) => summary(ownerId, row)))
     },
 
     async approve(ownerId, proposalId, proposalHash, approvalIdempotencyKey) {
-      let [proposal] = await database
-        .select()
-        .from(trainingProposals)
-        .where(and(eq(trainingProposals.id, proposalId), eq(trainingProposals.userId, ownerId)))
-        .limit(1)
+      let [proposal] = await Effect.runPromise(
+        database
+          .select()
+          .from(trainingProposals)
+          .where(and(eq(trainingProposals.id, proposalId), eq(trainingProposals.userId, ownerId)))
+          .limit(1)
+      )
       if (proposal === undefined) throw new Error("Training proposal does not belong to the owner")
       if (proposal.proposalHash !== proposalHash) throw new Error("Training proposal hash mismatch")
       if (proposal.status === "rejected") throw new Error("Training proposal was rejected")
@@ -371,42 +381,48 @@ export function makeTrainingProposalStore(
       }
 
       if (proposal.status === "proposed") {
-        const [approvalOwner] = await database
-          .select({ id: trainingProposals.id, proposalHash: trainingProposals.proposalHash })
-          .from(trainingProposals)
-          .where(
-            and(
-              eq(trainingProposals.userId, ownerId),
-              eq(trainingProposals.approvalIdempotencyKey, approvalIdempotencyKey)
+        const [approvalOwner] = await Effect.runPromise(
+          database
+            .select({ id: trainingProposals.id, proposalHash: trainingProposals.proposalHash })
+            .from(trainingProposals)
+            .where(
+              and(
+                eq(trainingProposals.userId, ownerId),
+                eq(trainingProposals.approvalIdempotencyKey, approvalIdempotencyKey)
+              )
             )
-          )
-          .limit(1)
+            .limit(1)
+        )
         if (
           approvalOwner !== undefined &&
           (approvalOwner.id !== proposal.id || approvalOwner.proposalHash !== proposalHash)
         ) {
           throw new Error("Approval idempotency key belongs to another proposal")
         }
-        await database
-          .update(trainingProposals)
-          .set({
-            status: "applying",
-            approvalIdempotencyKey,
-            approvedAt: now().toISOString()
-          })
-          .where(
-            and(
-              eq(trainingProposals.id, proposal.id),
-              eq(trainingProposals.userId, ownerId),
-              eq(trainingProposals.proposalHash, proposalHash),
-              eq(trainingProposals.status, "proposed")
+        await Effect.runPromise(
+          database
+            .update(trainingProposals)
+            .set({
+              status: "applying",
+              approvalIdempotencyKey,
+              approvedAt: now().toISOString()
+            })
+            .where(
+              and(
+                eq(trainingProposals.id, proposal.id),
+                eq(trainingProposals.userId, ownerId),
+                eq(trainingProposals.proposalHash, proposalHash),
+                eq(trainingProposals.status, "proposed")
+              )
             )
-          )
-        ;[proposal] = await database
-          .select()
-          .from(trainingProposals)
-          .where(and(eq(trainingProposals.id, proposalId), eq(trainingProposals.userId, ownerId)))
-          .limit(1)
+        )
+        ;[proposal] = await Effect.runPromise(
+          database
+            .select()
+            .from(trainingProposals)
+            .where(and(eq(trainingProposals.id, proposalId), eq(trainingProposals.userId, ownerId)))
+            .limit(1)
+        )
       }
       if (
         proposal === undefined ||
@@ -419,18 +435,20 @@ export function makeTrainingProposalStore(
 
       const result = await applyProposal(ownerId, proposal)
       const encryptedResult = await encodePrivate(ownerId, result)
-      await database
-        .update(trainingProposals)
-        .set({ status: "applied", resultJson: encryptedResult, appliedAt: now().toISOString() })
-        .where(
-          and(
-            eq(trainingProposals.id, proposal.id),
-            eq(trainingProposals.userId, ownerId),
-            eq(trainingProposals.proposalHash, proposalHash),
-            eq(trainingProposals.approvalIdempotencyKey, approvalIdempotencyKey),
-            eq(trainingProposals.status, "applying")
+      await Effect.runPromise(
+        database
+          .update(trainingProposals)
+          .set({ status: "applied", resultJson: encryptedResult, appliedAt: now().toISOString() })
+          .where(
+            and(
+              eq(trainingProposals.id, proposal.id),
+              eq(trainingProposals.userId, ownerId),
+              eq(trainingProposals.proposalHash, proposalHash),
+              eq(trainingProposals.approvalIdempotencyKey, approvalIdempotencyKey),
+              eq(trainingProposals.status, "applying")
+            )
           )
-        )
+      )
       return result
     }
   }

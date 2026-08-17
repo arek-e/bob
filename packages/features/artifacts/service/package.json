@@ -1,0 +1,28 @@
+{
+  "name": "@bob/artifacts-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./context-source": "./src/context-source.ts",
+    "./persistence": "./src/persistence.ts",
+    "./render": "./src/render.ts",
+    "./store": "./src/store.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/artifacts-types": "workspace:*",
+    "@bob/context-service": "workspace:*",
+    "@bob/context-types": "workspace:*",
+    "@bob/db-service": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/policy-service": "workspace:*",
+    "@bob/policy-types": "workspace:*",
+    "@effect/sql-pg": "4.0.0-beta.107",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "4.0.0-beta.107"
+  }
+}

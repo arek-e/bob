@@ -1,13 +1,12 @@
-import type { DeliveryResult } from "@bob/core-types/delivery"
+import type { DeliveryResult } from "@bob/delivery-types/delivery"
 import type { JobPublisher } from "@bob/job-queue-types"
 
 import { makeQueueBindingJobPublisher } from "@bob/job-queue-runtime/queue-binding"
-import { noopSpanProcessor } from "@bob/observability/effect"
 import {
-  invocationEventSink,
+  noopSpanProcessor,
   invocationTelemetryLayer,
   makeInvocationSpanProcessor
-} from "@bob/observability/invocation"
+} from "@bob/observability"
 import { createSendblueClient } from "@bob/sendblue-runtime/client"
 import { Context, Effect, Layer, Schema } from "effect"
 
@@ -49,7 +48,6 @@ function telemetryProcessor(bindings: EgressBindings) {
 
 export function composeEgress(bindings: EgressBindings) {
   const config = Schema.decodeUnknownSync(ApplicationConfiguration)(bindings)
-  const events = invocationEventSink()
   const ports: EgressPorts = {
     core: bindings.CORE,
     deliveryResults: makeQueueBindingJobPublisher(bindings.DELIVERY_RESULT_QUEUE),
@@ -65,7 +63,6 @@ export function composeEgress(bindings: EgressBindings) {
   )
   return {
     config,
-    events,
     processor,
     ports: Effect.runSync(
       Effect.gen(function* () {

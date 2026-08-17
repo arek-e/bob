@@ -1,4 +1,7 @@
-import type { ToolCommand, ToolResult } from "@bob/core-capabilities-types/tools"
+import type { ToolCommand, ToolResult } from "@bob/capabilities-types/tools"
+
+import { Context, Effect, Schema } from "effect"
+
 import type {
   AgentRunOperation,
   AgentRunRequest,
@@ -6,9 +9,7 @@ import type {
   AgentSmokeResult,
   AgentSteerResult,
   DeviceLoginEvent
-} from "@bob/core-types/agent"
-
-import { Context, Effect, Schema } from "effect"
+} from "./run.ts"
 
 export const AgentModelConfiguration = Schema.Struct({
   provider: Schema.NonEmptyString,

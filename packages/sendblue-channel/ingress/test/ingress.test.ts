@@ -1,4 +1,4 @@
-import { parseTraceparent } from "@bob/observability/propagation"
+import { parseTraceparent } from "@bob/observability"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { handleIngressHttp } from "../src/entrypoints/http.ts"

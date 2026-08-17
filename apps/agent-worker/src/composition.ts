@@ -1,9 +1,9 @@
-import type { Telemetry } from "@bob/observability/effect"
+import type { Telemetry } from "@bob/observability"
 
 import { piAgentLayer } from "@bob/agent-service/pi"
 import { AgentToolError, BobAgent } from "@bob/agent-types"
-import { coreDeploymentProfile } from "@bob/core-types/profiles/core"
-import { nodeTelemetryLayer } from "@bob/observability/node"
+import { coreDeploymentProfile } from "@bob/core-types/profiles"
+import { nodeTelemetryLayer } from "@bob/observability"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { readFile } from "node:fs/promises"
 

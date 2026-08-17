@@ -1,0 +1,339 @@
+import type { MemoryClass } from "@bob/memory-types/evidence"
+import type { RetrievalCandidate, TemporalConstraint } from "@bob/retrieval-types/retrieval"
+
+import { Temporal } from "@js-temporal/polyfill"
+
+export type { RetrievalCandidate, TemporalConstraint } from "@bob/retrieval-types/retrieval"
+
+const stopWords = new Set([
+  "a",
+  "about",
+  "an",
+  "and",
+  "are",
+  "as",
+  "at",
+  "be",
+  "before",
+  "by",
+  "did",
+  "do",
+  "does",
+  "for",
+  "from",
+  "have",
+  "i",
+  "in",
+  "is",
+  "it",
+  "know",
+  "me",
+  "my",
+  "of",
+  "on",
+  "or",
+  "say",
+  "show",
+  "tell",
+  "that",
+  "the",
+  "to",
+  "was",
+  "what",
+  "when",
+  "where",
+  "which",
+  "who",
+  "you",
+  "yesterday",
+  "är",
+  "berätta",
+  "det",
+  "har",
+  "idag",
+  "igår",
+  "i",
+  "jag",
+  "min",
+  "mina",
+  "mitt",
+  "om",
+  "på",
+  "sa",
+  "vad",
+  "var",
+  "visa",
+  "today"
+])
+
+export interface AnalyzedRetrievalQuery {
+  readonly terms: readonly string[]
+  readonly ftsQuery?: string
+  readonly temporal: TemporalConstraint
+}
+
+function tokens(text: string): readonly string[] {
+  return [
+    ...new Set(
+      text
+        .normalize("NFKC")
+        .toLocaleLowerCase("en")
+        .match(/[\p{L}\p{N}]+/gu) ?? []
+    )
+  ]
+}
+
+function dayInterval(date: Temporal.PlainDate, timeZone: string) {
+  const from = date.toZonedDateTime({ timeZone, plainTime: "00:00:00" }).toInstant().toString()
+  const to = date.add({ days: 1 }).toZonedDateTime({ timeZone, plainTime: "00:00:00" })
+  return { from, to: to.toInstant().toString() }
+}
+
+/** Analyze temporal intent and build a literal FTS5 query from untrusted text. */
+export function analyzeRetrievalQuery(
+  text: string,
+  referenceTime: string,
+  timeZone: string
+): AnalyzedRetrievalQuery {
+  const reference = Temporal.Instant.from(referenceTime).toZonedDateTimeISO(timeZone)
+  const normalized = text.normalize("NFKC").toLocaleLowerCase("en")
+  const explicitDate = normalized.match(/\b(\d{4}-\d{2}-\d{2})\b/u)?.[1]
+  const relativeDate = /\b(?:yesterday|igår)\b/iu.test(normalized)
+    ? reference.toPlainDate().subtract({ days: 1 })
+    : /\b(?:today|idag)\b/iu.test(normalized)
+      ? reference.toPlainDate()
+      : undefined
+  let explicitPlainDate: Temporal.PlainDate | undefined
+  if (explicitDate !== undefined) {
+    try {
+      explicitPlainDate = Temporal.PlainDate.from(explicitDate)
+    } catch {
+      explicitPlainDate = undefined
+    }
+  }
+  const date = explicitDate === undefined ? relativeDate : explicitPlainDate
+  let temporal: TemporalConstraint = { mode: "current", at: reference.toInstant().toString() }
+  if (date !== undefined) {
+    const interval = dayInterval(date, timeZone)
+    temporal = /\b(?:as of|before|by|före|senast)\b/iu.test(normalized)
+      ? {
+          mode: "as_of",
+          at: Temporal.Instant.from(interval.to).subtract({ milliseconds: 1 }).toString()
+        }
+      : { mode: "during", ...interval }
+  }
+  const terms = tokens(normalized)
+    .filter((token) => !stopWords.has(token))
+    .filter((token) => explicitDate?.split("-").includes(token) !== true)
+    .filter((token) => token.length >= 2 || /^\d+$/u.test(token))
+    .slice(0, 12)
+  if (terms.length === 0) return { terms, temporal }
+  return {
+    terms,
+    ftsQuery: terms.map((token) => `"${token.replaceAll('"', '""')}"`).join(" OR "),
+    temporal
+  }
+}
+
+/** Build a literal FTS5 query. Kept as a small testable rule for untrusted input. */
+export function buildFtsQuery(text: string): string | undefined {
+  const terms = tokens(text)
+    .filter((token) => token.length >= 2 || /^\d+$/u.test(token))
+    .slice(0, 12)
+  if (terms.length === 0) return undefined
+  return terms.map((token) => `"${token.replaceAll('"', '""')}"`).join(" OR ")
+}
+
+function instant(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+export function matchesTemporalConstraint(
+  candidate: RetrievalCandidate,
+  constraint: TemporalConstraint
+): boolean {
+  const validFrom = instant(candidate.validFrom) ?? Number.NEGATIVE_INFINITY
+  const validTo = instant(candidate.validTo) ?? Number.POSITIVE_INFINITY
+  if (constraint.mode === "current" || constraint.mode === "as_of") {
+    const at = Date.parse(constraint.at)
+    return validFrom <= at && at < validTo
+  }
+  if (candidate.memoryClass === "owner_fact") {
+    const at = Date.parse(constraint.to) - 1
+    return validFrom <= at && at < validTo
+  }
+  const occurredAt = instant(candidate.occurredAt)
+  return (
+    occurredAt !== undefined &&
+    Date.parse(constraint.from) <= occurredAt &&
+    occurredAt < Date.parse(constraint.to)
+  )
+}
+
+function relevance(candidate: RetrievalCandidate, terms: readonly string[]): number {
+  if (terms.length === 0) return 1
+  const candidateTerms = new Set(tokens(candidate.searchText ?? candidate.text))
+  const matched = terms.filter((term) => candidateTerms.has(term)).length
+  return matched / terms.length
+}
+
+function recencyScore(candidate: RetrievalCandidate, nowMs: number): number {
+  if (candidate.memoryClass === "owner_fact") return 1
+  const occurredAt = instant(candidate.occurredAt)
+  if (occurredAt === undefined) return 0
+  const ageDays = Math.max(0, (nowMs - occurredAt) / 86_400_000)
+  return Math.exp((-Math.log(2) * ageDays) / 90)
+}
+
+export interface RankedRetrievalCandidate extends RetrievalCandidate {
+  readonly relevance: number
+}
+
+type RankedConflictGroup = readonly [
+  RankedRetrievalCandidate,
+  RankedRetrievalCandidate,
+  ...RankedRetrievalCandidate[]
+]
+
+export type RankedRetrievalUnit =
+  | {
+      readonly kind: "candidate"
+      readonly candidate: RankedRetrievalCandidate
+    }
+  | {
+      readonly kind: "conflict_group"
+      readonly conflictKey: string
+      readonly candidates: RankedConflictGroup
+    }
+
+/**
+ * Filter and rank candidates, then keep simultaneous values in one conflict unit.
+ */
+export function selectRelevantCandidates(
+  candidates: readonly RetrievalCandidate[],
+  terms: readonly string[],
+  temporal: TemporalConstraint,
+  options: {
+    readonly nowMs?: number
+    readonly limit?: number
+    readonly perMemoryClass?: number
+    readonly minimumRelevance?: number
+  } = {}
+): readonly RankedRetrievalUnit[] {
+  const nowMs = options.nowMs ?? Date.now()
+  const limit = options.limit ?? 12
+  const perMemoryClass = options.perMemoryClass ?? 8
+  const minimumRelevance = options.minimumRelevance ?? (terms.length <= 2 ? 0.5 : 0.34)
+  const ranked = candidates
+    .filter((candidate) => matchesTemporalConstraint(candidate, temporal))
+    .map((candidate) => ({ candidate, relevance: relevance(candidate, terms) }))
+    .filter(({ relevance: score }) => score >= minimumRelevance)
+    .map(({ candidate, relevance: score }) => ({
+      candidate,
+      relevance: score,
+      score:
+        0.45 * score +
+        0.3 / (candidate.lexicalPosition + 1) +
+        0.15 * Math.max(0, Math.min(1, candidate.importance / 1_000)) +
+        0.1 * recencyScore(candidate, nowMs)
+    }))
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        left.candidate.lexicalPosition - right.candidate.lexicalPosition ||
+        left.candidate.id.localeCompare(right.candidate.id)
+    )
+
+  const rankedCandidates = ranked.map(({ candidate, relevance: score }) => ({
+    ...candidate,
+    relevance: score
+  }))
+  const keyedCandidates = new Map<string, RankedRetrievalCandidate[]>()
+  const valuesByKey = new Map<string, Set<string>>()
+  for (const candidate of rankedCandidates) {
+    if (candidate.conflictKey === undefined) continue
+    const keyed = keyedCandidates.get(candidate.conflictKey) ?? []
+    keyed.push(candidate)
+    keyedCandidates.set(candidate.conflictKey, keyed)
+    const values = valuesByKey.get(candidate.conflictKey) ?? new Set<string>()
+    values.add(
+      candidate.contentHash ?? candidate.text.normalize("NFKC").trim().toLocaleLowerCase("en")
+    )
+    valuesByKey.set(candidate.conflictKey, values)
+  }
+  const conflictGroups = new Map<string, RankedConflictGroup>()
+  for (const [conflictKey, values] of valuesByKey) {
+    if (values.size <= 1) continue
+    const matching = [...(keyedCandidates.get(conflictKey) ?? [])].sort(
+      (left, right) =>
+        Date.parse(left.occurredAt ?? left.validFrom ?? "") -
+          Date.parse(right.occurredAt ?? right.validFrom ?? "") || left.id.localeCompare(right.id)
+    )
+    const first = matching[0]
+    const second = matching[1]
+    if (first === undefined || second === undefined) {
+      throw new Error("A retrieval conflict group requires at least two candidates")
+    }
+    conflictGroups.set(conflictKey, [first, second, ...matching.slice(2)])
+  }
+  const selected: RankedRetrievalUnit[] = []
+  const selectedIds = new Set<string>()
+  const counts = new Map<MemoryClass, number>()
+  let selectedCount = 0
+  for (const candidate of rankedCandidates) {
+    if (selectedIds.has(candidate.id)) continue
+    const conflictKey = candidate.conflictKey
+    const grouped = conflictKey === undefined ? undefined : conflictGroups.get(conflictKey)
+    const group = grouped ?? [candidate]
+    const groupCounts = new Map<MemoryClass, number>()
+    for (const item of group) {
+      groupCounts.set(item.memoryClass, (groupCounts.get(item.memoryClass) ?? 0) + 1)
+    }
+    if (
+      [...groupCounts].some(
+        ([memoryClass, count]) => (counts.get(memoryClass) ?? 0) + count > perMemoryClass
+      )
+    ) {
+      continue
+    }
+    if (group.length > limit || selectedCount + group.length > limit) continue
+    for (const item of group) {
+      selectedIds.add(item.id)
+      counts.set(item.memoryClass, (counts.get(item.memoryClass) ?? 0) + 1)
+    }
+    if (grouped === undefined || conflictKey === undefined) {
+      selected.push({ kind: "candidate", candidate })
+    } else {
+      selected.push({ kind: "conflict_group", conflictKey, candidates: grouped })
+    }
+    selectedCount += group.length
+    if (selectedCount >= limit) break
+  }
+  return selected
+}
+
+export function boundRetrievalReading(
+  units: readonly RankedRetrievalUnit[],
+  options: { readonly totalCharacters: number; readonly itemCharacters: number }
+): readonly RankedRetrievalUnit[] {
+  const selected: RankedRetrievalUnit[] = []
+  const visitedConflictKeys = new Set<string>()
+  let remaining = options.totalCharacters
+  for (const unit of units) {
+    if (remaining <= 0) break
+    const conflictKey =
+      unit.kind === "conflict_group" ? unit.conflictKey : unit.candidate.conflictKey
+    if (conflictKey !== undefined && visitedConflictKeys.has(conflictKey)) continue
+    if (conflictKey !== undefined) visitedConflictKeys.add(conflictKey)
+    const group: readonly RankedRetrievalCandidate[] =
+      unit.kind === "conflict_group" ? unit.candidates : [unit.candidate]
+    const groupCharacters =
+      group.reduce((sum, item) => sum + item.text.length, 0) + Math.max(0, group.length - 1)
+    if (groupCharacters > options.itemCharacters || groupCharacters > remaining) continue
+    selected.push(unit)
+    remaining -= groupCharacters
+  }
+  return Object.freeze(selected)
+}

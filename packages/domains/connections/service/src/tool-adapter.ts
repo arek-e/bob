@@ -1,14 +1,14 @@
 import type {
   ToolCommandAdapter,
   ToolCommandAdapterContext
-} from "@bob/core-service/conversations/tool-adapter"
+} from "@bob/conversations-types/tool-adapter"
 
+import { jsonObject } from "@bob/capabilities-types/json"
+import { capabilityToolNames } from "@bob/capabilities-types/tools"
 import {
   connectionsCapability,
   ConnectionProviderArguments
 } from "@bob/connections-types/capability"
-import { capabilityToolNames } from "@bob/core-capabilities-types/tools"
-import { jsonObject } from "@bob/core-types/json"
 import { Schema } from "effect"
 
 import type { ConnectionStore } from "./store.ts"

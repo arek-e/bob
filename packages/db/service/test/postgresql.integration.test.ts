@@ -1,58 +1,93 @@
 import { sql } from "drizzle-orm"
+import { Effect, ManagedRuntime } from "effect"
+import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
 
-import { connectPostgresqlDatabase, type PostgresqlDatabase } from "../src/postgresql.ts"
+import { PostgresqlDatabase, postgresqlDatabaseLayer } from "../src/postgresql.ts"
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const integration = databaseUrl === undefined ? describe.skip : describe
+const migrationsFolder = fileURLToPath(new URL("../migrations", import.meta.url))
 
 integration("native PostgreSQL database", () => {
-  let database: PostgresqlDatabase | undefined
+  let dispose: (() => Promise<void>) | undefined
 
   afterAll(async () => {
-    await database?.close()
+    await dispose?.()
   })
 
-  it("applies the reset baseline and rolls back an invalid batch", async () => {
+  it("applies all migrations and rolls back an invalid transaction", async () => {
     if (databaseUrl === undefined) throw new Error("TEST_DATABASE_URL is required")
-    database = connectPostgresqlDatabase(databaseUrl)
-    await database.migrate()
-    await database.migrate()
+    const runtime = ManagedRuntime.make(postgresqlDatabaseLayer(databaseUrl, { migrationsFolder }))
+    dispose = () => runtime.dispose()
+    const database = await runtime.runPromise(PostgresqlDatabase)
+    await runtime.runPromise(database.migrate)
+    await runtime.runPromise(database.migrate)
 
-    const [tableCount] = await database.applicationStorage.execute<{ count: number }>(sql`
-      SELECT count(*)::integer AS count
-      FROM information_schema.tables
-      WHERE table_schema = 'public'
-    `)
+    const [migrationCount] = await runtime.runPromise(
+      database.applicationStorage
+        .select({ count: sql<number>`count(*)::integer` })
+        .from(sql`drizzle.__drizzle_migrations`)
+    )
+    expect(migrationCount?.count).toBe(2)
+
+    const [fullTextIndex] = await runtime.runPromise(
+      database.applicationStorage
+        .select({ count: sql<number>`count(*)::integer` })
+        .from(sql`pg_indexes`)
+        .where(sql`schemaname = 'public' AND indexname = 'search_documents_full_text_idx'`)
+    )
+    expect(fullTextIndex?.count).toBe(1)
+
+    const [tableCount] = await runtime.runPromise(
+      database.applicationStorage
+        .select({ count: sql<number>`count(*)::integer` })
+        .from(sql`information_schema.tables`)
+        .where(sql`table_schema = 'public'`)
+    )
     expect(tableCount?.count).toBeGreaterThan(40)
 
     const ownerId = "00000000-0000-4000-8000-000000000001"
     await expect(
-      database.applicationStorage.batch([
-        database.applicationStorage.execute(sql`
-          INSERT INTO users (id, time_zone, locale, hour_cycle, created_at, updated_at)
-          VALUES (${ownerId}, 'Europe/Stockholm', 'en', 'auto', '2026-08-16', '2026-08-16')
-        `),
-        database.applicationStorage.execute(sql`
-          INSERT INTO users (id, time_zone, locale, hour_cycle, created_at, updated_at)
-          VALUES (${ownerId}, 'Europe/Stockholm', 'en', 'auto', '2026-08-16', '2026-08-16')
-        `)
-      ])
+      runtime.runPromise(
+        database.applicationStorage.transaction(() =>
+          Effect.all(
+            [
+              database.applicationStorage.execute(sql`
+                INSERT INTO users (id, time_zone, locale, hour_cycle, created_at, updated_at)
+                VALUES (${ownerId}, 'Europe/Stockholm', 'en', 'auto', '2026-08-16', '2026-08-16')
+              `),
+              database.applicationStorage.execute(sql`
+                INSERT INTO users (id, time_zone, locale, hour_cycle, created_at, updated_at)
+                VALUES (${ownerId}, 'Europe/Stockholm', 'en', 'auto', '2026-08-16', '2026-08-16')
+              `)
+            ],
+            { concurrency: 1 }
+          )
+        )
+      )
     ).rejects.toThrow()
 
-    const [ownerCount] = await database.applicationStorage.execute<{ count: number }>(sql`
-      SELECT count(*)::integer AS count FROM users WHERE id = ${ownerId}
-    `)
+    const [ownerCount] = await runtime.runPromise(
+      database.applicationStorage
+        .select({ count: sql<number>`count(*)::integer` })
+        .from(sql`users`)
+        .where(sql`id = ${ownerId}`)
+    )
     expect(ownerCount?.count).toBe(0)
 
-    await database.applicationStorage.execute(sql`
-      INSERT INTO users (id, time_zone, locale, hour_cycle, created_at, updated_at)
-      VALUES (${ownerId}, 'Europe/Stockholm', 'en', 'auto', '2026-08-16', '2026-08-16')
-    `)
-    const selected = await database.applicationStorage
-      .select({ id: sql<string>`id` })
-      .from(sql`users`)
-      .where(sql`id = ${ownerId}`)
+    await runtime.runPromise(
+      database.applicationStorage.execute(sql`
+        INSERT INTO users (id, time_zone, locale, hour_cycle, created_at, updated_at)
+        VALUES (${ownerId}, 'Europe/Stockholm', 'en', 'auto', '2026-08-16', '2026-08-16')
+      `)
+    )
+    const selected = await runtime.runPromise(
+      database.applicationStorage
+        .select({ id: sql<string>`id` })
+        .from(sql`users`)
+        .where(sql`id = ${ownerId}`)
+    )
     expect(selected).toEqual([{ id: ownerId }])
   })
 })

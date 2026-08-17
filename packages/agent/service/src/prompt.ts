@@ -1,5 +1,5 @@
-import type { AgentRunRequest } from "@bob/core-types/agent"
-import type { OutputValidationCode } from "@bob/core-types/output-safety"
+import type { AgentRunRequest } from "@bob/agent-types/run"
+import type { OutputValidationCode } from "@bob/policy-types/output-safety"
 
 function localDateTime(instant: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-US", {

@@ -1,10 +1,10 @@
 import type {
   ToolCommandAdapter,
   ToolCommandAdapterContext
-} from "@bob/core-service/conversations/tool-adapter"
-import type { ConversationTurnStore } from "@bob/core-service/conversations/turn-store"
+} from "@bob/conversations-types/tool-adapter"
+import type { ConversationTurnStoreAdapter } from "@bob/conversations-types/turn-store"
 
-import { capabilityToolNames } from "@bob/core-capabilities-types/tools"
+import { capabilityToolNames } from "@bob/capabilities-types/tools"
 import { journalCapability, JournalSearchMetadataArguments } from "@bob/journal-types/capability"
 import { Schema } from "effect"
 
@@ -14,7 +14,7 @@ import { journalAgentMetadata } from "./rules.ts"
 
 export function makeJournalToolAdapter(
   journal: JournalStore,
-  turns: Pick<ConversationTurnStore, "excludeFromContext">,
+  turns: Pick<ConversationTurnStoreAdapter, "excludeFromContext">,
   options: { readonly uiBaseUrl: string }
 ): ToolCommandAdapter {
   return {

@@ -1,12 +1,12 @@
-import { ToolName, type ToolResult } from "@bob/core-capabilities-types/tools"
-import { AgentArtifact } from "@bob/core-types/agent"
+import { AgentArtifact } from "@bob/artifacts-types/artifact"
+import { ToolName, type ToolResult } from "@bob/capabilities-types/tools"
 import {
   internalToolReferences,
   noSupportedRecordFallback,
   requiresPersonalGrounding,
   scanUnsafeOutput,
   type OutputValidationCode
-} from "@bob/core-types/output-safety"
+} from "@bob/policy-types/output-safety"
 import { Schema } from "effect"
 
 const NonEmptyText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8_000))

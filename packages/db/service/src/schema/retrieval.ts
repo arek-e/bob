@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm"
 import { boolean, index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core"
 
 export const searchDocuments = pgTable(
@@ -35,6 +36,10 @@ export const searchDocuments = pgTable(
       table.deletedAt,
       table.validFrom,
       table.validTo
+    ),
+    index("search_documents_full_text_idx").using(
+      "gin",
+      sql`to_tsvector('simple', ${table.searchText} || ' ' || ${table.sourceLabel})`
     )
   ]
 )
