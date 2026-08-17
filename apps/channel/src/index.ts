@@ -1,34 +1,48 @@
 import type { DeliveryResult } from "@bob/delivery-types/delivery"
-import type { EgressBindings } from "@bob/sendblue-channel-runtime/egress/bindings"
-import type { IngressBindings } from "@bob/sendblue-channel-runtime/ingress/bindings"
 
 import { OutboundJob, type InboundJob } from "@bob/core-types/jobs"
 import { makeBullMqJobPublisher } from "@bob/job-queue-runtime/bullmq"
 import { startBullMqWorkerHost } from "@bob/job-queue-runtime/bullmq-host"
 import { completeJob, decodeJobProcessor, retryJob, type JobPublisher } from "@bob/job-queue-types"
-import { handleEgressHttp } from "@bob/sendblue-channel-runtime/egress"
-import { processOutboundJob } from "@bob/sendblue-channel-runtime/egress/queue"
-import { handleIngressHttp } from "@bob/sendblue-channel-runtime/ingress/http"
+import { nodeTelemetryLayer } from "@bob/observability"
 import { Queue as BullQueue, type ConnectionOptions } from "bullmq"
-import { Schema } from "effect"
+import { Config, Effect, Layer, ManagedRuntime, Redacted, Schema } from "effect"
 import { createServer } from "node:http"
 
-import { webRequest, writeWebResponse } from "./node-http.ts"
+import type { EgressBindings } from "./egress/bindings.ts"
+import type { IngressBindings } from "./ingress/bindings.ts"
 
-const Environment = Schema.Struct({
-  PORT: Schema.NumberFromString,
-  CORE_URL: Schema.URLFromString,
-  JOB_QUEUE_URL: Schema.URLFromString,
-  CORE_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
-  SENDBLUE_ACCOUNT_ID: Schema.String.check(Schema.isMinLength(1)),
-  SENDBLUE_LINE_ID: Schema.String.check(Schema.isMinLength(1)),
-  SENDBLUE_API_KEY_ID: Schema.String.check(Schema.isMinLength(1)),
-  SENDBLUE_API_SECRET_KEY: Schema.String.check(Schema.isMinLength(1)),
-  SENDBLUE_WEBHOOK_SIGNING_SECRET: Schema.String.check(Schema.isMinLength(32)),
-  SENDBLUE_FROM_NUMBER: Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/)),
-  SENDBLUE_ALLOWED_USER_NUMBER: Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/)),
-  SENDBLUE_STATUS_CALLBACK_URL: Schema.URLFromString,
-  BOB_RELEASE_SHA: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/))
+import { sendblueEgressLayer } from "./egress/composition.ts"
+import { handleEgressHttp } from "./egress/index.ts"
+import { processOutboundJob } from "./egress/queue.ts"
+import { sendblueIngressLayer } from "./ingress/composition.ts"
+import { handleIngressHttp } from "./ingress/http.ts"
+import { webRequest, writeWebResponse } from "./node-http.ts"
+import { sendblueProviderLayer } from "./sendblue/provider.ts"
+
+const Environment = Config.all({
+  PORT: Config.schema(Schema.NumberFromString, "PORT"),
+  CORE_URL: Config.url("CORE_URL"),
+  JOB_QUEUE_URL: Config.url("JOB_QUEUE_URL"),
+  CORE_CALLER_SECRET: Config.redacted("CORE_CALLER_SECRET"),
+  SENDBLUE_ACCOUNT_ID: Config.nonEmptyString("SENDBLUE_ACCOUNT_ID"),
+  SENDBLUE_LINE_ID: Config.nonEmptyString("SENDBLUE_LINE_ID"),
+  SENDBLUE_API_KEY_ID: Config.nonEmptyString("SENDBLUE_API_KEY_ID"),
+  SENDBLUE_API_SECRET_KEY: Config.redacted("SENDBLUE_API_SECRET_KEY"),
+  SENDBLUE_WEBHOOK_SIGNING_SECRET: Config.redacted("SENDBLUE_WEBHOOK_SIGNING_SECRET"),
+  SENDBLUE_FROM_NUMBER: Config.schema(
+    Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/)),
+    "SENDBLUE_FROM_NUMBER"
+  ),
+  SENDBLUE_ALLOWED_USER_NUMBER: Config.schema(
+    Schema.String.check(Schema.isPattern(/^\+[1-9]\d{7,14}$/)),
+    "SENDBLUE_ALLOWED_USER_NUMBER"
+  ),
+  SENDBLUE_STATUS_CALLBACK_URL: Config.url("SENDBLUE_STATUS_CALLBACK_URL"),
+  BOB_RELEASE_SHA: Config.schema(
+    Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/)),
+    "BOB_RELEASE_SHA"
+  )
 })
 
 function redisConnection(urlValue: string): ConnectionOptions {
@@ -77,7 +91,7 @@ function makeQueueBinding<Job>(publisher: JobPublisher<Job>): RuntimeQueue<Job> 
 }
 
 async function main(): Promise<void> {
-  const config = Schema.decodeUnknownSync(Environment)(process.env)
+  const config = await Effect.runPromise(Environment)
   const coreUrl = config.CORE_URL.toString().replace(/\/$/u, "")
   const connection = redisConnection(config.JOB_QUEUE_URL.toString())
   const queueOptions = { connection, prefix: "bob" }
@@ -90,34 +104,44 @@ async function main(): Promise<void> {
   const deliveryResultQueueBinding = makeQueueBinding<DeliveryResult>(
     makeBullMqJobPublisher(deliveryResultQueue, "delivery-result")
   )
-  const commonTelemetry = {
-    OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:4318",
-    BOB_RELEASE_SHA: config.BOB_RELEASE_SHA
-  }
+  const callerSecret = Redacted.value(config.CORE_CALLER_SECRET)
+  const webhookSecret = Redacted.value(config.SENDBLUE_WEBHOOK_SIGNING_SECRET)
   const ingressBindings: IngressBindings = {
     CORE: core,
     INBOUND_QUEUE: inboundQueueBinding,
     SENDBLUE_ACCOUNT_ID: config.SENDBLUE_ACCOUNT_ID,
     SENDBLUE_LINE_ID: config.SENDBLUE_LINE_ID,
-    SENDBLUE_WEBHOOK_SIGNING_SECRET: config.SENDBLUE_WEBHOOK_SIGNING_SECRET,
+    SENDBLUE_WEBHOOK_SIGNING_SECRET: webhookSecret,
     SENDBLUE_FROM_NUMBER: config.SENDBLUE_FROM_NUMBER,
     SENDBLUE_ALLOWED_USER_NUMBER: config.SENDBLUE_ALLOWED_USER_NUMBER,
-    CORE_CALLER_SECRET: config.CORE_CALLER_SECRET,
-    ...commonTelemetry
+    CORE_CALLER_SECRET: callerSecret
   }
   const egressBindings: EgressBindings = {
     CORE: core,
     INGRESS: makeHttpFetcher("http://127.0.0.1:8786"),
     DELIVERY_RESULT_QUEUE: deliveryResultQueueBinding,
-    SENDBLUE_API_KEY_ID: config.SENDBLUE_API_KEY_ID,
-    SENDBLUE_API_SECRET_KEY: config.SENDBLUE_API_SECRET_KEY,
-    SENDBLUE_WEBHOOK_SIGNING_SECRET: config.SENDBLUE_WEBHOOK_SIGNING_SECRET,
+    SENDBLUE_WEBHOOK_SIGNING_SECRET: webhookSecret,
     SENDBLUE_FROM_NUMBER: config.SENDBLUE_FROM_NUMBER,
     SENDBLUE_ALLOWED_USER_NUMBER: config.SENDBLUE_ALLOWED_USER_NUMBER,
     SENDBLUE_STATUS_CALLBACK_URL: config.SENDBLUE_STATUS_CALLBACK_URL.toString(),
-    CORE_CALLER_SECRET: config.CORE_CALLER_SECRET,
-    ...commonTelemetry
+    CORE_CALLER_SECRET: callerSecret
   }
+  const runtime = ManagedRuntime.make(
+    Layer.mergeAll(
+      sendblueIngressLayer(ingressBindings),
+      sendblueEgressLayer(egressBindings),
+      sendblueProviderLayer({
+        apiKeyId: config.SENDBLUE_API_KEY_ID,
+        apiSecretKey: config.SENDBLUE_API_SECRET_KEY
+      }),
+      nodeTelemetryLayer({
+        endpoint: "http://127.0.0.1:4318",
+        serviceName: "bob-channel",
+        serviceVersion: config.BOB_RELEASE_SHA,
+        deploymentEnvironment: "prod"
+      })
+    )
+  )
   const workers = startBullMqWorkerHost(
     [
       {
@@ -126,7 +150,7 @@ async function main(): Promise<void> {
           { decode: (input) => Schema.decodeUnknownSync(OutboundJob)(input) },
           {
             process: async (job) =>
-              (await processOutboundJob(job, egressBindings)) === "done"
+              (await runtime.runPromise(processOutboundJob(job))) === "done"
                 ? completeJob
                 : retryJob(30_000)
           },
@@ -146,8 +170,8 @@ async function main(): Promise<void> {
         url.pathname === "/health"
           ? Response.json({ healthy: true, service: "channel-runtime", version: 1 })
           : url.pathname.startsWith("/internal/")
-            ? await handleEgressHttp(request, egressBindings)
-            : await handleIngressHttp(request, ingressBindings)
+            ? await runtime.runPromise(handleEgressHttp(request))
+            : await runtime.runPromise(handleIngressHttp(request))
       await writeWebResponse(response, outgoing)
     } catch {
       outgoing.writeHead(500).end()
@@ -159,6 +183,7 @@ async function main(): Promise<void> {
     server.close()
     await workers.close()
     await Promise.all([inboundQueue.close(), deliveryResultQueue.close()])
+    await runtime.dispose()
   }
   process.once("SIGTERM", () => void shutdown())
   process.once("SIGINT", () => void shutdown())

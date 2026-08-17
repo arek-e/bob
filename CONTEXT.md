@@ -91,6 +91,8 @@ Package projects follow the system map:
 - `packages/core/service` owns reusable Core workflows and the provider-neutral Core Layer builder.
 - `apps/core` selects one Deployment Profile and Adapter set. It owns the Managed Runtime, hosting
   entrypoints, and process lifecycle.
+- `apps/channel` owns the Sendblue Channel Adapter, wire schemas, workflows, Effect Layers, hosting
+  entrypoints, and process lifecycle.
 - `packages/<runtime-system>/types` owns one provider-neutral Runtime Interface.
 - `packages/<runtime-system>/runtime` owns the reviewed Runtime Adapters for that Interface.
 - `packages/db/types` owns the Effect Drizzle Database Interface.
@@ -239,6 +241,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - The Connections Gateway derives Instance scope from verified Instance identity.
 - The Connections Gateway namespaces every Nango owner reference with the Bob Instance ID.
 - The Sendblue modules never receive model-provider credentials.
+- The Channel app owns one Managed Runtime for Sendblue provider, ingress, egress, and telemetry Layers.
+- The Sendblue Provider Adapter owns provider HTTP, timeouts, decoding, and typed provider failures.
 - OpenBao is authoritative for production configuration and credentials.
 - Varlock defines and validates each runnable workspace's environment surface.
 - Varlock resolves approved OpenBao values without owning them.
@@ -248,13 +252,15 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - No runtime resource has two infrastructure owners.
 - Health observation is read-only, content-free, validated, and fail-open.
 - Effect composes I/O. Pure domain rules stay as normal TypeScript.
-- Each I/O feature defines its Effect service tag in its `types` project.
+- Each provider-neutral I/O feature defines its Effect service tag in its `types` project.
+- A provider Runtime Adapter can define its private Effect service tag in its owning app.
 - Each I/O feature provides its live Adapter through an Effect `Layer` in its `service` project.
 - Each I/O feature exposes one Effect service object for its public effectful operations.
 - Public service operations define coarse spans. Database helpers do not create spans.
 - Business Modules use the central telemetry Interface and Effect span functions. They do not own telemetry helpers.
 - The Core Layer builder composes feature Layers from the app's static Deployment Profile.
 - Core hosting entrypoints run Effects through one app-owned Managed Runtime.
+- Provider-specific runtime logic stays in its runnable app unless two apps reuse the same Adapter.
 - A Layer can provide a hosting-owned Adapter when the hosting boundary must also use that Adapter.
 - The Core app owns the scoped PostgreSQL Layer and closes its pool during app shutdown.
 - Drizzle owns application schemas and queries. Better Auth uses the selected Database Adapter for auth tables.
