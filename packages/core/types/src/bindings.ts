@@ -3,20 +3,6 @@ import type { BetterAuthOptions } from "better-auth"
 
 import type { OutboundJob } from "./jobs.ts"
 
-export interface ReminderBindings {
-  REMINDER_CLOCK: {
-    readonly fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
-  }
-  REMINDER_QUIET_HOURS_START: string
-  REMINDER_QUIET_HOURS_END: string
-  REMINDER_DAILY_LIMIT: number
-}
-
-export interface ConnectionsBindings {
-  CONNECTIONS_GATEWAY_URL: string
-  CONNECTIONS_GATEWAY_CALLER_SECRET: string
-}
-
 export interface GeneralCoreBindings {
   ASSETS?: { readonly fetch: (request: Request) => Promise<Response> }
   AUTH_DATABASE: NonNullable<BetterAuthOptions["database"]>
@@ -53,8 +39,5 @@ export interface GeneralCoreBindings {
   BOB_RELEASE_SHA?: string
   OTEL_EXPORTER_OTLP_ENDPOINT?: string
 }
-
-export interface TransitionalBindings
-  extends GeneralCoreBindings, ReminderBindings, ConnectionsBindings {}
 
 export interface CoreBindings extends GeneralCoreBindings {}

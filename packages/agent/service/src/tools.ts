@@ -6,7 +6,7 @@ import {
   type ToolCommand,
   type ToolInputSchema,
   type ToolName
-} from "@bob/capabilities-types/tools"
+} from "@bob/tools-types/tools"
 import { Type, type TSchema, type Tool } from "@earendil-works/pi-ai"
 import { Schema } from "effect"
 

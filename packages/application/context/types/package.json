@@ -1,0 +1,20 @@
+{
+  "name": "@bob/context-types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./item": "./src/item.ts",
+    "./source": "./src/source.ts",
+    "./store": "./src/store.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/shared-types": "workspace:*",
+    "@bob/tools-types": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  }
+}

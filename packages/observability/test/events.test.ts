@@ -1,6 +1,6 @@
-import { makeCapabilityCatalogue } from "@bob/capabilities-types/catalogue"
 import { memoryCapability } from "@bob/memory-types/capability"
 import { reminderCapability } from "@bob/reminders-types/capability"
+import { makeCapabilityCatalogue } from "@bob/tools-types/catalogue"
 import { trainingCapability } from "@bob/training-types/capability"
 import { describe, expect, it } from "vitest"
 

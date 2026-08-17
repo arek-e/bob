@@ -1,5 +1,6 @@
 import type { CoreAdapters } from "@bob/core-types/adapters"
 import type { GeneralCoreBindings } from "@bob/core-types/bindings"
+import type { CoreDeploymentProfile } from "@bob/deployment-profile-types/runtime"
 
 import { artifactStoreLayer, makeArtifactStore } from "@bob/artifacts-service/store"
 import { makePrivateTextReader } from "@bob/context-service/private-text"
@@ -9,7 +10,6 @@ import { makeConversationEvidenceSource } from "@bob/conversations-service/evide
 import { agentRunStoreLayer, makeAgentRunStore } from "@bob/conversations-service/run-store"
 import { conversationStoreLayer, makeConversationStore } from "@bob/conversations-service/store"
 import { conversationTiming } from "@bob/conversations-service/timing"
-import { makeToolAdapterRegistry } from "@bob/conversations-service/tool-adapter"
 import { makeToolExecutor, toolExecutorLayer } from "@bob/conversations-service/tool-executor"
 import {
   conversationTurnStoreLayer,
@@ -28,9 +28,8 @@ import { makeRetrievalPipeline, retrievalPipelineLayer } from "@bob/retrieval-se
 import { makeOwnerSettingsStore, ownerSettingsStoreLayer } from "@bob/settings-service/store"
 import { makeSettingsToolAdapter } from "@bob/settings-service/tool-adapter"
 import { makeReviewedSkillRegistry } from "@bob/skills-service/registry"
+import { makeToolAdapterRegistry } from "@bob/tools-service/registry"
 import { Layer, Schema } from "effect"
-
-import type { CoreDeploymentProfile } from "./deployment-profile.ts"
 
 import { makeApplicationContextStore } from "./context-composition.ts"
 
@@ -61,9 +60,9 @@ const Configuration = Schema.Struct({
   )
 })
 
-export function composeGeneralCore<Extensions extends object>(
+export function composeGeneralCore(
   bindings: GeneralCoreBindings,
-  runtimeProfile: CoreDeploymentProfile<Extensions>,
+  runtimeProfile: CoreDeploymentProfile,
   adapters: CoreAdapters
 ) {
   const config = Schema.decodeUnknownSync(Configuration)(bindings)
@@ -144,7 +143,7 @@ export function composeGeneralCore<Extensions extends object>(
   const toolAdapters = makeToolAdapterRegistry(runtimeProfile.catalogue, [
     makeMemoryToolAdapter(memory, retrieval),
     makeSettingsToolAdapter(settings),
-    ...prepared.toolAdapters({ memory, retrieval })
+    ...prepared.toolAdapters
   ])
   const tools = makeToolExecutor(applicationStorage, protection, toolAdapters, {
     toolLeaseMs: conversationTiming.mutationSettleLeaseMs,
@@ -174,9 +173,8 @@ export function composeGeneralCore<Extensions extends object>(
   return {
     config,
     profile: runtimeProfile.catalogue,
-    modules: prepared.modules,
+    modules: prepared.runtimeModules,
     layer,
-    extensions: prepared.extensions,
     memoryClasses: Object.freeze({ agentExperience, reviewedSkills }),
     jobQueue: adapters.jobQueue,
     runCoordinator: adapters.runCoordinator,

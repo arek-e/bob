@@ -1,0 +1,22 @@
+{
+  "name": "@bob/context-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./private-text": "./src/private-text.ts",
+    "./source": "./src/source.ts",
+    "./store": "./src/store.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/context-types": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/policy-service": "workspace:*",
+    "@bob/policy-types": "workspace:*",
+    "effect": "4.0.0-beta.107"
+  }
+}

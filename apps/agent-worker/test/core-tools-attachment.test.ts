@@ -1,4 +1,4 @@
-import { coreDeploymentProfile } from "@bob/core-types/profiles"
+import { coreDeploymentProfile } from "@bob/deployment-profile-types/profiles"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 

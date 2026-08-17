@@ -1,0 +1,30 @@
+{
+  "name": "@bob/delivery-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./followups": "./src/followups.ts",
+    "./store": "./src/store.ts",
+    "./target-adapter": "./src/target-adapter.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/conversations-types": "workspace:*",
+    "@bob/core-types": "workspace:*",
+    "@bob/db-service": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/delivery-types": "workspace:*",
+    "@bob/job-queue-types": "workspace:*",
+    "@bob/operations-service": "workspace:*",
+    "@bob/policy-service": "workspace:*",
+    "@bob/policy-types": "workspace:*",
+    "@bob/shared-types": "workspace:*",
+    "@effect/sql-pg": "4.0.0-beta.107",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "4.0.0-beta.107"
+  }
+}

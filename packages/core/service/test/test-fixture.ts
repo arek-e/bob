@@ -10,9 +10,10 @@ import {
   MessageAttachmentStore,
   type MessageAttachmentStoreShape
 } from "@bob/conversations-types/attachment-store"
-import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
+import { type ToolExecutorShape, ToolExecutorError } from "@bob/conversations-types/tool-executor"
 import { makeRuntimeModules } from "@bob/core-types/runtime-module"
 import { deliveryStoreLayer } from "@bob/delivery-service/store"
+import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
 import { makeJournalConversationWorkflow } from "@bob/journal-service/conversation-workflow"
 import { noopTelemetryLayer } from "@bob/observability"
 import { alertStoreLayer } from "@bob/operations-service/alerts/store"
@@ -54,6 +55,33 @@ function completeAdapter<Adapter extends object>(value: object | undefined): Ada
       }
     }
   })
+}
+
+function completeToolExecutor(value: object | undefined): ToolExecutorShape {
+  const member = (operation: keyof ToolExecutorShape) =>
+    typeof Reflect.get(value ?? {}, operation) === "function"
+      ? (Reflect.get(value ?? {}, operation) as (...arguments_: unknown[]) => unknown)
+      : undefined
+  const run = <A>(operation: keyof ToolExecutorShape, fallback: A, arguments_: unknown[]) =>
+    Effect.suspend(() => {
+      const execute = member(operation)
+      if (execute === undefined) return Effect.succeed(fallback)
+      try {
+        const result = execute(...arguments_)
+        if (Effect.isEffect(result)) return result as Effect.Effect<A, ToolExecutorError>
+        return Effect.tryPromise({
+          try: () => Promise.resolve(result as A),
+          catch: (cause) => new ToolExecutorError({ operation, cause })
+        })
+      } catch (cause) {
+        return Effect.fail(new ToolExecutorError({ operation, cause }))
+      }
+    })
+  return {
+    execute: (input) => run("execute", { ok: true, code: "unused", message: "Unused." }, [input]),
+    mutationActivity: (runId) => run("mutationActivity", { status: "none" as const }, [runId]),
+    expireMutationRecovery: (runId) => run("expireMutationRecovery", false, [runId])
+  }
 }
 
 export function testFixture<
@@ -101,7 +129,7 @@ export function testFixture<
           attachmentService?.loadForAgent ?? (() => Effect.die("Missing attachment store"))
       })
     ),
-    toolExecutorLayer(completeAdapter(services?.tools)),
+    toolExecutorLayer(completeToolExecutor(services?.tools)),
     conversationTurnStoreLayer(completeAdapter(services?.turns)),
     deliveryStoreLayer(completeAdapter(services?.delivery)),
     alertStoreLayer(completeAdapter(services?.alerts)),

@@ -13,9 +13,10 @@
   },
   "dependencies": {
     "@bob/artifacts-types": "workspace:*",
-    "@bob/capabilities-types": "workspace:*",
     "@bob/context-types": "workspace:*",
     "@bob/settings-types": "workspace:*",
+    "@bob/shared-types": "workspace:*",
+    "@bob/tools-types": "workspace:*",
     "effect": "4.0.0-beta.107"
   }
 }

@@ -1,0 +1,40 @@
+{
+  "name": "@bob/memory-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./agent-experience": "./src/agent-experience.ts",
+    "./evidence-source": "./src/evidence-source.ts",
+    "./evidence": "./src/evidence.ts",
+    "./rules": "./src/rules.ts",
+    "./source-withdrawal": "./src/source-withdrawal.ts",
+    "./store": "./src/store.ts",
+    "./tool-adapter": "./src/tool-adapter.ts",
+    "./value-envelope": "./src/value-envelope.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/context-service": "workspace:*",
+    "@bob/conversations-types": "workspace:*",
+    "@bob/db-service": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/memory-types": "workspace:*",
+    "@bob/policy-service": "workspace:*",
+    "@bob/policy-types": "workspace:*",
+    "@bob/retrieval-service": "workspace:*",
+    "@bob/retrieval-types": "workspace:*",
+    "@bob/shared-types": "workspace:*",
+    "@bob/tools-service": "workspace:*",
+    "@bob/tools-types": "workspace:*",
+    "@effect/sql-pg": "4.0.0-beta.107",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "4.0.0-beta.107"
+  },
+  "devDependencies": {
+    "@bob/skills-service": "workspace:*"
+  }
+}

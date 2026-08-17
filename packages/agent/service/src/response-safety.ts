@@ -1,5 +1,4 @@
 import { AgentArtifact } from "@bob/artifacts-types/artifact"
-import { ToolName, type ToolResult } from "@bob/capabilities-types/tools"
 import {
   internalToolReferences,
   noSupportedRecordFallback,
@@ -7,6 +6,7 @@ import {
   scanUnsafeOutput,
   type OutputValidationCode
 } from "@bob/policy-types/output-safety"
+import { ToolName, type ToolResult } from "@bob/tools-types/tools"
 import { Schema } from "effect"
 
 const NonEmptyText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(8_000))

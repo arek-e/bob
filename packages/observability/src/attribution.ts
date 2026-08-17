@@ -1,4 +1,4 @@
-import type { CapabilityCatalogue } from "@bob/capabilities-types/tools"
+import type { CapabilityCatalogue } from "@bob/tools-types/tools"
 
 import type { TelemetryFeature, TelemetrySpanCode } from "./events.ts"
 

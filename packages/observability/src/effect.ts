@@ -1,5 +1,5 @@
-import { ToolName } from "@bob/capabilities-types/tools"
 import { OutputValidationCode } from "@bob/policy-types/output-safety"
+import { ToolName } from "@bob/tools-types/tools"
 import { Context, Effect, Exit, Layer, Option, Schema, Tracer } from "effect"
 
 import {

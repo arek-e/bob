@@ -1,8 +1,8 @@
 import type { AgentRunOperation, AgentRunRequest, AgentRunResult } from "@bob/agent-types/run"
-import type { ToolCommand, ToolResult } from "@bob/capabilities-types/tools"
+import type { ToolCommand, ToolResult } from "@bob/tools-types/tools"
 
 import { AgentCheckpointError, AgentToolError } from "@bob/agent-types"
-import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
+import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
 import { withBobSpan, makeCaptureTelemetry } from "@bob/observability"
 import {
   fauxAssistantMessage,

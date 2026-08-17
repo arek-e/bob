@@ -1,0 +1,44 @@
+{
+  "name": "@bob/conversations-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./attachment-store": "./src/attachment-store.ts",
+    "./agent-response": "./src/agent-response.ts",
+    "./context-sources": "./src/context-sources.ts",
+    "./evidence-source": "./src/evidence-source.ts",
+    "./prior-tool-receipts": "./src/prior-tool-receipts.ts",
+    "./run-store": "./src/run-store.ts",
+    "./store": "./src/store.ts",
+    "./timing": "./src/timing.ts",
+    "./tool-executor": "./src/tool-executor.ts",
+    "./turn-store": "./src/turn-store.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@bob/agent-types": "workspace:*",
+    "@bob/artifacts-service": "workspace:*",
+    "@bob/artifacts-types": "workspace:*",
+    "@bob/context-service": "workspace:*",
+    "@bob/context-types": "workspace:*",
+    "@bob/conversations-types": "workspace:*",
+    "@bob/db-service": "workspace:*",
+    "@bob/db-types": "workspace:*",
+    "@bob/memory-service": "workspace:*",
+    "@bob/memory-types": "workspace:*",
+    "@bob/object-store-types": "workspace:*",
+    "@bob/observability": "workspace:*",
+    "@bob/policy-service": "workspace:*",
+    "@bob/policy-types": "workspace:*",
+    "@bob/shared-types": "workspace:*",
+    "@bob/tools-service": "workspace:*",
+    "@bob/tools-types": "workspace:*",
+    "@effect/sql-pg": "4.0.0-beta.107",
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "effect": "4.0.0-beta.107"
+  }
+}
