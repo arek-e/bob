@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 
 import { SendblueEgress } from "./composition.ts"
 import { InboundReconciliationError, reconcileInboundHistory } from "./reconcile.ts"
@@ -15,7 +15,8 @@ function recoveryErrorCode(cause: unknown): string {
   ) {
     return cause.message
   }
-  if (typeof cause === "object" && cause !== null && "_tag" in cause) return String(cause._tag)
+  const tagged = Schema.decodeUnknownExit(Schema.Struct({ _tag: Schema.String }))(cause)
+  if (tagged._tag === "Success") return tagged.value._tag
   return "unknown"
 }
 
@@ -28,12 +29,12 @@ export function handleScheduledReconcile(scheduledAt: Date) {
       signingSecret: egress.config.SENDBLUE_WEBHOOK_SIGNING_SECRET,
       scheduledAt,
       accept: ({ headers, body, signal }) => {
-        const request = {
+        const request: RequestInit = {
           method: "POST",
           headers,
-          body,
-          ...(signal === undefined ? {} : { signal })
+          body
         }
+        if (signal !== undefined) request.signal = signal
         return egress.ingress.fetch("https://ingress.internal/webhooks/receive", request)
       }
     })

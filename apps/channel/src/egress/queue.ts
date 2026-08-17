@@ -1,4 +1,5 @@
-import { OutboundJob, type OutboundJob as OutboundJobValue } from "@bob/core-types/jobs"
+import type { OutboundJob as OutboundJobValue } from "@bob/core-types/jobs"
+
 import { OutboxClaim, type DeliveryResult } from "@bob/delivery-types/delivery"
 import {
   emitHealth,
@@ -7,7 +8,7 @@ import {
   recordDecision,
   withBobSpan
 } from "@bob/observability"
-import { Effect, Schema } from "effect"
+import { Data, Effect, Schema } from "effect"
 
 import { SendblueProvider, type SendOutcome } from "../sendblue/provider.ts"
 import { buildSendblueStatusCallback } from "../sendblue/status-callback.ts"
@@ -20,10 +21,9 @@ class WorkflowResponseFailure extends Schema.TaggedError<WorkflowResponseFailure
   { response: Schema.Defect() }
 ) {}
 
-class ProviderOutcomeFailure extends Schema.TaggedError<ProviderOutcomeFailure>()(
-  "ProviderOutcomeFailure",
-  { outcome: Schema.Defect() }
-) {}
+class ProviderOutcomeFailure extends Data.TaggedError("ProviderOutcomeFailure")<{
+  readonly outcome: SendOutcome
+}> {}
 
 function decodeResponse<A, I, R>(response: Response, schema: Schema.Codec<A, I, R, never>) {
   return Effect.tryPromise(() => response.json()).pipe(
@@ -118,9 +118,7 @@ function processDecodedOutboundJob(job: OutboundJobValue) {
           return result
         })
       ).pipe(
-        Effect.catchTag("ProviderOutcomeFailure", (failure) =>
-          Effect.succeed(failure.outcome as SendOutcome)
-        )
+        Effect.catchTag("ProviderOutcomeFailure", (failure) => Effect.succeed(failure.outcome))
       )
       yield* emitHealth({
         type: "delivery",
@@ -200,8 +198,6 @@ function processDecodedOutboundJob(job: OutboundJobValue) {
   return parent === undefined ? effect : effect.pipe(Effect.withParentSpan(parent))
 }
 
-export function processOutboundJob(input: unknown) {
-  return Schema.decodeUnknownEffect(OutboundJob)(input).pipe(
-    Effect.flatMap(processDecodedOutboundJob)
-  )
+export function processOutboundJob(input: OutboundJobValue) {
+  return processDecodedOutboundJob(input)
 }

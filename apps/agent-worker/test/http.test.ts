@@ -1,6 +1,6 @@
 import type { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/agent-types/run"
 
-import { BobAgent, type AgentRunDurability, type BobAgentShape } from "@bob/agent-types"
+import { BobAgent, type AgentRunDurability, type BobAgentService } from "@bob/agent-types"
 import { transitionalDeploymentProfile } from "@bob/core-types/profiles"
 import { withBobSpan, makeCaptureTelemetry } from "@bob/observability"
 import { Effect, Layer, ManagedRuntime } from "effect"
@@ -43,34 +43,38 @@ const runAttemptId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db93"
 
 const activeRuntimes: Array<{ readonly dispose: () => Promise<void> }> = []
 
-type Mutable<Value> = { -readonly [Key in keyof Value]: Value[Key] }
+interface TestCoreToolClient {
+  execute: CoreToolClient["execute"]
+  loadRunOperations: CoreToolClient["loadRunOperations"]
+  appendRunOperation: CoreToolClient["appendRunOperation"]
+  loadAttachment: CoreToolClient["loadAttachment"]
+  checkReadiness: CoreToolClient["checkReadiness"]
+}
+
+interface TestBobAgent {
+  runTurn: BobAgentService["runTurn"]
+  runSmoke: BobAgentService["runSmoke"]
+  requestSteer: BobAgentService["requestSteer"]
+  getAuthStatus: BobAgentService["getAuthStatus"]
+  startDeviceLogin: BobAgentService["startDeviceLogin"]
+}
 
 afterEach(async () => {
   await Promise.all(activeRuntimes.splice(0).map((runtime) => runtime.dispose()))
 })
 
-function composition(authorized: boolean, allowedScope: "run" | "admin" | "both" = "both") {
-  const telemetry = makeCaptureTelemetry({
-    serviceName: "bob-agent-worker",
-    serviceVersion: "0123456789abcdef0123456789abcdef01234567",
-    deploymentEnvironment: "test"
-  })
-  const access = {
-    verify: vi.fn(async (_request: Request, scope: "run" | "admin") => {
-      if (!authorized || (allowedScope !== "both" && allowedScope !== scope)) {
-        throw new Error("access_denied")
-      }
-      return { subject: "", commonName: "service-token", scope }
-    })
-  }
-  const coreTools: Mutable<CoreToolClient> = {
+function coreToolClientFixture(): TestCoreToolClient {
+  return {
     execute: vi.fn(() => Effect.die("not implemented in HTTP boundary test")),
     loadRunOperations: vi.fn(() => Effect.succeed([])),
     appendRunOperation: vi.fn(() => Effect.void),
     loadAttachment: vi.fn(() => Effect.die("not implemented in HTTP boundary test")),
     checkReadiness: vi.fn(() => Effect.succeed(true))
   }
-  const agent: Mutable<BobAgentShape> = {
+}
+
+function agentFixture(): TestBobAgent {
+  return {
     runTurn: vi.fn(() =>
       withBobSpan(
         {
@@ -103,6 +107,24 @@ function composition(authorized: boolean, allowedScope: "run" | "admin" | "both"
       } satisfies DeviceLoginEvent)
     )
   }
+}
+
+function composition(authorized: boolean, allowedScope: "run" | "admin" | "both" = "both") {
+  const telemetry = makeCaptureTelemetry({
+    serviceName: "bob-agent-worker",
+    serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+    deploymentEnvironment: "test"
+  })
+  const access = {
+    verify: vi.fn(async (_request: Request, scope: "run" | "admin") => {
+      if (!authorized || (allowedScope !== "both" && allowedScope !== scope)) {
+        throw new Error("access_denied")
+      }
+      return { subject: "", commonName: "service-token", scope }
+    })
+  }
+  const coreTools = coreToolClientFixture()
+  const agent = agentFixture()
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
       telemetry.layer,

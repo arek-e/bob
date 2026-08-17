@@ -1,10 +1,10 @@
-import type { NormalizedInboundEvent } from "@bob/conversations-types/channel"
+import type { InboundAcceptance, NormalizedInboundEvent } from "@bob/conversations-types/channel"
 import type { ConversationStoreAdapter } from "@bob/conversations-types/store"
 import type { CoreDatabase, DatabaseQuery } from "@bob/db-types"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/capabilities-types/effect-adapter"
 import { ConversationStore, ConversationStoreError } from "@bob/conversations-types/store"
 import {
   channels,
@@ -139,12 +139,13 @@ export function makeConversationStore(
       )
       if (existing !== undefined) {
         const pending = await pendingAttachmentOrdinals(existing.id, existing.attachmentCount)
-        return {
+        const acceptance: InboundAcceptance = {
           eventId: existing.id,
           duplicate: true,
-          shouldEnqueue: existing.enqueuedAt === null && existing.processedAt === null,
-          ...(pending.length === 0 ? {} : { pendingAttachmentOrdinals: pending })
+          shouldEnqueue: existing.enqueuedAt === null && existing.processedAt === null
         }
+        if (pending.length > 0) Object.assign(acceptance, { pendingAttachmentOrdinals: pending })
+        return acceptance
       }
 
       const ownerDataKey = await ownerDataKeys.ensure(options.ownerId)
@@ -223,20 +224,22 @@ export function makeConversationStore(
         )
         if (winner === undefined) throw new Error("Inbound event insert failed")
         const pending = await pendingAttachmentOrdinals(winner.id, winner.attachmentCount)
-        return {
+        const acceptance: InboundAcceptance = {
           eventId: winner.id,
           duplicate: true,
-          shouldEnqueue: winner.enqueuedAt === null && winner.processedAt === null,
-          ...(pending.length === 0 ? {} : { pendingAttachmentOrdinals: pending })
+          shouldEnqueue: winner.enqueuedAt === null && winner.processedAt === null
         }
+        if (pending.length > 0) Object.assign(acceptance, { pendingAttachmentOrdinals: pending })
+        return acceptance
       }
       const pending = Array.from({ length: event.attachmentCount ?? 0 }, (_, ordinal) => ordinal)
-      return {
+      const acceptance: InboundAcceptance = {
         eventId: event.id,
         duplicate: false,
-        shouldEnqueue: !consumedControl,
-        ...(pending.length === 0 ? {} : { pendingAttachmentOrdinals: pending })
+        shouldEnqueue: !consumedControl
       }
+      if (pending.length > 0) Object.assign(acceptance, { pendingAttachmentOrdinals: pending })
+      return acceptance
     },
 
     async markEnqueued(eventId, at) {
@@ -397,11 +400,22 @@ export function makeConversationStore(
 }
 
 export function conversationStoreLayer(store: ConversationStoreAdapter) {
+  const failure = (operation: keyof ConversationStoreAdapter) => (cause: unknown) =>
+    new ConversationStoreError({ operation: String(operation), cause })
   return Layer.succeed(
     ConversationStore,
-    liftPromiseAdapter(
-      store,
-      (operation, cause) => new ConversationStoreError({ operation: String(operation), cause })
-    )
+    ConversationStore.of({
+      acceptInbound: liftPromiseOperation(store.acceptInbound, failure("acceptInbound")),
+      markEnqueued: liftPromiseOperation(store.markEnqueued, failure("markEnqueued")),
+      getInboundOwner: liftPromiseOperation(store.getInboundOwner, failure("getInboundOwner")),
+      claimInbound: liftPromiseOperation(store.claimInbound, failure("claimInbound")),
+      claimReaction: liftPromiseOperation(store.claimReaction, failure("claimReaction")),
+      completeInbound: liftPromiseOperation(store.completeInbound, failure("completeInbound")),
+      prepareInboundRecovery: liftPromiseOperation(
+        store.prepareInboundRecovery,
+        failure("prepareInboundRecovery")
+      ),
+      pendingBindings: liftPromiseOperation(store.pendingBindings, failure("pendingBindings"))
+    })
   )
 }

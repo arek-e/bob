@@ -3,7 +3,7 @@ import type { DeliveryStoreAdapter } from "@bob/delivery-types/store"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/capabilities-types/effect-adapter"
 import {
   ProviderDeliveryStatus,
   type NormalizedStatusEvent
@@ -985,11 +985,33 @@ export function makeDeliveryStore(
 }
 
 export function deliveryStoreLayer(store: DeliveryStoreAdapter) {
+  const failure = (operation: keyof DeliveryStoreAdapter) => (cause: unknown) =>
+    new DeliveryStoreError({ operation: String(operation), cause })
   return Layer.succeed(
     DeliveryStore,
-    liftPromiseAdapter(
-      store,
-      (operation, cause) => new DeliveryStoreError({ operation: String(operation), cause })
-    )
+    DeliveryStore.of({
+      createOutbox: liftPromiseOperation(store.createOutbox, failure("createOutbox")),
+      markEnqueued: liftPromiseOperation(store.markEnqueued, failure("markEnqueued")),
+      claimOutbox: liftPromiseOperation(store.claimOutbox, failure("claimOutbox")),
+      recordResult: liftPromiseOperation(store.recordResult, failure("recordResult")),
+      recordProviderEvent: liftPromiseOperation(
+        store.recordProviderEvent,
+        failure("recordProviderEvent")
+      ),
+      reconcileExpiredClaims: liftPromiseOperation(
+        store.reconcileExpiredClaims,
+        failure("reconcileExpiredClaims")
+      ),
+      reconcileOutbox: liftPromiseOperation(store.reconcileOutbox, failure("reconcileOutbox")),
+      reconciliationTarget: liftPromiseOperation(
+        store.reconciliationTarget,
+        failure("reconciliationTarget")
+      ),
+      prepareOutboundRecovery: liftPromiseOperation(
+        store.prepareOutboundRecovery,
+        failure("prepareOutboundRecovery")
+      ),
+      outboxDisposition: liftPromiseOperation(store.outboxDisposition, failure("outboxDisposition"))
+    })
   )
 }

@@ -463,9 +463,10 @@ describe("Sendblue egress", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        // SAFETY: This controlled test fixture matches the asserted contract used by this test.
         if (!String(input).endsWith("/v1/traces")) {
-          providerRequests.push(JSON.parse(String(init?.body)) as unknown)
+          providerRequests.push(
+            Schema.decodeUnknownSync(Schema.Json)(JSON.parse(String(init?.body)))
+          )
         }
         return Response.json({ message_handle: "sendblue-handle", status: "ACCEPTED" })
       })

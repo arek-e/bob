@@ -1,7 +1,7 @@
 import type { CoreDatabase } from "@bob/db-types"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 
-import { liftPromiseAdapter } from "@bob/capabilities-types/effect-adapter"
+import { liftPromiseOperation } from "@bob/capabilities-types/effect-adapter"
 import { users } from "@bob/db-service/schema/conversations"
 import {
   OwnerDataKeyStore,
@@ -137,11 +137,13 @@ export function makeOwnerDataKeyStore(
 }
 
 export function ownerDataKeyStoreLayer(store: OwnerDataKeyStoreAdapter) {
+  const failure = (operation: keyof OwnerDataKeyStoreAdapter) => (cause: unknown) =>
+    new OwnerDataKeyStoreError({ operation: String(operation), cause })
   return Layer.succeed(
     OwnerDataKeyStore,
-    liftPromiseAdapter(
-      store,
-      (operation, cause) => new OwnerDataKeyStoreError({ operation: String(operation), cause })
-    )
+    OwnerDataKeyStore.of({
+      load: liftPromiseOperation(store.load, failure("load")),
+      ensure: liftPromiseOperation(store.ensure, failure("ensure"))
+    })
   )
 }

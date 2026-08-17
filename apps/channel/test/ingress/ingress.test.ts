@@ -92,7 +92,7 @@ function bindings(
     value: {
       CORE: { fetch: coreFetch },
       MEDIA: { fetch: mediaFetch },
-      INBOUND_QUEUE: { send: queueSend },
+      INBOUND_QUEUE: { send: queueSend, sendBatch: vi.fn().mockResolvedValue(undefined) },
       SENDBLUE_ACCOUNT_ID: "account",
       SENDBLUE_LINE_ID: "line",
       SENDBLUE_WEBHOOK_SIGNING_SECRET: "s".repeat(64),
@@ -149,7 +149,7 @@ describe("Sendblue ingress", () => {
       media_url: "https://media.example.test/image.png"
     }
 
-    const result = await handleIngressHttp(request("s".repeat(64), body), target.value as never)
+    const result = await handleIngressHttp(request("s".repeat(64), body), target.value)
 
     expect(result.status).toBe(202)
     expect(target.mediaFetch).toHaveBeenCalledOnce()

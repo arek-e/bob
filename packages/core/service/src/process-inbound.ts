@@ -917,11 +917,16 @@ export function processConversationTurnEffect(
           allowedTools,
           conversationTurnId: conversationTurn.turnId,
           conversationTurnRevision: conversationTurn.revision,
-          currentTurnMessages: turnMessages.map((message) => ({
-            sourceMessageId: message.messageId,
-            text: message.text,
-            ...(message.attachments === undefined ? {} : { attachments: message.attachments })
-          })),
+          currentTurnMessages: turnMessages.map((message) => {
+            const currentMessage = {
+              sourceMessageId: message.messageId,
+              text: message.text
+            }
+            if (message.attachments !== undefined) {
+              Object.assign(currentMessage, { attachments: message.attachments })
+            }
+            return currentMessage
+          }),
           limits: {
             maxTurns: 4,
             maxToolCalls: 4,
