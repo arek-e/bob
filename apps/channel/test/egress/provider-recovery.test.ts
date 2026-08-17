@@ -101,7 +101,11 @@ describe("Sendblue provider recovery", () => {
         SENDBLUE_FROM_NUMBER: "+46711111111",
         SENDBLUE_ALLOWED_USER_NUMBER: "+46700000000"
       } as never)
-    ).rejects.toThrow("sendblue_line_unavailable")
+    ).rejects.toMatchObject({
+      _tag: "InboundReconciliationError",
+      code: "sendblue_line_unavailable",
+      message: "sendblue_line_unavailable"
+    })
     expect(errors.map((line) => JSON.parse(line))).toEqual([
       {
         type: "inbound_reconcile",

@@ -89,6 +89,31 @@ describe("Sendblue inbound history reconciliation", () => {
         scheduledAt: new Date("2026-08-13T10:32:00.000Z"),
         accept: vi.fn()
       })
-    ).rejects.toThrow("sendblue_line_unavailable")
+    ).rejects.toMatchObject({
+      _tag: "InboundReconciliationError",
+      code: "sendblue_line_unavailable",
+      message: "sendblue_line_unavailable"
+    })
+  })
+
+  it("retains the failed ingress response status", async () => {
+    await expect(
+      reconcileInboundHistory({
+        history: {
+          hasLine: vi.fn().mockResolvedValue(true),
+          listInbound: vi.fn().mockResolvedValue([ownerInbound])
+        },
+        sendblueNumber: "+46711111111",
+        ownerNumber: "+46700000000",
+        signingSecret: "s".repeat(64),
+        scheduledAt: new Date("2026-08-13T10:32:00.000Z"),
+        accept: vi.fn(async () => new Response(null, { status: 503 }))
+      })
+    ).rejects.toMatchObject({
+      _tag: "InboundReconciliationError",
+      code: "sendblue_history_replay_failed",
+      status: 503,
+      message: "sendblue_history_replay_http_503"
+    })
   })
 })

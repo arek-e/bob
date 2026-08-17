@@ -1,5 +1,7 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from "node:http"
 
+import { RequestBodyTooLargeError } from "./http-errors.ts"
+
 const MAX_BODY_BYTES = 64 * 1024
 
 async function toRequest(input: IncomingMessage, signal: AbortSignal): Promise<Request> {
@@ -13,6 +15,8 @@ async function toRequest(input: IncomingMessage, signal: AbortSignal): Promise<R
   if (method === "GET" || method === "HEAD") {
     return new Request(`http://${host}${input.url ?? "/"}`, { method, headers, signal })
   }
+  const declaredLength = Number(headers.get("content-length") ?? "0")
+  if (declaredLength > MAX_BODY_BYTES) throw new RequestBodyTooLargeError()
   const chunks: Uint8Array[] = []
   let size = 0
   for await (const value of input) {
@@ -21,7 +25,7 @@ async function toRequest(input: IncomingMessage, signal: AbortSignal): Promise<R
         ? new TextEncoder().encode(String(value))
         : new Uint8Array(value)
     size += chunk.byteLength
-    if (size > MAX_BODY_BYTES) throw new Error("body_too_large")
+    if (size > MAX_BODY_BYTES) throw new RequestBodyTooLargeError()
     chunks.push(chunk)
   }
   const body = new Uint8Array(size)
@@ -57,7 +61,7 @@ export function createNodeHttpHandler(
       if (!output.destroyed) await writeResponse(output, response)
     } catch (error) {
       if (controller.signal.aborted || output.destroyed) return
-      const status = error instanceof Error && error.message === "body_too_large" ? 413 : 500
+      const status = error instanceof RequestBodyTooLargeError ? 413 : 500
       await writeResponse(
         output,
         Response.json(
