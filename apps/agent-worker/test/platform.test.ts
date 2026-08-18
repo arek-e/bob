@@ -27,5 +27,7 @@ describe("agent platform contract", () => {
     expect(schema).toContain(
       "@generateTsTypes(path=./src/environment.generated.ts, exposeEnv=local, auto=false)"
     )
+    expect(schema).toContain("@type=number")
+    expect(schema).not.toContain("@type=integer")
   })
 })
