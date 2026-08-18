@@ -432,8 +432,7 @@ export function makeDeliveryStore(
       const claimExpiresAt = new Date(claimedAt.getTime() + leaseMs).toISOString()
       await Effect.runPromise(
         allInTransaction(database, [
-          // This update and the attempt insert share one application storage transaction. The existing trigger
-          // closes an exact conversation turn only if the attempt insert can also commit.
+          // Claim the outbox, create the attempt, and close the exact turn in one transaction.
           database
             .update(outboxMessages)
             .set({
@@ -470,7 +469,27 @@ export function makeDeliveryStore(
                   eq(outboxMessages.claimToken, attemptId)
                 )
               )
-          )
+          ),
+          database
+            .update(conversationTurns)
+            .set({
+              status: "replied",
+              repliedAt: claimedAt.toISOString(),
+              updatedAt: claimedAt.toISOString()
+            })
+            .where(
+              and(
+                eq(conversationTurns.id, candidate.conversationTurnId ?? ""),
+                eq(conversationTurns.revision, candidate.conversationTurnRevision ?? -1),
+                eq(conversationTurns.replyOutboxId, candidate.id),
+                eq(conversationTurns.status, "committing"),
+                sql<boolean>`EXISTS (
+                  SELECT 1
+                  FROM ${deliveryAttempts}
+                  WHERE ${deliveryAttempts.outboxId} = ${candidate.id}
+                )`
+              )
+            )
         ])
       )
       const [attempt] = await Effect.runPromise(
@@ -741,6 +760,25 @@ export function makeDeliveryStore(
     },
 
     async reconcileExpiredClaims(at) {
+      await Effect.runPromise(
+        database
+          .update(conversationTurns)
+          .set({ status: "replied", repliedAt: at, updatedAt: at })
+          .where(
+            and(
+              eq(conversationTurns.status, "committing"),
+              sql<boolean>`EXISTS (
+                SELECT 1
+                FROM ${outboxMessages}
+                INNER JOIN ${deliveryAttempts}
+                  ON ${deliveryAttempts.outboxId} = ${outboxMessages.id}
+                WHERE ${outboxMessages.id} = ${conversationTurns.replyOutboxId}
+                  AND ${outboxMessages.conversationTurnId} = ${conversationTurns.id}
+                  AND ${outboxMessages.conversationTurnRevision} = ${conversationTurns.revision}
+              )`
+            )
+          )
+      )
       const expired = await Effect.runPromise(
         database
           .select({ id: outboxMessages.id, userId: outboxMessages.userId })
