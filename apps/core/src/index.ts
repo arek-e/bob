@@ -137,9 +137,9 @@ async function main(): Promise<void> {
     ASYNC_AGENT_RUNS: "true",
     UI_BASE_URL: config.UI_BASE_URL,
     BOB_MODEL: config.BOB_MODEL,
+    BOB_PROVIDER: config.BOB_PROVIDER,
     BOB_RELEASE_SHA: config.BOB_RELEASE_SHA,
     OTEL_EXPORTER_OTLP_ENDPOINT: config.OTEL_EXPORTER_OTLP_ENDPOINT,
-    BOB_PROVIDER: "openai-codex",
     BOB_RUN_TOKEN_BUDGET: config.BOB_RUN_TOKEN_BUDGET,
     BOB_DAILY_TOKEN_BUDGET: config.BOB_DAILY_TOKEN_BUDGET
   }

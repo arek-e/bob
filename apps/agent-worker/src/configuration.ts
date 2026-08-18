@@ -11,7 +11,7 @@ const Environment = Schema.Struct({
   BAO_APPROLE_ROLE_ID: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
   BAO_APPROLE_SECRET_ID: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
   BAO_APPROLE_SECRET_ID_PATH: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
-  BOB_PROVIDER: Schema.Literal("openai-codex"),
+  BOB_PROVIDER: Schema.Literals(["openai-codex", "openrouter"]),
   BOB_MODEL: Schema.String.check(Schema.isMinLength(1)),
   BOB_ALLOWED_MODELS: Schema.String.check(Schema.isMinLength(1)),
   BOB_RELEASE_SHA: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/)),
@@ -50,7 +50,7 @@ export interface AgentConfiguration {
         readonly secretId?: never
         readonly secretIdPath: string
       }
-  readonly provider: "openai-codex"
+  readonly provider: "openai-codex" | "openrouter"
   readonly model: string
   readonly allowedModels: readonly string[]
   readonly releaseSha: string

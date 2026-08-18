@@ -26,6 +26,7 @@ const Environment = Schema.Struct({
   AGENT_URL: Schema.URLFromString,
   AGENT_EXECUTION_POOL_ID: Schema.String.check(Schema.isMinLength(1)),
   CHANNEL_EGRESS_URL: Schema.URLFromString,
+  BOB_PROVIDER: Schema.Literals(["openai-codex", "openrouter"]),
   BOB_MODEL: Schema.String.check(Schema.isMinLength(1)),
   BOB_RELEASE_SHA: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/)),
   OTEL_EXPORTER_OTLP_ENDPOINT: Schema.URLFromString,
@@ -40,6 +41,7 @@ export function readCoreRuntimeConfiguration(environment: NodeJS.ProcessEnv) {
     AUTO_MIGRATE: environment.AUTO_MIGRATE ?? "true",
     AUTO_ENQUEUE_INBOUND: environment.AUTO_ENQUEUE_INBOUND ?? "false",
     AGENT_EXECUTION_POOL_ID: environment.AGENT_EXECUTION_POOL_ID ?? "core-v1",
+    BOB_PROVIDER: environment.BOB_PROVIDER ?? "openai-codex",
     ASSETS_DIRECTORY: environment.ASSETS_DIRECTORY ?? "/app/ui",
     SCHEDULER_INTERVAL_MS: environment.SCHEDULER_INTERVAL_MS ?? "60000"
   })

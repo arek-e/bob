@@ -50,6 +50,7 @@ import {
 } from "@earendil-works/pi-ai"
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth"
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex"
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter"
 import { Cause, Data, Deferred, Effect, Fiber, Layer, Schema } from "effect"
 
 import { classifyProviderError } from "../errors.ts"
@@ -68,7 +69,7 @@ import { waitForDeviceLoginStart } from "./device-login.ts"
 const pendingSteerRetentionMs = 140_000
 
 const PiAgentConfiguration = Schema.Struct({
-  provider: Schema.Literal("openai-codex"),
+  provider: Schema.Literals(["openai-codex", "openrouter"]),
   model: Schema.NonEmptyString,
   allowedModels: Schema.Array(Schema.NonEmptyString).check(Schema.isNonEmpty())
 })
@@ -76,7 +77,7 @@ const PiAgentConfiguration = Schema.Struct({
 export interface PiAgentOptions {
   readonly catalogue: CapabilityCatalogue
   readonly credentials: CredentialStore
-  readonly provider: "openai-codex"
+  readonly provider: "openai-codex" | "openrouter"
   readonly model: string
   readonly allowedModels: readonly string[]
   readonly executeTool: (command: ToolCommand) => Effect.Effect<ToolResult, AgentToolError>
@@ -101,6 +102,7 @@ export interface PiAgentDependencies {
     "setProvider" | "getModel" | "completeSimple" | "login"
   >
   readonly openaiCodexProvider: typeof openaiCodexProvider
+  readonly openrouterProvider: typeof openrouterProvider
   readonly registerOAuthFlows: typeof registerBunOAuthFlows
 }
 
@@ -111,12 +113,13 @@ function registerDefaultOAuthFlows(): void {
 const defaultDependencies: PiAgentDependencies = {
   createModels,
   openaiCodexProvider,
+  openrouterProvider,
   registerOAuthFlows: registerDefaultOAuthFlows
 }
 
 export interface AuthStatus {
   readonly configured: boolean
-  readonly provider: "openai-codex"
+  readonly provider: "openai-codex" | "openrouter"
   readonly accountIdRedacted?: string
   readonly expiresAt?: string
 }
@@ -426,7 +429,11 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
   const dependencies = options.dependencies ?? defaultDependencies
   dependencies.registerOAuthFlows()
   const models = dependencies.createModels({ credentials: options.credentials })
-  models.setProvider(dependencies.openaiCodexProvider())
+  const providerAdapters = {
+    "openai-codex": dependencies.openaiCodexProvider,
+    openrouter: dependencies.openrouterProvider
+  }
+  models.setProvider(providerAdapters[options.provider]())
   const model = models.getModel(options.provider, options.model)
   if (model === undefined)
     throw new AgentConfigurationError({
@@ -687,7 +694,7 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
                   inputTokens += completion.message.usage.input
                   outputTokens += completion.message.usage.output
                   yield* annotateModelUsage({
-                    provider: "openai-codex",
+                    provider: options.provider,
                     model: options.model,
                     inputTokens: completion.message.usage.input,
                     outputTokens: completion.message.usage.output,
@@ -1581,7 +1588,7 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
 
     getAuthStatus() {
       return Effect.tryPromise({
-        try: (signal) => options.credentials.read("openai-codex", { signal }),
+        try: (signal) => options.credentials.read(options.provider, { signal }),
         catch: (cause) =>
           new AgentProviderError({
             code: "authentication",
@@ -1590,14 +1597,15 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
           })
       }).pipe(
         Effect.map((credential) => {
-          if (credential?.type !== "oauth")
-            return { configured: false, provider: "openai-codex" } as const
+          if (credential === undefined)
+            return { configured: false, provider: options.provider } as const
+          if (credential.type !== "oauth") return { configured: true, provider: options.provider }
           const accountId = Schema.is(Schema.String)(credential.accountId)
             ? credential.accountId
             : undefined
           const status: AuthStatus = {
             configured: true,
-            provider: "openai-codex",
+            provider: options.provider,
             expiresAt: new Date(credential.expires).toISOString()
           }
           if (accountId !== undefined)
@@ -1668,6 +1676,12 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
 
     startDeviceLogin() {
       return Effect.suspend(() => {
+        if (options.provider !== "openai-codex") {
+          return Effect.succeed({
+            type: "failed" as const,
+            code: "device_login_unavailable" as const
+          })
+        }
         if (activeLogin !== undefined) {
           return Effect.succeed({ type: "failed" as const, code: "login_already_active" as const })
         }
@@ -1704,7 +1718,7 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
           }
         }
         activeLogin = models
-          .login("openai-codex", "oauth", interaction)
+          .login(options.provider, "oauth", interaction)
           .catch(() => {
             if (!eventSent) completeEvent({ type: "failed", code: "device_login_failed" })
           })

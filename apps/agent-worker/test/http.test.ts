@@ -137,7 +137,7 @@ function composition(authorized: boolean, allowedScope: "run" | "admin" | "both"
   activeRuntimes.push(runtime)
   return {
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-    config: {} as never,
+    config: { provider: "openai-codex" } as never,
     profile: transitionalDeploymentProfile,
     runtime,
     telemetry,

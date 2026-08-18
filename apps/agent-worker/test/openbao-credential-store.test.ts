@@ -17,6 +17,9 @@ describe("OpenBao Pi credential store", () => {
       if (url.includes("/auth/kubernetes/login")) {
         return Response.json({ auth: { client_token: "vault-token", lease_duration: 300 } })
       }
+      if (url.includes("/pi-auth/openrouter")) {
+        return new Response(null, { status: 404 })
+      }
       return Response.json({ data: { data: credential, metadata: { version: 4 } } })
     })
     const store = new OpenBaoCredentialStore({
@@ -38,6 +41,9 @@ describe("OpenBao Pi credential store", () => {
     const request = vi.fn<typeof fetch>(async (input) => {
       if (String(input).includes("/auth/approle/login")) {
         return Response.json({ auth: { client_token: "vault-token", lease_duration: 300 } })
+      }
+      if (String(input).includes("/pi-auth/openrouter")) {
+        return new Response(null, { status: 404 })
       }
       return Response.json({ data: { data: credential, metadata: { version: 4 } } })
     })
@@ -68,6 +74,9 @@ describe("OpenBao Pi credential store", () => {
       const url = String(input)
       if (url.includes("/auth/kubernetes/login")) {
         return Response.json({ auth: { client_token: "vault-token", lease_duration: 300 } })
+      }
+      if (url.includes("/pi-auth/openrouter")) {
+        return new Response(null, { status: 404 })
       }
       if (init?.method === "POST") {
         // SAFETY: This controlled test fixture matches the asserted contract used by this test.
@@ -101,6 +110,9 @@ describe("OpenBao Pi credential store", () => {
     const request = vi.fn<typeof fetch>(async (input, init) => {
       if (String(input).includes("/auth/kubernetes/login")) {
         return Response.json({ auth: { client_token: "vault-token", lease_duration: 300 } })
+      }
+      if (String(input).includes("/pi-auth/openrouter")) {
+        return new Response(null, { status: 404 })
       }
       if (init?.method === "POST") writes.push(init.body)
       return Response.json({ data: { data: credential, metadata: { version: 4 } } })

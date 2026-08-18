@@ -14,7 +14,7 @@ export interface AgentUsageInput {
   readonly ownerId: string
   readonly correlationId: string
   readonly feature: TelemetryFeature
-  readonly provider: "openai-codex"
+  readonly provider: string
   readonly model: string
   readonly status: "completed" | "failed" | "cancelled"
   readonly inputTokens: number

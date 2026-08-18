@@ -57,7 +57,7 @@ const Configuration = Schema.Struct({
   AGENT_EXECUTION_POOL_ID: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1))),
   ASYNC_AGENT_RUNS: Schema.optionalKey(Schema.Literal("true")),
   BOB_MODEL: Schema.String,
-  BOB_PROVIDER: Schema.Literal("openai-codex"),
+  BOB_PROVIDER: Schema.String,
   BOB_RUN_TOKEN_BUDGET: Schema.Number.check(
     Schema.isInt(),
     Schema.isBetween({ minimum: 1_000, maximum: 1_000_000 })

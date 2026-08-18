@@ -4,6 +4,7 @@ import { AgentToolError, BobAgent } from "@bob/agent-types"
 import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
 import { fauxAssistantMessage } from "@earendil-works/pi-ai"
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex"
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter"
 import { it } from "@effect/vitest"
 import { Effect } from "effect"
 import { expect, vi } from "vitest"
@@ -62,6 +63,7 @@ const dependencies: PiAgentDependencies = {
     login: vi.fn()
   }),
   openaiCodexProvider,
+  openrouterProvider,
   registerOAuthFlows: vi.fn()
 }
 

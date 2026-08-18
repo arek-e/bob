@@ -4,7 +4,12 @@ import { Schema } from "effect"
 const OpaqueId = Schema.String.check(Schema.isUUID())
 const Status = Schema.Literals(["started", "completed", "failed", "cancelled", "unknown"])
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
-const ModelName = Schema.String.check(Schema.isPattern(/^gpt-[a-z0-9][a-z0-9.-]{0,90}$/))
+const ProviderName = Schema.String.check(Schema.isMinLength(1))
+const ModelName = Schema.String.check(
+  Schema.isPattern(
+    /^(?!(?:.*\+|.*\bprivate\b|.*\bphone\b|.*\d{10,}).*$)[a-zA-Z0-9][a-zA-Z0-9._/:-]{2,200}$/i
+  )
+)
 const WebhookCode = Schema.Literals([
   "accepted",
   "duplicate",
@@ -140,7 +145,7 @@ export const HealthEvent = Schema.Union([
     runId: OpaqueId,
     feature: TelemetryFeature,
     workflow: TelemetryWorkflow,
-    provider: Schema.Literal("openai-codex"),
+    provider: ProviderName,
     model: ModelName,
     status: Schema.Literals(["completed", "failed", "cancelled"]),
     inputTokens: NonNegativeInt,

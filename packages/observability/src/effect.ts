@@ -163,7 +163,7 @@ export interface BobSpan {
 }
 
 export interface BobModelUsage {
-  readonly provider: "openai-codex"
+  readonly provider: string
   readonly model: string
   readonly inputTokens: number
   readonly outputTokens: number
@@ -210,7 +210,10 @@ export const noopSpanProcessor: SafeSpanProcessor = {
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const safeModelPattern = /^gpt-[a-z0-9][a-z0-9.-]{0,90}$/
+const safeModelPattern =
+  /^(?!(?:.*\+|.*\bprivate\b|.*\bphone\b|.*\d{10,}).*$)[a-zA-Z0-9][a-zA-Z0-9._/:-]{2,200}$/i
+
+const safeProviderPattern = /^[a-z0-9][a-z0-9-._:/+]*$/i
 
 const spanSemantics = {
   "bob.runtime.ready": { kind: "internal", workflow: "administration" },
@@ -409,7 +412,7 @@ function safeSpanAttributes(
   const toolCallIndex = attributes.get("bob.tool.call_index")
   if (safeNatural(toolCallIndex, 100)) output["bob.tool.call_index"] = toolCallIndex
   const provider = attributes.get("gen_ai.provider.name")
-  if (provider === "openai-codex") output["gen_ai.provider.name"] = provider
+  if (safeString(provider, safeProviderPattern)) output["gen_ai.provider.name"] = provider
   const model = attributes.get("gen_ai.request.model")
   if (safeString(model, safeModelPattern)) {
     output["gen_ai.request.model"] = model
@@ -632,9 +635,8 @@ export function recordDecision(input: BobDecision): Effect.Effect<void> {
 
 export function annotateModelUsage(input: BobModelUsage): Effect.Effect<void> {
   const attributes: Record<string, string | number> = {}
-  if (input.provider === "openai-codex") {
+  if (safeString(input.provider, safeProviderPattern))
     attributes["gen_ai.provider.name"] = input.provider
-  }
   if (safeModelPattern.test(input.model)) {
     attributes["gen_ai.request.model"] = input.model
   }

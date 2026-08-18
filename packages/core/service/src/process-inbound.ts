@@ -1172,7 +1172,7 @@ export function processConversationTurnEffect(
             ownerId: claimed.ownerId,
             correlationId: result.correlationId,
             feature,
-            provider: "openai-codex",
+            provider: composition.config.BOB_PROVIDER,
             model: result.model,
             status: result.status,
             inputTokens: result.inputTokens,

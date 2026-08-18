@@ -211,7 +211,7 @@ export async function handleAgentHttp(
             runId: output.runId,
             feature,
             workflow: "agent_turn",
-            provider: "openai-codex",
+            provider: composition.config.provider,
             model: output.model,
             status: output.status,
             inputTokens: output.inputTokens,
