@@ -8,6 +8,13 @@ set -eu
 work="$(mktemp -d)"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 
+# A new Runtime Cluster has an empty, dedicated backup bucket. Initialize its
+# Restic repository before the first snapshot. Restic refuses to initialize an
+# existing repository, so a failed config read cannot overwrite backup data.
+if ! restic cat config >/dev/null 2>&1; then
+  restic init
+fi
+
 pg_dump --dbname "$DATABASE_URL" --format=custom --no-owner --file "$work/database.dump"
 pg_restore --list "$work/database.dump" >/dev/null
 
