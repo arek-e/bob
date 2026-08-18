@@ -20,6 +20,7 @@ const Environment = Schema.Struct({
   INGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   EGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   AGENT_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  BETTER_AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
   SETUP_TOKEN: Schema.String.check(Schema.isMinLength(32)),
   UI_BASE_URL: Schema.URLFromString,
   AGENT_URL: Schema.URLFromString,

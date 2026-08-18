@@ -45,13 +45,13 @@ services:
     restart: unless-stopped
     command: [--config=/etc/otelcol-contrib/config.yaml]
     env_file:
-      - ${RUNTIME_ENV_FILE:?}
+      - ${OTEL_ENV_FILE:?}
     healthcheck:
       test: [CMD, /otelcol-contrib, validate, --config=/etc/otelcol-contrib/config.yaml]
       interval: 30s
       timeout: 10s
       retries: 3
-    networks: [runtime]
+    networks: [runtime, egress]
     volumes:
       - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
     tmpfs: [/tmp]
@@ -62,7 +62,7 @@ services:
     image: ghcr.io/arek-e/bob-migration@${MIGRATION_IMAGE_DIGEST:?}
     restart: "no"
     env_file:
-      - ${RUNTIME_ENV_FILE:?}
+      - ${MIGRATION_ENV_FILE:?}
     depends_on:
       postgresql: { condition: service_healthy }
     tmpfs: [/tmp]
@@ -72,9 +72,10 @@ services:
     <<: *runtime
     image: ghcr.io/arek-e/bob-core@${CORE_IMAGE_DIGEST:?}
     env_file:
-      - ${RUNTIME_ENV_FILE:?}
+      - ${CORE_ENV_FILE:?}
     environment:
       AUTO_MIGRATE: "false"
+      PORT: "8788"
       AGENT_EXECUTION_POOL_ID: ${AGENT_EXECUTION_POOL_ID:?}
       BOB_MODEL: ${BOB_MODEL:?}
       BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
@@ -84,7 +85,7 @@ services:
       redis: { condition: service_healthy }
       otel-collector: { condition: service_healthy }
     expose: [8788]
-    networks: [runtime, ingress]
+    networks: [runtime, egress, ingress]
     healthcheck:
       test:
         [
@@ -105,8 +106,9 @@ services:
     <<: *runtime
     image: ghcr.io/arek-e/bob-agent-worker@${AGENT_WORKER_IMAGE_DIGEST:?}
     env_file:
-      - ${RUNTIME_ENV_FILE:?}
+      - ${AGENT_WORKER_ENV_FILE:?}
     environment:
+      PORT: "8787"
       AGENT_EXECUTION_POOL_ID: ${AGENT_EXECUTION_POOL_ID:?}
       BOB_MODEL: ${BOB_MODEL:?}
       BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
@@ -116,6 +118,7 @@ services:
       redis: { condition: service_healthy }
       otel-collector: { condition: service_healthy }
     expose: [8787]
+    networks: [runtime, egress]
     healthcheck:
       test:
         [
@@ -135,8 +138,9 @@ services:
     <<: *runtime
     image: ghcr.io/arek-e/bob-channel@${CHANNEL_IMAGE_DIGEST:?}
     env_file:
-      - ${RUNTIME_ENV_FILE:?}
+      - ${CHANNEL_ENV_FILE:?}
     environment:
+      PORT: "8786"
       BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     depends_on:
@@ -144,7 +148,7 @@ services:
       redis: { condition: service_healthy }
       otel-collector: { condition: service_healthy }
     expose: [8786]
-    networks: [runtime, ingress]
+    networks: [runtime, egress, ingress]
     healthcheck:
       test:
         [
@@ -164,7 +168,7 @@ services:
     image: ghcr.io/arek-e/bob-backup@${BACKUP_IMAGE_DIGEST:?}
     restart: "no"
     env_file:
-      - ${RUNTIME_ENV_FILE:?}
+      - ${BACKUP_ENV_FILE:?}
     environment:
       RESTIC_PASSWORD_FILE: /run/secrets/restic_password
     depends_on:
@@ -172,6 +176,7 @@ services:
     secrets: [restic_password]
     volumes:
       - object-storage:/data/object-storage:ro
+    networks: [runtime, egress]
     tmpfs: [/tmp]
     profiles: [operations]
     labels: { bob_service: backup }
@@ -200,12 +205,13 @@ services:
     entrypoint: [/usr/local/bin/bob-restore-verify]
     restart: "no"
     env_file:
-      - ${RUNTIME_ENV_FILE:?}
+      - ${BACKUP_ENV_FILE:?}
     environment:
       RESTIC_PASSWORD_FILE: /run/secrets/restic_password
     depends_on:
       postgresql-restore: { condition: service_healthy }
     secrets: [restic_password]
+    networks: [runtime, egress]
     tmpfs: [/tmp]
     profiles: [operations]
     labels: { bob_service: restore-verifier }
@@ -213,6 +219,7 @@ services:
 networks:
   runtime:
     internal: true
+  egress:
   ingress:
     name: bob-runtime-ingress
     external: true
