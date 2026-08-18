@@ -138,7 +138,8 @@ export function makeRetrievalPipeline(
       const rows =
         analyzed.ftsQuery === undefined
           ? await Effect.runPromise(
-              database.execute(sql`
+              database.execute(
+                sql`
               SELECT
                 d.id AS document_id,
                 d.source_id,
@@ -160,10 +161,13 @@ export function makeRetrievalPipeline(
                 AND (${input.channel} = false OR d.channel_eligible = true)
               ORDER BY d.importance DESC, d.occurred_at DESC, d.id
               LIMIT ${candidateLimit}
-            `)
+            `,
+                "objects"
+              )
             )
           : await Effect.runPromise(
-              database.execute(sql`
+              database.execute(
+                sql`
               SELECT
                 d.id AS document_id,
                 d.source_id,
@@ -193,7 +197,9 @@ export function makeRetrievalPipeline(
                 d.importance DESC,
                 d.id
               LIMIT ${candidateLimit}
-            `)
+            `,
+                "objects"
+              )
             )
       if (rows.length === 0) {
         const policyRows =
