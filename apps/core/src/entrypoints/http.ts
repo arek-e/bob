@@ -335,9 +335,13 @@ export async function handleHttp(
         sql`SELECT id, email FROM auth_user WHERE id = ${input.ownerId} OR lower(email) = ${normalizedEmail}`
       )
     )
-    const conflict = existingOwners.find(
-      (owner) => owner.id !== input.ownerId || owner.email.trim().toLowerCase() !== normalizedEmail
-    )
+    let conflict: { readonly id: string; readonly email: string } | undefined
+    for (const owner of existingOwners) {
+      if (owner.id !== input.ownerId || owner.email.trim().toLowerCase() !== normalizedEmail) {
+        conflict = owner
+        break
+      }
+    }
     if (conflict !== undefined) return json({ code: "owner_identity_conflict" }, 409)
     if (existingOwners.length === 0) {
       const headers = new Headers(request.headers)
