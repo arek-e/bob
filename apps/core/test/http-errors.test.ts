@@ -34,21 +34,21 @@ describe("Core HTTP failures", () => {
     expect(await response.json()).toEqual({ code: "body_too_large" })
   })
 
-  it("reads owner enrollment conflicts from an iterable PostgreSQL result", async () => {
+  it("requests object rows for owner enrollment conflicts", async () => {
     const ownerEnrollmentSecret = "o".repeat(64)
     const requestedOwnerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
-    const existingOwners = {
-      *[Symbol.iterator]() {
-        yield {
-          id: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0",
-          email: "existing@example.test"
-        }
-      }
-    }
     const bindings = testFixture<CoreBindings>({
       OWNER_ENROLLMENT_SECRET: ownerEnrollmentSecret,
       DB: {
-        execute: () => Effect.succeed(existingOwners)
+        execute: (...arguments_: Parameters<CoreBindings["DB"]["execute"]>) => {
+          expect(arguments_[1]).toBe("objects")
+          return Effect.succeed([
+            {
+              id: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0",
+              email: "existing@example.test"
+            }
+          ])
+        }
       }
     })
     const composition = testFixture<CoreComposition>({ services: {} })
