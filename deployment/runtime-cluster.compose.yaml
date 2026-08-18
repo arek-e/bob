@@ -110,6 +110,7 @@ services:
       - ${AGENT_WORKER_ENV_FILE:?}
     environment:
       PORT: "8787"
+      BAO_APPROLE_SECRET_ID_PATH: /run/secrets/openbao_agent_approle_secret_id
       AGENT_EXECUTION_POOL_ID: ${AGENT_EXECUTION_POOL_ID:?}
       BOB_MODEL: ${BOB_MODEL:?}
       BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
@@ -120,6 +121,7 @@ services:
       otel-collector: { condition: service_healthy }
     expose: [8787]
     networks: [runtime, egress]
+    secrets: [openbao_agent_approle_secret_id]
     healthcheck:
       test:
         [
@@ -231,6 +233,8 @@ volumes:
   object-storage:
 
 secrets:
+  openbao_agent_approle_secret_id:
+    file: ${BAO_APPROLE_SECRET_ID_PATH:?}
   postgres_password:
     file: ${POSTGRES_PASSWORD_FILE:?}
   restic_password:
