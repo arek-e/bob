@@ -837,11 +837,14 @@ export function memoryStoreLayer(store: MemoryStoreAdapter) {
   return Layer.succeed(
     MemoryStore,
     MemoryStore.of({
-      propose: liftPromiseOperation(store.propose, failure("propose")),
-      confirm: liftPromiseOperation(store.confirm, failure("confirm")),
-      correct: liftPromiseOperation(store.correct, failure("correct")),
-      reject: liftPromiseOperation(store.reject, failure("reject")),
-      listCandidates: liftPromiseOperation(store.listCandidates, failure("listCandidates"))
+      propose: liftPromiseOperation(store.propose.bind(store), failure("propose")),
+      confirm: liftPromiseOperation(store.confirm.bind(store), failure("confirm")),
+      correct: liftPromiseOperation(store.correct.bind(store), failure("correct")),
+      reject: liftPromiseOperation(store.reject.bind(store), failure("reject")),
+      listCandidates: liftPromiseOperation(
+        store.listCandidates.bind(store),
+        failure("listCandidates")
+      )
     })
   )
 }
