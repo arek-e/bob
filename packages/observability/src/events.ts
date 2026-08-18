@@ -68,6 +68,12 @@ export const TelemetrySpanCode = Schema.Literals([
 
 export const HealthEvent = Schema.Union([
   Schema.Struct({
+    type: Schema.Literal("runtime_ready"),
+    correlationId: OpaqueId,
+    status: Schema.Literal("completed"),
+    role: Schema.Literals(["core", "channel", "agent-worker"])
+  }),
+  Schema.Struct({
     type: Schema.Literal("webhook"),
     correlationId: OpaqueId,
     status: Schema.Literals(["accepted", "duplicate", "rejected", "failed"]),
@@ -180,6 +186,7 @@ export function parseHealthEvent<Input>(value: Input): HealthEvent {
   const event = Schema.decodeUnknownSync(HealthEvent)(input)
   const common = ["type", "correlationId", "status"]
   const allowedByType = {
+    runtime_ready: [...common, "role"],
     webhook: [...common, "code", "durationMs"],
     agent_run: [...common, "runId", "model", "durationMs", "inputTokens", "outputTokens"],
     tool_call: [...common, "runId", "toolName", "durationMs"],
