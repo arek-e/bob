@@ -75,6 +75,7 @@ services:
       - ${RUNTIME_ENV_FILE:?}
     environment:
       AUTO_MIGRATE: "false"
+      PORT: "8788"
       AGENT_EXECUTION_POOL_ID: ${AGENT_EXECUTION_POOL_ID:?}
       BOB_MODEL: ${BOB_MODEL:?}
       BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
@@ -107,6 +108,7 @@ services:
     env_file:
       - ${RUNTIME_ENV_FILE:?}
     environment:
+      PORT: "8787"
       AGENT_EXECUTION_POOL_ID: ${AGENT_EXECUTION_POOL_ID:?}
       BOB_MODEL: ${BOB_MODEL:?}
       BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
@@ -137,6 +139,7 @@ services:
     env_file:
       - ${RUNTIME_ENV_FILE:?}
     environment:
+      PORT: "8786"
       BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
     depends_on:

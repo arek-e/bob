@@ -38,6 +38,7 @@ const Environment = Config.all({
   SENDBLUE_MEDIA_HOSTS: Config.nonEmptyString("SENDBLUE_MEDIA_HOSTS").pipe(
     Config.withDefault("cdn.sendblue.co,storage.googleapis.com")
   ),
+  OTEL_EXPORTER_OTLP_ENDPOINT: Config.url("OTEL_EXPORTER_OTLP_ENDPOINT"),
   BOB_RELEASE_SHA: Config.schema(
     Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/)),
     "BOB_RELEASE_SHA"
@@ -134,7 +135,7 @@ async function main(): Promise<void> {
         apiSecretKey: config.SENDBLUE_API_SECRET_KEY
       }),
       nodeTelemetryLayer({
-        endpoint: "http://127.0.0.1:4318",
+        endpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT.toString().replace(/\/$/u, ""),
         serviceName: "bob-channel",
         serviceVersion: config.BOB_RELEASE_SHA,
         deploymentEnvironment: "prod"
