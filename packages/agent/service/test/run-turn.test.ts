@@ -13,6 +13,7 @@ import {
   type Model
 } from "@earendil-works/pi-ai"
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex"
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter"
 import { Effect, Schema } from "effect"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -107,6 +108,7 @@ const dependencies: PiAgentDependencies = {
     login: vi.fn()
   }),
   openaiCodexProvider,
+  openrouterProvider,
   registerOAuthFlows: vi.fn()
 }
 

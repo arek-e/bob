@@ -9,13 +9,21 @@ import { Schema } from "effect"
 
 import { currentAgentExecutionContext } from "./execution-context.ts"
 
+const ApiKeyRecord = Schema.Struct({
+  type: Schema.Literal("api_key"),
+  key: Schema.optionalKey(Schema.String),
+  env: Schema.optionalKey(Schema.Record(Schema.String, Schema.String))
+})
+
 const OAuthRecord = Schema.Struct({
   type: Schema.Literal("oauth"),
   access: Schema.String,
   refresh: Schema.String,
   expires: Schema.Number,
-  accountId: Schema.String
+  accountId: Schema.optionalKey(Schema.String)
 })
+
+const CredentialRecord = Schema.Union([ApiKeyRecord, OAuthRecord])
 
 const LoginResponse = Schema.Struct({
   auth: Schema.Struct({
@@ -96,10 +104,9 @@ export class OpenBaoCredentialStore implements CredentialStore {
   }
 
   private providerPath(providerId: string): string | undefined {
-    if (providerId !== "openai-codex") return undefined
     const ownerId = this.options.fixedOwnerId ?? currentAgentExecutionContext()?.ownerId
     if (ownerId === undefined) return undefined
-    return `apps/prod/bob/owners/${encodeURIComponent(ownerId)}/pi-auth/openai-codex`
+    return `apps/prod/bob/owners/${encodeURIComponent(ownerId)}/pi-auth/${encodeURIComponent(providerId)}`
   }
 
   private async withLock<A>(providerId: string, action: () => Promise<A>): Promise<A> {
@@ -197,8 +204,13 @@ export class OpenBaoCredentialStore implements CredentialStore {
   }
 
   async list(options?: CredentialOperationOptions): Promise<readonly CredentialInfo[]> {
-    const credential = await this.read("openai-codex", options)
-    return credential === undefined ? [] : [{ providerId: "openai-codex", type: credential.type }]
+    const paths = ["openai-codex", "openrouter"]
+    const listed: CredentialInfo[] = []
+    for (const providerId of paths) {
+      const credential = await this.read(providerId, options)
+      if (credential !== undefined) listed.push({ providerId, type: credential.type })
+    }
+    return listed
   }
 
   async modify(
@@ -212,7 +224,7 @@ export class OpenBaoCredentialStore implements CredentialStore {
       const current = await this.readVersioned(providerId, options)
       const next = await fn(current?.credential)
       if (next === undefined) return current?.credential
-      const validated = Schema.decodeUnknownSync(OAuthRecord)(next)
+      const validated = Schema.decodeUnknownSync(CredentialRecord)(next)
       const requestInit: RequestInit = {
         method: "POST",
         headers: {

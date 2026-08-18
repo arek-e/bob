@@ -12,7 +12,7 @@ export const agentUsage = pgTable(
     correlationId: text("correlation_id").notNull(),
     feature: text("feature").notNull(),
     workflow: text("workflow", { enum: ["agent_turn"] }).notNull(),
-    provider: text("provider", { enum: ["openai-codex"] }).notNull(),
+    provider: text("provider").notNull(),
     model: text("model").notNull(),
     status: text("status", { enum: ["completed", "failed", "cancelled"] }).notNull(),
     inputTokens: integer("input_tokens").notNull(),
