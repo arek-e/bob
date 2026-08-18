@@ -199,16 +199,20 @@ export function makeRetrievalPipeline(
         const policyRows =
           analyzed.ftsQuery === undefined
             ? await Effect.runPromise(
-                database.execute<{ document_id: string }>(sql`
+                database.execute<{ document_id: string }>(
+                  sql`
                 SELECT d.id AS document_id
                 FROM search_documents AS d
                 WHERE d.user_id = ${input.ownerId}
                   AND d.deleted_at IS NULL
                 LIMIT 1
-              `)
+              `,
+                  "objects"
+                )
               )
             : await Effect.runPromise(
-                database.execute<{ document_id: string }>(sql`
+                database.execute<{ document_id: string }>(
+                  sql`
                 SELECT d.id AS document_id
                 FROM search_documents AS d
                 WHERE to_tsvector('simple', d.search_text || ' ' || d.source_label)
@@ -216,7 +220,9 @@ export function makeRetrievalPipeline(
                   AND d.user_id = ${input.ownerId}
                   AND d.deleted_at IS NULL
                 LIMIT 1
-              `)
+              `,
+                  "objects"
+                )
               )
         return {
           status: "abstain",

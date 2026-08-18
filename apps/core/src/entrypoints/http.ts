@@ -218,7 +218,7 @@ function idempotencyKey(request: Request): string {
 
 async function authUserExists(bindings: CoreBindings): Promise<boolean> {
   const rows = await Effect.runPromise(
-    bindings.DB.execute<{ id: string }>(sql`SELECT id FROM auth_user LIMIT 1`)
+    bindings.DB.execute<{ id: string }>(sql`SELECT id FROM auth_user LIMIT 1`, "objects")
   )
   return rows.length > 0
 }
@@ -332,7 +332,8 @@ export async function handleHttp(
     const normalizedEmail = input.email.trim().toLowerCase()
     const existingOwners = await Effect.runPromise(
       bindings.DB.execute<{ id: string; email: string }>(
-        sql`SELECT id, email FROM auth_user WHERE id = ${input.ownerId} OR lower(email) = ${normalizedEmail}`
+        sql`SELECT id, email FROM auth_user WHERE id = ${input.ownerId} OR lower(email) = ${normalizedEmail}`,
+        "objects"
       )
     )
     let conflict: { readonly id: string; readonly email: string } | undefined
@@ -411,7 +412,7 @@ export async function handleHttp(
 
     if (request.method === "GET" && url.pathname === "/internal/readiness") {
       const [result] = await Effect.runPromise(
-        bindings.DB.execute<{ ready: number }>(sql`SELECT 1 AS ready`)
+        bindings.DB.execute<{ ready: number }>(sql`SELECT 1 AS ready`, "objects")
       )
       return json({ ready: result?.ready === 1 }, result?.ready === 1 ? 200 : 503)
     }
