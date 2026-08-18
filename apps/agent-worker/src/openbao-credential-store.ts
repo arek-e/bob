@@ -34,7 +34,7 @@ const LoginResponse = Schema.Struct({
 
 const KvReadResponse = Schema.Struct({
   data: Schema.Struct({
-    data: OAuthRecord,
+    data: CredentialRecord,
     metadata: Schema.Struct({ version: Schema.Number })
   })
 })
