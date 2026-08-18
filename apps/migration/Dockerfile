@@ -12,4 +12,4 @@ FROM ${NODE_IMAGE}
 WORKDIR /app
 COPY --from=build --chown=node:node /app/apps/migration/dist /app/dist
 USER node
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/index.cjs"]
