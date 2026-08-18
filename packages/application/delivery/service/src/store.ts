@@ -990,28 +990,34 @@ export function deliveryStoreLayer(store: DeliveryStoreAdapter) {
   return Layer.succeed(
     DeliveryStore,
     DeliveryStore.of({
-      createOutbox: liftPromiseOperation(store.createOutbox, failure("createOutbox")),
-      markEnqueued: liftPromiseOperation(store.markEnqueued, failure("markEnqueued")),
-      claimOutbox: liftPromiseOperation(store.claimOutbox, failure("claimOutbox")),
-      recordResult: liftPromiseOperation(store.recordResult, failure("recordResult")),
+      createOutbox: liftPromiseOperation(store.createOutbox.bind(store), failure("createOutbox")),
+      markEnqueued: liftPromiseOperation(store.markEnqueued.bind(store), failure("markEnqueued")),
+      claimOutbox: liftPromiseOperation(store.claimOutbox.bind(store), failure("claimOutbox")),
+      recordResult: liftPromiseOperation(store.recordResult.bind(store), failure("recordResult")),
       recordProviderEvent: liftPromiseOperation(
-        store.recordProviderEvent,
+        store.recordProviderEvent.bind(store),
         failure("recordProviderEvent")
       ),
       reconcileExpiredClaims: liftPromiseOperation(
-        store.reconcileExpiredClaims,
+        store.reconcileExpiredClaims.bind(store),
         failure("reconcileExpiredClaims")
       ),
-      reconcileOutbox: liftPromiseOperation(store.reconcileOutbox, failure("reconcileOutbox")),
+      reconcileOutbox: liftPromiseOperation(
+        store.reconcileOutbox.bind(store),
+        failure("reconcileOutbox")
+      ),
       reconciliationTarget: liftPromiseOperation(
-        store.reconciliationTarget,
+        store.reconciliationTarget.bind(store),
         failure("reconciliationTarget")
       ),
       prepareOutboundRecovery: liftPromiseOperation(
-        store.prepareOutboundRecovery,
+        store.prepareOutboundRecovery.bind(store),
         failure("prepareOutboundRecovery")
       ),
-      outboxDisposition: liftPromiseOperation(store.outboxDisposition, failure("outboxDisposition"))
+      outboxDisposition: liftPromiseOperation(
+        store.outboxDisposition.bind(store),
+        failure("outboxDisposition")
+      )
     })
   )
 }
