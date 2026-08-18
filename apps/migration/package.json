@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --format=esm --platform=node --target=node22 --outfile=dist/index.js && mkdir -p dist/migrations && cp -R ../../packages/db/service/migrations/. dist/migrations",
+    "build": "esbuild src/index.ts --bundle --format=cjs --platform=node --target=node22 --outfile=dist/index.cjs && mkdir -p dist/migrations && cp -R ../../packages/db/service/migrations/. dist/migrations",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
