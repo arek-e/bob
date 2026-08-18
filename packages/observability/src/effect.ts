@@ -10,6 +10,7 @@ import {
 } from "./events.ts"
 
 export const BobSpanName = Schema.Literals([
+  "bob.runtime.ready",
   "bob.webhook.receive",
   "bob.inbound.invoke",
   "bob.inbound.attachment.store",
@@ -212,6 +213,7 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 const safeModelPattern = /^gpt-[a-z0-9][a-z0-9.-]{0,90}$/
 
 const spanSemantics = {
+  "bob.runtime.ready": { kind: "internal", workflow: "administration" },
   "bob.webhook.receive": { kind: "server", workflow: "inbound_message" },
   "bob.inbound.invoke": { kind: "client", workflow: "inbound_message" },
   "bob.inbound.attachment.store": { kind: "client", workflow: "inbound_message" },

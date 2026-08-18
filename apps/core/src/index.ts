@@ -17,7 +17,7 @@ import { makeBullMqJobPublisher } from "@bob/job-queue-runtime/bullmq"
 import { startBullMqWorkerHost } from "@bob/job-queue-runtime/bullmq-host"
 import { decodeJobProcessor, retryJob } from "@bob/job-queue-types"
 import { filesystemObjectStorageLayer } from "@bob/object-store-runtime/filesystem"
-import { nodeTelemetryLayer } from "@bob/observability"
+import { emitHealth, flushTelemetry, nodeTelemetryLayer, withBobRootSpan } from "@bob/observability"
 import { Queue, type ConnectionOptions } from "bullmq"
 import { and, eq } from "drizzle-orm"
 import { Effect, ManagedRuntime, Schema } from "effect"
@@ -355,7 +355,33 @@ async function main(): Promise<void> {
         .end()
     }
   })
-  server.listen(config.PORT, "0.0.0.0")
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    const rejectListen = (error: Error) => rejectPromise(error)
+    server.once("error", rejectListen)
+    server.listen(config.PORT, "0.0.0.0", () => {
+      server.off("error", rejectListen)
+      resolvePromise()
+    })
+  })
+  const readyCorrelationId = crypto.randomUUID()
+  await composition.runtime.runPromise(
+    withBobRootSpan(
+      {
+        name: "bob.runtime.ready",
+        correlationId: readyCorrelationId,
+        feature: "runtime_readiness"
+      },
+      Effect.gen(function* () {
+        yield* emitHealth({
+          type: "runtime_ready",
+          correlationId: readyCorrelationId,
+          status: "completed",
+          role: "core"
+        })
+        yield* flushTelemetry
+      })
+    )
+  )
 
   async function shutdown(): Promise<void> {
     clearInterval(schedulerTimer)
