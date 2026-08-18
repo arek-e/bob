@@ -110,7 +110,9 @@ services:
       - ${AGENT_WORKER_ENV_FILE:?}
     environment:
       PORT: "8787"
+      BAO_ADDR: https://bob-openbao-proxy:8443
       BAO_APPROLE_SECRET_ID_PATH: /run/secrets/openbao_agent_approle_secret_id
+      NODE_EXTRA_CA_CERTS: /etc/bob-openbao/ca.pem
       AGENT_EXECUTION_POOL_ID: ${AGENT_EXECUTION_POOL_ID:?}
       BOB_MODEL: ${BOB_MODEL:?}
       BOB_RELEASE_SHA: ${BOB_RELEASE_SHA:?}
@@ -120,8 +122,10 @@ services:
       redis: { condition: service_healthy }
       otel-collector: { condition: service_healthy }
     expose: [8787]
-    networks: [runtime, egress]
+    networks: [runtime, egress, openbao]
     secrets: [openbao_agent_approle_secret_id]
+    volumes:
+      - ${OPENBAO_CA_FILE:?}:/etc/bob-openbao/ca.pem:ro
     healthcheck:
       test:
         [
@@ -225,6 +229,9 @@ networks:
   egress:
   ingress:
     name: bob-runtime-ingress
+    external: true
+  openbao:
+    name: bob-runtime-openbao
     external: true
 
 volumes:

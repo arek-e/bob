@@ -12,7 +12,12 @@ describe("production Runtime Compose contract", () => {
     expect(worker).toContain(
       "BAO_APPROLE_SECRET_ID_PATH: /run/secrets/openbao_agent_approle_secret_id"
     )
+    expect(worker).toContain("BAO_ADDR: https://bob-openbao-proxy:8443")
+    expect(worker).toContain("NODE_EXTRA_CA_CERTS: /etc/bob-openbao/ca.pem")
+    expect(worker).toContain("networks: [runtime, egress, openbao]")
+    expect(worker).toContain("${OPENBAO_CA_FILE:?}:/etc/bob-openbao/ca.pem:ro")
     expect(worker).toContain("secrets: [openbao_agent_approle_secret_id]")
     expect(compose).toContain("file: ${BAO_APPROLE_SECRET_ID_PATH:?}")
+    expect(compose).toContain("name: bob-runtime-openbao")
   })
 })
