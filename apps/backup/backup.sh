@@ -29,8 +29,9 @@ fi
     sha256sum object-storage.tar >>SHA256SUMS
   fi
 )
-restic backup "$work" --tag bob-runtime --tag "schema-${DATABASE_SCHEMA_VERSION:-unknown}"
-restic forget --tag bob-runtime --keep-daily "${BACKUP_KEEP_DAILY:-14}" \
+restic backup "$work" --host bob-runtime --tag bob-runtime \
+  --tag "schema-${DATABASE_SCHEMA_VERSION:-unknown}"
+restic forget --tag bob-runtime --group-by tags --keep-daily "${BACKUP_KEEP_DAILY:-14}" \
   --keep-weekly "${BACKUP_KEEP_WEEKLY:-8}" --keep-monthly "${BACKUP_KEEP_MONTHLY:-12}" --prune
 restic check --read-data-subset="${BACKUP_CHECK_SUBSET:-5%}"
 printf '%s\n' "$stamp" >"${BACKUP_STATUS_FILE:-/tmp/last-successful-backup}"
