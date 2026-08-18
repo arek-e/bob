@@ -75,6 +75,7 @@ services:
       - ${CORE_ENV_FILE:?}
     environment:
       AUTO_MIGRATE: "false"
+      AUTO_ENQUEUE_INBOUND: "true"
       PORT: "8788"
       AGENT_EXECUTION_POOL_ID: ${AGENT_EXECUTION_POOL_ID:?}
       BOB_MODEL: ${BOB_MODEL:?}
