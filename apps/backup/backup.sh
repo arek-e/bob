@@ -22,7 +22,13 @@ if [ -d "${OBJECT_STORAGE_DIRECTORY:-/data/object-storage}" ]; then
   tar -C "${OBJECT_STORAGE_DIRECTORY:-/data/object-storage}" -cf "$work/object-storage.tar" .
 fi
 
-sha256sum "$work"/* >"$work/SHA256SUMS"
+(
+  cd "$work"
+  sha256sum database.dump >SHA256SUMS
+  if [ -f object-storage.tar ]; then
+    sha256sum object-storage.tar >>SHA256SUMS
+  fi
+)
 restic backup "$work" --tag bob-runtime --tag "schema-${DATABASE_SCHEMA_VERSION:-unknown}"
 restic forget --tag bob-runtime --keep-daily "${BACKUP_KEEP_DAILY:-14}" \
   --keep-weekly "${BACKUP_KEEP_WEEKLY:-8}" --keep-monthly "${BACKUP_KEEP_MONTHLY:-12}" --prune
