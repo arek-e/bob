@@ -107,6 +107,16 @@ jobs:
           merge-multiple: true
       - uses: oras-project/setup-oras@v1
         with: { version: 1.3.0 }
+      - name: Validate telemetry configuration
+        run: |
+          set -euo pipefail
+          trap 'docker rm bob-otel-validate >/dev/null 2>&1 || true' EXIT
+          docker run --name bob-otel-validate \
+            -e OTEL_UPSTREAM_ENDPOINT=https://otel.invalid \
+            -e OTEL_UPSTREAM_AUTHORIZATION=Bearer-validation \
+            -v "$PWD/deployment/otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro" \
+            otel/opentelemetry-collector-contrib@sha256:45392d534c1edcc809c2d112394029246bc679d2ae5ea7081414a1fc74f2c621 \
+            validate --config=/etc/otelcol-contrib/config.yaml
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
