@@ -22,6 +22,7 @@ import {
   featureForToolName,
   featureForTools,
   annotateModelUsage,
+  injectCurrentTraceparent,
   recordDecision,
   withBobSpan,
   type BobDecision,
@@ -43,6 +44,7 @@ import {
   type AssistantMessage,
   type Context,
   type Message,
+  type ModelsSimpleStreamOptions,
   type Tool,
   type ToolCall,
   type ToolResultMessage,
@@ -689,9 +691,13 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
                 turnPhase
               },
               Effect.gen(function* () {
+                const headers =
+                  options.provider === "litellm"
+                    ? Object.fromEntries((yield* injectCurrentTraceparent()).entries())
+                    : undefined
                 const providerCall = Effect.tryPromise({
-                  try: (signal) =>
-                    models.completeSimple(model, context, {
+                  try: (signal) => {
+                    const requestOptions: ModelsSimpleStreamOptions = {
                       maxRetries: 0,
                       reasoning: "medium",
                       signal:
@@ -699,7 +705,10 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
                           ? signal
                           : AbortSignal.any([externalSignal, signal]),
                       timeoutMs: Math.max(1, request.limits.maxDurationMs)
-                    }),
+                    }
+                    if (headers !== undefined) requestOptions.headers = headers
+                    return models.completeSimple(model, context, requestOptions)
+                  },
                   catch: (cause) => {
                     const message = cause instanceof Error ? cause.message : "Model request failed"
                     const classified =
