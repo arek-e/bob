@@ -34,6 +34,7 @@ describe("Effect telemetry", () => {
           providerStatusAgeMs: 42,
           providerAcceptedToDeliveredMs: 1_234,
           queueWaitMs: 7,
+          queueDispatchGeneration: 3,
           turnWaitMs: 1_500
         },
         Effect.void
@@ -44,6 +45,7 @@ describe("Effect telemetry", () => {
       "bob.provider.status_age_ms": 42,
       "bob.provider.accepted_to_delivered_ms": 1_234,
       "bob.queue.wait_ms": 7,
+      "bob.queue.dispatch_generation": 3,
       "bob.turn.wait_ms": 1_500
     })
   })

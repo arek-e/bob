@@ -168,6 +168,8 @@ export interface BobSpan {
   readonly providerAcceptedToDeliveredMs?: number
   /** Time a pointer waited in a queue before a consumer started it. */
   readonly queueWaitMs?: number
+  /** Monotonic dispatch generation used to fence a queue pointer. */
+  readonly queueDispatchGeneration?: number
   /** Quiet-window time between the latest inbound event and turn reflection. */
   readonly turnWaitMs?: number
 }
@@ -343,6 +345,10 @@ function validateSpan(input: BobSpan): void {
   assertTiming(input.providerStatusAgeMs, "Provider status age")
   assertTiming(input.providerAcceptedToDeliveredMs, "Provider accepted-to-delivered time")
   assertTiming(input.queueWaitMs, "Queue wait")
+  assertNatural(input.queueDispatchGeneration, "Queue dispatch generation")
+  if (input.queueDispatchGeneration !== undefined && input.queueDispatchGeneration > 1_000_000) {
+    throw new TypeError("Queue dispatch generation exceeds the telemetry limit")
+  }
   assertTiming(input.turnWaitMs, "Turn wait")
 }
 
@@ -392,6 +398,9 @@ function spanAttributes(input: BobSpan): SafeAttributes {
     attributes["bob.provider.accepted_to_delivered_ms"] = input.providerAcceptedToDeliveredMs
   }
   if (input.queueWaitMs !== undefined) attributes["bob.queue.wait_ms"] = input.queueWaitMs
+  if (input.queueDispatchGeneration !== undefined) {
+    attributes["bob.queue.dispatch_generation"] = input.queueDispatchGeneration
+  }
   if (input.turnWaitMs !== undefined) attributes["bob.turn.wait_ms"] = input.turnWaitMs
   return attributes
 }
@@ -477,6 +486,10 @@ function safeSpanAttributes(
   }
   const queueWaitMs = attributes.get("bob.queue.wait_ms")
   if (safeNatural(queueWaitMs, MAX_BOB_TIMING_MS)) output["bob.queue.wait_ms"] = queueWaitMs
+  const queueDispatchGeneration = attributes.get("bob.queue.dispatch_generation")
+  if (safeNatural(queueDispatchGeneration, 1_000_000)) {
+    output["bob.queue.dispatch_generation"] = queueDispatchGeneration
+  }
   const turnWaitMs = attributes.get("bob.turn.wait_ms")
   if (safeNatural(turnWaitMs, MAX_BOB_TIMING_MS)) output["bob.turn.wait_ms"] = turnWaitMs
   const provider = attributes.get("gen_ai.provider.name")

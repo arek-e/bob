@@ -95,14 +95,22 @@ export async function processOutboundDeadLetterJob(
   outboundJobs: JobPublisher<OutboundJob>
 ): Promise<JobDisposition> {
   const correlationId = job.correlationId ?? job.outboxId
+  const publishSpan: Parameters<typeof withBobSpan>[0] = {
+    name: "bob.outbox.publish",
+    correlationId,
+    outboxId: job.outboxId,
+    feature: "delivery"
+  }
+  if (job.dispatchGeneration !== undefined) {
+    Object.assign(publishSpan, { queueDispatchGeneration: job.dispatchGeneration })
+  }
+  if (job.enqueuedAt !== undefined) {
+    const queueWaitMs = elapsedMilliseconds(job.enqueuedAt)
+    if (queueWaitMs !== undefined) Object.assign(publishSpan, { queueWaitMs })
+  }
   const program = withTraceparent(
     withBobSpan(
-      {
-        name: "bob.outbox.publish",
-        correlationId,
-        outboxId: job.outboxId,
-        feature: "delivery"
-      },
+      publishSpan,
       Effect.gen(function* () {
         const alerts = yield* AlertStore
         const delivery = yield* DeliveryStore
@@ -228,13 +236,18 @@ export async function processInboundDeadLetterJob(
   inboundJobs: JobPublisher<InboundJob>
 ): Promise<JobDisposition> {
   const correlationId = job.correlationId ?? job.eventId
+  const consumeSpan: Parameters<typeof withBobSpan>[0] = {
+    name: "bob.inbound.consume",
+    correlationId,
+    feature: "assistant"
+  }
+  if (job.enqueuedAt !== undefined) {
+    const queueWaitMs = elapsedMilliseconds(job.enqueuedAt)
+    if (queueWaitMs !== undefined) Object.assign(consumeSpan, { queueWaitMs })
+  }
   const program = withTraceparent(
     withBobSpan(
-      {
-        name: "bob.inbound.consume",
-        correlationId,
-        feature: "assistant"
-      },
+      consumeSpan,
       Effect.gen(function* () {
         const alerts = yield* AlertStore
         const conversations = yield* ConversationStore
