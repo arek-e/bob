@@ -49,6 +49,7 @@ import {
   type UserMessage
 } from "@earendil-works/pi-ai"
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth"
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai"
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex"
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter"
 import { Cause, Data, Deferred, Effect, Fiber, Layer, Schema } from "effect"
@@ -69,7 +70,7 @@ import { waitForDeviceLoginStart } from "./device-login.ts"
 const pendingSteerRetentionMs = 140_000
 
 const PiAgentConfiguration = Schema.Struct({
-  provider: Schema.Literals(["openai-codex", "openrouter"]),
+  provider: Schema.Literals(["openai-codex", "openrouter", "litellm"]),
   model: Schema.NonEmptyString,
   allowedModels: Schema.Array(Schema.NonEmptyString).check(Schema.isNonEmpty())
 })
@@ -77,9 +78,13 @@ const PiAgentConfiguration = Schema.Struct({
 export interface PiAgentOptions {
   readonly catalogue: CapabilityCatalogue
   readonly credentials: CredentialStore
-  readonly provider: "openai-codex" | "openrouter"
+  readonly provider: "openai-codex" | "openrouter" | "litellm"
   readonly model: string
   readonly allowedModels: readonly string[]
+  readonly gateway?: {
+    readonly baseUrl: string
+    readonly apiKey: string
+  }
   readonly executeTool: (command: ToolCommand) => Effect.Effect<ToolResult, AgentToolError>
   readonly loadAttachment?: (
     runId: string,
@@ -102,6 +107,7 @@ export interface PiAgentDependencies {
     "setProvider" | "getModel" | "completeSimple" | "login"
   >
   readonly openaiCodexProvider: typeof openaiCodexProvider
+  readonly openaiProvider?: typeof openaiProvider
   readonly openrouterProvider: typeof openrouterProvider
   readonly registerOAuthFlows: typeof registerBunOAuthFlows
 }
@@ -113,13 +119,14 @@ function registerDefaultOAuthFlows(): void {
 const defaultDependencies: PiAgentDependencies = {
   createModels,
   openaiCodexProvider,
+  openaiProvider,
   openrouterProvider,
   registerOAuthFlows: registerDefaultOAuthFlows
 }
 
 export interface AuthStatus {
   readonly configured: boolean
-  readonly provider: "openai-codex" | "openrouter"
+  readonly provider: "openai-codex" | "openrouter" | "litellm"
   readonly accountIdRedacted?: string
   readonly expiresAt?: string
 }
@@ -429,9 +436,38 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
   const dependencies = options.dependencies ?? defaultDependencies
   dependencies.registerOAuthFlows()
   const models = dependencies.createModels({ credentials: options.credentials })
+  const gatewayProvider = () => {
+    const gateway = options.gateway
+    if (gateway === undefined)
+      throw new AgentConfigurationError({
+        message: "LiteLLM gateway configuration is required"
+      })
+    const upstream = (dependencies.openaiProvider ?? openaiProvider)()
+    const gatewayModels = upstream.getModels().map((model) => ({
+      ...model,
+      provider: "litellm",
+      baseUrl: gateway.baseUrl
+    }))
+    return {
+      ...upstream,
+      id: "litellm",
+      name: "LiteLLM",
+      baseUrl: gateway.baseUrl,
+      auth: {
+        apiKey: {
+          name: "LiteLLM virtual key",
+          async resolve() {
+            return { auth: { apiKey: gateway.apiKey }, source: "BOB_GATEWAY_API_KEY" }
+          }
+        }
+      },
+      getModels: () => gatewayModels
+    }
+  }
   const providerAdapters = {
     "openai-codex": dependencies.openaiCodexProvider,
-    openrouter: dependencies.openrouterProvider
+    openrouter: dependencies.openrouterProvider,
+    litellm: gatewayProvider
   }
   models.setProvider(providerAdapters[options.provider]())
   const model = models.getModel(options.provider, options.model)
@@ -1587,6 +1623,8 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
     },
 
     getAuthStatus() {
+      if (options.provider === "litellm")
+        return Effect.succeed({ configured: true, provider: options.provider } as const)
       return Effect.tryPromise({
         try: (signal) => options.credentials.read(options.provider, { signal }),
         catch: (cause) =>

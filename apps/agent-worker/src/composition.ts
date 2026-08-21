@@ -58,7 +58,7 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
               : readSecretValue(config.baoAuthentication.secretId)
         })
   })
-  const agentLayer = piAgentLayer({
+  const agentOptions: Parameters<typeof piAgentLayer>[0] = {
     catalogue: defaultAgentProfile,
     credentials,
     provider: config.provider,
@@ -83,7 +83,9 @@ export function composeAgent(environment: NodeJS.ProcessEnv): AgentComposition {
             })
         )
       )
-  })
+  }
+  if (config.gateway !== undefined) Object.assign(agentOptions, { gateway: config.gateway })
+  const agentLayer = piAgentLayer(agentOptions)
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
       accessVerifierLayer(access),

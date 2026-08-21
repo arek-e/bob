@@ -89,4 +89,56 @@ describe("agent configuration", () => {
       secretId: "secret-id"
     })
   })
+
+  it("requires and normalizes the opt-in LiteLLM gateway", () => {
+    const configuration = readAgentConfiguration({
+      PORT: "8787",
+      BAO_ADDR: "https://openbao.example.invalid/",
+      BAO_AUTH_METHOD: "approle",
+      BAO_APPROLE_ROLE_ID: "role-id",
+      BAO_APPROLE_SECRET_ID_PATH: "/run/secrets/openbao_approle_secret_id",
+      BOB_PROVIDER: "litellm",
+      BOB_MODEL: "gpt-5.4",
+      BOB_ALLOWED_MODELS: "gpt-5.4",
+      BOB_GATEWAY_BASE_URL: "https://ai-gateway.example.invalid/v1/",
+      BOB_GATEWAY_API_KEY: "test-virtual-key",
+      BOB_RELEASE_SHA: "f974ae0fc5b53ca1c233faa0dfd69e9f814cb25f",
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.example.invalid:4318/",
+      CORE_URL: "https://bob.example.invalid/",
+      RUNTIME_SHARED_SECRET: "runtime-shared-secret-value-1234567890",
+      CORE_CALLER_SECRET: "core-caller-secret-value-123456789012",
+      JOB_QUEUE_URL: "redis://localhost:6379",
+      AGENT_EXECUTION_POOL_ID: "core-v1",
+      AGENT_MAX_CONCURRENCY: "4"
+    })
+
+    expect(configuration.provider).toBe("litellm")
+    expect(configuration.gateway).toEqual({
+      baseUrl: "https://ai-gateway.example.invalid/v1",
+      apiKey: "test-virtual-key"
+    })
+  })
+
+  it("rejects an incomplete LiteLLM gateway", () => {
+    expect(() =>
+      readAgentConfiguration({
+        PORT: "8787",
+        BAO_ADDR: "https://openbao.example.invalid/",
+        BAO_AUTH_METHOD: "approle",
+        BAO_APPROLE_ROLE_ID: "role-id",
+        BAO_APPROLE_SECRET_ID_PATH: "/run/secrets/openbao_approle_secret_id",
+        BOB_PROVIDER: "litellm",
+        BOB_MODEL: "gpt-5.4",
+        BOB_ALLOWED_MODELS: "gpt-5.4",
+        BOB_RELEASE_SHA: "f974ae0fc5b53ca1c233faa0dfd69e9f814cb25f",
+        OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.example.invalid:4318/",
+        CORE_URL: "https://bob.example.invalid/",
+        RUNTIME_SHARED_SECRET: "runtime-shared-secret-value-1234567890",
+        CORE_CALLER_SECRET: "core-caller-secret-value-123456789012",
+        JOB_QUEUE_URL: "redis://localhost:6379",
+        AGENT_EXECUTION_POOL_ID: "core-v1",
+        AGENT_MAX_CONCURRENCY: "4"
+      })
+    ).toThrow("BOB_GATEWAY_BASE_URL")
+  })
 })
