@@ -3,7 +3,7 @@ import type { ToolCommand, ToolResult } from "@bob/tools-types/tools"
 
 import { AgentCheckpointError, AgentToolError } from "@bob/agent-types"
 import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
-import { withBobSpan, makeCaptureTelemetry } from "@bob/observability"
+import { makeCaptureTelemetry, parseTraceparent, withBobSpan } from "@bob/observability"
 import {
   fauxAssistantMessage,
   fauxToolCall,
@@ -12,6 +12,7 @@ import {
   type Context,
   type Model
 } from "@earendil-works/pi-ai"
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai"
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex"
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter"
 import { Effect, Schema } from "effect"
@@ -107,6 +108,7 @@ const dependencies: PiAgentDependencies = {
     completeSimple: modelHarness.completeSimple,
     login: vi.fn()
   }),
+  openaiProvider,
   openaiCodexProvider,
   openrouterProvider,
   registerOAuthFlows: vi.fn()
@@ -251,6 +253,44 @@ describe("Bob's direct pi-ai loop", () => {
         tools: []
       }
     ])
+  })
+
+  it("propagates the active model span to the LiteLLM gateway", async () => {
+    modelHarness.state.responses.push(structuredResponse())
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-agent",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const agent = createPiAgent({
+      catalogue: transitionalDeploymentProfile,
+      // SAFETY: The gateway key is resolved by the provider fixture, not this store.
+      credentials: { read: async () => undefined } as never,
+      provider: "litellm",
+      model: "gpt-test",
+      allowedModels: ["gpt-test"],
+      gateway: {
+        baseUrl: "https://ai-gateway.example.invalid/v1",
+        apiKey: "test-product-virtual-key"
+      },
+      executeTool: () => Effect.fail(new AgentToolError({ message: "No Tools in this test" })),
+      dependencies,
+      now: () => 1
+    })
+
+    await Effect.runPromise(
+      agent.runTurnEffect(baseRequest()).pipe(Effect.provide(telemetry.layer))
+    )
+
+    const modelSpan = telemetry.finishedSpans().find((span) => span.name === "bob.model.complete")
+    const propagated = parseTraceparent(modelHarness.state.options[0]?.headers?.traceparent)
+    expect(propagated).toMatchObject({
+      traceId: modelSpan?.traceId,
+      spanId: modelSpan?.spanId,
+      sampled: true
+    })
+
+    agent.dispose()
   })
 
   it("fails model smoke without returning model text", async () => {
