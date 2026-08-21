@@ -2,9 +2,20 @@ import type { AgentRunContinuationJob, AgentRunJob } from "@bob/agent-runs-types
 import type { CoreDatabase } from "@bob/db-types"
 import type { JobPublisher } from "@bob/job-queue-types"
 
-import { agentRunOutbox, agentRuns } from "@bob/db-service/schema/conversations"
+import {
+  agentRunOutbox,
+  agentRuns,
+  conversationTurnMessages
+} from "@bob/db-service/schema/conversations"
 import { and, asc, eq, lte } from "drizzle-orm"
 import { Effect } from "effect"
+
+const traceparentPattern = /^00-[0-9a-f]{32}-[0-9a-f]{16}-(00|01)$/
+
+function safeTraceparent(value: string | null | undefined): string | undefined {
+  if (value === null || value === undefined || value.length > 512) return undefined
+  return traceparentPattern.test(value) ? value : undefined
+}
 
 export interface AgentRunQueueProvider {
   readonly forExecutionPool: (executionPoolId: string) => JobPublisher<AgentRunJob>
@@ -45,10 +56,18 @@ export function makeAgentRunDispatcher(
             generation: agentRunOutbox.generation,
             executionPoolId: agentRuns.executionPoolId,
             jobProtocolVersion: agentRuns.jobProtocolVersion,
-            acceptedAt: agentRuns.createdAt
+            acceptedAt: agentRuns.createdAt,
+            traceparent: conversationTurnMessages.traceparent
           })
           .from(agentRunOutbox)
           .innerJoin(agentRuns, eq(agentRunOutbox.runId, agentRuns.id))
+          .leftJoin(
+            conversationTurnMessages,
+            and(
+              eq(conversationTurnMessages.turnId, agentRuns.conversationTurnId),
+              eq(conversationTurnMessages.revision, agentRuns.conversationTurnRevision)
+            )
+          )
           .where(
             and(
               eq(agentRunOutbox.kind, "dispatch"),
@@ -81,6 +100,8 @@ export function makeAgentRunDispatcher(
           acceptedAt: row.acceptedAt,
           enqueuedAt: selectedAt
         }
+        const traceparent = safeTraceparent(row.traceparent)
+        if (traceparent !== undefined) Object.assign(job, { traceparent })
         try {
           await queues.forExecutionPool(row.executionPoolId).publish(job, {
             deduplicationKey: `agent-run-${row.runId}-${row.generation}`
@@ -133,10 +154,18 @@ export function makeAgentRunContinuationDispatcher(
             runId: agentRunOutbox.runId,
             generation: agentRunOutbox.generation,
             correlationId: agentRuns.correlationId,
-            completedAt: agentRuns.completedAt
+            completedAt: agentRuns.completedAt,
+            traceparent: conversationTurnMessages.traceparent
           })
           .from(agentRunOutbox)
-          .innerJoin(agentRuns, eq(agentRunOutbox.runId, agentRuns.id))
+          .leftJoin(agentRuns, eq(agentRunOutbox.runId, agentRuns.id))
+          .leftJoin(
+            conversationTurnMessages,
+            and(
+              eq(conversationTurnMessages.turnId, agentRuns.conversationTurnId),
+              eq(conversationTurnMessages.revision, agentRuns.conversationTurnRevision)
+            )
+          )
           .where(
             and(
               eq(agentRunOutbox.kind, "continuation"),
@@ -155,9 +184,11 @@ export function makeAgentRunContinuationDispatcher(
             wireVersion: 1,
             runId: row.runId,
             generation: row.generation,
-            correlationId: row.correlationId,
             enqueuedAt: selectedAt
           }
+          if (row.correlationId !== null) Object.assign(job, { correlationId: row.correlationId })
+          const traceparent = safeTraceparent(row.traceparent)
+          if (traceparent !== undefined) Object.assign(job, { traceparent })
           if (row.completedAt !== null) Object.assign(job, { completedAt: row.completedAt })
           await publisher.publish(job, {
             deduplicationKey: `agent-continuation-${row.runId}-${row.generation}`
