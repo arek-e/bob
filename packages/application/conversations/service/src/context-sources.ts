@@ -14,6 +14,8 @@ import { deliveryAttempts, outboxMessages } from "@bob/db-service/schema/deliver
 import { and, asc, desc, eq, gte, inArray, isNotNull, lte, ne } from "drizzle-orm"
 import { Effect } from "effect"
 
+const conversationContextLookbackMs = 24 * 60 * 60_000
+
 function sourceDay(value: string): string {
   return value.slice(0, 10)
 }
@@ -101,7 +103,9 @@ export function makeConversationContextSources(
     deduplicateAgainst: ["inline_reply"],
     async load(input) {
       if (input.currentConversationTurnId === undefined) return []
-      const deliveredAfter = new Date(Date.parse(input.localTime) - 15 * 60_000).toISOString()
+      const deliveredAfter = new Date(
+        Date.parse(input.localTime) - conversationContextLookbackMs
+      ).toISOString()
       const priorTurns = await Effect.runPromise(
         database
           .select({
@@ -123,7 +127,7 @@ export function makeConversationContextSources(
             deliveryAttempts,
             and(
               eq(deliveryAttempts.outboxId, outboxMessages.id),
-              eq(deliveryAttempts.state, "delivered")
+              inArray(deliveryAttempts.state, ["accepted", "delivered"])
             )
           )
           .where(

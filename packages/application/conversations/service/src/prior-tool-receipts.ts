@@ -10,6 +10,7 @@ import { and, desc, eq, gte, inArray, isNotNull, lt, lte, ne, or } from "drizzle
 import { Effect, Schema } from "effect"
 
 const PrivateEnvelope = Schema.Struct({ ciphertext: Schema.String, iv: Schema.String })
+const conversationContextLookbackMs = 24 * 60 * 60_000
 
 export function makePriorToolReceiptSource(
   database: CoreDatabase,
@@ -40,7 +41,9 @@ export function makePriorToolReceiptSource(
         currentTurn === undefined || Date.parse(currentTurn.createdAt) > Date.parse(input.localTime)
           ? input.localTime
           : currentTurn.createdAt
-      const predecessorAfter = new Date(Date.parse(input.localTime) - 15 * 60_000).toISOString()
+      const predecessorAfter = new Date(
+        Date.parse(input.localTime) - conversationContextLookbackMs
+      ).toISOString()
       const [predecessor] =
         currentTurn === undefined
           ? []
