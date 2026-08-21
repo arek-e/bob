@@ -7,7 +7,16 @@ import {
   type PostgresqlDatabaseService,
   postgresqlDatabaseLayer
 } from "@bob/db-service/postgresql"
-import { agentRunOutbox } from "@bob/db-service/schema/conversations"
+import {
+  agentRunAttempts,
+  agentRunOutbox,
+  agentRuns,
+  channels,
+  conversationTurns,
+  inboundEvents,
+  messages,
+  users
+} from "@bob/db-service/schema/conversations"
 import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
 import { createDataProtection } from "@bob/policy-service/data-protection"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
@@ -236,5 +245,181 @@ integration("PostgreSQL Agent Runs", () => {
         })
       )
     ).resolves.toBe("accepted")
+  })
+
+  it("clears the conversation claim when a worker records an outcome", async () => {
+    const ownerId = crypto.randomUUID()
+    const channelId = crypto.randomUUID()
+    const messageId = crypto.randomUUID()
+    const eventId = crypto.randomUUID()
+    const turnId = crypto.randomUUID()
+    const runId = crypto.randomUUID()
+    const correlationId = crypto.randomUUID()
+    const now = "2026-08-18T12:00:00.000Z"
+    const protection = createDataProtection({ 1: "33".repeat(32) }, 1, "44".repeat(32))
+    const ownerDataKeys = makeOwnerDataKeyStore(database.applicationStorage, protection, {
+      defaultTimeZone: "UTC"
+    })
+    await ownerDataKeys.ensure(ownerId)
+    await Effect.runPromise(
+      database.applicationStorage.insert(channels).values({
+        id: channelId,
+        userId: ownerId,
+        provider: "test",
+        accountId: "account",
+        lineId: "line",
+        senderHash: "sender-hash",
+        senderCiphertext: "sender-ciphertext",
+        senderIv: "sender-iv",
+        destinationHash: "destination-hash",
+        destinationCiphertext: "destination-ciphertext",
+        destinationIv: "destination-iv",
+        createdAt: now
+      })
+    )
+    await Effect.runPromise(
+      database.applicationStorage.insert(messages).values({
+        id: messageId,
+        userId: ownerId,
+        channelId,
+        direction: "inbound",
+        textCiphertext: "message-ciphertext",
+        textIv: "message-iv",
+        dataKeyVersion: 1,
+        occurredAt: now,
+        createdAt: now
+      })
+    )
+    await Effect.runPromise(
+      database.applicationStorage.insert(inboundEvents).values({
+        id: eventId,
+        userId: ownerId,
+        channelId,
+        messageId,
+        accountId: "account",
+        lineId: "line",
+        providerMessageHandle: `provider-${eventId}`,
+        service: "imessage",
+        isGroup: false,
+        attachmentCount: 0,
+        correlationId,
+        createdAt: now,
+        recoveryCount: 0
+      })
+    )
+    await Effect.runPromise(
+      database.applicationStorage.insert(conversationTurns).values({
+        id: turnId,
+        userId: ownerId,
+        channelId,
+        status: "running",
+        revision: 1,
+        contextEligible: true,
+        latestInboundEventId: eventId,
+        latestMessageId: messageId,
+        activeRunId: runId,
+        activeRunRevision: 1,
+        claimedRevision: 1,
+        claimedAt: now,
+        claimExpiresAt: "2026-08-18T12:02:20.000Z",
+        quietUntil: "2026-08-18T12:00:01.500Z",
+        burstExpiresAt: "2026-08-18T12:00:05.000Z",
+        createdAt: now,
+        updatedAt: now
+      })
+    )
+
+    const request: AgentRunRequest = {
+      protocolVersion: 1,
+      deploymentProfileId: transitionalDeploymentProfile.profileId,
+      capabilityCatalogueGeneration: transitionalDeploymentProfile.generation,
+      runId,
+      ownerId,
+      correlationId,
+      sourceMessageId: messageId,
+      conversationTurnId: turnId,
+      conversationTurnRevision: 1,
+      localTime: now,
+      timeZone: "UTC",
+      userText: "Summarize my current work.",
+      contextItems: [],
+      allowedTools: [],
+      limits: {
+        maxTurns: 2,
+        maxToolCalls: 1,
+        maxDurationMs: 30_000,
+        maxResponseCharacters: 500
+      }
+    }
+    const runs = makeAgentRuns(database.applicationStorage, protection, { ownerDataKeys })
+    const gateway = makeAgentRunGateway(database.applicationStorage, protection, {
+      ownerDataKeys,
+      randomUuid: () => crypto.randomUUID()
+    })
+    await Effect.runPromise(
+      runs.submit({
+        idempotencyKey: `postgres-conversation-run-${runId}`,
+        origin: { type: "conversation_turn", turnId, revision: 1 },
+        request,
+        execution: {
+          jobProtocolVersion: 1,
+          coreGatewayProtocolVersion: 1,
+          checkpointLoopVersion: 1,
+          deploymentProfileId: transitionalDeploymentProfile.profileId,
+          capabilityCatalogueGeneration: transitionalDeploymentProfile.generation,
+          executionPoolId: "core-v1"
+        }
+      })
+    )
+    const acquired = await Effect.runPromise(
+      gateway.acquire({
+        job: { wireVersion: 1, runId, dispatchGeneration: 1, executionPoolId: "core-v1" },
+        workerId: "worker-conversation",
+        leaseMs: 60_000
+      })
+    )
+    if (acquired.state !== "acquired") throw new Error("Conversation Agent Run was not acquired")
+
+    await expect(
+      Effect.runPromise(
+        gateway.recordOutcome({
+          authority: acquired.authority,
+          result: {
+            protocolVersion: 1,
+            runId,
+            correlationId,
+            status: "completed",
+            responseText: "Your work is ready.",
+            model: "gpt-5.6-luna",
+            durationMs: 25,
+            inputTokens: 12,
+            outputTokens: 9,
+            toolCalls: 0
+          }
+        })
+      )
+    ).resolves.toBe("accepted")
+
+    const [turn] = await Effect.runPromise(
+      database.applicationStorage
+        .select({
+          status: conversationTurns.status,
+          claimExpiresAt: conversationTurns.claimExpiresAt
+        })
+        .from(conversationTurns)
+        .where(eq(conversationTurns.id, turnId))
+    )
+    expect(turn).toEqual({ status: "running", claimExpiresAt: null })
+
+    await Effect.runPromise(
+      database.applicationStorage.delete(agentRunOutbox).where(eq(agentRunOutbox.runId, runId))
+    )
+    await Effect.runPromise(
+      database.applicationStorage.delete(agentRunAttempts).where(eq(agentRunAttempts.runId, runId))
+    )
+    await Effect.runPromise(
+      database.applicationStorage.delete(agentRuns).where(eq(agentRuns.id, runId))
+    )
+    await Effect.runPromise(database.applicationStorage.delete(users).where(eq(users.id, ownerId)))
   })
 })

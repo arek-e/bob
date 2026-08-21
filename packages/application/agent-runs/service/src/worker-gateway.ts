@@ -472,7 +472,7 @@ export function makeAgentRunGateway(
               eq(
                 conversationTurns.id,
                 sql`(
-                SELECT origin_id
+                SELECT turn_id
                 FROM agent_runs
                 WHERE id = ${input.authority.runId}
                   AND origin_type = 'conversation_turn'
