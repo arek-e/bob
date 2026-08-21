@@ -95,6 +95,7 @@ export function makeAgentRunJobProcessor(input: {
           runId: acquired.request.runId,
           feature: "assistant"
         }
+        Object.assign(runSpan, { queueDispatchGeneration: job.dispatchGeneration })
         if (job.enqueuedAt !== undefined) {
           const queueWaitMs = elapsedMilliseconds(job.enqueuedAt)
           if (queueWaitMs !== undefined) Object.assign(runSpan, { queueWaitMs })

@@ -38,7 +38,11 @@ function processDecodedOutboundJob(job: OutboundJobValue) {
   const consumeSpan: Parameters<typeof withBobSpan>[0] = {
     name: "bob.outbox.consume",
     correlationId,
+    outboxId: job.outboxId,
     feature: "delivery"
+  }
+  if (job.dispatchGeneration !== undefined) {
+    Object.assign(consumeSpan, { queueDispatchGeneration: job.dispatchGeneration })
   }
   if (job.enqueuedAt !== undefined) {
     const queueWaitMs = elapsedMilliseconds(job.enqueuedAt)
