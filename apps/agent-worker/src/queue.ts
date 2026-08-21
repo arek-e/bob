@@ -100,6 +100,12 @@ export function makeAgentRunJobProcessor(input: {
           const queueWaitMs = elapsedMilliseconds(job.enqueuedAt)
           if (queueWaitMs !== undefined) Object.assign(runSpan, { queueWaitMs })
         }
+        if (job.acceptedAt !== undefined) {
+          const acceptedToStartedMs = elapsedMilliseconds(job.acceptedAt)
+          if (acceptedToStartedMs !== undefined) {
+            Object.assign(runSpan, { agentRunAcceptedToStartedMs: acceptedToStartedMs })
+          }
+        }
         const execution = withTraceparent(
           withBobSpan(
             runSpan,

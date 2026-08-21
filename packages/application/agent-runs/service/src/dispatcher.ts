@@ -44,7 +44,8 @@ export function makeAgentRunDispatcher(
             runId: agentRunOutbox.runId,
             generation: agentRunOutbox.generation,
             executionPoolId: agentRuns.executionPoolId,
-            jobProtocolVersion: agentRuns.jobProtocolVersion
+            jobProtocolVersion: agentRuns.jobProtocolVersion,
+            acceptedAt: agentRuns.createdAt
           })
           .from(agentRunOutbox)
           .innerJoin(agentRuns, eq(agentRunOutbox.runId, agentRuns.id))
@@ -77,6 +78,7 @@ export function makeAgentRunDispatcher(
           runId: row.runId,
           dispatchGeneration: row.generation,
           executionPoolId: row.executionPoolId,
+          acceptedAt: row.acceptedAt,
           enqueuedAt: selectedAt
         }
         try {
@@ -129,9 +131,12 @@ export function makeAgentRunContinuationDispatcher(
           .select({
             outboxId: agentRunOutbox.id,
             runId: agentRunOutbox.runId,
-            generation: agentRunOutbox.generation
+            generation: agentRunOutbox.generation,
+            correlationId: agentRuns.correlationId,
+            completedAt: agentRuns.completedAt
           })
           .from(agentRunOutbox)
+          .innerJoin(agentRuns, eq(agentRunOutbox.runId, agentRuns.id))
           .where(
             and(
               eq(agentRunOutbox.kind, "continuation"),
@@ -146,10 +151,17 @@ export function makeAgentRunContinuationDispatcher(
       let failed = 0
       for (const row of rows) {
         try {
-          await publisher.publish(
-            { wireVersion: 1, runId: row.runId, generation: row.generation },
-            { deduplicationKey: `agent-continuation-${row.runId}-${row.generation}` }
-          )
+          const job: AgentRunContinuationJob = {
+            wireVersion: 1,
+            runId: row.runId,
+            generation: row.generation,
+            correlationId: row.correlationId,
+            enqueuedAt: selectedAt
+          }
+          if (row.completedAt !== null) Object.assign(job, { completedAt: row.completedAt })
+          await publisher.publish(job, {
+            deduplicationKey: `agent-continuation-${row.runId}-${row.generation}`
+          })
           await Effect.runPromise(
             database
               .update(agentRunOutbox)

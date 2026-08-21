@@ -23,7 +23,8 @@ import {
   flushTelemetry,
   nodeTelemetryLayer,
   withBobRootSpan,
-  withBobSpan
+  withBobSpan,
+  withTraceparent
 } from "@bob/observability"
 import { Queue, type ConnectionOptions } from "bullmq"
 import { and, eq } from "drizzle-orm"
@@ -260,20 +261,52 @@ async function main(): Promise<void> {
         { decode: (input) => Schema.decodeUnknownSync(AgentRunContinuationJob)(input) },
         {
           async process(job) {
-            const [run] = await Effect.runPromise(
-              applicationStorage
-                .select({ ownerId: agentRuns.userId })
-                .from(agentRuns)
-                .where(
-                  and(
-                    eq(agentRuns.id, job.runId),
-                    eq(agentRuns.status, "awaiting_finalization"),
-                    eq(agentRuns.activeAttemptFence, job.generation)
-                  )
-                )
-                .limit(1)
+            const finishSpan: Parameters<typeof withBobSpan>[0] = {
+              name: "bob.agent_run.finish",
+              correlationId: job.correlationId ?? job.runId,
+              runId: job.runId,
+              feature: "assistant"
+            }
+            if (job.enqueuedAt !== undefined) {
+              const queueWaitMs = elapsedMilliseconds(job.enqueuedAt)
+              if (queueWaitMs !== undefined) Object.assign(finishSpan, { queueWaitMs })
+            }
+            if (job.completedAt !== undefined) {
+              const completionToFinalizationMs = elapsedMilliseconds(job.completedAt)
+              if (completionToFinalizationMs !== undefined) {
+                Object.assign(finishSpan, {
+                  agentRunCompletionToFinalizationMs: completionToFinalizationMs
+                })
+              }
+            }
+            const program = withTraceparent(
+              withBobSpan(
+                finishSpan,
+                Effect.gen(function* () {
+                  const [run] = yield* Effect.tryPromise({
+                    try: () =>
+                      Effect.runPromise(
+                        applicationStorage
+                          .select({ ownerId: agentRuns.userId })
+                          .from(agentRuns)
+                          .where(
+                            and(
+                              eq(agentRuns.id, job.runId),
+                              eq(agentRuns.status, "awaiting_finalization"),
+                              eq(agentRuns.activeAttemptFence, job.generation)
+                            )
+                          )
+                          .limit(1)
+                      ),
+                    catch: (cause) => cause
+                  })
+                  if (run !== undefined)
+                    yield* Effect.promise(() => runCoordinator.wake({ ownerId: run.ownerId }))
+                })
+              ),
+              job.traceparent
             )
-            if (run !== undefined) await runCoordinator.wake({ ownerId: run.ownerId })
+            await composition.runtime.runPromise(program)
             return { state: "complete" as const }
           }
         },
