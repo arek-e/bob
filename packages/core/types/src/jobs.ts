@@ -6,6 +6,7 @@ const Traceparent = Schema.String.check(Schema.isPattern(/^00-[0-9a-f]{32}-[0-9a
 export const InboundJob = Schema.Struct({
   eventId: Uuid,
   correlationId: Schema.optionalKey(Uuid),
+  enqueuedAt: Schema.optionalKey(IsoDateTime),
   traceparent: Schema.optionalKey(Traceparent)
 })
 
@@ -13,6 +14,7 @@ export const OutboundJob = Schema.Struct({
   outboxId: Uuid,
   dispatchGeneration: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   correlationId: Schema.optionalKey(Uuid),
+  enqueuedAt: Schema.optionalKey(IsoDateTime),
   traceparent: Schema.optionalKey(Traceparent)
 })
 

@@ -15,6 +15,9 @@ function makeStore(): DeliveryStoreAdapter {
       await this.reconcileExpiredClaims(new Date().toISOString())
       return undefined
     },
+    async attemptTiming() {
+      return undefined
+    },
     async recordResult() {
       return []
     },

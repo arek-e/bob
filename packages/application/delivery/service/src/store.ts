@@ -27,6 +27,7 @@ import {
 export { DeliveryStore }
 export type {
   CreateOutboxInput,
+  DeliveryAttemptTiming,
   DeliveryReconciliationTarget,
   DeliveryStoreAdapter
 } from "@bob/delivery-types/store"
@@ -546,6 +547,17 @@ export function makeDeliveryStore(
         : { ...claim, replyToMessageHandle: candidate.replyToProviderMessageHandle }
     },
 
+    async attemptTiming(outboxId, attemptId) {
+      const [attempt] = await Effect.runPromise(
+        database
+          .select({ state: deliveryAttempts.state, updatedAt: deliveryAttempts.updatedAt })
+          .from(deliveryAttempts)
+          .where(and(eq(deliveryAttempts.id, attemptId), eq(deliveryAttempts.outboxId, outboxId)))
+          .limit(1)
+      )
+      return attempt
+    },
+
     async recordResult(result) {
       const outboxState =
         result.state === "delivered"
@@ -1031,6 +1043,10 @@ export function deliveryStoreLayer(store: DeliveryStoreAdapter) {
       createOutbox: liftPromiseOperation(store.createOutbox.bind(store), failure("createOutbox")),
       markEnqueued: liftPromiseOperation(store.markEnqueued.bind(store), failure("markEnqueued")),
       claimOutbox: liftPromiseOperation(store.claimOutbox.bind(store), failure("claimOutbox")),
+      attemptTiming: liftPromiseOperation(
+        store.attemptTiming.bind(store),
+        failure("attemptTiming")
+      ),
       recordResult: liftPromiseOperation(store.recordResult.bind(store), failure("recordResult")),
       recordProviderEvent: liftPromiseOperation(
         store.recordProviderEvent.bind(store),

@@ -325,6 +325,7 @@ export function makeConversationTurnStore(
             service: inboundEvents.service,
             isGroup: inboundEvents.isGroup,
             correlationId: inboundEvents.correlationId,
+            receivedAt: messages.occurredAt,
             traceparent: conversationTurnMessages.traceparent
           })
           .from(conversationTurnMessages)
@@ -428,7 +429,8 @@ export function makeConversationTurnStore(
         isGroup: latest.isGroup,
         correlationId: latest.correlationId,
         number,
-        fromNumber
+        fromNumber,
+        receivedAt: latest.receivedAt
       }
       if (latest.attachments !== undefined) {
         Object.assign(latestMessage, { attachments: latest.attachments })
@@ -443,6 +445,7 @@ export function makeConversationTurnStore(
         channelId: claimed.channelId,
         revision: claimed.revision,
         claimExpiresAt: expiresAt,
+        quietUntil: claimed.quietUntil,
         latest: latestWithTrace,
         messages: ordered.map((row) => {
           const message: ConversationTurnMessage = {

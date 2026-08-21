@@ -33,6 +33,7 @@ export interface ConversationTurnLatest extends ConversationTurnMessage {
   readonly correlationId: string
   readonly number: string
   readonly fromNumber: string
+  readonly receivedAt?: string
   readonly traceparent?: string
 }
 
@@ -42,6 +43,7 @@ export interface ConversationTurnSnapshot {
   readonly channelId: string
   readonly revision: number
   readonly claimExpiresAt: string
+  readonly quietUntil?: string
   readonly latest: ConversationTurnLatest
   readonly messages: readonly ConversationTurnMessage[]
 }

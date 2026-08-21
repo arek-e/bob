@@ -160,6 +160,16 @@ export interface BobSpan {
   readonly turnPhase?: BobTurnPhase
   readonly toolName?: string
   readonly toolCallIndex?: number
+  /** Age of a provider event when Bob received it. */
+  readonly providerIngressDelayMs?: number
+  /** Age of a provider status event when Bob received it. */
+  readonly providerStatusAgeMs?: number
+  /** Time from provider acceptance until a delivered status was observed. */
+  readonly providerAcceptedToDeliveredMs?: number
+  /** Time a pointer waited in a queue before a consumer started it. */
+  readonly queueWaitMs?: number
+  /** Quiet-window time between the latest inbound event and turn reflection. */
+  readonly turnWaitMs?: number
 }
 
 export interface BobModelUsage {
@@ -214,6 +224,7 @@ const safeModelPattern =
   /^(?!(?:.*\+|.*\bprivate\b|.*\bphone\b|.*\d{10,}).*$)[a-zA-Z0-9][a-zA-Z0-9._/:-]{2,200}$/i
 
 const safeProviderPattern = /^[a-z0-9][a-z0-9-._:/+]*$/i
+export const MAX_BOB_TIMING_MS = 365 * 24 * 60 * 60 * 1_000
 
 const spanSemantics = {
   "bob.runtime.ready": { kind: "internal", workflow: "administration" },
@@ -279,6 +290,31 @@ function assertNatural(value: number | undefined, label: string): void {
   }
 }
 
+function assertTiming(value: number | undefined, label: string): void {
+  assertNatural(value, label)
+  if (value !== undefined && value > MAX_BOB_TIMING_MS) {
+    throw new TypeError(`${label} exceeds the telemetry timing limit`)
+  }
+}
+
+/**
+ * Computes a content-free elapsed time from an ISO timestamp to a clock value.
+ * Invalid, future, or implausibly old timestamps are omitted from telemetry.
+ */
+export function elapsedMilliseconds(
+  startedAt: string,
+  endedAt: string | number = Date.now()
+): number | undefined {
+  const startedAtMs = Date.parse(startedAt)
+  const endedAtMs =
+    Object.prototype.toString.call(endedAt) === "[object Number]"
+      ? Number(endedAt)
+      : Date.parse(String(endedAt))
+  if (!Number.isFinite(startedAtMs) || !Number.isFinite(endedAtMs)) return undefined
+  const elapsed = endedAtMs - startedAtMs
+  return safeNatural(elapsed, MAX_BOB_TIMING_MS) ? elapsed : undefined
+}
+
 function validateSpan(input: BobSpan): void {
   Schema.decodeUnknownSync(BobSpanName)(input.name)
   if (!uuidPattern.test(input.correlationId)) throw new TypeError("Correlation ID is invalid")
@@ -303,6 +339,11 @@ function validateSpan(input: BobSpan): void {
   }
   assertNatural(input.turnIndex, "Turn index")
   assertNatural(input.toolCallIndex, "Tool-call index")
+  assertTiming(input.providerIngressDelayMs, "Provider ingress delay")
+  assertTiming(input.providerStatusAgeMs, "Provider status age")
+  assertTiming(input.providerAcceptedToDeliveredMs, "Provider accepted-to-delivered time")
+  assertTiming(input.queueWaitMs, "Queue wait")
+  assertTiming(input.turnWaitMs, "Turn wait")
 }
 
 function validateDecision(input: BobDecision): void {
@@ -341,6 +382,17 @@ function spanAttributes(input: BobSpan): SafeAttributes {
   if (input.turnPhase !== undefined) attributes["bob.turn.phase"] = input.turnPhase
   if (input.toolName !== undefined) attributes["bob.tool.name"] = input.toolName
   if (input.toolCallIndex !== undefined) attributes["bob.tool.call_index"] = input.toolCallIndex
+  if (input.providerIngressDelayMs !== undefined) {
+    attributes["bob.provider.ingress_delay_ms"] = input.providerIngressDelayMs
+  }
+  if (input.providerStatusAgeMs !== undefined) {
+    attributes["bob.provider.status_age_ms"] = input.providerStatusAgeMs
+  }
+  if (input.providerAcceptedToDeliveredMs !== undefined) {
+    attributes["bob.provider.accepted_to_delivered_ms"] = input.providerAcceptedToDeliveredMs
+  }
+  if (input.queueWaitMs !== undefined) attributes["bob.queue.wait_ms"] = input.queueWaitMs
+  if (input.turnWaitMs !== undefined) attributes["bob.turn.wait_ms"] = input.turnWaitMs
   return attributes
 }
 
@@ -411,6 +463,22 @@ function safeSpanAttributes(
   }
   const toolCallIndex = attributes.get("bob.tool.call_index")
   if (safeNatural(toolCallIndex, 100)) output["bob.tool.call_index"] = toolCallIndex
+  const providerIngressDelayMs = attributes.get("bob.provider.ingress_delay_ms")
+  if (safeNatural(providerIngressDelayMs, MAX_BOB_TIMING_MS)) {
+    output["bob.provider.ingress_delay_ms"] = providerIngressDelayMs
+  }
+  const providerStatusAgeMs = attributes.get("bob.provider.status_age_ms")
+  if (safeNatural(providerStatusAgeMs, MAX_BOB_TIMING_MS)) {
+    output["bob.provider.status_age_ms"] = providerStatusAgeMs
+  }
+  const providerAcceptedToDeliveredMs = attributes.get("bob.provider.accepted_to_delivered_ms")
+  if (safeNatural(providerAcceptedToDeliveredMs, MAX_BOB_TIMING_MS)) {
+    output["bob.provider.accepted_to_delivered_ms"] = providerAcceptedToDeliveredMs
+  }
+  const queueWaitMs = attributes.get("bob.queue.wait_ms")
+  if (safeNatural(queueWaitMs, MAX_BOB_TIMING_MS)) output["bob.queue.wait_ms"] = queueWaitMs
+  const turnWaitMs = attributes.get("bob.turn.wait_ms")
+  if (safeNatural(turnWaitMs, MAX_BOB_TIMING_MS)) output["bob.turn.wait_ms"] = turnWaitMs
   const provider = attributes.get("gen_ai.provider.name")
   if (safeString(provider, safeProviderPattern)) output["gen_ai.provider.name"] = provider
   const model = attributes.get("gen_ai.request.model")

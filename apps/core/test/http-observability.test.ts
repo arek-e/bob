@@ -133,6 +133,68 @@ describe("Core HTTP telemetry", () => {
     ])
   })
 
+  it("records provider acceptance-to-delivery age on the delivery span", async () => {
+    const outboxId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db92"
+    const attemptId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db93"
+    const attemptTiming = vi.fn(async () => ({
+      state: "accepted" as const,
+      updatedAt: "2026-08-21T10:00:00.000Z"
+    }))
+    const recordProviderEvent = vi.fn(async () => [])
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-core-runtime",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+    const baseComposition = testFixture<CoreComposition>({
+      services: { delivery: { attemptTiming, recordProviderEvent } },
+      jobQueue: { outbound: { publish: vi.fn(async () => undefined) } }
+    })
+    const layer = Layer.merge(baseComposition.layer, telemetry.layer)
+    compositionHarness.current = {
+      ...baseComposition,
+      layer,
+      runtime: ManagedRuntime.make(layer)
+    }
+    const ingressSecret = "i".repeat(64)
+    const response = await handleHttp(
+      new Request("https://core.test/internal/status", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-bob-caller-token": ingressSecret
+        },
+        body: JSON.stringify({
+          id: "018e6f65-4d55-7a1b-8df4-4ee15ea1db94",
+          accountId: "account",
+          lineId: "line",
+          messageHandle: "provider-handle",
+          destinationE164: "+46700000000",
+          providerOptedOut: false,
+          status: "delivered",
+          occurredAt: "2026-08-21T10:00:05.000Z",
+          correlationId,
+          outboxId,
+          attemptId
+        })
+      }),
+      testFixture<CoreBindings>({
+        INGRESS_CALLER_SECRET: ingressSecret,
+        EGRESS_CALLER_SECRET: "e".repeat(64),
+        AGENT_CALLER_SECRET: "a".repeat(64)
+      }),
+      composeTestCore
+    )
+
+    expect(response.status).toBe(200)
+    expect(attemptTiming).toHaveBeenCalledWith(outboxId, attemptId)
+    expect(recordProviderEvent).toHaveBeenCalledOnce()
+    expect(
+      telemetry.finishedSpans().find((span) => span.name === "bob.delivery_result.record")
+        ?.attributes
+    ).toMatchObject({ "bob.provider.accepted_to_delivered_ms": 5_000 })
+  })
+
   it.each([
     { label: "terminal", activity: { status: "completed", completedInRun: true }, releases: true },
     { label: "unknown", activity: { status: "unknown" }, releases: true },

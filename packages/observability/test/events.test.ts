@@ -46,6 +46,31 @@ describe("content-free telemetry", () => {
     ).toMatchObject({ type: "token_usage", feature: "reminders" })
   })
 
+  it("accepts bounded timing fields", () => {
+    expect(
+      parseHealthEvent({
+        type: "webhook",
+        correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
+        status: "accepted",
+        code: "accepted",
+        durationMs: 3,
+        providerIngressDelayMs: 1_500
+      })
+    ).toMatchObject({ providerIngressDelayMs: 1_500 })
+    expect(() =>
+      parseHealthEvent({
+        type: "delivery",
+        correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
+        outboxId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0",
+        attemptId: "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1",
+        status: "delivered",
+        code: "accepted",
+        durationMs: 3,
+        providerAcceptedToDeliveredMs: 365 * 24 * 60 * 60 * 1_000 + 1
+      })
+    ).toThrow()
+  })
+
   it("rejects private fields on token attribution", () => {
     expect(() =>
       parseHealthEvent({

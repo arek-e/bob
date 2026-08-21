@@ -39,6 +39,7 @@ interface ExportedSpan {
   readonly spanId: string
   readonly parentSpanId?: string
   readonly status: { readonly code: number }
+  readonly attributes: Array<{ readonly key: string; readonly value: unknown }>
   readonly events: Array<{ readonly name: string; readonly attributes: unknown }>
 }
 
@@ -229,8 +230,16 @@ describe("Sendblue ingress", () => {
     expect(body).not.toContain(payload.from_number)
     expect(body).not.toContain("otel-secret")
     expect(health.map((line) => JSON.parse(line))).toEqual([
-      expect.objectContaining({ type: "webhook", status: "accepted", code: "accepted" })
+      expect.objectContaining({
+        type: "webhook",
+        status: "accepted",
+        code: "accepted",
+        providerIngressDelayMs: expect.any(Number)
+      })
     ])
+    expect(spans.at(-1)?.attributes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "bob.provider.ingress_delay_ms" })])
+    )
     expect(health.join("\n")).not.toContain(payload.content)
     expect(health.join("\n")).not.toContain(payload.from_number)
   })
@@ -456,6 +465,9 @@ describe("Sendblue ingress", () => {
     ])
     expect(spans[0]?.parentSpanId).toBe(spans[1]?.spanId)
     expect(spans[1]?.parentSpanId).toBe(parseTraceparent(traceparent)?.spanId)
+    expect(spans[1]?.attributes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "bob.provider.status_age_ms" })])
+    )
     expectTraceparentFrom(forwarded.get("traceparent"), spans[0])
     expect(body).not.toContain(payload.to_number)
     expect(body).not.toContain(payload.content)
@@ -634,13 +646,16 @@ describe("Sendblue ingress", () => {
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const response = await handleIngressHttp(request("s".repeat(64)), target.value as never)
     expect(response.status).toBe(202)
-    expect(target.queueSend).toHaveBeenCalledWith({
-      eventId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
-      correlationId: expect.stringMatching(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      ),
-      traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
-    })
+    expect(target.queueSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
+        correlationId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+        ),
+        enqueuedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        traceparent: expect.stringMatching(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
+      })
+    )
   })
 
   it("rejects an oversized webhook body", async () => {

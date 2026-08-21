@@ -4,6 +4,10 @@ import { Schema } from "effect"
 const OpaqueId = Schema.String.check(Schema.isUUID())
 const Status = Schema.Literals(["started", "completed", "failed", "cancelled", "unknown"])
 const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+const ElapsedMilliseconds = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(0),
+  Schema.isLessThanOrEqualTo(365 * 24 * 60 * 60 * 1_000)
+)
 const ProviderName = Schema.String.check(Schema.isMinLength(1))
 const ModelName = Schema.String.check(
   Schema.isPattern(
@@ -83,7 +87,8 @@ export const HealthEvent = Schema.Union([
     correlationId: OpaqueId,
     status: Schema.Literals(["accepted", "duplicate", "rejected", "failed"]),
     code: WebhookCode,
-    durationMs: NonNegativeInt
+    durationMs: NonNegativeInt,
+    providerIngressDelayMs: Schema.optionalKey(ElapsedMilliseconds)
   }),
   Schema.Struct({
     type: Schema.Literal("agent_run"),
@@ -110,7 +115,9 @@ export const HealthEvent = Schema.Union([
     attemptId: OpaqueId,
     status: Schema.Literals(["accepted", "delivered", "failed", "uncertain"]),
     code: DeliveryCode,
-    durationMs: NonNegativeInt
+    durationMs: NonNegativeInt,
+    providerStatusAgeMs: Schema.optionalKey(ElapsedMilliseconds),
+    providerAcceptedToDeliveredMs: Schema.optionalKey(ElapsedMilliseconds)
   }),
   Schema.Struct({
     type: Schema.Literal("reminder_clock"),
@@ -192,10 +199,18 @@ export function parseHealthEvent<Input>(value: Input): HealthEvent {
   const common = ["type", "correlationId", "status"]
   const allowedByType = {
     runtime_ready: [...common, "role"],
-    webhook: [...common, "code", "durationMs"],
+    webhook: [...common, "code", "durationMs", "providerIngressDelayMs"],
     agent_run: [...common, "runId", "model", "durationMs", "inputTokens", "outputTokens"],
     tool_call: [...common, "runId", "toolName", "durationMs"],
-    delivery: [...common, "outboxId", "attemptId", "code", "durationMs"],
+    delivery: [
+      ...common,
+      "outboxId",
+      "attemptId",
+      "code",
+      "durationMs",
+      "providerStatusAgeMs",
+      "providerAcceptedToDeliveredMs"
+    ],
     reminder_clock: [...common, "ownerId", "dueCount", "durationMs"],
     provider_auth: [...common, "code"],
     workflow_span: [

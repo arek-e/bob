@@ -14,6 +14,7 @@ export const AgentRunJob = Schema.Struct({
   runId: Uuid,
   dispatchGeneration: PositiveInt,
   executionPoolId: Identifier,
+  enqueuedAt: Schema.optionalKey(IsoDateTime),
   traceparent: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(512)))
 })
 

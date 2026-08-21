@@ -76,7 +76,8 @@ export function makeAgentRunDispatcher(
           wireVersion: 1,
           runId: row.runId,
           dispatchGeneration: row.generation,
-          executionPoolId: row.executionPoolId
+          executionPoolId: row.executionPoolId,
+          enqueuedAt: selectedAt
         }
         try {
           await queues.forExecutionPool(row.executionPoolId).publish(job, {

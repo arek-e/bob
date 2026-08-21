@@ -2,6 +2,7 @@ import type { OutboundJob as OutboundJobValue } from "@bob/core-types/jobs"
 
 import { OutboxClaim, type DeliveryResult } from "@bob/delivery-types/delivery"
 import {
+  elapsedMilliseconds,
   emitHealth,
   externalParentFromTraceparent,
   injectCurrentTraceparent,
@@ -34,8 +35,17 @@ function decodeResponse<A, I, R>(response: Response, schema: Schema.Codec<A, I, 
 function processDecodedOutboundJob(job: OutboundJobValue) {
   const correlationId = job.correlationId ?? job.outboxId
   const dispatchGeneration = job.dispatchGeneration ?? 0
+  const consumeSpan: Parameters<typeof withBobSpan>[0] = {
+    name: "bob.outbox.consume",
+    correlationId,
+    feature: "delivery"
+  }
+  if (job.enqueuedAt !== undefined) {
+    const queueWaitMs = elapsedMilliseconds(job.enqueuedAt)
+    if (queueWaitMs !== undefined) Object.assign(consumeSpan, { queueWaitMs })
+  }
   const effect = withBobSpan(
-    { name: "bob.outbox.consume", correlationId, feature: "delivery" },
+    consumeSpan,
     Effect.gen(function* () {
       const egress = yield* SendblueEgress
       const sendblue = yield* SendblueProvider
@@ -131,6 +141,7 @@ function processDecodedOutboundJob(job: OutboundJobValue) {
       })
 
       const occurredAt = new Date().toISOString()
+      const enqueuedAt = new Date().toISOString()
       let result: DeliveryResult =
         outcome.state === "accepted"
           ? {
@@ -139,6 +150,7 @@ function processDecodedOutboundJob(job: OutboundJobValue) {
               correlationId: claim.correlationId,
               state: "accepted",
               providerMessageHandle: outcome.providerMessageHandle,
+              enqueuedAt,
               occurredAt
             }
           : {
@@ -147,6 +159,7 @@ function processDecodedOutboundJob(job: OutboundJobValue) {
               correlationId: claim.correlationId,
               state: outcome.state,
               errorCode: outcome.code,
+              enqueuedAt,
               occurredAt
             }
       const published = yield* withBobSpan(

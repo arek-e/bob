@@ -108,12 +108,14 @@ export async function handleScheduled(
                 ? {
                     outboxId: item.id,
                     dispatchGeneration,
-                    correlationId: item.correlationId
+                    correlationId: item.correlationId,
+                    enqueuedAt: new Date().toISOString()
                   }
                 : {
                     outboxId: item.id,
                     dispatchGeneration,
                     correlationId: item.correlationId,
+                    enqueuedAt: new Date().toISOString(),
                     traceparent
                   }
             yield* promiseEffect(() => outboundJobs.publish(message))

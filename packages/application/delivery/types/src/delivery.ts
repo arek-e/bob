@@ -29,6 +29,7 @@ export const DeliveryResult = Schema.Struct({
   traceparent: Schema.optionalKey(
     Schema.String.check(Schema.isPattern(/^00-[0-9a-f]{32}-[0-9a-f]{16}-(00|01)$/))
   ),
+  enqueuedAt: Schema.optionalKey(IsoDateTime),
   state: DeliveryAttemptState,
   providerMessageHandle: Schema.optionalKey(Schema.String),
   errorCode: Schema.optionalKey(Schema.String),
