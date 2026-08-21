@@ -3,7 +3,7 @@ import type { EffectAdapter } from "@bob/shared-types/effect-adapter"
 
 import { Context, Schema } from "effect"
 
-import type { DeliveryResult, OutboxClaim } from "./delivery.ts"
+import type { DeliveryAttemptState, DeliveryResult, OutboxClaim } from "./delivery.ts"
 
 export interface CreateOutboxInput {
   readonly ownerId: string
@@ -28,6 +28,11 @@ interface DeliveryReconciliationIdentity {
   readonly correlationId: string
 }
 
+export interface DeliveryAttemptTiming {
+  readonly state: DeliveryAttemptState
+  readonly updatedAt: string
+}
+
 export type DeliveryReconciliationTarget = DeliveryReconciliationIdentity &
   (
     | { readonly providerMessageHandle: string }
@@ -47,6 +52,7 @@ export interface DeliveryStoreAdapter {
     leaseMs: number,
     dispatchGeneration?: number
   ): Promise<OutboxClaim | undefined>
+  attemptTiming(outboxId: string, attemptId: string): Promise<DeliveryAttemptTiming | undefined>
   recordResult(result: DeliveryResult): Promise<readonly string[]>
   recordProviderEvent(event: NormalizedStatusEvent): Promise<readonly string[]>
   reconcileExpiredClaims(at: string): Promise<number>

@@ -13,6 +13,7 @@ import { DeliveryResult } from "@bob/delivery-types/delivery"
 import { DeliveryStore } from "@bob/delivery-types/store"
 import { completeJob, decodeJobProcessor, retryJob } from "@bob/job-queue-types"
 import {
+  elapsedMilliseconds,
   recordDecision,
   withBobSpan,
   injectCurrentTraceparent,
@@ -33,13 +34,18 @@ function promiseEffect<A>(operation: (signal: AbortSignal) => PromiseLike<A>) {
 
 export async function processInboundJob(job: InboundJob, composition: CoreComposition) {
   const correlationId = job.correlationId ?? job.eventId
+  const consumeSpan: Parameters<typeof withBobSpan>[0] = {
+    name: "bob.inbound.consume",
+    correlationId,
+    feature: "assistant"
+  }
+  if (job.enqueuedAt !== undefined) {
+    const queueWaitMs = elapsedMilliseconds(job.enqueuedAt)
+    if (queueWaitMs !== undefined) Object.assign(consumeSpan, { queueWaitMs })
+  }
   const program = withTraceparent(
     withBobSpan(
-      {
-        name: "bob.inbound.consume",
-        correlationId,
-        feature: "assistant"
-      },
+      consumeSpan,
       Effect.gen(function* () {
         const conversations = yield* ConversationStore
         const ownerId = yield* conversations.getInboundOwner(job.eventId)
@@ -130,11 +136,17 @@ export async function processOutboundDeadLetterJob(
         const traceparent = headers.get("traceparent")
         const retryJob =
           traceparent === null
-            ? { ...job, correlationId, dispatchGeneration: decision.dispatchGeneration }
+            ? {
+                ...job,
+                correlationId,
+                dispatchGeneration: decision.dispatchGeneration,
+                enqueuedAt: new Date().toISOString()
+              }
             : {
                 ...job,
                 correlationId,
                 dispatchGeneration: decision.dispatchGeneration,
+                enqueuedAt: new Date().toISOString(),
                 traceparent
               }
         yield* promiseEffect(() => outboundJobs.publish(retryJob, { delayMs: 300_000 }))
@@ -158,15 +170,20 @@ export async function processDeliveryResultJob(
   outboundJobs: JobPublisher<OutboundJob>
 ): Promise<JobDisposition> {
   const correlationId = result.correlationId ?? result.outboxId
+  const consumeSpan: Parameters<typeof withBobSpan>[0] = {
+    name: "bob.delivery_result.consume",
+    correlationId,
+    outboxId: result.outboxId,
+    deliveryAttemptId: result.attemptId,
+    feature: "delivery"
+  }
+  if (result.enqueuedAt !== undefined) {
+    const queueWaitMs = elapsedMilliseconds(result.enqueuedAt)
+    if (queueWaitMs !== undefined) Object.assign(consumeSpan, { queueWaitMs })
+  }
   const program = withTraceparent(
     withBobSpan(
-      {
-        name: "bob.delivery_result.consume",
-        correlationId,
-        outboxId: result.outboxId,
-        deliveryAttemptId: result.attemptId,
-        feature: "delivery"
-      },
+      consumeSpan,
       Effect.gen(function* () {
         const alerts = yield* AlertStore
         const delivery = yield* DeliveryStore
@@ -249,8 +266,8 @@ export async function processInboundDeadLetterJob(
             const traceparent = headers.get("traceparent")
             const retryJob =
               traceparent === null
-                ? { ...job, correlationId }
-                : { ...job, correlationId, traceparent }
+                ? { ...job, correlationId, enqueuedAt: new Date().toISOString() }
+                : { ...job, correlationId, enqueuedAt: new Date().toISOString(), traceparent }
             yield* promiseEffect(() => inboundJobs.publish(retryJob, { delayMs: 300_000 }))
           })
         )

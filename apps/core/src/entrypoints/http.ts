@@ -34,6 +34,7 @@ import { DeliveryStore } from "@bob/delivery-types/store"
 import { MemoryStore } from "@bob/memory-types/store"
 import {
   featureForToolName,
+  elapsedMilliseconds,
   recordDecision,
   withBobSpan,
   type BobSpan,
@@ -534,12 +535,35 @@ export async function handleHttp(
 
     if (request.method === "POST" && url.pathname === "/internal/status") {
       const event = Schema.decodeUnknownSync(NormalizedStatusEvent)(await readJson(request))
+      let providerAcceptedToDeliveredMs: number | undefined
+      if (
+        event.status === "delivered" &&
+        event.outboxId !== undefined &&
+        event.attemptId !== undefined
+      ) {
+        try {
+          const timing = await composition.runtime.runPromise(
+            Effect.flatMap(DeliveryStore, (delivery) =>
+              delivery.attemptTiming(event.outboxId!, event.attemptId!)
+            )
+          )
+          if (timing?.state === "accepted") {
+            providerAcceptedToDeliveredMs = elapsedMilliseconds(timing.updatedAt, event.occurredAt)
+          }
+        } catch {
+          // A timing read must never block provider status reconciliation.
+        }
+      }
+      const recordSpan = deliveryResultSpan("bob.delivery_result.record", event)
+      if (providerAcceptedToDeliveredMs !== undefined) {
+        Object.assign(recordSpan, { providerAcceptedToDeliveredMs })
+      }
       const readyFollowups = await runTelemetry(
         withTraceparent(
           withBobSpan(
             deliveryResultSpan("bob.delivery_result.accept", event),
             withBobSpan(
-              deliveryResultSpan("bob.delivery_result.record", event),
+              recordSpan,
               Effect.flatMap(DeliveryStore, (delivery) => delivery.recordProviderEvent(event))
             )
           ),
@@ -825,7 +849,10 @@ export async function handleHttp(
           )
         )
         if (decision === "recover") {
-          await jobQueue().inbound.publish({ eventId: alert.objectId })
+          await jobQueue().inbound.publish({
+            eventId: alert.objectId,
+            enqueuedAt: new Date().toISOString()
+          })
           await composition.runtime.runPromise(
             Effect.flatMap(ConversationStore, (conversations) =>
               conversations.markEnqueued(alert.objectId, new Date().toISOString())
@@ -848,7 +875,8 @@ export async function handleHttp(
         if (decision.status === "recover") {
           await jobQueue().outbound.publish({
             outboxId: alert.objectId,
-            dispatchGeneration: decision.dispatchGeneration
+            dispatchGeneration: decision.dispatchGeneration,
+            enqueuedAt: new Date().toISOString()
           })
           await composition.runtime.runPromise(
             Effect.flatMap(DeliveryStore, (delivery) =>

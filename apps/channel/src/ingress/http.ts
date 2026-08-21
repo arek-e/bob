@@ -2,6 +2,7 @@ import type { InboundJob } from "@bob/core-types/jobs"
 
 import { InboundAcceptance, type NormalizedInboundEvent } from "@bob/conversations-types/channel"
 import {
+  elapsedMilliseconds,
   emitHealth,
   externalParentFromTraceparent,
   injectCurrentTraceparent,
@@ -152,7 +153,8 @@ function persistInbound(event: NormalizedInboundEvent, mediaUrl?: string) {
           const traceparent = headers.get("traceparent")
           const job: InboundJob = {
             eventId: acceptance.eventId,
-            correlationId: event.correlationId
+            correlationId: event.correlationId,
+            enqueuedAt: new Date().toISOString()
           }
           if (traceparent !== null) Object.assign(job, { traceparent })
           yield* Effect.tryPromise(() => ingress.queue.publish(job))
@@ -206,12 +208,17 @@ const receiveWebhook = (request: Request, payload: typeof Schema.Json.Type) =>
       catch: (cause) => cause
     })
     const startedAt = Date.now()
+    const providerIngressDelayMs = elapsedMilliseconds(decoded.date_sent, startedAt)
+    const webhookSpan: BobSpan = {
+      name: "bob.webhook.receive",
+      correlationId: event.correlationId,
+      feature: "assistant"
+    }
+    if (providerIngressDelayMs !== undefined) {
+      Object.assign(webhookSpan, { providerIngressDelayMs })
+    }
     const effect = withBobSpan(
-      {
-        name: "bob.webhook.receive",
-        correlationId: event.correlationId,
-        feature: "assistant"
-      },
+      webhookSpan,
       persistInbound(
         event,
         decoded.media_url.trim().length === 0 ? undefined : decoded.media_url
@@ -244,7 +251,7 @@ const receiveWebhook = (request: Request, payload: typeof Schema.Json.Type) =>
       resultBody.code === "enqueue_record_failed"
         ? resultBody.code
         : "unknown"
-    yield* emitHealth({
+    const healthEvent = {
       type: "webhook",
       correlationId: event.correlationId,
       status:
@@ -255,7 +262,11 @@ const receiveWebhook = (request: Request, payload: typeof Schema.Json.Type) =>
             : "failed",
       code: healthCode,
       durationMs: Math.max(0, Date.now() - startedAt)
-    })
+    } satisfies Parameters<typeof emitHealth>[0]
+    if (providerIngressDelayMs !== undefined) {
+      Object.assign(healthEvent, { providerIngressDelayMs })
+    }
+    yield* emitHealth(healthEvent)
     return result
   })
 
@@ -266,6 +277,7 @@ const outboundWebhook = (request: Request, url: URL, payload: typeof Schema.Json
     if (decoded.from_number !== ingress.config.SENDBLUE_FROM_NUMBER) {
       return response("unknown_line", 403)
     }
+    const providerStatusReceivedAt = Date.now()
     const callback = readSendblueStatusCallback(url)
     const isOptOut = decoded.opted_out || decoded.status === "OPTED_OUT"
     if (!isOptOut && (callback.outboxId === undefined || callback.attemptId === undefined)) {
@@ -289,12 +301,16 @@ const outboundWebhook = (request: Request, url: URL, payload: typeof Schema.Json
     if (event.attemptId !== undefined) {
       Object.assign(spanInput, { deliveryAttemptId: event.attemptId })
     }
+    const providerStatusSpan: BobSpan = {
+      name: "bob.provider.status",
+      correlationId: event.correlationId,
+      feature: "delivery"
+    }
+    const providerStatusAgeMs = elapsedMilliseconds(decoded.date_updated, providerStatusReceivedAt)
+    if (providerStatusAgeMs !== undefined)
+      Object.assign(providerStatusSpan, { providerStatusAgeMs })
     const effect = withBobSpan(
-      {
-        name: "bob.provider.status",
-        correlationId: event.correlationId,
-        feature: "delivery"
-      },
+      providerStatusSpan,
       withBobSpan(
         spanInput,
         Effect.gen(function* () {

@@ -17,7 +17,8 @@ export function publishDeliveryFollowups(
           publisher.publish({
             outboxId,
             dispatchGeneration: 0,
-            correlationId
+            correlationId,
+            enqueuedAt: new Date().toISOString()
           } satisfies OutboundJob),
         catch: (cause) => cause
       })

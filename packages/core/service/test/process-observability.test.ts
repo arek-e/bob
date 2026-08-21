@@ -178,12 +178,13 @@ describe("core workflow telemetry", () => {
       })
     )
     expect(sent).toEqual([
-      {
+      expect.objectContaining({
         outboxId,
         dispatchGeneration: 0,
         correlationId,
+        enqueuedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
         traceparent: expect.stringMatching(new RegExp(`^00-${inboundTraceId}-[0-9a-f]{16}-01$`))
-      }
+      })
     ])
     expect(completeWithResponse).toHaveBeenCalledWith(
       expect.objectContaining({ sourceIds: [messageId], conflict: "none" }),

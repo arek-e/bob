@@ -18,6 +18,36 @@ const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
 const runId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0"
 
 describe("Effect telemetry", () => {
+  it("keeps bounded provider and queue timing attributes on safe spans", async () => {
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-channel",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+
+    await Effect.runPromise(
+      withBobSpan(
+        {
+          name: "bob.provider.status",
+          correlationId,
+          feature: "delivery",
+          providerStatusAgeMs: 42,
+          providerAcceptedToDeliveredMs: 1_234,
+          queueWaitMs: 7,
+          turnWaitMs: 1_500
+        },
+        Effect.void
+      ).pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(telemetry.finishedSpans()[0]?.attributes).toMatchObject({
+      "bob.provider.status_age_ms": 42,
+      "bob.provider.accepted_to_delivered_ms": 1_234,
+      "bob.queue.wait_ms": 7,
+      "bob.turn.wait_ms": 1_500
+    })
+  })
+
   it("records closed conversation steering metadata without message content", async () => {
     const telemetry = makeCaptureTelemetry({
       serviceName: "bob-core-worker",

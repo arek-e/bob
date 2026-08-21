@@ -22,6 +22,7 @@ import {
   withBobSpan,
   type BobDecisionCode,
   type BobSpan,
+  elapsedMilliseconds,
   emitHealth,
   noopTelemetryLayer,
   type TelemetryFeature,
@@ -223,6 +224,7 @@ function publishOutbox(
           outboxId,
           dispatchGeneration: 0,
           correlationId: telemetry.correlationId,
+          enqueuedAt: new Date().toISOString(),
           traceparent: formatTraceparent(span)
         } satisfies OutboundJob)
       )
@@ -1343,16 +1345,24 @@ export function processConversationTurnEffect(
       yield* publishOutbox(outboundPublisher, composition, outboxId, outboxTelemetry)
     })
   )
-  const workflow = withBobSpan(
-    {
-      name: "bob.turn.reflect",
-      correlationId,
-      conversationTurnId: conversationTurn.turnId,
-      conversationRevision: conversationTurn.revision,
-      feature: "assistant"
-    },
-    process
-  )
+  const reflectSpan: BobSpan = {
+    name: "bob.turn.reflect",
+    correlationId,
+    conversationTurnId: conversationTurn.turnId,
+    conversationRevision: conversationTurn.revision,
+    feature: "assistant"
+  }
+  if (
+    conversationTurn.latest.receivedAt !== undefined &&
+    conversationTurn.quietUntil !== undefined
+  ) {
+    const turnWaitMs = elapsedMilliseconds(
+      conversationTurn.latest.receivedAt,
+      conversationTurn.quietUntil
+    )
+    if (turnWaitMs !== undefined) Object.assign(reflectSpan, { turnWaitMs })
+  }
+  const workflow = withBobSpan(reflectSpan, process)
   const program = withTraceparent(workflow, conversationTurn.latest.traceparent)
 
   return program.pipe(Effect.ensuring(Effect.suspend(() => interactionStop)))

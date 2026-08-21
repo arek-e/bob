@@ -17,7 +17,14 @@ import { makeBullMqJobPublisher } from "@bob/job-queue-runtime/bullmq"
 import { startBullMqWorkerHost } from "@bob/job-queue-runtime/bullmq-host"
 import { decodeJobProcessor, retryJob } from "@bob/job-queue-types"
 import { filesystemObjectStorageLayer } from "@bob/object-store-runtime/filesystem"
-import { emitHealth, flushTelemetry, nodeTelemetryLayer, withBobRootSpan } from "@bob/observability"
+import {
+  elapsedMilliseconds,
+  emitHealth,
+  flushTelemetry,
+  nodeTelemetryLayer,
+  withBobRootSpan,
+  withBobSpan
+} from "@bob/observability"
 import { Queue, type ConnectionOptions } from "bullmq"
 import { and, eq } from "drizzle-orm"
 import { Effect, ManagedRuntime, Schema } from "effect"
@@ -230,7 +237,18 @@ async function main(): Promise<void> {
       processor: decodeJobProcessor(
         { decode: (input) => Schema.decodeUnknownSync(OwnerWakeJob)(input) },
         makeOwnerWakeJobProcessor({
-          wake: (job) => composition.runtime.runPromise(ownerTurnEngine.wake(job.ownerId)),
+          wake: (job) => {
+            const span: Parameters<typeof withBobSpan>[0] = {
+              name: "bob.coordinator.run",
+              correlationId: job.wakeId,
+              feature: "assistant"
+            }
+            const queueWaitMs = elapsedMilliseconds(job.requestedAt)
+            if (queueWaitMs !== undefined) Object.assign(span, { queueWaitMs })
+            return composition.runtime.runPromise(
+              withBobSpan(span, ownerTurnEngine.wake(job.ownerId))
+            )
+          },
           complete: (wakeId) => ownerWakeOutbox.markCompleted(wakeId, new Date().toISOString())
         }),
         retryJob(30_000)
@@ -331,7 +349,10 @@ async function main(): Promise<void> {
           await response.clone().json()
         )
         if (acceptance.shouldEnqueue && (acceptance.pendingAttachmentOrdinals?.length ?? 0) === 0) {
-          await jobQueue.inbound.publish({ eventId: acceptance.eventId })
+          await jobQueue.inbound.publish({
+            eventId: acceptance.eventId,
+            enqueuedAt: new Date().toISOString()
+          })
           await composition.runtime.runPromise(
             Effect.flatMap(ConversationStore, (conversations) =>
               conversations.markEnqueued(acceptance.eventId, new Date().toISOString())

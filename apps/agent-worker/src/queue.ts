@@ -5,6 +5,7 @@ import { AgentRunJob } from "@bob/agent-runs-types/worker-gateway"
 import { AgentCheckpointError, BobAgent } from "@bob/agent-types"
 import { AgentRunResult } from "@bob/agent-types/run"
 import { completeJob, retryJob } from "@bob/job-queue-types"
+import { elapsedMilliseconds, withBobSpan, withTraceparent } from "@bob/observability"
 import { Effect, Schema } from "effect"
 
 import type { AgentComposition } from "./composition.ts"
@@ -88,14 +89,27 @@ export function makeAgentRunJobProcessor(input: {
               )
             )
         }
+        const runSpan: Parameters<typeof withBobSpan>[0] = {
+          name: "bob.agent.run",
+          correlationId: acquired.request.correlationId,
+          runId: acquired.request.runId,
+          feature: "assistant"
+        }
+        if (job.enqueuedAt !== undefined) {
+          const queueWaitMs = elapsedMilliseconds(job.enqueuedAt)
+          if (queueWaitMs !== undefined) Object.assign(runSpan, { queueWaitMs })
+        }
+        const execution = withTraceparent(
+          withBobSpan(
+            runSpan,
+            BobAgent.use((agent) => agent.runTurn(acquired.request, durability))
+          ),
+          job.traceparent
+        )
         result = Schema.decodeUnknownSync(AgentRunResult)(
           await withAgentExecutionContext(
             { ownerId: acquired.request.ownerId, authority: () => authority },
-            () =>
-              input.composition.runtime.runPromise(
-                BobAgent.use((agent) => agent.runTurn(acquired.request, durability)),
-                { signal: controller.signal }
-              )
+            () => input.composition.runtime.runPromise(execution, { signal: controller.signal })
           )
         )
       } catch {
