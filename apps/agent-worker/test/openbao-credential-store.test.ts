@@ -11,6 +11,20 @@ const credential = {
 }
 
 describe("OpenBao Pi credential store", () => {
+  it("does not read gateway credentials from an owner credential path", async () => {
+    const request = vi.fn<typeof fetch>()
+    const store = new OpenBaoCredentialStore({
+      address: "https://bao.example",
+      fixedOwnerId: "00000000-0000-4000-8000-000000000001",
+      kubernetesRole: "bob",
+      getKubernetesJwt: async () => "jwt",
+      fetch: request
+    })
+
+    await expect(store.read("litellm")).resolves.toBeUndefined()
+    expect(request).not.toHaveBeenCalled()
+  })
+
   it("lists metadata without token values", async () => {
     const request = vi.fn<typeof fetch>(async (input) => {
       const url = String(input)

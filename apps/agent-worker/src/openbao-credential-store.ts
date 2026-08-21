@@ -83,6 +83,8 @@ interface VersionedCredential {
   readonly version: number
 }
 
+const ownerCredentialProviders = new Set(["openai-codex", "openrouter"])
+
 function combineSignals(first?: AbortSignal, second?: AbortSignal): AbortSignal | undefined {
   const signals = [first, second].filter((signal): signal is AbortSignal => signal !== undefined)
   return signals.length === 0 ? undefined : AbortSignal.any(signals)
@@ -104,6 +106,7 @@ export class OpenBaoCredentialStore implements CredentialStore {
   }
 
   private providerPath(providerId: string): string | undefined {
+    if (!ownerCredentialProviders.has(providerId)) return undefined
     const ownerId = this.options.fixedOwnerId ?? currentAgentExecutionContext()?.ownerId
     if (ownerId === undefined) return undefined
     return `apps/prod/bob/owners/${encodeURIComponent(ownerId)}/pi-auth/${encodeURIComponent(providerId)}`
