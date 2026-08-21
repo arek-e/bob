@@ -30,6 +30,11 @@ set `BOB_PROVIDER=litellm`, `BOB_MODEL=gpt-5.4`, `BOB_ALLOWED_MODELS=gpt-5.4`,
 LiteLLM master key. The gateway configuration affects model requests only. Bob keeps its direct
 Codex OAuth record for rollback.
 
+Platform operators store the LiteLLM master key and Bob virtual key in separate OpenBao records.
+LiteLLM stores its independent ChatGPT OAuth record on its private persistent volume. See the
+[LiteLLM gateway runbook](https://github.com/teampitch/ops/blob/main/docs/litellm-gateway.md) for
+credential ownership, product onboarding, and verification.
+
 Start the stack with Docker Compose. Then open `http://127.0.0.1:8788/setup`. Enter the value of
 `SETUP_TOKEN` to create the owner login.
 
