@@ -24,6 +24,12 @@ Codex and Sendblue remain external providers. Set their credentials before start
 `CODEX_CREDENTIAL_FILE` to an OpenBao-ready OAuth record when Codex credentials must be seeded.
 The file must contain `type`, `access`, `refresh`, `expires`, and `accountId` fields.
 
+Bob uses the direct `openai-codex` provider by default. To opt into the internal LiteLLM gateway,
+set `BOB_PROVIDER=litellm`, `BOB_MODEL=gpt-5.4`, `BOB_ALLOWED_MODELS=gpt-5.4`,
+`BOB_GATEWAY_BASE_URL`, and `BOB_GATEWAY_API_KEY`. Use Bob's LiteLLM virtual key. Do not use the
+LiteLLM master key. The gateway configuration affects model requests only. Bob keeps its direct
+Codex OAuth record for rollback.
+
 Start the stack with Docker Compose. Then open `http://127.0.0.1:8788/setup`. Enter the value of
 `SETUP_TOKEN` to create the owner login.
 
