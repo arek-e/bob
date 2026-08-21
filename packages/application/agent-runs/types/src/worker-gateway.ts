@@ -8,20 +8,31 @@ const Identifier = Schema.String.check(
   Schema.isPattern(/^[a-z][a-z0-9-]{0,62}$/),
   Schema.isMaxLength(63)
 )
+const Traceparent = Schema.String.check(
+  Schema.isPattern(/^00-[0-9a-f]{32}-[0-9a-f]{16}-(00|01)$/),
+  Schema.isMaxLength(512)
+)
 
 export const AgentRunJob = Schema.Struct({
   wireVersion: Schema.Literal(1),
   runId: Uuid,
   dispatchGeneration: PositiveInt,
   executionPoolId: Identifier,
+  /** Durable acceptance time used to separate dispatch delay from queue wait. */
+  acceptedAt: Schema.optionalKey(IsoDateTime),
   enqueuedAt: Schema.optionalKey(IsoDateTime),
-  traceparent: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(512)))
+  traceparent: Schema.optionalKey(Traceparent)
 })
 
 export const AgentRunContinuationJob = Schema.Struct({
   wireVersion: Schema.Literal(1),
   runId: Uuid,
-  generation: PositiveInt
+  generation: PositiveInt,
+  /** Optional fields keep pre-stage-timing queue messages decodable. */
+  correlationId: Schema.optionalKey(Uuid),
+  enqueuedAt: Schema.optionalKey(IsoDateTime),
+  completedAt: Schema.optionalKey(IsoDateTime),
+  traceparent: Schema.optionalKey(Traceparent)
 })
 
 export const AgentRunAttemptAuthority = Schema.Struct({

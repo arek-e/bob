@@ -35,6 +35,8 @@ describe("Effect telemetry", () => {
           providerAcceptedToDeliveredMs: 1_234,
           queueWaitMs: 7,
           queueDispatchGeneration: 3,
+          agentRunAcceptedToStartedMs: 8_901,
+          agentRunCompletionToFinalizationMs: 123,
           turnWaitMs: 1_500
         },
         Effect.void
@@ -46,6 +48,8 @@ describe("Effect telemetry", () => {
       "bob.provider.accepted_to_delivered_ms": 1_234,
       "bob.queue.wait_ms": 7,
       "bob.queue.dispatch_generation": 3,
+      "bob.agent_run.accepted_to_started_ms": 8_901,
+      "bob.agent_run.completion_to_finalization_ms": 123,
       "bob.turn.wait_ms": 1_500
     })
   })

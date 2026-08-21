@@ -170,6 +170,10 @@ export interface BobSpan {
   readonly queueWaitMs?: number
   /** Monotonic dispatch generation used to fence a queue pointer. */
   readonly queueDispatchGeneration?: number
+  /** Time from durable Agent Run acceptance until a worker starts it. */
+  readonly agentRunAcceptedToStartedMs?: number
+  /** Time from a completed Agent Run until Core starts finalization. */
+  readonly agentRunCompletionToFinalizationMs?: number
   /** Quiet-window time between the latest inbound event and turn reflection. */
   readonly turnWaitMs?: number
 }
@@ -349,6 +353,11 @@ function validateSpan(input: BobSpan): void {
   if (input.queueDispatchGeneration !== undefined && input.queueDispatchGeneration > 1_000_000) {
     throw new TypeError("Queue dispatch generation exceeds the telemetry limit")
   }
+  assertTiming(input.agentRunAcceptedToStartedMs, "Agent Run accepted-to-started time")
+  assertTiming(
+    input.agentRunCompletionToFinalizationMs,
+    "Agent Run completion-to-finalization time"
+  )
   assertTiming(input.turnWaitMs, "Turn wait")
 }
 
@@ -400,6 +409,13 @@ function spanAttributes(input: BobSpan): SafeAttributes {
   if (input.queueWaitMs !== undefined) attributes["bob.queue.wait_ms"] = input.queueWaitMs
   if (input.queueDispatchGeneration !== undefined) {
     attributes["bob.queue.dispatch_generation"] = input.queueDispatchGeneration
+  }
+  if (input.agentRunAcceptedToStartedMs !== undefined) {
+    attributes["bob.agent_run.accepted_to_started_ms"] = input.agentRunAcceptedToStartedMs
+  }
+  if (input.agentRunCompletionToFinalizationMs !== undefined) {
+    attributes["bob.agent_run.completion_to_finalization_ms"] =
+      input.agentRunCompletionToFinalizationMs
   }
   if (input.turnWaitMs !== undefined) attributes["bob.turn.wait_ms"] = input.turnWaitMs
   return attributes
@@ -489,6 +505,16 @@ function safeSpanAttributes(
   const queueDispatchGeneration = attributes.get("bob.queue.dispatch_generation")
   if (safeNatural(queueDispatchGeneration, 1_000_000)) {
     output["bob.queue.dispatch_generation"] = queueDispatchGeneration
+  }
+  const agentRunAcceptedToStartedMs = attributes.get("bob.agent_run.accepted_to_started_ms")
+  if (safeNatural(agentRunAcceptedToStartedMs, MAX_BOB_TIMING_MS)) {
+    output["bob.agent_run.accepted_to_started_ms"] = agentRunAcceptedToStartedMs
+  }
+  const agentRunCompletionToFinalizationMs = attributes.get(
+    "bob.agent_run.completion_to_finalization_ms"
+  )
+  if (safeNatural(agentRunCompletionToFinalizationMs, MAX_BOB_TIMING_MS)) {
+    output["bob.agent_run.completion_to_finalization_ms"] = agentRunCompletionToFinalizationMs
   }
   const turnWaitMs = attributes.get("bob.turn.wait_ms")
   if (safeNatural(turnWaitMs, MAX_BOB_TIMING_MS)) output["bob.turn.wait_ms"] = turnWaitMs
