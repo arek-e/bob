@@ -49,25 +49,15 @@ export function handleInteractionRequest(request: Request) {
       })
       return Response.json({ typing })
     }
-    const [reaction, typing] = yield* Effect.all(
-      [
-        command.react
-          ? sendblue.sendReaction({
-              fromNumber: command.fromNumber,
-              messageHandle: command.messageHandle,
-              reaction: "like"
-            })
-          : Effect.succeed({ state: "skipped" as const }),
-        sendblue.sendTypingIndicator({
-          number: command.number,
-          fromNumber: command.fromNumber,
-          state: "start",
-          maxDurationMs: command.maxDurationMs
-        })
-      ],
-      { concurrency: "unbounded" }
-    )
-    return Response.json({ reaction, typing })
+    // A typing indicator is enough feedback. A reaction before the reply
+    // makes the assistant feel like it sent two responses.
+    const typing = yield* sendblue.sendTypingIndicator({
+      number: command.number,
+      fromNumber: command.fromNumber,
+      state: "start",
+      maxDurationMs: command.maxDurationMs
+    })
+    return Response.json({ typing })
   })
 }
 
