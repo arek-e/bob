@@ -97,7 +97,7 @@ describe("inbound native message interactions", () => {
         number: "+46700000000",
         fromNumber: "+46711111111",
         messageHandle,
-        react: true,
+        react: false,
         maxDurationMs: 90_000
       },
       {

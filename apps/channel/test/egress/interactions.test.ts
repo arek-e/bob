@@ -144,7 +144,7 @@ describe("Sendblue message interactions", () => {
     expect(response.status).toBe(401)
   })
 
-  it("sends a like reaction and starts typing", async () => {
+  it("starts typing without sending a reaction", async () => {
     const requests: Array<{ url: string; body: unknown }> = []
     vi.stubGlobal(
       "fetch",
@@ -167,27 +167,17 @@ describe("Sendblue message interactions", () => {
     )
 
     expect(response.status).toBe(200)
-    expect(requests).toEqual(
-      expect.arrayContaining([
-        {
-          url: "https://api.sendblue.com/api/send-reaction",
-          body: {
-            from_number: "+46711111111",
-            message_handle: "inbound-1",
-            reaction: "like"
-          }
-        },
-        {
-          url: "https://api.sendblue.com/api/send-typing-indicator",
-          body: {
-            number: "+46700000000",
-            from_number: "+46711111111",
-            state: "start",
-            max_duration_ms: 90_000
-          }
+    expect(requests).toEqual([
+      {
+        url: "https://api.sendblue.com/api/send-typing-indicator",
+        body: {
+          number: "+46700000000",
+          from_number: "+46711111111",
+          state: "start",
+          max_duration_ms: 90_000
         }
-      ])
-    )
+      }
+    ])
   })
 
   it("stops typing without sending another reaction", async () => {

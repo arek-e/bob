@@ -275,18 +275,13 @@ function messageInteractionLifecycle(
 
   return {
     start: Effect.gen(function* () {
-      const react = yield* promiseEffect(() =>
-        composition.interfaces.conversations.claimReaction(
-          claimed.eventId,
-          new Date().toISOString()
-        )
-      ).pipe(Effect.catch(() => Effect.succeed(false)))
       yield* post({
         action: "start",
         number: claimed.number,
         fromNumber: claimed.fromNumber,
         messageHandle: claimed.providerMessageHandle,
-        react,
+        // Keep the wire field for rolling compatibility. Channel ignores it.
+        react: false,
         maxDurationMs: 90_000
       })
     }),
