@@ -208,12 +208,22 @@ const receiveWebhook = (request: Request, payload: typeof Schema.Json.Type) =>
       catch: (cause) => cause
     })
     const startedAt = Date.now()
-    const providerIngressDelayMs = elapsedMilliseconds(decoded.date_sent, startedAt)
+    const providerEventAgeMs = elapsedMilliseconds(decoded.date_sent, startedAt)
+    const providerIngressSource =
+      request.headers.get("x-bob-ingress-source") === "recovery_replay"
+        ? ("recovery_replay" as const)
+        : ("live_webhook" as const)
+    // A recovery replay carries the provider event timestamp, but it is not a
+    // live webhook delivery. Keep it out of live ingress latency metrics.
+    const providerIngressDelayMs =
+      providerIngressSource === "live_webhook" ? providerEventAgeMs : undefined
     const webhookSpan: BobSpan = {
       name: "bob.webhook.receive",
       correlationId: event.correlationId,
-      feature: "assistant"
+      feature: "assistant",
+      providerIngressSource
     }
+    if (providerEventAgeMs !== undefined) Object.assign(webhookSpan, { providerEventAgeMs })
     if (providerIngressDelayMs !== undefined) {
       Object.assign(webhookSpan, { providerIngressDelayMs })
     }
@@ -261,8 +271,10 @@ const receiveWebhook = (request: Request, payload: typeof Schema.Json.Type) =>
             ? "duplicate"
             : "failed",
       code: healthCode,
-      durationMs: Math.max(0, Date.now() - startedAt)
+      durationMs: Math.max(0, Date.now() - startedAt),
+      providerIngressSource
     } satisfies Parameters<typeof emitHealth>[0]
+    if (providerEventAgeMs !== undefined) Object.assign(healthEvent, { providerEventAgeMs })
     if (providerIngressDelayMs !== undefined) {
       Object.assign(healthEvent, { providerIngressDelayMs })
     }

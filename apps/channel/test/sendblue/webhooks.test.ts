@@ -6,6 +6,7 @@ import {
   SendblueProvider,
   SendblueWebhookList,
   planWebhookReconciliation,
+  requiredWebhooksFromStatusCallback,
   sendblueProviderTestLayer,
   timingSafeEqual
 } from "../../src/sendblue/provider.ts"
@@ -170,6 +171,25 @@ describe("Sendblue webhook normalization", () => {
 })
 
 describe("Sendblue webhook reconciliation", () => {
+  it("derives the receive hook from the public status callback URL", () => {
+    expect(
+      requiredWebhooksFromStatusCallback(
+        "https://bob-ingress.example/webhooks/outbound?ignored=true",
+        "secret"
+      )
+    ).toEqual({
+      receiveUrl: "https://bob-ingress.example/webhooks/receive",
+      outboundUrl: "https://bob-ingress.example/webhooks/outbound",
+      globalSecret: "secret"
+    })
+  })
+
+  it("rejects a status callback URL that does not identify the outbound route", () => {
+    expect(() =>
+      requiredWebhooksFromStatusCallback("https://bob-ingress.example/status", "secret")
+    ).toThrow("SENDBLUE_STATUS_CALLBACK_URL must end with /outbound")
+  })
+
   it("preserves unrelated hooks and adds only missing Bob hooks", () => {
     const result = plan({
       status: "OK",

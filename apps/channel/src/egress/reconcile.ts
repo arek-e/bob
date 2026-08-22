@@ -52,7 +52,8 @@ export function reconcileInboundHistory(options: ReconcileInboundHistoryOptions)
           options.accept({
             headers: {
               "content-type": "application/json",
-              "sb-signing-secret": options.signingSecret
+              "sb-signing-secret": options.signingSecret,
+              "x-bob-ingress-source": "recovery_replay"
             },
             body: JSON.stringify(message),
             signal
