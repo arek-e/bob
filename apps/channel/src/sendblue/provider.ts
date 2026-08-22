@@ -64,9 +64,13 @@ const MESSAGE_PAGE_LIMIT = "100"
 export type SendblueStatus = typeof StatusResponse.Type
 
 export type SendOutcome =
-  | { readonly state: "accepted"; readonly providerMessageHandle: string }
-  | { readonly state: "failed"; readonly code: string }
-  | { readonly state: "uncertain"; readonly code: string }
+  | {
+      readonly state: "accepted"
+      readonly providerMessageHandle: string
+      readonly fallbackUsed?: true
+    }
+  | { readonly state: "failed"; readonly code: string; readonly fallbackUsed?: true }
+  | { readonly state: "uncertain"; readonly code: string; readonly fallbackUsed?: true }
 
 export type InteractionOutcome =
   | { readonly state: "accepted" }
@@ -341,6 +345,9 @@ function providerLayer(options: SendblueProviderOptions) {
             ),
             timeoutMs
           )
+        let fallbackUsed = false
+        const withFallback = (outcome: SendOutcome): SendOutcome =>
+          fallbackUsed ? { ...outcome, fallbackUsed: true } : outcome
         const first = yield* send(messageBody).pipe(Effect.result)
         if (first._tag === "Failure") {
           return {
@@ -353,6 +360,7 @@ function providerLayer(options: SendblueProviderOptions) {
           claim.replyToMessageHandle !== undefined &&
           isSafeInlineReplyRejection(response.status)
         ) {
+          fallbackUsed = true
           const fallbackBody = {
             number: claim.number,
             from_number: claim.fromNumber,
@@ -363,20 +371,22 @@ function providerLayer(options: SendblueProviderOptions) {
           }
           const fallback = yield* send(fallbackBody).pipe(Effect.result)
           if (fallback._tag === "Failure") {
-            return {
+            return withFallback({
               state: "uncertain",
               code: fallback.failure._tag === "SendblueTimeoutError" ? "timeout" : "network"
-            } as const
+            })
           }
           response = fallback.success
         }
         if (response.status < 200 || response.status >= 300) {
-          return classifyHttpFailure(response.status)
+          return withFallback(classifyHttpFailure(response.status))
         }
         const parsed = yield* decode("send_message", response, SendResponse).pipe(Effect.result)
-        return parsed._tag === "Failure"
-          ? ({ state: "uncertain", code: "invalid_success_response" } as const)
-          : ({ state: "accepted", providerMessageHandle: parsed.success.message_handle } as const)
+        return withFallback(
+          parsed._tag === "Failure"
+            ? { state: "uncertain", code: "invalid_success_response" }
+            : { state: "accepted", providerMessageHandle: parsed.success.message_handle }
+        )
       })
 
       const history = (isOutbound: boolean, window: InboundHistoryWindow) => {

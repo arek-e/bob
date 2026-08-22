@@ -215,6 +215,25 @@ describe("domain-owned Tool command Adapters", () => {
     )
   })
 
+  it("returns a safe owner-facing result when recall is unavailable", async () => {
+    const memory = testFixture<MemoryStoreAdapter>({})
+    const retrieval = testFixture<RetrievalPipelineAdapter>({
+      retrieve: vi.fn().mockRejectedValue(new Error("database details must stay private"))
+    })
+
+    const result = await executeTool(
+      makeMemoryToolAdapter(memory, retrieval),
+      commandContext("memory_search", { query: "gym" })
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      code: "memory_unavailable",
+      message: "I could not check your saved records right now. Please try again."
+    })
+    expect(JSON.stringify(result)).not.toContain("database details")
+  })
+
   it("keeps the Memory Tool result flat across retrieval units", async () => {
     const memory = testFixture<MemoryStoreAdapter>({})
     const item = (id: string, text: string) => ({

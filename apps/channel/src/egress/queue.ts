@@ -116,6 +116,13 @@ function processDecodedOutboundJob(job: OutboundJobValue) {
             })
           )
           const result = yield* sendblue.sendMessage(claim, statusCallback)
+          if (result.fallbackUsed === true) {
+            yield* recordDecision({
+              name: "bob.state.transition",
+              code: "provider_fallback",
+              outcome: "applied"
+            })
+          }
           yield* recordDecision({
             name: "bob.state.transition",
             code:

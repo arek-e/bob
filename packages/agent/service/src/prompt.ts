@@ -67,6 +67,8 @@ export function renderSystemPrompt(request: AgentRunRequest): string {
     "Ask for the missing detail or exact choice in the next reply.",
     "If a tool returns external_outcome_unknown, do not retry it.",
     "Say that you cannot confirm whether the action completed.",
+    "If a requested capability is not registered, say that this deployment does not support it.",
+    "Do not use memory_search as a substitute for an unavailable capability.",
     "Use only the registered tools.",
     "Choose tools from the owner's meaning, not from keywords, language, or domain assumptions.",
     "An available tool is a capability. It is not evidence that the owner requested its action.",

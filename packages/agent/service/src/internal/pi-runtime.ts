@@ -355,7 +355,8 @@ function safeToolFailure(): ToolResult {
 const reflectedToolResultCodes = new Set([
   "choice_required",
   "confirmation_required",
-  "external_outcome_unknown"
+  "external_outcome_unknown",
+  "memory_unavailable"
 ])
 
 /** These domain results need an owner-facing reply, not a generic agent failure. */
@@ -1177,7 +1178,9 @@ export function createPiAgent(options: PiAgentOptions): PiAgentRuntime {
                     code:
                       toolResult.code === "external_outcome_unknown"
                         ? "external_unknown"
-                        : "confirmation_required",
+                        : toolResult.code === "memory_unavailable"
+                          ? "retrieval_failure"
+                          : "confirmation_required",
                     outcome: "applied",
                     toolName: call.name
                   })

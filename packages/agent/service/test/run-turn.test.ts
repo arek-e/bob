@@ -1436,6 +1436,32 @@ describe("Bob's direct pi-ai loop", () => {
     })
   })
 
+  it("reflects a temporary memory outage without retrying retrieval", async () => {
+    modelHarness.state.responses.push(
+      toolResponse(fauxToolCall("memory_search", { query: "routine" }, { id: "call-1" })),
+      structuredResponse({
+        responseText: "I could not check your saved records right now. Please try again.",
+        toolNames: ["memory_search"]
+      })
+    )
+    const executeTool = vi.fn(async () => ({
+      ok: false as const,
+      code: "memory_unavailable",
+      message: "I could not check your saved records right now. Please try again."
+    }))
+    const agent = makeAgent(executeTool)
+
+    await expect(agent.runTurn(baseRequest())).resolves.toMatchObject({
+      status: "completed",
+      responseText: "I could not check your saved records right now. Please try again.",
+      toolCalls: 1
+    })
+    expect(executeTool).toHaveBeenCalledOnce()
+    // SAFETY: The second scripted model context is the reflection turn for the one tool call.
+    const reflectionContext = modelHarness.state.contexts[1] as Context
+    expect(reflectionContext.tools).toEqual([])
+  })
+
   it("runs multiple tool calls in one pi-ai response in order", async () => {
     modelHarness.state.responses.push(
       toolResponse(

@@ -54,6 +54,7 @@ export const BobSpanName = Schema.Literals([
   "bob.outbox.invoke",
   "bob.outbox.claim",
   "bob.provider.send",
+  "bob.provider.interaction",
   "bob.provider.status",
   "bob.delivery_result.publish",
   "bob.delivery_result.invoke",
@@ -105,7 +106,9 @@ export const BobDecisionCode = Schema.Literals([
   "not_allowlisted",
   "not_registered",
   "provider_control",
+  "provider_fallback",
   "provider_failure",
+  "retrieval_failure",
   "restart_with_receipts",
   "reminder_intent",
   "repair_failed",
@@ -162,6 +165,8 @@ export interface BobSpan {
   readonly turnPhase?: BobTurnPhase
   readonly toolName?: string
   readonly toolCallIndex?: number
+  /** Native provider interaction state, such as a typing indicator start or stop. */
+  readonly interactionState?: "start" | "stop"
   /** Age of a provider event when Bob received it. */
   readonly providerEventAgeMs?: number
   /** Source that delivered the provider event to Bob. */
@@ -281,6 +286,7 @@ const spanSemantics = {
   "bob.outbox.invoke": { kind: "client", workflow: "outbound_delivery" },
   "bob.outbox.claim": { kind: "server", workflow: "outbound_delivery" },
   "bob.provider.send": { kind: "client", workflow: "outbound_delivery" },
+  "bob.provider.interaction": { kind: "client", workflow: "outbound_delivery" },
   "bob.provider.status": { kind: "server", workflow: "outbound_delivery" },
   "bob.delivery_result.publish": { kind: "producer", workflow: "outbound_delivery" },
   "bob.delivery_result.invoke": { kind: "client", workflow: "outbound_delivery" },
@@ -351,6 +357,9 @@ function validateSpan(input: BobSpan): void {
   }
   assertNatural(input.turnIndex, "Turn index")
   assertNatural(input.toolCallIndex, "Tool-call index")
+  if (input.interactionState !== undefined) {
+    Schema.decodeUnknownSync(Schema.Literals(["start", "stop"]))(input.interactionState)
+  }
   if (input.providerIngressSource !== undefined) {
     Schema.decodeUnknownSync(ProviderIngressSource)(input.providerIngressSource)
   }
@@ -407,6 +416,9 @@ function spanAttributes(input: BobSpan): SafeAttributes {
   if (input.turnPhase !== undefined) attributes["bob.turn.phase"] = input.turnPhase
   if (input.toolName !== undefined) attributes["bob.tool.name"] = input.toolName
   if (input.toolCallIndex !== undefined) attributes["bob.tool.call_index"] = input.toolCallIndex
+  if (input.interactionState !== undefined) {
+    attributes["bob.provider.interaction_state"] = input.interactionState
+  }
   if (input.providerIngressSource !== undefined) {
     attributes["bob.provider.ingress_source"] = input.providerIngressSource
   }
@@ -504,6 +516,14 @@ function safeSpanAttributes(
   }
   const toolCallIndex = attributes.get("bob.tool.call_index")
   if (safeNatural(toolCallIndex, 100)) output["bob.tool.call_index"] = toolCallIndex
+  const interactionState = attributes.get("bob.provider.interaction_state")
+  try {
+    output["bob.provider.interaction_state"] = Schema.decodeUnknownSync(
+      Schema.Literals(["start", "stop"])
+    )(interactionState)
+  } catch {
+    // Unknown interaction values are not safe telemetry dimensions.
+  }
   const providerIngressSource = attributes.get("bob.provider.ingress_source")
   try {
     output["bob.provider.ingress_source"] =

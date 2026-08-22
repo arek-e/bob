@@ -24,16 +24,26 @@ export function makeMemoryToolAdapter(
         switch (command.name) {
           case "memory_search": {
             const args = Schema.decodeUnknownSync(MemorySearchArguments)(command.arguments)
-            const result = await retrieval.retrieve({
-              ownerId: command.ownerId,
-              query: args.query,
-              channel: true,
-              referenceTime: run.localTime,
-              timeZone: run.timeZone,
-              limit: 12,
-              totalCharacterBudget: 6_000,
-              itemCharacterBudget: 1_200
-            })
+            let result
+            try {
+              result = await retrieval.retrieve({
+                ownerId: command.ownerId,
+                query: args.query,
+                channel: true,
+                referenceTime: run.localTime,
+                timeZone: run.timeZone,
+                limit: 12,
+                totalCharacterBudget: 6_000,
+                itemCharacterBudget: 1_200
+              })
+            } catch {
+              // Retrieval is a read-only best effort. Do not expose storage details.
+              return {
+                ok: false,
+                code: "memory_unavailable",
+                message: "I could not check your saved records right now. Please try again."
+              }
+            }
             const matches =
               result.status === "supported"
                 ? result.items.flatMap((unit) =>

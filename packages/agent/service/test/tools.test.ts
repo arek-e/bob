@@ -386,6 +386,12 @@ describe("Pi catalogue tools", () => {
     expect(prompt).toContain(
       "If a tool returns confirmation_required or choice_required, do not retry it."
     )
+    expect(prompt).toContain(
+      "If a requested capability is not registered, say that this deployment does not support it."
+    )
+    expect(prompt).toContain(
+      "Do not use memory_search as a substitute for an unavailable capability."
+    )
   })
 
   it("renders only closed prior action metadata as trusted system data", () => {
