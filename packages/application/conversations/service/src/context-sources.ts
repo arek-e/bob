@@ -11,10 +11,23 @@ import {
   messages
 } from "@bob/db-service/schema/conversations"
 import { deliveryAttempts, outboxMessages } from "@bob/db-service/schema/delivery"
-import { and, asc, desc, eq, gte, inArray, isNotNull, lte, ne } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, isNotNull, lte, ne, notInArray } from "drizzle-orm"
 import { Effect } from "effect"
 
 const conversationContextLookbackMs = 24 * 60 * 60_000
+const contextExcludedReplyReasonCodes = Object.freeze([
+  "agent_boundary_fallback",
+  "agent_degraded_recall",
+  "agent_failure"
+] as const)
+const contextExcludedReplyReasonCodeSet: ReadonlySet<string> = new Set(
+  contextExcludedReplyReasonCodes
+)
+
+/** Failed or degraded replies are status messages, not conversation evidence. */
+export function isContextEligibleReply(reasonCode: string): boolean {
+  return !contextExcludedReplyReasonCodeSet.has(reasonCode)
+}
 
 function sourceDay(value: string): string {
   return value.slice(0, 10)
@@ -48,7 +61,8 @@ export function makeConversationContextSources(
               eq(outboxMessages.id, deliveryAttempts.outboxId),
               eq(outboxMessages.userId, input.ownerId),
               eq(outboxMessages.channelId, input.channelId),
-              eq(outboxMessages.state, "accepted")
+              eq(outboxMessages.state, "accepted"),
+              notInArray(outboxMessages.reasonCode, [...contextExcludedReplyReasonCodes])
             )
           )
           .innerJoin(
@@ -120,7 +134,8 @@ export function makeConversationContextSources(
               eq(outboxMessages.id, conversationTurns.replyOutboxId),
               eq(outboxMessages.conversationTurnId, conversationTurns.id),
               eq(outboxMessages.conversationTurnRevision, conversationTurns.revision),
-              eq(outboxMessages.state, "accepted")
+              eq(outboxMessages.state, "accepted"),
+              notInArray(outboxMessages.reasonCode, [...contextExcludedReplyReasonCodes])
             )
           )
           .innerJoin(

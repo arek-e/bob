@@ -176,7 +176,11 @@ it.effect("falls back after a safe inline reply rejection", () => {
     const result = yield* withProvider(request, (provider) =>
       provider.sendMessage({ ...claim, replyToMessageHandle: "inbound-1" })
     )
-    expect(result).toEqual({ state: "accepted", providerMessageHandle: "provider-2" })
+    expect(result).toEqual({
+      state: "accepted",
+      providerMessageHandle: "provider-2",
+      fallbackUsed: true
+    })
     const bodies = request.mock.calls.map((call) => decodeRequestBody(call[1]?.body))
     expect(bodies[0]).toEqual(
       expect.objectContaining({ reply_to: { message_handle: "inbound-1" } })

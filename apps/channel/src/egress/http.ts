@@ -1,5 +1,6 @@
 import { MessageInteractionCommand } from "@bob/conversations-types/interactions"
 import { DeliveryReconciliationRequest, type DeliveryResult } from "@bob/delivery-types/delivery"
+import { withBobSpan } from "@bob/observability"
 import { Effect, Schema } from "effect"
 
 import { SendblueProvider, timingSafeEqual } from "../sendblue/provider.ts"
@@ -29,6 +30,26 @@ function deliveryState(status: string): "accepted" | "delivered" | "failed" {
   return "accepted"
 }
 
+const CorrelationId = Schema.String.check(Schema.isUUID())
+
+function traceInteraction<A, E>(
+  request: Request,
+  state: "start" | "stop",
+  effect: Effect.Effect<A, E>
+): Effect.Effect<A, E> {
+  const header = request.headers.get("x-bob-correlation-id")
+  if (header === null || !Schema.is(CorrelationId)(header)) return effect
+  return withBobSpan(
+    {
+      name: "bob.provider.interaction",
+      correlationId: header,
+      feature: "delivery",
+      interactionState: state
+    },
+    effect
+  )
+}
+
 export function handleInteractionRequest(request: Request) {
   return Effect.gen(function* () {
     if (!(yield* callerIsAuthorized(request))) {
@@ -42,21 +63,29 @@ export function handleInteractionRequest(request: Request) {
 
     const sendblue = yield* SendblueProvider
     if (command.action === "stop") {
-      const typing = yield* sendblue.sendTypingIndicator({
-        number: command.number,
-        fromNumber: command.fromNumber,
-        state: "stop"
-      })
+      const typing = yield* traceInteraction(
+        request,
+        "stop",
+        sendblue.sendTypingIndicator({
+          number: command.number,
+          fromNumber: command.fromNumber,
+          state: "stop"
+        })
+      )
       return Response.json({ typing })
     }
     // A typing indicator is enough feedback. A reaction before the reply
     // makes the assistant feel like it sent two responses.
-    const typing = yield* sendblue.sendTypingIndicator({
-      number: command.number,
-      fromNumber: command.fromNumber,
-      state: "start",
-      maxDurationMs: command.maxDurationMs
-    })
+    const typing = yield* traceInteraction(
+      request,
+      "start",
+      sendblue.sendTypingIndicator({
+        number: command.number,
+        fromNumber: command.fromNumber,
+        state: "start",
+        maxDurationMs: command.maxDurationMs
+      })
+    )
     return Response.json({ typing })
   })
 }

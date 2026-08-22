@@ -54,6 +54,30 @@ describe("Effect telemetry", () => {
     })
   })
 
+  it("records native provider interaction state without owner data", async () => {
+    const telemetry = makeCaptureTelemetry({
+      serviceName: "bob-sendblue-egress",
+      serviceVersion: "0123456789abcdef0123456789abcdef01234567",
+      deploymentEnvironment: "test"
+    })
+
+    await Effect.runPromise(
+      withBobSpan(
+        {
+          name: "bob.provider.interaction",
+          correlationId,
+          feature: "delivery",
+          interactionState: "start"
+        },
+        Effect.void
+      ).pipe(Effect.provide(telemetry.layer))
+    )
+
+    expect(telemetry.finishedSpans()[0]?.attributes).toMatchObject({
+      "bob.provider.interaction_state": "start"
+    })
+  })
+
   it("records closed conversation steering metadata without message content", async () => {
     const telemetry = makeCaptureTelemetry({
       serviceName: "bob-core-worker",
