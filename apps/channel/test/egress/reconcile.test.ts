@@ -73,7 +73,8 @@ describe("Sendblue inbound history reconciliation", () => {
     })
     expect(accept.mock.calls[0]?.[0].headers).toEqual({
       "content-type": "application/json",
-      "sb-signing-secret": "s".repeat(64)
+      "sb-signing-secret": "s".repeat(64),
+      "x-bob-ingress-source": "recovery_replay"
     })
     expect(result).toEqual({ retrieved: 3, replayed: 3, skipped: 0 })
   })

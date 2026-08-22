@@ -244,6 +244,26 @@ describe("Sendblue ingress", () => {
     expect(health.join("\n")).not.toContain(payload.from_number)
   })
 
+  it("does not count a recovery replay as live ingress delay", async () => {
+    const health: string[] = []
+    vi.spyOn(console, "log").mockImplementation((line) => health.push(String(line)))
+    const target = bindings()
+    const replay = request("s".repeat(64))
+    replay.headers.set("x-bob-ingress-source", "recovery_replay")
+
+    // SAFETY: This controlled fixture contains the bindings required by the ingress Effect Layer.
+    const result = await handleIngressHttp(replay, target.value as never)
+
+    expect(result.status).toBe(202)
+    const event = health.map((line) => JSON.parse(line))[0]
+    expect(event).toMatchObject({
+      type: "webhook",
+      providerIngressSource: "recovery_replay",
+      providerEventAgeMs: expect.any(Number)
+    })
+    expect(event).not.toHaveProperty("providerIngressDelayMs")
+  })
+
   it("accepts a valid webhook when all telemetry bindings are missing", async () => {
     const telemetryFetch = vi.fn(async () => new Response(null, { status: 200 }))
     vi.stubGlobal("fetch", telemetryFetch)

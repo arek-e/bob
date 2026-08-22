@@ -18,7 +18,11 @@ import { processOutboundJob } from "./egress/queue.ts"
 import { sendblueIngressLayer } from "./ingress/composition.ts"
 import { handleIngressHttp } from "./ingress/http.ts"
 import { webRequest, writeWebResponse } from "./node-http.ts"
-import { sendblueProviderLayer } from "./sendblue/provider.ts"
+import {
+  requiredWebhooksFromStatusCallback,
+  SendblueProvider,
+  sendblueProviderLayer
+} from "./sendblue/provider.ts"
 
 const Environment = Config.all({
   PORT: Config.schema(Schema.NumberFromString, "PORT"),
@@ -178,6 +182,41 @@ async function main(): Promise<void> {
     }
   })
   server.listen(config.PORT, "0.0.0.0")
+
+  // Keep the provider's account hooks aligned with this release. This runs
+  // after the HTTP server starts, so a slow provider API cannot delay webhook
+  // readiness. The operation is idempotent and fails open: recovery remains
+  // available if Sendblue is temporarily unavailable.
+  const requiredWebhooks = requiredWebhooksFromStatusCallback(
+    config.SENDBLUE_STATUS_CALLBACK_URL.toString(),
+    webhookSecret
+  )
+  void runtime
+    .runPromise(
+      Effect.flatMap(SendblueProvider, (provider) =>
+        provider.reconcileWebhooks(requiredWebhooks, false)
+      )
+    )
+    .then((plan) => {
+      console.log(
+        JSON.stringify({
+          type: "sendblue_webhook_reconciliation",
+          status: "completed",
+          state: plan.state,
+          receiveCount: plan.receiveCount,
+          outboundCount: plan.outboundCount
+        })
+      )
+    })
+    .catch(() => {
+      console.error(
+        JSON.stringify({
+          type: "sendblue_webhook_reconciliation",
+          status: "failed",
+          code: "provider_reconciliation_failed"
+        })
+      )
+    })
 
   async function shutdown(): Promise<void> {
     server.close()

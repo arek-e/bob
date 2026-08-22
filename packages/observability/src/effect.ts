@@ -4,9 +4,11 @@ import { Context, Effect, Exit, Layer, Option, Schema, Tracer } from "effect"
 
 import {
   parseHealthEvent,
+  ProviderIngressSource,
   TelemetryFeature,
   TelemetryWorkflow,
-  type HealthEvent
+  type HealthEvent,
+  type ProviderIngressSource as ProviderIngressSourceType
 } from "./events.ts"
 
 export const BobSpanName = Schema.Literals([
@@ -161,6 +163,10 @@ export interface BobSpan {
   readonly toolName?: string
   readonly toolCallIndex?: number
   /** Age of a provider event when Bob received it. */
+  readonly providerEventAgeMs?: number
+  /** Source that delivered the provider event to Bob. */
+  readonly providerIngressSource?: ProviderIngressSourceType
+  /** Age of a live provider webhook when Bob received it. */
   readonly providerIngressDelayMs?: number
   /** Age of a provider status event when Bob received it. */
   readonly providerStatusAgeMs?: number
@@ -345,6 +351,10 @@ function validateSpan(input: BobSpan): void {
   }
   assertNatural(input.turnIndex, "Turn index")
   assertNatural(input.toolCallIndex, "Tool-call index")
+  if (input.providerIngressSource !== undefined) {
+    Schema.decodeUnknownSync(ProviderIngressSource)(input.providerIngressSource)
+  }
+  assertTiming(input.providerEventAgeMs, "Provider event age")
   assertTiming(input.providerIngressDelayMs, "Provider ingress delay")
   assertTiming(input.providerStatusAgeMs, "Provider status age")
   assertTiming(input.providerAcceptedToDeliveredMs, "Provider accepted-to-delivered time")
@@ -397,6 +407,12 @@ function spanAttributes(input: BobSpan): SafeAttributes {
   if (input.turnPhase !== undefined) attributes["bob.turn.phase"] = input.turnPhase
   if (input.toolName !== undefined) attributes["bob.tool.name"] = input.toolName
   if (input.toolCallIndex !== undefined) attributes["bob.tool.call_index"] = input.toolCallIndex
+  if (input.providerIngressSource !== undefined) {
+    attributes["bob.provider.ingress_source"] = input.providerIngressSource
+  }
+  if (input.providerEventAgeMs !== undefined) {
+    attributes["bob.provider.event_age_ms"] = input.providerEventAgeMs
+  }
   if (input.providerIngressDelayMs !== undefined) {
     attributes["bob.provider.ingress_delay_ms"] = input.providerIngressDelayMs
   }
@@ -488,6 +504,17 @@ function safeSpanAttributes(
   }
   const toolCallIndex = attributes.get("bob.tool.call_index")
   if (safeNatural(toolCallIndex, 100)) output["bob.tool.call_index"] = toolCallIndex
+  const providerIngressSource = attributes.get("bob.provider.ingress_source")
+  try {
+    output["bob.provider.ingress_source"] =
+      Schema.decodeUnknownSync(ProviderIngressSource)(providerIngressSource)
+  } catch {
+    // Unknown source values are not safe telemetry dimensions.
+  }
+  const providerEventAgeMs = attributes.get("bob.provider.event_age_ms")
+  if (safeNatural(providerEventAgeMs, MAX_BOB_TIMING_MS)) {
+    output["bob.provider.event_age_ms"] = providerEventAgeMs
+  }
   const providerIngressDelayMs = attributes.get("bob.provider.ingress_delay_ms")
   if (safeNatural(providerIngressDelayMs, MAX_BOB_TIMING_MS)) {
     output["bob.provider.ingress_delay_ms"] = providerIngressDelayMs

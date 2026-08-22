@@ -87,6 +87,33 @@ export interface RequiredWebhooks {
   readonly globalSecret: string
 }
 
+/**
+ * Build the two account-level hooks from the status callback base URL.
+ *
+ * Sendblue receives the same public Channel host for inbound webhooks and
+ * outbound status callbacks. Keeping this derivation in one place prevents a
+ * release from sending status callbacks to one host while inbound messages
+ * still point at an old host.
+ */
+export function requiredWebhooksFromStatusCallback(
+  statusCallbackUrl: string,
+  globalSecret: string
+): RequiredWebhooks {
+  const outbound = new URL(statusCallbackUrl)
+  outbound.search = ""
+  outbound.hash = ""
+  const receive = new URL(outbound)
+  receive.pathname = receive.pathname.replace(/\/outbound\/?$/u, "/receive")
+  if (receive.pathname === outbound.pathname) {
+    throw new Error("SENDBLUE_STATUS_CALLBACK_URL must end with /outbound")
+  }
+  return {
+    receiveUrl: receive.toString(),
+    outboundUrl: outbound.toString(),
+    globalSecret
+  }
+}
+
 export interface ReconcilePlan {
   readonly state: "secret_mismatch" | "duplicate_hooks" | "changes_required" | "converged"
   readonly receiveCount: number

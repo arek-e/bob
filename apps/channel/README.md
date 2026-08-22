@@ -10,3 +10,7 @@ paths keep separate bindings and credential boundaries.
 
 The Channel Runtime runs both paths in one Node process with the selected Job Queue Adapter. The
 Sendblue provider, wire schemas, workflows, and Effect Layers stay local to this app.
+
+On boot, the Channel reconciles the configured Sendblue receive and outbound hooks. This operation
+runs after the HTTP listener starts and fails open. Scheduled history recovery remains a fallback;
+its replay events are marked separately from live webhook delivery in telemetry.

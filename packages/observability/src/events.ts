@@ -9,6 +9,7 @@ const ElapsedMilliseconds = Schema.Int.check(
   Schema.isLessThanOrEqualTo(365 * 24 * 60 * 60 * 1_000)
 )
 const ProviderName = Schema.String.check(Schema.isMinLength(1))
+export const ProviderIngressSource = Schema.Literals(["live_webhook", "recovery_replay"])
 const ModelName = Schema.String.check(
   Schema.isPattern(
     /^(?!(?:.*\+|.*\bprivate\b|.*\bphone\b|.*\d{10,}).*$)[a-zA-Z0-9][a-zA-Z0-9._/:-]{2,200}$/i
@@ -88,6 +89,8 @@ export const HealthEvent = Schema.Union([
     status: Schema.Literals(["accepted", "duplicate", "rejected", "failed"]),
     code: WebhookCode,
     durationMs: NonNegativeInt,
+    providerIngressSource: Schema.optionalKey(ProviderIngressSource),
+    providerEventAgeMs: Schema.optionalKey(ElapsedMilliseconds),
     providerIngressDelayMs: Schema.optionalKey(ElapsedMilliseconds)
   }),
   Schema.Struct({
@@ -192,6 +195,7 @@ export type TelemetryFeature = typeof TelemetryFeature.Type
 export type TelemetryWorkflow = typeof TelemetryWorkflow.Type
 export type WorkflowSpanName = typeof WorkflowSpanName.Type
 export type TelemetrySpanCode = typeof TelemetrySpanCode.Type
+export type ProviderIngressSource = typeof ProviderIngressSource.Type
 
 export function parseHealthEvent<Input>(value: Input): HealthEvent {
   const input = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(value)
@@ -199,7 +203,14 @@ export function parseHealthEvent<Input>(value: Input): HealthEvent {
   const common = ["type", "correlationId", "status"]
   const allowedByType = {
     runtime_ready: [...common, "role"],
-    webhook: [...common, "code", "durationMs", "providerIngressDelayMs"],
+    webhook: [
+      ...common,
+      "code",
+      "durationMs",
+      "providerIngressSource",
+      "providerEventAgeMs",
+      "providerIngressDelayMs"
+    ],
     agent_run: [...common, "runId", "model", "durationMs", "inputTokens", "outputTokens"],
     tool_call: [...common, "runId", "toolName", "durationMs"],
     delivery: [
