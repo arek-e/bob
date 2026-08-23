@@ -20,7 +20,7 @@ const deterministicCommands = [
 ] as const
 
 const deterministicCommandAliases = new Map<string, DeterministicCommand>([
-  ["hjälp", "why"],
+  ["hjälp", "help"],
   ["hjalp", "help"],
   ["upprepa", "repeat"],
   ["varför", "why"],
