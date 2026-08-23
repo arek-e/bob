@@ -1,9 +1,10 @@
-export type CoreCaller = "ingress" | "egress" | "agent"
+export type CoreCaller = "ingress" | "egress" | "agent" | "operator"
 
 export interface CoreAccessConfiguration {
   readonly ingressSecret: string
   readonly egressSecret: string
   readonly agentSecret: string
+  readonly operatorSecret: string
 }
 
 export interface SetupAccessConfiguration {
@@ -55,6 +56,12 @@ function requiredCaller(pathname: string): CoreCaller | undefined {
   ) {
     return "agent"
   }
+  if (
+    pathname === "/internal/production-data/summary" ||
+    /^\/internal\/production-data\/workflow\/[^/]+$/.test(pathname)
+  ) {
+    return "operator"
+  }
   return undefined
 }
 
@@ -69,7 +76,9 @@ export async function authorizeCoreRequest(
       ? configuration.ingressSecret
       : caller === "egress"
         ? configuration.egressSecret
-        : configuration.agentSecret
+        : caller === "agent"
+          ? configuration.agentSecret
+          : configuration.operatorSecret
   if (!(await secretMatches(request.headers.get("x-bob-caller-token"), expected))) {
     throw new Error("access_denied")
   }

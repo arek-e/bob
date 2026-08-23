@@ -28,6 +28,10 @@ import { makeFactEvidenceSource } from "@bob/memory-service/evidence-source"
 import { makeMemoryStore, memoryStoreLayer } from "@bob/memory-service/store"
 import { makeMemoryToolAdapter } from "@bob/memory-service/tool-adapter"
 import { alertStoreLayer, makeAlertStore } from "@bob/operations-service/alerts/store"
+import {
+  makeProductionDataInspector,
+  productionDataInspectorLayer
+} from "@bob/operations-service/production-data/inspector"
 import { createDataProtection } from "@bob/policy-service/data-protection"
 import { makeOwnerDataKeyStore, ownerDataKeyStoreLayer } from "@bob/policy-service/owner-data-key"
 import { makeRetrievalPipeline, retrievalPipelineLayer } from "@bob/retrieval-service/pipeline"
@@ -47,6 +51,7 @@ const Configuration = Schema.Struct({
   DATA_LOOKUP_KEY: Schema.String.check(Schema.isMinLength(40)),
   INGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   EGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  PRODUCTION_DATA_INSPECTOR_SECRET: Schema.String.check(Schema.isMinLength(32)),
   CHANNEL_EGRESS_URL: Schema.String,
   BETTER_AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
   SETUP_TOKEN: Schema.String.check(Schema.isMinLength(32)),
@@ -117,6 +122,7 @@ export function composeGeneralCore(
     ownerTimeZone: config.OWNER_TIME_ZONE
   })
   const alerts = makeAlertStore(applicationStorage, {})
+  const productionDataInspector = makeProductionDataInspector(applicationStorage)
   const artifacts = makeArtifactStore(applicationStorage, protection, {
     legacyReaders: prepared.legacyArtifactReaders,
     ownerDataKeys
@@ -170,6 +176,7 @@ export function composeGeneralCore(
     ownerDataKeysLayer,
     attachmentsLayer,
     alertStoreLayer(alerts),
+    productionDataInspectorLayer(productionDataInspector),
     artifactStoreLayer(artifacts),
     deliveryStoreLayer(delivery),
     memoryStoreLayer(memory),

@@ -42,6 +42,11 @@ import {
   withTraceparent
 } from "@bob/observability"
 import { AlertStore } from "@bob/operations-types/alerts"
+import {
+  parseProductionDataQuery,
+  ProductionDataInspector,
+  ProductionDataInspectorError
+} from "@bob/operations-types/production-data"
 import { MemoryCandidateCorrection } from "@bob/operations-types/ui"
 import {
   authorizeCoreRequest,
@@ -389,7 +394,8 @@ export async function handleHttp(
       await authorizeCoreRequest(request, {
         ingressSecret: bindings.INGRESS_CALLER_SECRET,
         egressSecret: bindings.EGRESS_CALLER_SECRET,
-        agentSecret: bindings.AGENT_CALLER_SECRET
+        agentSecret: bindings.AGENT_CALLER_SECRET,
+        operatorSecret: bindings.PRODUCTION_DATA_INSPECTOR_SECRET
       })
     } catch {
       return json({ code: "unauthorized" }, 401)
@@ -416,6 +422,32 @@ export async function handleHttp(
         bindings.DB.execute<{ ready: number }>(sql`SELECT 1 AS ready`, "objects")
       )
       return json({ ready: result?.ready === 1 }, result?.ready === 1 ? 200 : 503)
+    }
+
+    if (request.method === "GET" && url.pathname === "/internal/production-data/summary") {
+      const query = parseProductionDataQuery({
+        from: url.searchParams.get("from"),
+        to: url.searchParams.get("to"),
+        limit: url.searchParams.get("limit")
+      })
+      return json(
+        await runTelemetry(
+          Effect.flatMap(ProductionDataInspector, (inspector) => inspector.summary(query))
+        )
+      )
+    }
+
+    const workflowMatch = url.pathname.match(/^\/internal\/production-data\/workflow\/([^/]+)$/)
+    if (request.method === "GET" && workflowMatch !== null) {
+      const correlationId = decodeURIComponent(workflowMatch[1]!)
+      const query = parseProductionDataQuery({ limit: url.searchParams.get("limit") })
+      return json(
+        await runTelemetry(
+          Effect.flatMap(ProductionDataInspector, (inspector) =>
+            inspector.workflow(correlationId, query.limit)
+          )
+        )
+      )
     }
 
     if (request.method === "POST" && url.pathname === "/internal/inbound") {
@@ -781,6 +813,23 @@ export async function handleHttp(
       })
     }
 
+    if (request.method === "GET" && url.pathname === "/api/production-data/messages") {
+      const query = parseProductionDataQuery({
+        from: url.searchParams.get("from"),
+        to: url.searchParams.get("to"),
+        limit: url.searchParams.get("limit")
+      })
+      return json({
+        from: query.from,
+        to: query.to,
+        messages: await runTelemetry(
+          Effect.flatMap(ConversationStore, (conversations) =>
+            conversations.listMessages(authenticatedOwnerId!, query)
+          )
+        )
+      })
+    }
+
     if (request.method === "GET" && url.pathname === "/api/settings") {
       const settings = await composition.runtime.runPromise(
         Effect.flatMap(OwnerSettingsStore, (store) => store.get(authenticatedOwnerId!))
@@ -1061,6 +1110,9 @@ export async function handleHttp(
     }
     return json({ code: "not_found" }, 404)
   } catch (error) {
+    if (error instanceof ProductionDataInspectorError) {
+      return json({ code: "production_data_unavailable" }, 503)
+    }
     if (error instanceof AgentRunAuthorityLost) return json({ code: "authority_lost" }, 409)
     if (error instanceof AgentRunCheckpointConflict)
       return json({ code: "checkpoint_conflict" }, 409)

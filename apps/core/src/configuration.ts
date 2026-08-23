@@ -19,6 +19,7 @@ const Environment = Schema.Struct({
   DATA_LOOKUP_KEY: Schema.String.check(Schema.isMinLength(40)),
   INGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   EGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  PRODUCTION_DATA_INSPECTOR_SECRET: Schema.String.check(Schema.isMinLength(32)),
   AGENT_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   BETTER_AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
   SETUP_TOKEN: Schema.String.check(Schema.isMinLength(32)),

@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest"
 const configuration = {
   ingressSecret: "i".repeat(64),
   egressSecret: "e".repeat(64),
-  agentSecret: "a".repeat(64)
+  agentSecret: "a".repeat(64),
+  operatorSecret: "o".repeat(64)
 }
 
 function request(path: string, token?: string, header = "x-bob-caller-token"): Request {
@@ -27,7 +28,9 @@ describe("core route authorization", () => {
     ["/internal/agent/operations", "agent", configuration.agentSecret],
     ["/internal/agent/operations/load", "agent", configuration.agentSecret],
     ["/internal/agent/runs/run/attachments/attachment", "agent", configuration.agentSecret],
-    ["/internal/readiness", "agent", configuration.agentSecret]
+    ["/internal/readiness", "agent", configuration.agentSecret],
+    ["/internal/production-data/summary", "operator", configuration.operatorSecret],
+    ["/internal/production-data/workflow/correlation-id", "operator", configuration.operatorSecret]
   ] as const)("allows only the scoped caller for %s", async (path, caller, secret) => {
     await expect(authorizeCoreRequest(request(path, secret), configuration)).resolves.toBe(caller)
     await expect(authorizeCoreRequest(request(path, "wrong"), configuration)).rejects.toThrow(

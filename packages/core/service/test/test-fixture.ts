@@ -22,6 +22,7 @@ import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/pro
 import { makeJournalConversationWorkflow } from "@bob/journal-service/conversation-workflow"
 import { noopTelemetryLayer } from "@bob/observability"
 import { alertStoreLayer } from "@bob/operations-service/alerts/store"
+import { productionDataInspectorLayer } from "@bob/operations-service/production-data/inspector"
 import { makeReminderConversationWorkflow } from "@bob/reminders-service/conversation-workflow"
 import { ownerSettingsStoreLayer } from "@bob/settings-service/store"
 import { makeTrainingConversationWorkflow } from "@bob/training-service/conversation-workflow"
@@ -33,6 +34,7 @@ export type TestFixture<T> = {
 
 interface CompatibilityServices {
   readonly alerts?: TestFixture<Parameters<typeof alertStoreLayer>[0]>
+  readonly productionData?: TestFixture<Parameters<typeof productionDataInspectorLayer>[0]>
   readonly artifacts?: TestFixture<Parameters<typeof artifactStoreLayer>[0]>
   readonly attachments?: Partial<MessageAttachmentStoreService>
   readonly context?: TestFixture<Parameters<typeof contextStoreLayer>[0]>
@@ -171,6 +173,7 @@ export function testFixture<
     conversationTurnStoreLayer(completeAdapter(services?.turns)),
     deliveryStoreLayer(completeAdapter(services?.delivery)),
     alertStoreLayer(completeAdapter(services?.alerts)),
+    productionDataInspectorLayer(completeAdapter(services?.productionData)),
     ownerSettingsStoreLayer(completeAdapter(services?.settings))
   )
   const runtimeLayer = Layer.merge(layer, noopTelemetryLayer)

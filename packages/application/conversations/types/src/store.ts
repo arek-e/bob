@@ -18,6 +18,21 @@ export interface ClaimedInbound {
   readonly correlationId: string
 }
 
+export interface ConversationMessageView {
+  readonly id: string
+  readonly channelId: string
+  readonly direction: "inbound" | "outbound"
+  readonly text: string
+  readonly occurredAt: string
+  readonly createdAt: string
+}
+
+export interface ConversationMessageQuery {
+  readonly from: string
+  readonly to: string
+  readonly limit: number
+}
+
 export interface ConversationStoreAdapter {
   bindChannel(input: {
     ownerId: string
@@ -50,6 +65,10 @@ export interface ConversationStoreAdapter {
       expiresAt: string
     }[]
   >
+  listMessages(
+    ownerId: string,
+    query: ConversationMessageQuery
+  ): Promise<readonly ConversationMessageView[]>
 }
 
 export class ConversationStoreError extends Schema.TaggedError<ConversationStoreError>()(

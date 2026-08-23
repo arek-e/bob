@@ -15,11 +15,16 @@ import {
 import { allInTransaction } from "@bob/db-types"
 import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { liftPromiseOperation } from "@bob/shared-types/effect-adapter"
-import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm"
+import { and, desc, eq, gt, gte, isNull, lt, or, sql } from "drizzle-orm"
 import { Effect, Layer } from "effect"
 
 export { ConversationStore }
-export type { ClaimedInbound, ConversationStoreAdapter } from "@bob/conversations-types/store"
+export type {
+  ClaimedInbound,
+  ConversationMessageQuery,
+  ConversationMessageView,
+  ConversationStoreAdapter
+} from "@bob/conversations-types/store"
 
 export interface ConversationStoreOptions {
   readonly ownerId?: string | undefined
@@ -405,6 +410,57 @@ export function makeConversationStore(
       return event.processedAt === null ? "exhausted" : "complete"
     },
 
+    async listMessages(ownerId, query) {
+      const from = new Date(query.from)
+      const to = new Date(query.to)
+      if (
+        Number.isNaN(from.getTime()) ||
+        Number.isNaN(to.getTime()) ||
+        from >= to ||
+        !Number.isSafeInteger(query.limit) ||
+        query.limit < 1 ||
+        query.limit > 100
+      ) {
+        throw new TypeError("Conversation message query is invalid")
+      }
+      const owner = await ownerDataKeys.load(ownerId)
+      const rows = await Effect.runPromise(
+        database
+          .select({
+            id: messages.id,
+            channelId: messages.channelId,
+            direction: messages.direction,
+            textCiphertext: messages.textCiphertext,
+            textIv: messages.textIv,
+            occurredAt: messages.occurredAt,
+            createdAt: messages.createdAt
+          })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.userId, ownerId),
+              gte(messages.occurredAt, query.from),
+              lt(messages.occurredAt, query.to)
+            )
+          )
+          .orderBy(desc(messages.occurredAt), desc(messages.createdAt), desc(messages.id))
+          .limit(query.limit)
+      )
+      return Promise.all(
+        rows.map(async (row) => ({
+          id: row.id,
+          channelId: row.channelId,
+          direction: row.direction,
+          text: await protection.decryptText(owner.key, {
+            ciphertext: row.textCiphertext,
+            iv: row.textIv
+          }),
+          occurredAt: row.occurredAt,
+          createdAt: row.createdAt
+        }))
+      )
+    },
+
     async pendingBindings(ownerId, command, at) {
       return Effect.runPromise(
         database
@@ -447,6 +503,7 @@ export function conversationStoreLayer(store: ConversationStoreAdapter) {
         store.prepareInboundRecovery,
         failure("prepareInboundRecovery")
       ),
+      listMessages: liftPromiseOperation(store.listMessages, failure("listMessages")),
       pendingBindings: liftPromiseOperation(store.pendingBindings, failure("pendingBindings"))
     })
   )

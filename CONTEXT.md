@@ -1,7 +1,7 @@
 # Bob context
 
 Status: product and architecture context  
-Updated: 2026-08-17
+Updated: 2026-08-23
 
 ## Product
 
@@ -189,6 +189,7 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Delivery recovery:** A bounded decision that restores a safe delivery or raises an operational alert.
 - **Scheduled recovery:** Independent repair phases that continue after one item fails.
 - **Production release:** One immutable bundle of a reviewed source revision, configuration revision, and runtime artifacts.
+- **Production data inspector:** A bounded Runtime read Interface for operational metadata and owner-authorized message reads.
 - **Acknowledged:** The owner confirms seeing one reminder occurrence.
 - **Completed:** The owner confirms finishing one task.
 - **Snoozed:** One occurrence closes and a linked successor is created.
@@ -257,6 +258,11 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Many managed Owners can run in one Runtime Cluster.
 - Every application query derives its Owner scope from trusted identity and durable records.
 - PostgreSQL is authoritative for Agent Run state. BullMQ only carries replay-safe work pointers.
+- Coolify and the Control Plane manage Runtime deployment, health, backups, and release metadata. They do not own or query Owner data.
+- The operator production data inspector uses a dedicated caller secret and returns bounded metadata only. It never returns ciphertext, private payloads, provider handles, or arbitrary SQL results.
+- Owner message content is available only through a Better Auth owner session and a bounded time window. Operator authorization cannot substitute for owner authorization.
+- Production data inspection queries stay in the owning Application Module. They use PostgreSQL as the authoritative source and do not infer records from telemetry.
+- Root maintenance commands use Ink for terminal presentation and a statically reviewed TypeScript registry. They do not load runtime plugins or execute arbitrary shell commands.
 - Queue delivery does not grant Agent Run authority.
 - One active Agent Run attempt holds one renewable Database lease and monotonic fence.
 - A stale Agent Run attempt cannot checkpoint, call a Tool, or record an outcome.

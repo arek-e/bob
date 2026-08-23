@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./alerts/store": "./src/alerts/store.ts",
+    "./production-data/inspector": "./src/production-data/inspector.ts",
     "./usage/reporting": "./src/usage/reporting.ts",
     "./usage/store": "./src/usage/store.ts"
   },

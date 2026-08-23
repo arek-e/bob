@@ -8,7 +8,9 @@ export default defineConfig({
     include: [
       "apps/*/test/**/*.test.ts",
       "iac/*/test/**/*.test.ts",
-      "packages/**/test/**/*.test.ts"
+      "packages/**/test/**/*.test.ts",
+      "tools/test/**/*.test.ts",
+      "tools/test/**/*.test.tsx"
     ],
     passWithNoTests: false
   }

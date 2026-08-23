@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./alerts": "./src/alerts.ts",
+    "./production-data": "./src/production-data.ts",
     "./ui": "./src/ui.ts"
   },
   "scripts": {
