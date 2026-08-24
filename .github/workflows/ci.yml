@@ -42,8 +42,7 @@ jobs:
       - name: Mill Improve transformation fixture
         if: ${{ matrix.name == 'unit-tests' && false }}
         run: |
-          docker compose up -d
-          sleep 15
+          docker compose up -d --wait
 
   verify:
     if: always()
