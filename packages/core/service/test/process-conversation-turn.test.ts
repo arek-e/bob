@@ -4,7 +4,7 @@ import type { OutboundJob } from "@bob/core-types/jobs"
 
 import { AgentRunRequest } from "@bob/agent-types/run"
 import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
-import { makeCaptureTelemetry } from "@bob/observability"
+import { createCaptureTelemetry } from "@bob/observability"
 import { Effect, Schema } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -185,7 +185,7 @@ describe("conversation turn processing", () => {
 
   it("runs one immutable request for the newest revision and publishes one reply", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"

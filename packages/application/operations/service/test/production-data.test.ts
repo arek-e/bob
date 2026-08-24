@@ -1,7 +1,7 @@
 import type { CoreDatabase } from "@bob/db-types"
 
 import {
-  makeProductionDataInspector,
+  createProductionDataInspector,
   type ProductionDataDatabase,
   productionDataInspectorLayer
 } from "@bob/operations-service/production-data/inspector"
@@ -71,7 +71,7 @@ describe("production data inspection", () => {
         }
       ]
     ])
-    const inspector = makeProductionDataInspector(database)
+    const inspector = createProductionDataInspector(database)
     const result = await inspector.summary({
       from: "2026-08-23T00:00:00.000Z",
       to: "2026-08-24T00:00:00.000Z",
@@ -132,7 +132,7 @@ describe("production data inspection", () => {
         }
       ]
     ])
-    const result = await makeProductionDataInspector(database).workflow("correlation-1", 50)
+    const result = await createProductionDataInspector(database).workflow("correlation-1", 50)
 
     expect(result.inboundEvents).toHaveLength(1)
     expect(result.agentRuns[0]?.status).toBe("completed")

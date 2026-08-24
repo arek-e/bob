@@ -26,7 +26,7 @@ import {
   conversationTurns
 } from "@bob/db-service/schema/conversations"
 import { allInTransaction } from "@bob/db-types"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { and, asc, eq, sql } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
 
@@ -61,7 +61,7 @@ function preserveGatewayError(operation: string, cause: unknown): AgentRunGatewa
   return unavailable(operation, cause)
 }
 
-export function makeAgentRunGateway(
+export function createAgentRunGateway(
   database: CoreDatabase,
   protection: DataProtection,
   options: {
@@ -71,7 +71,8 @@ export function makeAgentRunGateway(
 ): AgentRunGatewayService {
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const ownerDataKeys =
-    options.ownerDataKeys ?? makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC" })
+    options.ownerDataKeys ??
+    createOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC" })
 
   async function loadRequest(ownerId: string, envelopeJson: string) {
     const envelope = Schema.decodeUnknownSync(StoredEnvelope)(JSON.parse(envelopeJson))

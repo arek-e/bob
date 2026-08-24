@@ -68,6 +68,43 @@ services:
     tmpfs: [/tmp]
     labels: { bob_service: migration }
 
+  maintenance:
+    <<: *runtime
+    image: ${CORE_IMAGE_REFERENCE:?}
+    restart: "no"
+    env_file:
+      - ${MAINTENANCE_ENV_FILE:?}
+    entrypoint: [node, /app/dist/maintenance-entrypoint.mjs]
+    command: [help]
+    environment:
+      BAO_ADDR: https://bob-openbao-proxy:8443
+      BOB_MAINTENANCE_ENVIRONMENT: ${BOB_MAINTENANCE_ENVIRONMENT:?}
+      BOB_MAINTENANCE_CLUSTER_ID: ${BOB_MAINTENANCE_CLUSTER_ID:?}
+      BOB_MAINTENANCE_DEPLOYMENT_PROFILE_ID: ${BOB_MAINTENANCE_DEPLOYMENT_PROFILE_ID:?}
+      BOB_MAINTENANCE_TARGET_REGION: ${BOB_MAINTENANCE_TARGET_REGION:?}
+      BOB_MAINTENANCE_TARGET_PROVIDER: ${BOB_MAINTENANCE_TARGET_PROVIDER:?}
+      BOB_MAINTENANCE_RUNTIME_ADAPTER: ${BOB_MAINTENANCE_RUNTIME_ADAPTER:?}
+      BOB_MAINTENANCE_TARGET_REFERENCE: ${BOB_MAINTENANCE_TARGET_REFERENCE:?}
+      BOB_MAINTENANCE_TARGET_ACCESS_POLICY_ID: ${BOB_MAINTENANCE_TARGET_ACCESS_POLICY_ID:-}
+      BOB_MAINTENANCE_TARGET_SOURCE: ${BOB_MAINTENANCE_TARGET_SOURCE:?}
+      BOB_MAINTENANCE_TARGET_SOURCE_REVISION: ${BOB_MAINTENANCE_TARGET_SOURCE_REVISION:-}
+      BOB_MAINTENANCE_MODE: cluster-job
+      BOB_MAINTENANCE_RELEASE_ID: ${BOB_MAINTENANCE_RELEASE_ID:?}
+      BOB_MAINTENANCE_EXECUTION_ID: ${BOB_MAINTENANCE_EXECUTION_ID:?}
+      BOB_MAINTENANCE_IMAGE_SOURCE: ${BOB_MAINTENANCE_IMAGE_SOURCE:-runtime-release}
+      BOB_MAINTENANCE_IMAGE_DIGEST: ${CORE_IMAGE_DIGEST:?}
+      BOB_MAINTENANCE_SOURCE_REVISION: ${BOB_MAINTENANCE_SOURCE_REVISION:-}
+      BOB_MIGRATIONS_FOLDER: /app/dist/migrations
+      NODE_EXTRA_CA_CERTS: /etc/bob-openbao/ca.pem
+    depends_on:
+      postgresql: { condition: service_healthy }
+    networks: [runtime, openbao]
+    volumes:
+      - ${OPENBAO_CA_FILE:?}:/etc/bob-openbao/ca.pem:ro
+    tmpfs: [/tmp]
+    profiles: [operations]
+    labels: { bob_service: maintenance }
+
   core:
     <<: *runtime
     image: ghcr.io/arek-e/bob-core@${CORE_IMAGE_DIGEST:?}

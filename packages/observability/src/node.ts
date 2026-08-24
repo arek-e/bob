@@ -2,7 +2,7 @@ import { Layer } from "effect"
 
 import { telemetryLayer, type Telemetry } from "./effect.ts"
 import { parseHealthEvent, type HealthEvent } from "./events.ts"
-import { makeOtlpHttpSpanProcessor, type OtlpHttpSpanProcessorOptions } from "./otlp.ts"
+import { createOtlpHttpSpanProcessor, type OtlpHttpSpanProcessorOptions } from "./otlp.ts"
 
 function stringAttribute(key: string, value: string) {
   return { key, value: { stringValue: value } }
@@ -124,7 +124,7 @@ export function nodeTelemetryLayer(options: NodeTelemetryLayerOptions): Layer.La
     if (options.maxBatchSize !== undefined)
       Object.assign(processorOptions, { maxBatchSize: options.maxBatchSize })
     return telemetryLayer({
-      processor: makeOtlpHttpSpanProcessor(processorOptions),
+      processor: createOtlpHttpSpanProcessor(processorOptions),
       writeHealth: nodeHealthLogWriter(options)
     })
   })

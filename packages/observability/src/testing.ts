@@ -5,7 +5,7 @@ import type { HealthEvent } from "./events.ts"
 import { flushTelemetry, telemetryLayer, type SafeSpanRecord } from "./effect.ts"
 import { parseHealthEvent } from "./events.ts"
 
-export function makeCaptureTelemetry(_resource: {
+export function createCaptureTelemetry(_resource: {
   readonly serviceName: string
   readonly serviceVersion: string
   readonly deploymentEnvironment: string

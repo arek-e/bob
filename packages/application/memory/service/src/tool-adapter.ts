@@ -12,7 +12,7 @@ import { Schema } from "effect"
 
 import type { OwnerFactStore } from "./store.ts"
 
-export function makeMemoryToolAdapter(
+export function createMemoryToolAdapter(
   memory: OwnerFactStore,
   retrieval: RetrievalPipelineAdapter
 ): ToolCommandAdapter {

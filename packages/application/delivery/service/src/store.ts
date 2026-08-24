@@ -13,13 +13,13 @@ import { deliveryAttempts, outboxMessages, providerEvents } from "@bob/db-servic
 import { allInTransaction } from "@bob/db-types"
 import { DeliveryStore, DeliveryStoreError } from "@bob/delivery-types/store"
 import { recordOperationalAlert } from "@bob/operations-service/alerts/store"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { liftPromiseOperation } from "@bob/shared-types/effect-adapter"
 import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
 
 import {
-  makeDeliveryTargetRegistry,
+  createDeliveryTargetRegistry,
   type DeliveryTargetAdapter,
   type DeliveryTargetOutcome
 } from "./target-adapter.ts"
@@ -104,7 +104,7 @@ export const recoverablePendingOutbox = and(
   currentConversationReply
 )
 
-export function makeDeliveryStore(
+export function createDeliveryStore(
   database: CoreDatabase,
   protection: DataProtection,
   options: {
@@ -117,10 +117,10 @@ export function makeDeliveryStore(
 ): DeliveryStoreAdapter {
   const now = options.now ?? (() => new Date())
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
-  const targets = makeDeliveryTargetRegistry(options.targetAdapters)
+  const targets = createDeliveryTargetRegistry(options.targetAdapters)
   const ownerDataKeys =
     options.ownerDataKeys ??
-    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
+    createOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
   async function targetStatements(input: {
     readonly outcome: DeliveryTargetOutcome
     readonly targetType: string | null

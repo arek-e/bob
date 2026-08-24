@@ -12,7 +12,7 @@ import { Effect, Schema } from "effect"
 const PrivateEnvelope = Schema.Struct({ ciphertext: Schema.String, iv: Schema.String })
 const conversationContextLookbackMs = 24 * 60 * 60_000
 
-export function makePriorToolReceiptSource(
+export function createPriorToolReceiptSource(
   database: CoreDatabase,
   text: PrivateTextReader
 ): PriorToolReceiptSource {

@@ -11,7 +11,7 @@ import { Schema } from "effect"
 
 import type { ConnectionStore } from "./store.ts"
 
-export function makeConnectionsToolAdapter(
+export function createConnectionsToolAdapter(
   connections: ConnectionStore | undefined
 ): ToolCommandAdapter {
   return {

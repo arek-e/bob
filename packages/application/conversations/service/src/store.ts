@@ -4,7 +4,11 @@ import type { CoreDatabase, DatabaseQuery } from "@bob/db-types"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
-import { ConversationStore, ConversationStoreError } from "@bob/conversations-types/store"
+import {
+  CONVERSATION_MESSAGE_MAX_LIMIT,
+  ConversationStore,
+  ConversationStoreError
+} from "@bob/conversations-types/store"
 import {
   channels,
   inboundEvents,
@@ -13,7 +17,7 @@ import {
   shortReplyBindings
 } from "@bob/db-service/schema/conversations"
 import { allInTransaction } from "@bob/db-types"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { liftPromiseOperation } from "@bob/shared-types/effect-adapter"
 import { and, desc, eq, gt, gte, isNull, lt, or, sql } from "drizzle-orm"
 import { Effect, Layer } from "effect"
@@ -35,7 +39,7 @@ export interface ConversationStoreOptions {
   readonly randomUuid?: () => string
 }
 
-export function makeConversationStore(
+export function createConversationStore(
   database: CoreDatabase,
   protection: DataProtection,
   options: ConversationStoreOptions
@@ -44,7 +48,7 @@ export function makeConversationStore(
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const ownerDataKeys =
     options.ownerDataKeys ??
-    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: options.ownerTimeZone, now })
+    createOwnerDataKeyStore(database, protection, { defaultTimeZone: options.ownerTimeZone, now })
 
   async function pendingAttachmentOrdinals(
     eventId: string,
@@ -419,7 +423,7 @@ export function makeConversationStore(
         from >= to ||
         !Number.isSafeInteger(query.limit) ||
         query.limit < 1 ||
-        query.limit > 100
+        query.limit > CONVERSATION_MESSAGE_MAX_LIMIT
       ) {
         throw new TypeError("Conversation message query is invalid")
       }

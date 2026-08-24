@@ -4,6 +4,10 @@ const Identifier = Schema.String.check(
   Schema.isPattern(/^[a-z][a-z0-9-]{0,62}$/),
   Schema.isMaxLength(63)
 )
+const ReleaseIdentifier = Schema.String.check(
+  Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,62}$/),
+  Schema.isMaxLength(63)
+)
 const Digest = Schema.String.check(Schema.isPattern(/^sha256:[0-9a-f]{64}$/))
 const GitRevision = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/))
 const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0))
@@ -23,6 +27,42 @@ export const RuntimeRoleId = Schema.Literals([
   "scheduler",
   "migration"
 ])
+
+export const MaintenanceJobImage = Schema.Struct({
+  name: Schema.Literal("core"),
+  source: Schema.Literals(["runtime-release", "commit-build", "pinned-image"]),
+  digest: Digest,
+  sourceRevision: Schema.optionalKey(GitRevision)
+}).check(
+  Schema.makeFilter((image) => {
+    if (image.source === "commit-build" && image.sourceRevision === undefined) {
+      return { path: ["sourceRevision"], issue: "commit-built images require a source revision" }
+    }
+    if (image.source !== "commit-build" && image.sourceRevision !== undefined) {
+      return {
+        path: ["sourceRevision"],
+        issue: "source revisions are only valid for commit-built images"
+      }
+    }
+    return undefined
+  })
+)
+
+export const MaintenanceJobSpec = Schema.Struct({
+  schemaVersion: Schema.Literal("bob.maintenance-job.v1"),
+  executionId: Identifier,
+  target: Schema.Struct({
+    environment: Schema.Literals(["development", "staging", "production"]),
+    clusterId: Identifier,
+    deploymentProfileId: Identifier,
+    releaseId: ReleaseIdentifier
+  }),
+  image: MaintenanceJobImage,
+  command: Schema.Struct({
+    name: Identifier,
+    arguments: Schema.Array(Schema.String)
+  })
+})
 
 export const RuntimeProtocolRange = Schema.Struct({
   minimum: PositiveInt,
@@ -206,6 +246,8 @@ export const RuntimeClusterObservation = Schema.Struct({
 })
 
 export type RuntimeRoleId = typeof RuntimeRoleId.Type
+export type MaintenanceJobImage = typeof MaintenanceJobImage.Type
+export type MaintenanceJobSpec = typeof MaintenanceJobSpec.Type
 export type RuntimeProtocolRange = typeof RuntimeProtocolRange.Type
 export type RuntimeCompatibilityContract = typeof RuntimeCompatibilityContract.Type
 export type RuntimeRoleContract = typeof RuntimeRoleContract.Type

@@ -4,7 +4,7 @@ import { approvedContextItem } from "@bob/context-service/source"
 
 import type { RetrievalPipelineAdapter } from "./pipeline.ts"
 
-export function makeRetrievalContextSource(
+export function createRetrievalContextSource(
   retrieval: RetrievalPipelineAdapter,
   options: {
     readonly characterBudget?: number

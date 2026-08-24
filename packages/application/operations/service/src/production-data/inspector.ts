@@ -72,7 +72,7 @@ async function query<Row>(
   return rows as readonly Row[]
 }
 
-export function makeProductionDataInspector(
+export function createProductionDataInspector(
   database: ProductionDataDatabase
 ): ProductionDataInspectorAdapter {
   return {

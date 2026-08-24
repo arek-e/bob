@@ -15,7 +15,7 @@ export interface OwnerEnrollmentAccessConfiguration {
   readonly ownerEnrollmentSecret: string
 }
 
-async function secretMatches(supplied: string | null, expected: string): Promise<boolean> {
+export async function secretMatches(supplied: string | null, expected: string): Promise<boolean> {
   if (supplied === null) return false
   const encoder = new TextEncoder()
   const [suppliedHash, expectedHash] = await Promise.all([

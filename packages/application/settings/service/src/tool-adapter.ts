@@ -10,7 +10,7 @@ import type { OwnerSettingsStoreAdapter } from "./store.ts"
 
 import { isSettingsMutationRequest, settingsUpdateMatchesRequest } from "./rules.ts"
 
-export function makeSettingsToolAdapter(
+export function createSettingsToolAdapter(
   settings: OwnerSettingsStoreAdapter | undefined
 ): ToolCommandAdapter {
   return {

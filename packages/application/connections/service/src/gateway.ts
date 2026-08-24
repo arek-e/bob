@@ -46,7 +46,7 @@ const ConnectionsResponse = Schema.Struct({
   )
 })
 
-export function makeConnectionsGatewayClient(
+export function createConnectionsGatewayClient(
   options: ConnectionsGatewayClientOptions
 ): ConnectionsGatewayClient {
   const request = options.fetch ?? fetch

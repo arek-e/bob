@@ -20,4 +20,37 @@ describe("production Runtime Compose contract", () => {
     expect(compose).toContain("file: ${BAO_APPROLE_SECRET_ID_PATH:?}")
     expect(compose).toContain("name: bob-runtime-openbao")
   })
+
+  it("defines maintenance as a target-cluster one-shot job", async () => {
+    const compose = await readFile(
+      new URL("../../../deployment/runtime-cluster.compose.yaml", import.meta.url),
+      "utf8"
+    )
+    const coreDockerfile = await readFile(
+      new URL("../../../apps/core/Dockerfile", import.meta.url),
+      "utf8"
+    )
+    const corePackage = await readFile(
+      new URL("../../../apps/core/package.json", import.meta.url),
+      "utf8"
+    )
+    const maintenance = compose.slice(compose.indexOf("  maintenance:"), compose.indexOf("  core:"))
+
+    expect(maintenance).toContain("image: ${CORE_IMAGE_REFERENCE:?")
+    expect(maintenance).toContain("BOB_MAINTENANCE_IMAGE_DIGEST: ${CORE_IMAGE_DIGEST:?")
+    expect(maintenance).not.toContain("BOB_MAINTENANCE_IMAGE_REFERENCE")
+    expect(maintenance).toContain("entrypoint: [node, /app/dist/maintenance-entrypoint.mjs]")
+    expect(maintenance).not.toContain("bob-maintenance")
+    expect(corePackage).toContain("dist/maintenance.mjs")
+    expect(coreDockerfile).toContain("node_modules/varlock")
+    expect(maintenance).toContain('restart: "no"')
+    expect(maintenance).toContain("profiles: [operations]")
+    expect(maintenance).toContain("BOB_MAINTENANCE_MODE: cluster-job")
+    expect(maintenance).toContain("BOB_MAINTENANCE_CLUSTER_ID: ${BOB_MAINTENANCE_CLUSTER_ID:?")
+    expect(maintenance).toContain("BOB_MAINTENANCE_RELEASE_ID: ${BOB_MAINTENANCE_RELEASE_ID:?")
+    expect(maintenance).toContain("BOB_MIGRATIONS_FOLDER: /app/dist/migrations")
+    expect(maintenance).toContain("depends_on:")
+    expect(maintenance).toContain("postgresql: { condition: service_healthy }")
+    expect(maintenance).toContain("networks: [runtime, openbao]")
+  })
 })

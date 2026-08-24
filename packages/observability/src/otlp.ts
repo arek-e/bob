@@ -150,7 +150,7 @@ function httpDiagnosticCode(status: number): OtlpProcessorDiagnosticCode {
   return "http_other"
 }
 
-export function makeOtlpHttpSpanProcessor(
+export function createOtlpHttpSpanProcessor(
   options: OtlpHttpSpanProcessorOptions
 ): SafeSpanProcessor {
   const request = options.fetch ?? fetch

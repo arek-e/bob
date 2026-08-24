@@ -2,7 +2,11 @@ import { Schema } from "effect"
 import { readFile } from "node:fs/promises"
 import { describe, expect, it } from "vitest"
 
-import { RuntimeCompatibilityContract, RuntimeReleaseContract } from "../src/contract.ts"
+import {
+  MaintenanceJobSpec,
+  RuntimeCompatibilityContract,
+  RuntimeReleaseContract
+} from "../src/contract.ts"
 
 const digest = `sha256:${"a".repeat(64)}`
 
@@ -61,6 +65,128 @@ describe("Runtime release contract", () => {
       )
     )
     expect(Schema.decodeUnknownSync(RuntimeCompatibilityContract)(document)).toEqual(document)
+  })
+
+  it("accepts a cluster-scoped maintenance job with a pinned release image", () => {
+    const job = {
+      schemaVersion: "bob.maintenance-job.v1",
+      executionId: "maintenance-job-1",
+      target: {
+        environment: "production",
+        clusterId: "prod-eu",
+        deploymentProfileId: "core",
+        releaseId: "runtime-release"
+      },
+      image: {
+        name: "core",
+        source: "runtime-release",
+        digest
+      },
+      command: { name: "migrate", arguments: [] }
+    }
+
+    expect(Schema.decodeUnknownSync(MaintenanceJobSpec)(job)).toEqual(job)
+  })
+
+  it("accepts a Control Plane UUID release identity", () => {
+    expect(
+      Schema.decodeUnknownSync(MaintenanceJobSpec)({
+        schemaVersion: "bob.maintenance-job.v1",
+        executionId: "maintenance-job-1",
+        target: {
+          environment: "production",
+          clusterId: "prod-eu",
+          deploymentProfileId: "core",
+          releaseId: "12345678-1234-1234-1234-123456789abc"
+        },
+        image: { name: "core", source: "pinned-image", digest },
+        command: { name: "migrate", arguments: [] }
+      })
+    ).toMatchObject({ target: { releaseId: "12345678-1234-1234-1234-123456789abc" } })
+  })
+
+  it("requires a source revision for a commit-built Core image", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(MaintenanceJobSpec)({
+        schemaVersion: "bob.maintenance-job.v1",
+        executionId: "maintenance-job-1",
+        target: {
+          environment: "production",
+          clusterId: "prod-eu",
+          deploymentProfileId: "core",
+          releaseId: "runtime-release"
+        },
+        image: {
+          name: "core",
+          source: "commit-build",
+          digest
+        },
+        command: { name: "migrate", arguments: [] }
+      })
+    ).toThrow()
+  })
+
+  it("rejects mutable Core image tags", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(MaintenanceJobSpec)({
+        schemaVersion: "bob.maintenance-job.v1",
+        executionId: "maintenance-job-1",
+        target: {
+          environment: "production",
+          clusterId: "prod-eu",
+          deploymentProfileId: "core",
+          releaseId: "runtime-release"
+        },
+        image: {
+          name: "core",
+          source: "pinned-image",
+          digest: "latest"
+        },
+        command: { name: "migrate", arguments: [] }
+      })
+    ).toThrow()
+  })
+
+  it("rejects full image references in the maintenance contract", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(MaintenanceJobSpec)({
+        schemaVersion: "bob.maintenance-job.v1",
+        executionId: "maintenance-job-1",
+        target: {
+          environment: "production",
+          clusterId: "prod-eu",
+          deploymentProfileId: "core",
+          releaseId: "runtime-release"
+        },
+        image: {
+          name: "core",
+          source: "pinned-image",
+          digest: `ghcr.io/arek-e/bob-core@${digest}`
+        },
+        command: { name: "migrate", arguments: [] }
+      })
+    ).toThrow()
+  })
+
+  it("requires the Core project image", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(MaintenanceJobSpec)({
+        schemaVersion: "bob.maintenance-job.v1",
+        executionId: "maintenance-job-1",
+        target: {
+          environment: "production",
+          clusterId: "prod-eu",
+          deploymentProfileId: "core",
+          releaseId: "runtime-release"
+        },
+        image: {
+          name: "migration",
+          source: "pinned-image",
+          digest
+        },
+        command: { name: "migrate", arguments: [] }
+      })
+    ).toThrow()
   })
 
   it("accepts one complete compatible release description", () => {

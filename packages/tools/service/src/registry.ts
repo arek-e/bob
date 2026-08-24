@@ -24,7 +24,7 @@ export type {
  * The executor selects Adapters with an explicit dispatch statement. This is
  * not a runtime registry or a plugin mechanism.
  */
-export function makeToolAdapterRegistry(
+export function createToolAdapterRegistry(
   catalogue: CapabilityCatalogue,
   adapters: readonly ToolCommandAdapter[]
 ): ToolAdapterRegistry {

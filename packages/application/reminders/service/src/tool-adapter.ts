@@ -128,7 +128,7 @@ async function validateMutationTarget(
   return undefined
 }
 
-export function makeReminderToolAdapter(reminders: ReminderStore): ToolCommandAdapter {
+export function createReminderToolAdapter(reminders: ReminderStore): ToolCommandAdapter {
   return {
     capabilityId: reminderCapability.id,
     names: capabilityToolNames(reminderCapability),

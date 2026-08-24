@@ -4,7 +4,7 @@ import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
 import { AgentRunOperation, AgentRunRequest, AgentRunResult } from "@bob/agent-types/run"
-import { makeArtifactPersistence } from "@bob/artifacts-service/persistence"
+import { createArtifactPersistence } from "@bob/artifacts-service/persistence"
 import { AgentRunStore, AgentRunStoreError } from "@bob/conversations-types/run-store"
 import {
   agentRunAttempts,
@@ -17,7 +17,7 @@ import {
 } from "@bob/db-service/schema/conversations"
 import { outboxMessages } from "@bob/db-service/schema/delivery"
 import { allInTransaction } from "@bob/db-types"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { liftPromiseOperation } from "@bob/shared-types/effect-adapter"
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
@@ -38,7 +38,7 @@ const StoredRunEnvelope = Schema.Struct({
   keyVersion: Schema.Number
 })
 
-export function makeAgentRunStore(
+export function createAgentRunStore(
   database: CoreDatabase,
   protection: DataProtection,
   options: {
@@ -51,8 +51,8 @@ export function makeAgentRunStore(
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const ownerDataKeys =
     options.ownerDataKeys ??
-    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
-  const artifactPersistence = makeArtifactPersistence(database, protection, ownerDataKeys, {
+    createOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
+  const artifactPersistence = createArtifactPersistence(database, protection, ownerDataKeys, {
     randomUuid
   })
 

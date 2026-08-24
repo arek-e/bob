@@ -13,7 +13,7 @@ import {
   type LegacyArtifactReader
 } from "@bob/artifacts-types/store"
 import { artifactRevisions, artifacts } from "@bob/db-service/schema/artifacts"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { and, desc, eq } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
 
@@ -24,7 +24,7 @@ export {
   type StoredArtifact
 } from "@bob/artifacts-types/store"
 
-export function makeArtifactStore(
+export function createArtifactStore(
   database: CoreDatabase,
   protection: DataProtection,
   options: {
@@ -33,7 +33,8 @@ export function makeArtifactStore(
   } = {}
 ): ArtifactStoreAdapter {
   const ownerDataKeys =
-    options.ownerDataKeys ?? makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC" })
+    options.ownerDataKeys ??
+    createOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC" })
   function decodeArtifact(value: typeof Schema.Json.Type): AgentArtifactValue {
     try {
       return Schema.decodeUnknownSync(AgentArtifact)(value)

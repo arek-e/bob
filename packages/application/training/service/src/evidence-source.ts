@@ -12,7 +12,7 @@ import { evidenceDate } from "@bob/memory-service/evidence"
 import { and, asc, eq } from "drizzle-orm"
 import { Effect } from "effect"
 
-export function makeTrainingEvidenceSource(
+export function createTrainingEvidenceSource(
   database: CoreDatabase,
   protection: DataProtection
 ): EvidenceSourceAdapter {

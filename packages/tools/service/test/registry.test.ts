@@ -1,12 +1,12 @@
 import type { ToolCommandAdapterContext } from "@bob/tools-types/adapter"
 
-import { makeCaptureTelemetry, withBobSpan } from "@bob/observability"
+import { createCaptureTelemetry, withBobSpan } from "@bob/observability"
 import { ToolAdapterError } from "@bob/tools-types/adapter"
-import { makeCapabilityCatalogue } from "@bob/tools-types/catalogue"
+import { createCapabilityCatalogue } from "@bob/tools-types/catalogue"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 
-import { executeRegisteredTool, makeToolAdapterRegistry } from "../src/registry.ts"
+import { executeRegisteredTool, createToolAdapterRegistry } from "../src/registry.ts"
 
 const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db91"
 const runId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0"
@@ -25,7 +25,7 @@ const module = {
     }
   ]
 } as const
-const catalogue = makeCapabilityCatalogue("test", [module])
+const catalogue = createCapabilityCatalogue("test", [module])
 const context: ToolCommandAdapterContext = {
   command: {
     runId,
@@ -46,7 +46,7 @@ const context: ToolCommandAdapterContext = {
 }
 
 function telemetry() {
-  return makeCaptureTelemetry({
+  return createCaptureTelemetry({
     serviceName: "bob-tools-test",
     serviceVersion: "0123456789abcdef0123456789abcdef01234567",
     deploymentEnvironment: "test"
@@ -56,7 +56,7 @@ function telemetry() {
 describe("Tool registry telemetry", () => {
   it("ends a successful domain span below the execute span", async () => {
     const capture = telemetry()
-    const registry = makeToolAdapterRegistry(catalogue, [
+    const registry = createToolAdapterRegistry(catalogue, [
       {
         capabilityId: "test-tools",
         names: ["test_read"],
@@ -89,7 +89,7 @@ describe("Tool registry telemetry", () => {
 
   it("ends a failed domain span when its Adapter fails", async () => {
     const capture = telemetry()
-    const registry = makeToolAdapterRegistry(catalogue, [
+    const registry = createToolAdapterRegistry(catalogue, [
       {
         capabilityId: "test-tools",
         names: ["test_read"],

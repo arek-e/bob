@@ -101,7 +101,7 @@ function retrievalUnitCount(units: ReturnType<typeof selectRelevantCandidates>):
   )
 }
 
-export function makeRetrievalPipeline(
+export function createRetrievalPipeline(
   database: CoreDatabase,
   options: {
     readonly candidateLimit?: number

@@ -12,14 +12,14 @@ import {
   withBobRootSpan,
   withBobSpan
 } from "../src/effect.ts"
-import { makeCaptureTelemetry } from "../src/testing.ts"
+import { createCaptureTelemetry } from "../src/testing.ts"
 
 const correlationId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f"
 const runId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0"
 
 describe("Effect telemetry", () => {
   it("keeps bounded provider and queue timing attributes on safe spans", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-channel",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -55,7 +55,7 @@ describe("Effect telemetry", () => {
   })
 
   it("records native provider interaction state without owner data", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-sendblue-egress",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -79,7 +79,7 @@ describe("Effect telemetry", () => {
   })
 
   it("records closed conversation steering metadata without message content", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-core-worker",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -127,7 +127,7 @@ describe("Effect telemetry", () => {
   })
 
   it("starts an explicit Bob root without the current parent", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-core-worker",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -160,7 +160,7 @@ describe("Effect telemetry", () => {
   })
 
   it("records one safe agent and tool trace tree", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -285,7 +285,7 @@ describe("Effect telemetry", () => {
   })
 
   it("drops unapproved spans and never exports failure content", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -322,7 +322,7 @@ describe("Effect telemetry", () => {
 
   it("drops an unknown output validation code without dropping the decision", async () => {
     const privateCanary = "private-validation-code-8841"
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -436,7 +436,7 @@ describe("Effect telemetry", () => {
   })
 
   it("drops invalid model metadata without changing the application result", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -487,7 +487,7 @@ describe("Effect telemetry", () => {
   })
 
   it("skips an invalid span without changing the application result", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -518,7 +518,7 @@ describe("Effect telemetry", () => {
   })
 
   it("skips an invalid decision without changing the application result", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -572,7 +572,7 @@ describe("Effect telemetry", () => {
   })
 
   it("normalizes approved spans and removes unapproved identity fields", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"

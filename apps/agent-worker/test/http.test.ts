@@ -2,7 +2,7 @@ import type { AgentRunRequest, AgentRunResult, DeviceLoginEvent } from "@bob/age
 
 import { BobAgent, type AgentRunDurability, type BobAgentService } from "@bob/agent-types"
 import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
-import { withBobSpan, makeCaptureTelemetry } from "@bob/observability"
+import { withBobSpan, createCaptureTelemetry } from "@bob/observability"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -111,7 +111,7 @@ function agentFixture(): TestBobAgent {
 }
 
 function composition(authorized: boolean, allowedScope: "run" | "admin" | "both" = "both") {
-  const telemetry = makeCaptureTelemetry({
+  const telemetry = createCaptureTelemetry({
     serviceName: "bob-agent-worker",
     serviceVersion: "0123456789abcdef0123456789abcdef01234567",
     deploymentEnvironment: "test"

@@ -1,7 +1,7 @@
 import type { DeliveryResult } from "@bob/delivery-types/delivery"
 
 import { OutboundJob, type InboundJob } from "@bob/core-types/jobs"
-import { makeBullMqJobPublisher } from "@bob/job-queue-runtime/bullmq"
+import { createBullMqJobPublisher } from "@bob/job-queue-runtime/bullmq"
 import { startBullMqWorkerHost } from "@bob/job-queue-runtime/bullmq-host"
 import { completeJob, decodeJobProcessor, retryJob, type JobPublisher } from "@bob/job-queue-types"
 import { nodeTelemetryLayer } from "@bob/observability"
@@ -66,7 +66,7 @@ interface RuntimeQueue<Job> {
   sendBatch(messages: readonly { body: Job; delaySeconds?: number }[]): Promise<void>
 }
 
-function makeHttpFetcher(baseUrl: string): RuntimeFetcher {
+function createHttpFetcher(baseUrl: string): RuntimeFetcher {
   return {
     fetch(input, init) {
       const request = input instanceof Request ? input : new Request(input, init)
@@ -76,7 +76,7 @@ function makeHttpFetcher(baseUrl: string): RuntimeFetcher {
   }
 }
 
-function makeQueueBinding<Job>(publisher: JobPublisher<Job>): RuntimeQueue<Job> {
+function createQueueBinding<Job>(publisher: JobPublisher<Job>): RuntimeQueue<Job> {
   return {
     send: (job) => publisher.publish(job),
     async sendBatch(messages) {
@@ -101,12 +101,12 @@ async function main(): Promise<void> {
   const queueOptions = { connection, prefix: "bob" }
   const inboundQueue = new BullQueue("bob-inbound", queueOptions)
   const deliveryResultQueue = new BullQueue("bob-delivery-result", queueOptions)
-  const core = makeHttpFetcher(coreUrl)
-  const inboundQueueBinding = makeQueueBinding<InboundJob>(
-    makeBullMqJobPublisher(inboundQueue, "inbound")
+  const core = createHttpFetcher(coreUrl)
+  const inboundQueueBinding = createQueueBinding<InboundJob>(
+    createBullMqJobPublisher(inboundQueue, "inbound")
   )
-  const deliveryResultQueueBinding = makeQueueBinding<DeliveryResult>(
-    makeBullMqJobPublisher(deliveryResultQueue, "delivery-result")
+  const deliveryResultQueueBinding = createQueueBinding<DeliveryResult>(
+    createBullMqJobPublisher(deliveryResultQueue, "delivery-result")
   )
   const callerSecret = Redacted.value(config.CORE_CALLER_SECRET)
   const webhookSecret = Redacted.value(config.SENDBLUE_WEBHOOK_SIGNING_SECRET)
@@ -123,7 +123,7 @@ async function main(): Promise<void> {
   }
   const egressBindings: EgressBindings = {
     CORE: core,
-    INGRESS: makeHttpFetcher("http://127.0.0.1:8786"),
+    INGRESS: createHttpFetcher("http://127.0.0.1:8786"),
     DELIVERY_RESULT_QUEUE: deliveryResultQueueBinding,
     SENDBLUE_WEBHOOK_SIGNING_SECRET: webhookSecret,
     SENDBLUE_FROM_NUMBER: config.SENDBLUE_FROM_NUMBER,

@@ -55,7 +55,7 @@ export async function recordOperationalAlert(
   return stored.id
 }
 
-export function makeAlertStore(
+export function createAlertStore(
   database: CoreDatabase,
   options: { readonly now?: () => Date; readonly randomUuid?: () => string }
 ): AlertStoreAdapter {

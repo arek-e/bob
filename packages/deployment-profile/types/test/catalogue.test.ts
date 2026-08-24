@@ -6,7 +6,10 @@ import {
 } from "@bob/deployment-profile-types/profiles"
 import { JournalSearchMetadataArguments } from "@bob/journal-types/capability"
 import { memoryCapability } from "@bob/memory-types/capability"
-import { CapabilityCatalogueGeneration, makeCapabilityCatalogue } from "@bob/tools-types/catalogue"
+import {
+  CapabilityCatalogueGeneration,
+  createCapabilityCatalogue
+} from "@bob/tools-types/catalogue"
 import { capabilityToolNames } from "@bob/tools-types/definitions"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
@@ -49,7 +52,7 @@ describe("Bob tool catalogue", () => {
   })
 
   it("rejects duplicate Capability Modules in one profile", () => {
-    expect(() => makeCapabilityCatalogue("core", [memoryCapability, memoryCapability])).toThrow(
+    expect(() => createCapabilityCatalogue("core", [memoryCapability, memoryCapability])).toThrow(
       "Duplicate Capability Module ID"
     )
   })

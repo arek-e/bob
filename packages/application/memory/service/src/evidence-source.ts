@@ -8,7 +8,7 @@ import { Effect } from "effect"
 
 import type { EvidenceSourceAdapter } from "./evidence.ts"
 
-export function makeFactEvidenceSource(
+export function createFactEvidenceSource(
   database: CoreDatabase,
   text: PrivateTextReader,
   protection: DataProtection

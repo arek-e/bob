@@ -5,7 +5,7 @@ import { Schema } from "effect"
 
 import type { ConnectionStore } from "./store.ts"
 
-export function makeConnectionOwnerRoutes(connections: ConnectionStore): OwnerRouteModule {
+export function createConnectionOwnerRoutes(connections: ConnectionStore): OwnerRouteModule {
   return {
     id: "connection-owner-routes",
     async handle(context) {

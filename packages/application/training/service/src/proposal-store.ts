@@ -4,7 +4,7 @@ import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
 import { messages } from "@bob/db-service/schema/conversations"
 import { trainingProposals } from "@bob/db-service/schema/training"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { JsonObject as JsonObjectSchema } from "@bob/shared-types/json"
 import { type ToolCommand, type ToolName, ToolResult } from "@bob/tools-types/tools"
 import {
@@ -114,7 +114,7 @@ async function commandHash(input: {
   return `sha256:${hex}`
 }
 
-export function makeTrainingProposalStore(
+export function createTrainingProposalStore(
   database: CoreDatabase,
   protection: DataProtection,
   training: TrainingStore,
@@ -128,7 +128,7 @@ export function makeTrainingProposalStore(
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const ownerDataKeys =
     options.ownerDataKeys ??
-    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
+    createOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
 
   async function encodePrivate<Input>(ownerId: string, value: Input): Promise<string> {
     const encrypted = await protection.encryptText(

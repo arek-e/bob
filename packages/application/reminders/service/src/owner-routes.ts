@@ -5,7 +5,7 @@ import { Schema } from "effect"
 
 import type { ReminderStore } from "./store.ts"
 
-export function makeReminderOwnerRoutes(reminders: ReminderStore): OwnerRouteModule {
+export function createReminderOwnerRoutes(reminders: ReminderStore): OwnerRouteModule {
   return {
     id: "reminder-owner-routes",
     async handle(context) {

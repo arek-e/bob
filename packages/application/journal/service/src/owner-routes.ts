@@ -5,7 +5,7 @@ import { Schema } from "effect"
 
 import type { JournalStore } from "./store.ts"
 
-export function makeJournalOwnerRoutes(journal: JournalStore): OwnerRouteModule {
+export function createJournalOwnerRoutes(journal: JournalStore): OwnerRouteModule {
   return {
     id: "journal-owner-routes",
     async handle(context) {

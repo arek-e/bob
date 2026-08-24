@@ -1,0 +1,13 @@
+feature=runtime-context
+$ pnpm --silent maint context
+{
+  "executionContext": {
+    "schemaVersion": "bob.maintenance-context.v1",
+    "environment": "development",
+    "clusterId": "local",
+    "deploymentProfileId": "core",
+    "mode": "local"
+  }
+}
+
+exit_code=0

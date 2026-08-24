@@ -11,7 +11,7 @@ import { composeAgent } from "./composition.ts"
 import { handleAgentHttp } from "./http.ts"
 import { AGENT_LISTEN_HOST } from "./listener.ts"
 import { createNodeHttpHandler } from "./node-http.ts"
-import { makeAgentRunJobProcessor } from "./queue.ts"
+import { createAgentRunJobProcessor } from "./queue.ts"
 import { serveAgent } from "./server.ts"
 
 function redisConnection(urlValue: string): ConnectionOptions {
@@ -40,7 +40,7 @@ const workers = startBullMqWorkerHost(
       concurrency: composition.config.maximumConcurrency,
       processor: decodeJobProcessor(
         { decode: (input) => Schema.decodeUnknownSync(AgentRunJob)(input) },
-        makeAgentRunJobProcessor({
+        createAgentRunJobProcessor({
           composition,
           gateway: agentRuns,
           workerId

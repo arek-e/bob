@@ -19,14 +19,14 @@ import {
 } from "@bob/db-service/schema/conversations"
 import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
 import { createDataProtection } from "@bob/policy-service/data-protection"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { eq } from "drizzle-orm"
 import { Effect, ManagedRuntime } from "effect"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-import { makeAgentRuns } from "../src/agent-runs.ts"
-import { makeAgentRunGateway } from "../src/worker-gateway.ts"
+import { createAgentRuns } from "../src/agent-runs.ts"
+import { createAgentRunGateway } from "../src/worker-gateway.ts"
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const integration = databaseUrl === undefined ? describe.skip : describe
@@ -87,12 +87,12 @@ integration("PostgreSQL Agent Runs", () => {
       toolCalls: 0
     }
     const protection = createDataProtection({ 1: "11".repeat(32) }, 1, "22".repeat(32))
-    const ownerDataKeys = makeOwnerDataKeyStore(database.applicationStorage, protection, {
+    const ownerDataKeys = createOwnerDataKeyStore(database.applicationStorage, protection, {
       defaultTimeZone: "UTC"
     })
     await ownerDataKeys.ensure(ownerId)
-    const runs = makeAgentRuns(database.applicationStorage, protection, { ownerDataKeys })
-    const gateway = makeAgentRunGateway(database.applicationStorage, protection, {
+    const runs = createAgentRuns(database.applicationStorage, protection, { ownerDataKeys })
+    const gateway = createAgentRunGateway(database.applicationStorage, protection, {
       ownerDataKeys,
       randomUuid: () => crypto.randomUUID()
     })
@@ -257,7 +257,7 @@ integration("PostgreSQL Agent Runs", () => {
     const correlationId = crypto.randomUUID()
     const now = "2026-08-18T12:00:00.000Z"
     const protection = createDataProtection({ 1: "33".repeat(32) }, 1, "44".repeat(32))
-    const ownerDataKeys = makeOwnerDataKeyStore(database.applicationStorage, protection, {
+    const ownerDataKeys = createOwnerDataKeyStore(database.applicationStorage, protection, {
       defaultTimeZone: "UTC"
     })
     await ownerDataKeys.ensure(ownerId)
@@ -351,8 +351,8 @@ integration("PostgreSQL Agent Runs", () => {
         maxResponseCharacters: 500
       }
     }
-    const runs = makeAgentRuns(database.applicationStorage, protection, { ownerDataKeys })
-    const gateway = makeAgentRunGateway(database.applicationStorage, protection, {
+    const runs = createAgentRuns(database.applicationStorage, protection, { ownerDataKeys })
+    const gateway = createAgentRunGateway(database.applicationStorage, protection, {
       ownerDataKeys,
       randomUuid: () => crypto.randomUUID()
     })

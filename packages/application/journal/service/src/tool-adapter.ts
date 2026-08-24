@@ -10,7 +10,7 @@ import type { JournalStore } from "./store.ts"
 
 import { journalAgentMetadata } from "./rules.ts"
 
-export function makeJournalToolAdapter(
+export function createJournalToolAdapter(
   journal: JournalStore,
   turns: Pick<ConversationTurnStoreAdapter, "excludeFromContext">,
   options: { readonly uiBaseUrl: string }

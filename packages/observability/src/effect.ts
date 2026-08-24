@@ -672,7 +672,7 @@ function toSafeSpanRecord(
   return parent === undefined ? output : { ...output, parentSpanId: parent.spanId }
 }
 
-export function makeSafeTracer(processor: SafeSpanProcessor): Tracer.Tracer {
+export function createSafeTracer(processor: SafeSpanProcessor): Tracer.Tracer {
   return Tracer.make({
     span(input) {
       return new (class extends Tracer.NativeSpan {
@@ -711,7 +711,7 @@ export function telemetryLayer(options: {
     () => safeShutdown
   )
   return Layer.merge(
-    Layer.succeed(Tracer.Tracer, makeSafeTracer(options.processor)),
+    Layer.succeed(Tracer.Tracer, createSafeTracer(options.processor)),
     Layer.effect(Telemetry, service)
   )
 }

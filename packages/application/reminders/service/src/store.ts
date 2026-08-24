@@ -13,7 +13,7 @@ import {
   schedulerOutbox
 } from "@bob/db-service/schema/reminders"
 import { allInTransaction } from "@bob/db-types"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, or, sql, type SQL } from "drizzle-orm"
 import { Effect, Context, Layer } from "effect"
 
@@ -97,7 +97,7 @@ export interface ReminderStore {
 
 export const ReminderStore = Context.Service<ReminderStore>("bob/ReminderStore")
 
-export function makeReminderStore(
+export function createReminderStore(
   database: CoreDatabase,
   protection: DataProtection,
   options: {
@@ -114,7 +114,7 @@ export function makeReminderStore(
   const dailyLimit = options.dailyLimit
   const ownerDataKeys =
     options.ownerDataKeys ??
-    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
+    createOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
 
   async function ownerQuietHours(ownerId: string): Promise<QuietHours | undefined> {
     if (quietHours === undefined) return undefined

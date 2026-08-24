@@ -9,7 +9,7 @@ import { Effect } from "effect"
 
 import type { ReminderStore } from "./store.ts"
 
-export function makeReminderScheduledWorkflow(input: {
+export function createReminderScheduledWorkflow(input: {
   readonly clock: {
     readonly fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   }

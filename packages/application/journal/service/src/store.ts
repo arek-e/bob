@@ -14,7 +14,7 @@ import {
   completedEffectAfterConflict,
   type EffectIdentity
 } from "@bob/policy-service/effect-outcome"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { retrievalProjection } from "@bob/retrieval-service/projection"
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm"
 import { Effect, Context, Layer, Schema } from "effect"
@@ -93,7 +93,7 @@ function normalizeJournalTag(tag: string): string {
   return normalized
 }
 
-export function makeJournalStore(
+export function createJournalStore(
   database: CoreDatabase,
   protection: DataProtection,
   options: {
@@ -106,7 +106,7 @@ export function makeJournalStore(
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const ownerDataKeys =
     options.ownerDataKeys ??
-    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
+    createOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
 
   return {
     async createHandoff(ownerId, ttlMs, idempotencyKey) {

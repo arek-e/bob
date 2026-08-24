@@ -15,7 +15,7 @@ import { withAgentExecutionContext } from "./execution-context.ts"
 const LEASE_MS = 90_000
 const CONTROL_POLL_MS = 2_000
 
-export function makeAgentRunJobProcessor(input: {
+export function createAgentRunJobProcessor(input: {
   readonly composition: AgentComposition
   readonly gateway: AgentRunGatewayService
   readonly workerId: string

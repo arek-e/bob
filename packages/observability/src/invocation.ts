@@ -4,19 +4,19 @@ import type { SafeSpanProcessor } from "./effect.ts"
 import type { HealthEvent } from "./events.ts"
 import type { OtlpHttpSpanProcessorOptions } from "./otlp.ts"
 
-import { makeSafeTracer, Telemetry } from "./effect.ts"
+import { createSafeTracer, Telemetry } from "./effect.ts"
 import { parseHealthEvent } from "./events.ts"
-import { makeOtlpHttpSpanProcessor } from "./otlp.ts"
+import { createOtlpHttpSpanProcessor } from "./otlp.ts"
 
 export type InvocationSpanProcessorOptions = Omit<
   OtlpHttpSpanProcessorOptions,
   "scheduledDelayMs" | "flushOnShutdown"
 >
 
-export function makeInvocationSpanProcessor(
+export function createInvocationSpanProcessor(
   options: InvocationSpanProcessorOptions
 ): SafeSpanProcessor {
-  return makeOtlpHttpSpanProcessor(options)
+  return createOtlpHttpSpanProcessor(options)
 }
 
 export function invocationTelemetryLayer(options: {
@@ -27,7 +27,7 @@ export function invocationTelemetryLayer(options: {
     options.writeHealth ?? ((event: HealthEvent) => console.log(JSON.stringify(event)))
   const safeFlush = options.processor.forceFlush.pipe(Effect.catchCause(() => Effect.void))
   return Layer.merge(
-    Layer.succeed(Tracer.Tracer, makeSafeTracer(options.processor)),
+    Layer.succeed(Tracer.Tracer, createSafeTracer(options.processor)),
     Layer.succeed(Telemetry, {
       emitHealth: (event) =>
         Effect.sync(() => writeHealth(parseHealthEvent(event))).pipe(

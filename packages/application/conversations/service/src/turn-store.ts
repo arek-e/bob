@@ -20,7 +20,7 @@ import {
   messages
 } from "@bob/db-service/schema/conversations"
 import { allInTransaction } from "@bob/db-types"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { liftPromiseOperation } from "@bob/shared-types/effect-adapter"
 import { and, asc, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm"
 import { Effect, Layer } from "effect"
@@ -48,7 +48,7 @@ export interface ConversationTurnStoreOptions {
   readonly ownerDataKeys?: OwnerDataKeyStoreAdapter
 }
 
-export function makeConversationTurnStore(
+export function createConversationTurnStore(
   database: CoreDatabase,
   protection: DataProtection,
   options: ConversationTurnStoreOptions
@@ -61,7 +61,7 @@ export function makeConversationTurnStore(
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const ownerDataKeys =
     options.ownerDataKeys ??
-    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
+    createOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
 
   return {
     async offer(inboundEventId, traceparent) {

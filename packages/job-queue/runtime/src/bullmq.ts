@@ -16,13 +16,13 @@ export interface BullMqJobAdapterInput<Job> {
 }
 
 export interface BullMqJobConsumerOptions {
-  readonly makeDelayedError: () => Error
+  readonly createDelayedError: () => Error
   readonly now?: () => number
   readonly unexpectedErrorDelayMs?: number
   readonly onUnexpectedError?: (error: Error) => void
 }
 
-export function makeBullMqJobPublisher<Job, Result>(
+export function createBullMqJobPublisher<Job, Result>(
   queue: BullMqQueueAdapterInput<Job, Result>,
   jobName: string
 ): JobPublisher<Job> {
@@ -43,7 +43,7 @@ export function makeBullMqJobPublisher<Job, Result>(
   }
 }
 
-export function makeBullMqJobProcessor<Job>(
+export function createBullMqJobProcessor<Job>(
   processor: JobProcessor<Job>,
   options: BullMqJobConsumerOptions
 ): (job: BullMqJobAdapterInput<Job>, token?: string) => Promise<void> {
@@ -60,10 +60,10 @@ export function makeBullMqJobProcessor<Job>(
       const delayMs = validatedDelayMs({ delayMs: options.unexpectedErrorDelayMs })
       if (delayMs === undefined) throw new TypeError("Unexpected error delay is missing")
       await job.moveToDelayed(now() + delayMs, token)
-      throw options.makeDelayedError()
+      throw options.createDelayedError()
     }
     if (disposition.state === "complete") return
     await job.moveToDelayed(now() + disposition.delayMs, token)
-    throw options.makeDelayedError()
+    throw options.createDelayedError()
   }
 }

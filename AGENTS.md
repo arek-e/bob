@@ -22,6 +22,9 @@ Oxfmt owns formatting, import order, Tailwind class order, and `package.json` fi
 
 Oxlint owns correctness rules and import safety. Do not add disable comments to hide a finding.
 
+Bob-owned dependency-injection factories use the `createX` naming pattern. Preserve names defined by external
+libraries, such as `ManagedRuntime.make` and `Schema.makeFilter`.
+
 Tailwind class sorting uses `apps/ui/src/styles/app.css`. It also handles `cn`, `clsx`, and `cva`.
 
 Lefthook formats and lints staged files before each commit. CI remains the authoritative check.
@@ -36,7 +39,7 @@ Update the relevant tests when behavior changes. Report failed checks and their 
 
 ## Architecture guardrails
 
-- Treat `CONTEXT.md` and accepted ADRs as authoritative.
+- Treat `CONTEXT.md` and the current implementation as authoritative.
 - Register Capability Modules and Context source Modules in static, reviewed deployment profiles.
 - Keep every Tool in exactly one Capability Module.
 - Update Tool definitions, safety metadata, and conformance tests together.
@@ -44,5 +47,5 @@ Update the relevant tests when behavior changes. Report failed checks and their 
 - Keep ContextStore authoritative for privacy, budgets, deduplication, and assembly.
 - Keep telemetry read-only and fail-open.
 - Do not add runtime discovery, package-installed Modules, self-registration, or hot reload.
-- Do not add mutable lifecycle hooks without an accepted ADR.
-- Update `CONTEXT.md` and the relevant ADR when architecture changes.
+- Do not add mutable lifecycle hooks without a defined lifecycle, owner, and cleanup path.
+- Update `CONTEXT.md` and the relevant README or feature documentation when architecture changes.

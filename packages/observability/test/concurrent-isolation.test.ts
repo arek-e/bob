@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 
 import { currentBobCorrelationId, withBobSpan } from "../src/effect.ts"
 import { externalParentFromTraceparent, injectCurrentTraceparent } from "../src/propagation.ts"
-import { makeCaptureTelemetry } from "../src/testing.ts"
+import { createCaptureTelemetry } from "../src/testing.ts"
 
 const first = {
   correlationId: "018e6f65-4d55-7a1b-8df4-4ee15ea1db9f",
@@ -23,7 +23,7 @@ function traceparent(input: typeof first | typeof second): string {
 
 describe("Effect trace isolation", () => {
   it("keeps concurrent external roots and correlation IDs fiber-local", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"

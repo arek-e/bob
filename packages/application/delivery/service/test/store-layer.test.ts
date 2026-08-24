@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import { DeliveryStore, deliveryStoreLayer } from "../src/store.ts"
 
-function makeStore(): DeliveryStoreAdapter {
+function createStore(): DeliveryStoreAdapter {
   return {
     async createOutbox() {
       return crypto.randomUUID()
@@ -48,7 +48,7 @@ function makeStore(): DeliveryStoreAdapter {
 
 describe("deliveryStoreLayer", () => {
   it("keeps the Adapter receiver for methods that call another Adapter method", async () => {
-    const store = makeStore()
+    const store = createStore()
     await Effect.runPromise(
       Effect.gen(function* () {
         const delivery = yield* DeliveryStore

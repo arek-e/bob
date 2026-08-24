@@ -16,16 +16,16 @@ import {
   type ToolExecutorService,
   ToolExecutorError
 } from "@bob/conversations-types/tool-executor"
-import { makeRuntimeModules } from "@bob/core-types/runtime-module"
+import { createRuntimeModules } from "@bob/core-types/runtime-module"
 import { deliveryStoreLayer } from "@bob/delivery-service/store"
 import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
-import { makeJournalConversationWorkflow } from "@bob/journal-service/conversation-workflow"
+import { createJournalConversationWorkflow } from "@bob/journal-service/conversation-workflow"
 import { noopTelemetryLayer } from "@bob/observability"
 import { alertStoreLayer } from "@bob/operations-service/alerts/store"
 import { productionDataInspectorLayer } from "@bob/operations-service/production-data/inspector"
-import { makeReminderConversationWorkflow } from "@bob/reminders-service/conversation-workflow"
+import { createReminderConversationWorkflow } from "@bob/reminders-service/conversation-workflow"
 import { ownerSettingsStoreLayer } from "@bob/settings-service/store"
-import { makeTrainingConversationWorkflow } from "@bob/training-service/conversation-workflow"
+import { createTrainingConversationWorkflow } from "@bob/training-service/conversation-workflow"
 import { Effect, Layer } from "effect"
 
 export type TestFixture<T> = {
@@ -43,10 +43,10 @@ interface CompatibilityServices {
   readonly runs?: TestFixture<Parameters<typeof agentRunStoreLayer>[0]>
   readonly settings?: TestFixture<Parameters<typeof ownerSettingsStoreLayer>[0]>
   readonly tools?: ToolExecutorFixture
-  readonly training?: TestFixture<Parameters<typeof makeTrainingConversationWorkflow>[0]>
-  readonly journal?: TestFixture<Parameters<typeof makeJournalConversationWorkflow>[0]>
+  readonly training?: TestFixture<Parameters<typeof createTrainingConversationWorkflow>[0]>
+  readonly journal?: TestFixture<Parameters<typeof createJournalConversationWorkflow>[0]>
   readonly turns?: TestFixture<Parameters<typeof conversationTurnStoreLayer>[0]>
-  readonly reminders?: TestFixture<Parameters<typeof makeReminderConversationWorkflow>[1]>
+  readonly reminders?: TestFixture<Parameters<typeof createReminderConversationWorkflow>[1]>
   readonly conversations?: TestFixture<Parameters<typeof conversationStoreLayer>[0]>
 }
 
@@ -137,22 +137,24 @@ export function testFixture<
   const attachmentService = services?.attachments
   if (services?.training !== undefined) {
     // SAFETY: The focused double implements the workflow methods exercised by its test.
-    const training = services.training as Parameters<typeof makeTrainingConversationWorkflow>[0]
-    conversations.push(makeTrainingConversationWorkflow(training))
+    const training = services.training as Parameters<typeof createTrainingConversationWorkflow>[0]
+    conversations.push(createTrainingConversationWorkflow(training))
   }
   if (services?.journal !== undefined && services.turns !== undefined) {
     // SAFETY: The focused doubles implement the workflow methods exercised by their test.
-    const journal = services.journal as Parameters<typeof makeJournalConversationWorkflow>[0]
+    const journal = services.journal as Parameters<typeof createJournalConversationWorkflow>[0]
     // SAFETY: The focused doubles implement the workflow methods exercised by their test.
-    const turns = services.turns as Parameters<typeof makeJournalConversationWorkflow>[1]
-    conversations.push(makeJournalConversationWorkflow(journal, turns, config?.UI_BASE_URL ?? ""))
+    const turns = services.turns as Parameters<typeof createJournalConversationWorkflow>[1]
+    conversations.push(createJournalConversationWorkflow(journal, turns, config?.UI_BASE_URL ?? ""))
   }
   if (services?.reminders !== undefined && services.conversations !== undefined) {
     // SAFETY: The focused doubles implement the workflow methods exercised by their test.
-    const source = services.conversations as Parameters<typeof makeReminderConversationWorkflow>[0]
+    const source = services.conversations as Parameters<
+      typeof createReminderConversationWorkflow
+    >[0]
     // SAFETY: The focused doubles implement the workflow methods exercised by their test.
-    const reminders = services.reminders as Parameters<typeof makeReminderConversationWorkflow>[1]
-    conversations.push(makeReminderConversationWorkflow(source, reminders))
+    const reminders = services.reminders as Parameters<typeof createReminderConversationWorkflow>[1]
+    conversations.push(createReminderConversationWorkflow(source, reminders))
   }
   // SAFETY: A focused test double implements every member exercised by its test.
   const layer = Layer.mergeAll(
@@ -181,7 +183,7 @@ export function testFixture<
     "services" in value && !("profile" in value)
       ? {
           profile: transitionalDeploymentProfile,
-          modules: makeRuntimeModules({ conversations }),
+          modules: createRuntimeModules({ conversations }),
           layer,
           runtime: {
             runPromise: <A, E, R>(effect: Effect.Effect<A, E, R>) => {

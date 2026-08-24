@@ -1,7 +1,7 @@
 # Bob context
 
 Status: product and architecture context  
-Updated: 2026-08-23
+Updated: 2026-08-24
 
 ## Product
 
@@ -26,7 +26,8 @@ Bob keeps explicit and bounded authority as its capability grows.
 
 Bob uses iMessage as the stable conversation interface.
 
-Bob uses the private UI for setup, review, recovery, and consequential approvals.
+Bob uses the private UI for setup, review, recovery, and consequential approvals. Bob also exposes the canonical
+private owner API to approved automation clients through a machine-authentication boundary.
 
 Bob learns owner preferences from explicit statements and corrections.
 
@@ -98,7 +99,8 @@ Package projects follow the system map:
 - `packages/core/types` owns the provider-neutral Core Module Interface.
 - `packages/core/service` owns reusable Core workflows and the provider-neutral Core Layer builder.
 - `apps/core` selects one Deployment Profile and Adapter set. It owns the Managed Runtime, hosting
-  entrypoints, and process lifecycle.
+  entrypoints, process lifecycle, and the bundled maintenance entrypoint used by Core project image jobs. Its HTTP
+  entrypoint keeps shared transport concerns, while feature route Adapters live under `apps/core/src/http`.
 - `apps/channel` owns the Sendblue Channel Adapter, wire schemas, workflows, Effect Layers, hosting
   entrypoints, and process lifecycle.
 - `packages/<runtime-system>/types` owns one provider-neutral Runtime Interface.
@@ -111,7 +113,8 @@ Package projects follow the system map:
 - `packages/agent/service` owns the model loop and reviewed Model SDK Adapters.
 - `apps/agent-worker` composes the Agent Module with one model SDK and credential Adapter.
 - `packages/application/agent-runs` owns Agent Run state, attempts, leases, checkpoints, and outboxes.
-- `packages/runtime-control/types` owns the Runtime release contract and content-free observations.
+- `packages/runtime-control/types` owns the Runtime release contract, maintenance job contract, and content-free
+  observations.
 - A `runtime` project can depend on its matching `types` project. A `types` project never depends on
   its matching `runtime` project.
 - An Application Module `service` project can depend on its matching `types` project. An Application
@@ -190,6 +193,10 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Scheduled recovery:** Independent repair phases that continue after one item fails.
 - **Production release:** One immutable bundle of a reviewed source revision, configuration revision, and runtime artifacts.
 - **Production data inspector:** A bounded Runtime read Interface for operational metadata and owner-authorized message reads.
+- **Machine-authenticated owner API:** The canonical private Core Runtime API used by browser clients and approved
+  automation clients. Machine credentials do not create agent-specific resource routes.
+- **Machine API credential:** One OpenBao-projected bearer credential with an explicit, fixed Owner scope for message
+  reads.
 - **Acknowledged:** The owner confirms seeing one reminder occurrence.
 - **Completed:** The owner confirms finishing one task.
 - **Snoozed:** One occurrence closes and a linked successor is created.
@@ -209,6 +216,13 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - **Owner Run Coordination:** Core Runtime behavior that accepts owner turns and schedules durable wakes.
 - **Scheduler:** Periodic work and recovery triggers behind a provider-neutral Interface.
 - **Runtime Adapter:** One hosting-specific Implementation of a Runtime Interface.
+- **Runtime Target:** Provider-neutral identity and placement metadata for one Runtime Cluster. It names the
+  environment, region, provider Adapter, Deployment Profile, access-policy reference, and configuration source.
+  It stores references and provenance, not secrets.
+- **Maintenance execution context:** The selected Runtime Target and the environment, Deployment Profile, release,
+  Core project image, and execution identity resolved for one maintenance process.
+- **Maintenance job:** One short-lived provider job or pod that runs one reviewed maintenance command inside a
+  target Runtime Cluster.
 
 ## System invariants
 
@@ -225,6 +239,10 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Better Auth owns the `auth_user`, `auth_session`, `auth_account`, `auth_verification`, and `auth_rate_limit` tables.
 - A one-time setup token protects owner setup in the primary Runtime.
 - Better Auth sessions protect owner API routes.
+- Machine-authenticated owner API reads use a dedicated bearer credential and never accept an Owner scope from the
+  caller.
+- Machine-authenticated message reads use the same `/api/production-data/messages` route and ConversationStore
+  Interface as the browser client for one configured Owner. They remain bounded.
 - The owner record is authoritative for live locality settings.
 - A locality change affects new requests. An installed scheduling Module keeps saved schedules stable.
 - Core Runtime coordinates owner-turn acceptance and scheduled wake-ups through Redis jobs.
@@ -260,9 +278,26 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - PostgreSQL is authoritative for Agent Run state. BullMQ only carries replay-safe work pointers.
 - Coolify and the Control Plane manage Runtime deployment, health, backups, and release metadata. They do not own or query Owner data.
 - The operator production data inspector uses a dedicated caller secret and returns bounded metadata only. It never returns ciphertext, private payloads, provider handles, or arbitrary SQL results.
-- Owner message content is available only through a Better Auth owner session and a bounded time window. Operator authorization cannot substitute for owner authorization.
+- Owner API message content is available through the same `/api/production-data/messages` route with either a Better Auth
+  owner session or the scoped machine credential, with a bounded time window. The direct maintenance content command is
+  a separate, explicit owner-scoped operator action with a bounded query; its approval value is a guardrail, not an
+  owner session.
 - Production data inspection queries stay in the owning Application Module. They use PostgreSQL as the authoritative source and do not infer records from telemetry.
 - Root maintenance commands use Ink for terminal presentation and a statically reviewed TypeScript registry. They do not load runtime plugins or execute arbitrary shell commands.
+- The root maintenance runtime composes selected Database and Application Module Interfaces directly. It does not depend on Core HTTP routes.
+- Maintenance migrations use the shared Database Module migration program. They do not duplicate migration SQL or create a second migration registry.
+- Production maintenance runs as a short-lived job or pod inside the target Runtime Cluster. It does not use a local database tunnel.
+- Every maintenance job carries an explicit Runtime Target, resolved Deployment Profile and release, execution ID, and immutable image digest.
+- The Control Plane snapshots the resolved Runtime Target into the maintenance Operation. A provider Adapter does not query Terraform, a cloud API, or the Control Plane during job execution.
+- The Core project image source for maintenance is recorded as the current Runtime release, an exact-commit build, or a pinned reviewed image.
+- A maintenance job uses the Core project image and cannot use a mutable image tag or a different project image.
+- Flagged maintenance commands send only the selected Runtime Target context and image choice through the private Control Plane API. The Control Plane resolves the target's explicit environment, region, provider Adapter, Deployment Profile, and release, stores content-free job metadata, and the assigned Runner creates the provider job.
+- Runtime Target records are the Control Plane seam for Terraform or another infrastructure publisher. The publisher may update desired target metadata through the Control Plane; the maintenance CLI never reads Terraform state or provider credentials.
+- In the current v1 contract, one Runtime Target is embedded in its Runtime Cluster specification and its identifier aliases the cluster identifier. The `/v1/runtime-targets/:id` projection preserves a future seam for a separate target registry.
+- A future PIM flow may authorize access against a Runtime Target access-policy reference. PIM does not define the target, environment, or provider placement.
+- Runtime Target records contain references and provenance only. Secret values remain in the Runtime Cluster's OpenBao projection.
+- Target names are identifiers. The Control Plane never infers environment or Deployment Profile from a name such as `prod-eu`.
+- Agent execution uses the same command names as the human path. It does not depend on the Bob UI, a browser terminal, or a Coolify terminal.
 - Queue delivery does not grant Agent Run authority.
 - One active Agent Run attempt holds one renewable Database lease and monotonic fence.
 - A stale Agent Run attempt cannot checkpoint, call a Tool, or record an outcome.
@@ -301,6 +336,8 @@ Bob does not expose shell, browser, filesystem, or arbitrary MCP tools.
 - Provider-specific runtime logic stays in its runnable app unless two apps reuse the same Adapter.
 - A Layer can provide a hosting-owned Adapter when the hosting boundary must also use that Adapter.
 - The Core app owns the scoped PostgreSQL Layer and closes its pool during app shutdown.
+- The Core HTTP entrypoint owns path classification, caller authentication, Runtime composition, and final error
+  mapping. Product route Adapters call Application Module Interfaces and do not own domain policy or database queries.
 - Drizzle owns application schemas and queries. Better Auth uses the selected Database Adapter for auth tables.
 - Application Drizzle queries use the native Effect PostgreSQL driver.
 - Atomic query groups use the Effect SQL transaction context.

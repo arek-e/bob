@@ -1,13 +1,13 @@
 import { memoryCapability } from "@bob/memory-types/capability"
 import { reminderCapability } from "@bob/reminders-types/capability"
-import { makeCapabilityCatalogue } from "@bob/tools-types/catalogue"
+import { createCapabilityCatalogue } from "@bob/tools-types/catalogue"
 import { trainingCapability } from "@bob/training-types/capability"
 import { describe, expect, it } from "vitest"
 
 import { agentRunSpanCode, featureForTools, tokenBudgetState } from "../src/attribution.ts"
 import { parseHealthEvent } from "../src/events.ts"
 
-const transitionalDeploymentProfile = makeCapabilityCatalogue("telemetry-test", [
+const transitionalDeploymentProfile = createCapabilityCatalogue("telemetry-test", [
   reminderCapability,
   memoryCapability,
   trainingCapability

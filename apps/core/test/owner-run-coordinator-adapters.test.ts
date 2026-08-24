@@ -4,8 +4,8 @@ import type { PublishJobOptions } from "@bob/job-queue-types"
 import { describe, expect, it, vi } from "vitest"
 
 import {
-  makeOwnerWakeJobProcessor,
-  makeQueuedOwnerRunCoordinator,
+  createOwnerWakeJobProcessor,
+  createQueuedOwnerRunCoordinator,
   repairOwnerWakeOutbox
 } from "../src/runtime/run-coordinator.ts"
 
@@ -48,7 +48,7 @@ describe("Compose Owner Run Coordinator Adapter", () => {
   it("accepts runs through the local owner engine", async () => {
     const accept = vi.fn(async () => Response.json({ ok: true }, { status: 202 }))
     const { wakeOutbox } = wakeOutboxFixture()
-    const coordinator = makeQueuedOwnerRunCoordinator({
+    const coordinator = createQueuedOwnerRunCoordinator({
       accept,
       wakeJobs: { publish: vi.fn(async () => undefined) },
       wakeOutbox
@@ -62,7 +62,7 @@ describe("Compose Owner Run Coordinator Adapter", () => {
   it("publishes immediate and delayed durable wake jobs", async () => {
     const publish = vi.fn(async (_job: OwnerWakeJob, _options?: PublishJobOptions) => undefined)
     const { wakeOutbox, rows } = wakeOutboxFixture()
-    const coordinator = makeQueuedOwnerRunCoordinator({
+    const coordinator = createQueuedOwnerRunCoordinator({
       accept: async () => Response.json({ ok: true }),
       wakeJobs: { publish },
       wakeOutbox,
@@ -91,7 +91,7 @@ describe("Compose Owner Run Coordinator Adapter", () => {
   it("completes a wake job only after the owner engine runs", async () => {
     const wake = vi.fn(async () => undefined)
     const complete = vi.fn(async () => undefined)
-    const processor = makeOwnerWakeJobProcessor({ wake, complete })
+    const processor = createOwnerWakeJobProcessor({ wake, complete })
     const job = { wakeId: eventId, ownerId, requestedAt: "2026-08-16T10:00:05.000Z" }
 
     await expect(processor.process(job)).resolves.toEqual({ state: "complete" })
