@@ -12,6 +12,9 @@
 .DS_Store
 tmp/
 
+# Local research notes
+docs/research/
+
 .env-flat/
 .varlock/*
 !.varlock/config.json

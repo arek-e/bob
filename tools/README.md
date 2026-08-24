@@ -106,5 +106,3 @@ frames. Commander is the fallback if option parsing grows beyond the local typed
 future need for independently installed plugins. Clack is optional for prompts, but should not share terminal input
 ownership with Ink. Clipanion was rejected because its official repository has no releases and its visible commit
 history is stale for this project.
-
-See [the framework comparison](../docs/research/cli-framework-comparison.md) for primary-source links.
