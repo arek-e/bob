@@ -1,7 +1,7 @@
 import type { DeliveryResult } from "@bob/delivery-types/delivery"
 import type { JobPublisher } from "@bob/job-queue-types"
 
-import { makeQueueBindingJobPublisher } from "@bob/job-queue-runtime/queue-binding"
+import { createQueueBindingJobPublisher } from "@bob/job-queue-runtime/queue-binding"
 import { Context, Effect, Layer, Schema } from "effect"
 
 import type { RuntimeFetcher } from "../runtime.ts"
@@ -33,7 +33,7 @@ export function sendblueEgressLayer(bindings: EgressBindings) {
           config,
           core: bindings.CORE,
           ingress: bindings.INGRESS,
-          deliveryResults: makeQueueBindingJobPublisher(bindings.DELIVERY_RESULT_QUEUE)
+          deliveryResults: createQueueBindingJobPublisher(bindings.DELIVERY_RESULT_QUEUE)
         })
       )
     )

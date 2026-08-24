@@ -1,6 +1,6 @@
 import type { CoreBindings } from "@bob/core-types/bindings"
 
-import { makeCaptureTelemetry } from "@bob/observability"
+import { createCaptureTelemetry } from "@bob/observability"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -92,7 +92,7 @@ describe("Core HTTP telemetry", () => {
       EGRESS_CALLER_SECRET: "e".repeat(64),
       AGENT_CALLER_SECRET: "a".repeat(64)
     })
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -141,7 +141,7 @@ describe("Core HTTP telemetry", () => {
       updatedAt: "2026-08-21T10:00:00.000Z"
     }))
     const recordProviderEvent = vi.fn(async () => [])
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -217,7 +217,7 @@ describe("Core HTTP telemetry", () => {
     )
     const wake = vi.fn(async () => new Response(null, { status: 200 }))
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"

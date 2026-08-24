@@ -35,7 +35,7 @@ export interface AgentRunContinuationDispatcher {
   readonly dispatchPending: (limit?: number) => Promise<AgentRunDispatchResult>
 }
 
-export function makeAgentRunDispatcher(
+export function createAgentRunDispatcher(
   database: CoreDatabase,
   queues: AgentRunQueueProvider,
   options: { readonly now?: () => Date } = {}
@@ -135,7 +135,7 @@ export function makeAgentRunDispatcher(
   }
 }
 
-export function makeAgentRunContinuationDispatcher(
+export function createAgentRunContinuationDispatcher(
   database: CoreDatabase,
   publisher: JobPublisher<AgentRunContinuationJob>,
   options: { readonly now?: () => Date } = {}

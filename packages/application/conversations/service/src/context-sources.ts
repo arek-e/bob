@@ -33,7 +33,7 @@ function sourceDay(value: string): string {
   return value.slice(0, 10)
 }
 
-export function makeConversationContextSources(
+export function createConversationContextSources(
   database: CoreDatabase,
   text: PrivateTextReader,
   options: { readonly itemCharacterBudget?: number } = {}

@@ -20,7 +20,7 @@ export {
   type OwnerDataKeyStoreOptions
 } from "@bob/policy-types/owner-data-key"
 
-export function makeOwnerDataKeyStore(
+export function createOwnerDataKeyStore(
   database: CoreDatabase,
   protection: DataProtection,
   options: OwnerDataKeyStoreOptions

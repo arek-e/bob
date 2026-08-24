@@ -63,7 +63,7 @@ function assertUnique(kind: string, modules: readonly { readonly id: string }[])
   if (new Set(ids).size !== ids.length) throw new Error(`Duplicate ${kind} Module ID`)
 }
 
-export function makeRuntimeModules(input: {
+export function createRuntimeModules(input: {
   readonly conversations?: readonly ConversationWorkflowModule[]
   readonly ownerRoutes?: readonly OwnerRouteModule[]
   readonly scheduledTasks?: readonly ScheduledTaskModule[]
@@ -77,4 +77,4 @@ export function makeRuntimeModules(input: {
   return Object.freeze({ conversations, ownerRoutes, scheduledTasks })
 }
 
-export type RuntimeModules = ReturnType<typeof makeRuntimeModules>
+export type RuntimeModules = ReturnType<typeof createRuntimeModules>

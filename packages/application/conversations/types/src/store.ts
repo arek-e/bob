@@ -33,6 +33,8 @@ export interface ConversationMessageQuery {
   readonly limit: number
 }
 
+export const CONVERSATION_MESSAGE_MAX_LIMIT = 1000
+
 export interface ConversationStoreAdapter {
   bindChannel(input: {
     ownerId: string

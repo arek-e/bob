@@ -32,7 +32,7 @@ export function evidenceDate(value: string): string {
   return `${Number(day)} ${monthLabels[Number(month) - 1] ?? month} ${year}`
 }
 
-export function makeEvidenceSourceRegistry(
+export function createEvidenceSourceRegistry(
   profileId: string,
   adapters: readonly EvidenceSourceAdapter[]
 ): EvidenceSourceRegistry {

@@ -2,7 +2,7 @@ import type { CoreDatabase } from "@bob/db-types"
 import type { DataProtection } from "@bob/policy-types/data-protection"
 import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 
 export interface PrivateTextReader {
   decrypt(
@@ -11,10 +11,10 @@ export interface PrivateTextReader {
   ): Promise<string>
 }
 
-export function makePrivateTextReader(
+export function createPrivateTextReader(
   database: CoreDatabase,
   protection: DataProtection,
-  ownerDataKeys: OwnerDataKeyStoreAdapter = makeOwnerDataKeyStore(database, protection, {
+  ownerDataKeys: OwnerDataKeyStoreAdapter = createOwnerDataKeyStore(database, protection, {
     defaultTimeZone: "UTC"
   })
 ): PrivateTextReader {

@@ -13,7 +13,7 @@ export type {
   ContextSourceRegistry
 } from "@bob/context-types/source"
 
-export function makeContextSourceRegistry(
+export function createContextSourceRegistry(
   profileId: string,
   modules: readonly ContextSourceModule[]
 ): ContextSourceRegistry {

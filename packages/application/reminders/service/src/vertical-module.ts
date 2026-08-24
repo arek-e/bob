@@ -1,16 +1,16 @@
 import type { PreparedVerticalModule, VerticalModule } from "@bob/deployment-profile-types/runtime"
 
-import { makeRuntimeModules } from "@bob/core-types/runtime-module"
+import { createRuntimeModules } from "@bob/core-types/runtime-module"
 import { reminderCapability } from "@bob/reminders-types/capability"
 import { Predicate, Schema } from "effect"
 
-import { makeReminderConversationWorkflow } from "./conversation-workflow.ts"
-import { makeReminderDeliveryTarget } from "./delivery-target.ts"
-import { makeReminderEvidenceSource } from "./evidence-source.ts"
-import { makeReminderOwnerRoutes } from "./owner-routes.ts"
-import { makeReminderScheduledWorkflow } from "./scheduled-workflow.ts"
-import { makeReminderStore } from "./store.ts"
-import { makeReminderToolAdapter } from "./tool-adapter.ts"
+import { createReminderConversationWorkflow } from "./conversation-workflow.ts"
+import { createReminderDeliveryTarget } from "./delivery-target.ts"
+import { createReminderEvidenceSource } from "./evidence-source.ts"
+import { createReminderOwnerRoutes } from "./owner-routes.ts"
+import { createReminderScheduledWorkflow } from "./scheduled-workflow.ts"
+import { createReminderStore } from "./store.ts"
+import { createReminderToolAdapter } from "./tool-adapter.ts"
 
 const Configuration = Schema.Struct({
   REMINDER_CLOCK: Schema.Struct({ fetch: Schema.optionalKey(Schema.Any) }),
@@ -36,7 +36,7 @@ export const reminderVerticalModule: VerticalModule = {
     }
     // SAFETY: The configuration schema checks the clock object, and Predicate checks its fetch member.
     const config = { ...parsed, REMINDER_CLOCK: parsed.REMINDER_CLOCK as ReminderClock }
-    const reminders = makeReminderStore(context.database, context.protection, {
+    const reminders = createReminderStore(context.database, context.protection, {
       quietHours: {
         start: config.REMINDER_QUIET_HOURS_START,
         end: config.REMINDER_QUIET_HOURS_END,
@@ -49,21 +49,21 @@ export const reminderVerticalModule: VerticalModule = {
     return {
       id: reminderCapability.id,
       capability: reminderCapability,
-      evidenceSources: [makeReminderEvidenceSource(context.database, context.protection)],
+      evidenceSources: [createReminderEvidenceSource(context.database, context.protection)],
       legacyArtifactReaders: [],
-      deliveryTargets: [makeReminderDeliveryTarget(context.database)],
-      runtimeModules: makeRuntimeModules({
-        conversations: [makeReminderConversationWorkflow(context.conversations, reminders)],
-        ownerRoutes: [makeReminderOwnerRoutes(reminders)],
+      deliveryTargets: [createReminderDeliveryTarget(context.database)],
+      runtimeModules: createRuntimeModules({
+        conversations: [createReminderConversationWorkflow(context.conversations, reminders)],
+        ownerRoutes: [createReminderOwnerRoutes(reminders)],
         scheduledTasks: [
-          makeReminderScheduledWorkflow({
+          createReminderScheduledWorkflow({
             clock: config.REMINDER_CLOCK,
             database: context.database,
             reminders
           })
         ]
       }),
-      toolAdapters: [makeReminderToolAdapter(reminders)]
+      toolAdapters: [createReminderToolAdapter(reminders)]
     }
   }
 }

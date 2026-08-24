@@ -17,7 +17,7 @@ export interface AgentExperienceRegistry {
  * Agent experience has a review-only composition path.
  * It cannot enter the Owner fact proposal or confirmation workflow.
  */
-export function makeAgentExperienceRegistry(
+export function createAgentExperienceRegistry(
   profileId: string,
   entries: readonly ReviewedAgentExperience[]
 ): AgentExperienceRegistry {

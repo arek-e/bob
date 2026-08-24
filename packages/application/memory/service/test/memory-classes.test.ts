@@ -1,6 +1,6 @@
-import { makeAgentExperienceRegistry } from "@bob/memory-service/agent-experience"
-import { makeEvidenceSourceRegistry } from "@bob/memory-service/evidence"
-import { makeReviewedSkillRegistry } from "@bob/skills-service/registry"
+import { createAgentExperienceRegistry } from "@bob/memory-service/agent-experience"
+import { createEvidenceSourceRegistry } from "@bob/memory-service/evidence"
+import { createReviewedSkillRegistry } from "@bob/skills-service/registry"
 import { describe, expect, it } from "vitest"
 
 describe("Memory class Modules", () => {
@@ -10,15 +10,15 @@ describe("Memory class Modules", () => {
       sourceTypes: ["record"],
       verify: async () => undefined
     }
-    expect(() => makeEvidenceSourceRegistry("core", [adapter, adapter])).toThrow("Duplicate")
-    const registry = makeEvidenceSourceRegistry("core", [adapter])
+    expect(() => createEvidenceSourceRegistry("core", [adapter, adapter])).toThrow("Duplicate")
+    const registry = createEvidenceSourceRegistry("core", [adapter])
     await expect(
       registry.verify({ ownerId: "owner", sourceType: "unknown", sourceId: "source" })
     ).rejects.toThrow("not supported")
   })
 
   it("composes a core-only evidence profile without Vertical Adapters", () => {
-    const registry = makeEvidenceSourceRegistry("core", [
+    const registry = createEvidenceSourceRegistry("core", [
       { id: "conversation", sourceTypes: ["message"], verify: async () => undefined }
     ])
     expect(registry.profileId).toBe("core")
@@ -28,7 +28,7 @@ describe("Memory class Modules", () => {
 
   it("keeps Agent experience behind review evidence", () => {
     expect(() =>
-      makeAgentExperienceRegistry("core", [
+      createAgentExperienceRegistry("core", [
         {
           id: "retry-outcome",
           version: 1,
@@ -40,11 +40,11 @@ describe("Memory class Modules", () => {
         }
       ])
     ).toThrow("lacks review evidence")
-    expect(makeAgentExperienceRegistry("core", []).entries).toEqual([])
+    expect(createAgentExperienceRegistry("core", []).entries).toEqual([])
   })
 
   it("keeps reviewed Skills immutable and without Tool authority", () => {
-    const registry = makeReviewedSkillRegistry("core", [
+    const registry = createReviewedSkillRegistry("core", [
       {
         id: "summarize",
         version: 1,

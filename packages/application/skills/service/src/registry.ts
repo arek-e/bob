@@ -3,7 +3,7 @@ import type { ReviewedSkill, ReviewedSkillRegistry } from "@bob/skills-types/ski
 export type { ReviewedSkill, ReviewedSkillRegistry } from "@bob/skills-types/skill"
 
 /** Skills are immutable reviewed instructions. This Interface has no mutation or Tool authority. */
-export function makeReviewedSkillRegistry(
+export function createReviewedSkillRegistry(
   profileId: string,
   skills: readonly ReviewedSkill[]
 ): ReviewedSkillRegistry {

@@ -5,7 +5,7 @@ import { Schema } from "effect"
 
 import type { TrainingModule } from "./module.ts"
 
-export function makeTrainingOwnerRoutes(training: TrainingModule): OwnerRouteModule {
+export function createTrainingOwnerRoutes(training: TrainingModule): OwnerRouteModule {
   return {
     id: "training-owner-routes",
     async handle(context) {

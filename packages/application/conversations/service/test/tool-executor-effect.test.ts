@@ -5,13 +5,13 @@ import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 import type { ToolCommandAdapter } from "@bob/tools-types/adapter"
 import type { ToolResult } from "@bob/tools-types/tools"
 
-import { makeCaptureTelemetry, withBobSpan } from "@bob/observability"
-import { makeToolAdapterRegistry } from "@bob/tools-service/registry"
-import { makeCapabilityCatalogue } from "@bob/tools-types/catalogue"
+import { createCaptureTelemetry, withBobSpan } from "@bob/observability"
+import { createToolAdapterRegistry } from "@bob/tools-service/registry"
+import { createCapabilityCatalogue } from "@bob/tools-types/catalogue"
 import { Context, Effect, Option } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
-import { makeToolExecutor } from "../src/tool-executor.ts"
+import { createToolExecutor } from "../src/tool-executor.ts"
 
 const runId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba0"
 const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1dba1"
@@ -191,18 +191,18 @@ describe("Effect-native durable Tool execution", () => {
             } satisfies ToolResult
           })
       }
-      const catalogue = makeCapabilityCatalogue("test", [capability])
-      const executor = makeToolExecutor(
+      const catalogue = createCapabilityCatalogue("test", [capability])
+      const executor = createToolExecutor(
         database,
         protection,
-        makeToolAdapterRegistry(catalogue, [adapter]),
+        createToolAdapterRegistry(catalogue, [adapter]),
         {
           now: () => new Date("2026-08-17T10:01:00.000Z"),
           randomUuid: () => "018e6f65-4d55-7a1b-8df4-4ee15ea1dbaf",
           ownerDataKeys
         }
       )
-      const telemetry = makeCaptureTelemetry({
+      const telemetry = createCaptureTelemetry({
         serviceName: "bob-tool-executor-test",
         serviceVersion: "0123456789abcdef0123456789abcdef01234567",
         deploymentEnvironment: "test"
@@ -251,8 +251,8 @@ describe("Effect-native durable Tool execution", () => {
     const execute = vi.fn(() =>
       Effect.succeed({ ok: true, code: "read", message: "Unexpected." } satisfies ToolResult)
     )
-    const catalogue = makeCapabilityCatalogue("test", [capability])
-    const executor = makeToolExecutor(
+    const catalogue = createCapabilityCatalogue("test", [capability])
+    const executor = createToolExecutor(
       scriptedDatabase([
         [
           {
@@ -264,7 +264,7 @@ describe("Effect-native durable Tool execution", () => {
         ]
       ]),
       protection,
-      makeToolAdapterRegistry(catalogue, [
+      createToolAdapterRegistry(catalogue, [
         { capabilityId: "test-tools", names: ["test_read"], execute }
       ]),
       { ownerDataKeys }

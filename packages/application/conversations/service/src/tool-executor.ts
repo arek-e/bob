@@ -17,7 +17,7 @@ import {
   toolCalls
 } from "@bob/db-service/schema/conversations"
 import { currentBobCorrelationId, withBobSpan } from "@bob/observability"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { JsonObject } from "@bob/shared-types/json"
 import { executeRegisteredTool } from "@bob/tools-service/registry"
 import {
@@ -225,7 +225,7 @@ export function expiredToolCallOutcome(
   }
 }
 
-export function makeToolExecutor(
+export function createToolExecutor(
   database: CoreDatabase,
   protection: DataProtection,
   registry: ToolAdapterRegistry,
@@ -241,7 +241,7 @@ export function makeToolExecutor(
   const toolLeaseMs = options.toolLeaseMs ?? 60_000
   const ownerDataKeys =
     options.ownerDataKeys ??
-    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
+    createOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
   const isReadOnly = (name: ToolName) => registry.catalogue.isReadOnly(name)
   const mutatingToolNames = registry.catalogue.names.filter((name) => !isReadOnly(name))
 

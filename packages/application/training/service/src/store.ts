@@ -158,7 +158,7 @@ export interface TrainingStore {
 
 export const TrainingStore = Context.Service<TrainingStore>("bob/TrainingStore")
 
-export function makeTrainingStore(
+export function createTrainingStore(
   database: CoreDatabase,
   options: { readonly now?: () => Date; readonly randomUuid?: () => string }
 ): TrainingStore {

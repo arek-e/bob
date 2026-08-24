@@ -17,7 +17,7 @@ import type { TrainingModule } from "./module.ts"
 import { isTrainingMutationTool } from "./proposal-store.ts"
 import { isTrainingMutationRequest } from "./rules.ts"
 
-export function makeTrainingToolAdapter(training: TrainingModule): ToolCommandAdapter {
+export function createTrainingToolAdapter(training: TrainingModule): ToolCommandAdapter {
   return {
     capabilityId: trainingCapability.id,
     names: capabilityToolNames(trainingCapability),

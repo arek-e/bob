@@ -5,7 +5,7 @@ import type { JournalStore } from "./store.ts"
 
 const commands = new Set(["journal", "dagbok"])
 
-export function makeJournalConversationWorkflow(
+export function createJournalConversationWorkflow(
   journal: JournalStore,
   turns: ConversationTurnStoreAdapter,
   uiBaseUrl: string

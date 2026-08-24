@@ -24,7 +24,7 @@ import {
 } from "@bob/agent-runs-types/agent-runs"
 import { agentRunAttempts, agentRunOutbox, agentRuns } from "@bob/db-service/schema/conversations"
 import { allInTransaction } from "@bob/db-types"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { and, eq, sql } from "drizzle-orm"
 import { Effect, Layer, Schema } from "effect"
 
@@ -93,7 +93,7 @@ function preserveInspectError(operation: string, cause: unknown): AgentRunInspec
   return unavailable(operation, cause)
 }
 
-export function makeAgentRuns(
+export function createAgentRuns(
   database: CoreDatabase,
   protection: DataProtection,
   options: {
@@ -106,7 +106,7 @@ export function makeAgentRuns(
   const randomUuid = options.randomUuid ?? (() => crypto.randomUUID())
   const ownerDataKeys =
     options.ownerDataKeys ??
-    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
+    createOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
 
   async function loadByIdempotency(ownerId: string, idempotencyKey: string) {
     const [row] = await Effect.runPromise(

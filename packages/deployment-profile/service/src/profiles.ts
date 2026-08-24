@@ -7,7 +7,7 @@ import type {
 import type { CapabilityCatalogue } from "@bob/tools-types/tools"
 
 import { connectionsVerticalModule } from "@bob/connections-service/vertical-module"
-import { makeRuntimeModules } from "@bob/core-types/runtime-module"
+import { createRuntimeModules } from "@bob/core-types/runtime-module"
 import {
   coreDeploymentProfile,
   transitionalDeploymentProfile
@@ -35,7 +35,7 @@ function prepareVerticalModules(
       prepared.flatMap((module) => module.legacyArtifactReaders)
     ),
     deliveryTargets: Object.freeze(prepared.flatMap((module) => module.deliveryTargets)),
-    runtimeModules: makeRuntimeModules({
+    runtimeModules: createRuntimeModules({
       conversations: prepared.flatMap((module) => module.runtimeModules.conversations),
       ownerRoutes: prepared.flatMap((module) => module.runtimeModules.ownerRoutes),
       scheduledTasks: prepared.flatMap((module) => module.runtimeModules.scheduledTasks)
@@ -44,7 +44,7 @@ function prepareVerticalModules(
   })
 }
 
-function makeRuntimeProfile(
+function createRuntimeProfile(
   catalogue: CapabilityCatalogue,
   selectedVerticalModules: readonly VerticalModule[]
 ): CoreDeploymentProfile {
@@ -64,7 +64,7 @@ function makeRuntimeProfile(
   })
 }
 
-export const coreRuntimeProfile = makeRuntimeProfile(coreDeploymentProfile, [])
+export const coreRuntimeProfile = createRuntimeProfile(coreDeploymentProfile, [])
 
 const transitionalVerticalModules = Object.freeze([
   reminderVerticalModule,
@@ -73,7 +73,7 @@ const transitionalVerticalModules = Object.freeze([
   connectionsVerticalModule
 ])
 
-export const transitionalRuntimeProfile = makeRuntimeProfile(
+export const transitionalRuntimeProfile = createRuntimeProfile(
   transitionalDeploymentProfile,
   transitionalVerticalModules
 )

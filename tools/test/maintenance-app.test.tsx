@@ -2,12 +2,60 @@ import { render } from "ink-testing-library"
 import React from "react"
 import { describe, expect, it } from "vitest"
 
+import type { MaintenanceRuntime } from "../maintenance/runtime.js"
+
 import { MaintenanceApp } from "../maintenance/app.js"
 import { summarizeActivityCommand } from "../maintenance/production-data.js"
+
+const contextEnvironment = {
+  BOB_MAINTENANCE_ENVIRONMENT: "development",
+  BOB_MAINTENANCE_CLUSTER_ID: "local",
+  BOB_MAINTENANCE_DEPLOYMENT_PROFILE_ID: "core",
+  BOB_MAINTENANCE_MODE: "local"
+} satisfies NodeJS.ProcessEnv
 
 type InkTestInstance = {
   readonly lastFrame: () => string | undefined
   readonly unmount: () => void
+}
+
+function testRuntime(): MaintenanceRuntime {
+  return {
+    executionContext: {
+      schemaVersion: "bob.maintenance-context.v1",
+      environment: "development",
+      clusterId: "local",
+      deploymentProfileId: "core",
+      mode: "local"
+    },
+    productionData: {
+      summary: async (query) => ({
+        from: query.from,
+        to: query.to,
+        totalMessages: 2,
+        totalOwners: 1,
+        totalAgentRuns: 1,
+        totalToolCalls: 0,
+        messageDirections: [],
+        inboundEventStates: [],
+        agentRunStates: [],
+        deliveryStates: [],
+        toolCallStates: [],
+        owners: []
+      }),
+      workflow: async (correlationId) => ({
+        correlationId,
+        inboundEvents: [],
+        agentRuns: [],
+        outboxMessages: [],
+        deliveryAttempts: [],
+        toolCalls: []
+      })
+    },
+    getConversations: async () => ({ listMessages: async () => [] }),
+    migrate: async () => {},
+    dispose: async () => {}
+  }
 }
 
 async function waitForOutput(
@@ -29,20 +77,17 @@ describe("MaintenanceApp", () => {
       <MaintenanceApp
         argv={["summarize-activity"]}
         commands={[summarizeActivityCommand]}
-        env={{
-          BOB_PRODUCTION_CORE_URL: "https://core.example",
-          PRODUCTION_DATA_INSPECTOR_TOKEN: "t".repeat(32)
-        }}
-        fetchImplementation={async () => new Response(JSON.stringify({ messageCount: 2 }))}
+        env={contextEnvironment}
+        createRuntime={async () => testRuntime()}
         onComplete={(code) => {
           exitCode = code
         }}
       />
     )
 
-    const frame = await waitForOutput(app, (value) => value.includes('"messageCount": 2'))
+    const frame = await waitForOutput(app, (value) => value.includes('"totalMessages": 2'))
 
-    expect(frame).toContain('"messageCount": 2')
+    expect(frame).toContain('"totalMessages": 2')
     expect(exitCode).toBe(0)
     app.unmount()
   })
@@ -53,17 +98,19 @@ describe("MaintenanceApp", () => {
       <MaintenanceApp
         argv={["summarize-activity"]}
         commands={[summarizeActivityCommand]}
-        env={{ BOB_PRODUCTION_CORE_URL: "https://core.example" }}
-        fetchImplementation={async () => new Response("{}")}
+        env={contextEnvironment}
+        createRuntime={async () => {
+          throw new Error("database unavailable")
+        }}
         onComplete={(code) => {
           exitCode = code
         }}
       />
     )
 
-    const frame = await waitForOutput(app, (value) => value.includes("Inspector token is missing"))
+    const frame = await waitForOutput(app, (value) => value.includes("Maintenance command failed"))
 
-    expect(frame).toContain("Inspector token is missing or invalid")
+    expect(frame).toContain("Maintenance command failed")
     expect(exitCode).toBe(1)
     app.unmount()
   })

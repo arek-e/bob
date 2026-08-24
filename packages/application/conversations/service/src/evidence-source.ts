@@ -8,7 +8,7 @@ import { evidenceDate } from "@bob/memory-service/evidence"
 import { and, eq } from "drizzle-orm"
 import { Effect } from "effect"
 
-export function makeConversationEvidenceSource(
+export function createConversationEvidenceSource(
   database: CoreDatabase,
   text: PrivateTextReader,
   protection: DataProtection

@@ -7,7 +7,7 @@ import { evidenceDate } from "@bob/memory-service/evidence"
 import { and, eq } from "drizzle-orm"
 import { Effect } from "effect"
 
-export function makeReminderEvidenceSource(
+export function createReminderEvidenceSource(
   database: CoreDatabase,
   protection: DataProtection
 ): EvidenceSourceAdapter {

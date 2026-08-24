@@ -12,7 +12,7 @@ import { completeJob } from "@bob/job-queue-types"
 import { and, eq, ne } from "drizzle-orm"
 import { Effect } from "effect"
 
-export function makeHandlerOwnerRunCoordinator(input: {
+export function createHandlerOwnerRunCoordinator(input: {
   readonly run: (request: OwnerRunRequest) => Promise<Response>
   readonly wake: (request: OwnerWakeRequest) => Promise<void>
 }): OwnerRunCoordinator {
@@ -33,7 +33,7 @@ export interface OwnerWakeOutboxPort {
   >
 }
 
-export function makePostgresqlOwnerWakeOutbox(
+export function createPostgresqlOwnerWakeOutbox(
   database: CoreAdapters["applicationStorage"]
 ): OwnerWakeOutboxPort {
   return {
@@ -80,14 +80,14 @@ export function makePostgresqlOwnerWakeOutbox(
   }
 }
 
-export function makeQueuedOwnerRunCoordinator(input: {
+export function createQueuedOwnerRunCoordinator(input: {
   readonly accept: (request: OwnerRunRequest) => Promise<Response>
   readonly wakeJobs: JobPublisher<OwnerWakeJob>
   readonly wakeOutbox: OwnerWakeOutboxPort
   readonly now?: () => Date
 }): OwnerRunCoordinator {
   const now = input.now ?? (() => new Date())
-  return makeHandlerOwnerRunCoordinator({
+  return createHandlerOwnerRunCoordinator({
     run: input.accept,
     async wake(request) {
       const current = now()
@@ -113,7 +113,7 @@ export function makeQueuedOwnerRunCoordinator(input: {
   })
 }
 
-export function makeOwnerWakeJobProcessor(input: {
+export function createOwnerWakeJobProcessor(input: {
   readonly wake: (job: OwnerWakeJob) => Promise<void>
   readonly complete: (wakeId: string) => Promise<void>
 }): JobProcessor<OwnerWakeJob> {

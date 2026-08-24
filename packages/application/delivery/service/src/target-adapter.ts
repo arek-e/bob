@@ -7,7 +7,7 @@ export type {
   DeliveryTargetRegistry
 } from "@bob/delivery-types/target"
 
-export function makeDeliveryTargetRegistry(
+export function createDeliveryTargetRegistry(
   adapters: readonly DeliveryTargetAdapter[] = []
 ): DeliveryTargetRegistry {
   const byType = new Map<string, DeliveryTargetAdapter>()

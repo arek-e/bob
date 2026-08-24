@@ -11,24 +11,24 @@ import type {
 } from "@bob/tools-types/adapter"
 import type { TrainingModule } from "@bob/training-service/module"
 
-import { makeConnectionsToolAdapter } from "@bob/connections-service/tool-adapter"
+import { createConnectionsToolAdapter } from "@bob/connections-service/tool-adapter"
 import { expiredToolCallOutcome } from "@bob/conversations-service/tool-executor"
 import {
   coreDeploymentProfile,
   transitionalDeploymentProfile
 } from "@bob/deployment-profile-types/profiles"
-import { makeJournalToolAdapter } from "@bob/journal-service/tool-adapter"
-import { makeMemoryToolAdapter } from "@bob/memory-service/tool-adapter"
-import { makeReminderToolAdapter } from "@bob/reminders-service/tool-adapter"
-import { makeSettingsToolAdapter } from "@bob/settings-service/tool-adapter"
-import { makeToolAdapterRegistry } from "@bob/tools-service/registry"
+import { createJournalToolAdapter } from "@bob/journal-service/tool-adapter"
+import { createMemoryToolAdapter } from "@bob/memory-service/tool-adapter"
+import { createReminderToolAdapter } from "@bob/reminders-service/tool-adapter"
+import { createSettingsToolAdapter } from "@bob/settings-service/tool-adapter"
+import { createToolAdapterRegistry } from "@bob/tools-service/registry"
 import {
   capabilityToolNames,
   type CapabilityModule,
   type ToolCommand,
   type ToolName
 } from "@bob/tools-types/tools"
-import { makeTrainingToolAdapter } from "@bob/training-service/tool-adapter"
+import { createTrainingToolAdapter } from "@bob/training-service/tool-adapter"
 import { Effect, Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
@@ -86,7 +86,7 @@ describe("domain-owned Tool command Adapters", () => {
   }
 
   it("composes a core registry without a Training Adapter", () => {
-    const registry = makeToolAdapterRegistry(
+    const registry = createToolAdapterRegistry(
       coreDeploymentProfile,
       coreDeploymentProfile.modules.map(adapterFor)
     )
@@ -96,12 +96,14 @@ describe("domain-owned Tool command Adapters", () => {
   })
 
   it("rejects missing and unselected Adapters", () => {
-    expect(() => makeToolAdapterRegistry(coreDeploymentProfile, [])).toThrow("Missing Tool Adapter")
+    expect(() => createToolAdapterRegistry(coreDeploymentProfile, [])).toThrow(
+      "Missing Tool Adapter"
+    )
     const training = transitionalDeploymentProfile.modules.find(
       (module) => module.id === "training"
     )
     expect(training).toBeDefined()
-    expect(() => makeToolAdapterRegistry(coreDeploymentProfile, [adapterFor(training!)])).toThrow(
+    expect(() => createToolAdapterRegistry(coreDeploymentProfile, [adapterFor(training!)])).toThrow(
       "is not in profile core"
     )
   })
@@ -120,7 +122,7 @@ describe("domain-owned Tool command Adapters", () => {
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const reminders = testFixture<ReminderStore>({ list: vi.fn().mockResolvedValue([]) })
     const result = await executeTool(
-      makeReminderToolAdapter(reminders),
+      createReminderToolAdapter(reminders),
       commandContext("reminder_list", {})
     )
 
@@ -137,7 +139,7 @@ describe("domain-owned Tool command Adapters", () => {
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const training = testFixture<TrainingModule>({ proposeTraining })
     const result = await executeTool(
-      makeTrainingToolAdapter(training),
+      createTrainingToolAdapter(training),
       commandContext("gym_create", { name: "Home gym" }, "Please create a gym called Home gym.")
     )
 
@@ -161,7 +163,7 @@ describe("domain-owned Tool command Adapters", () => {
     })
     const excludeFromContext = vi.fn().mockResolvedValue(true)
     const result = await executeTool(
-      makeJournalToolAdapter(
+      createJournalToolAdapter(
         journal,
         { excludeFromContext },
         { uiBaseUrl: "https://bob.example.invalid" }
@@ -181,7 +183,7 @@ describe("domain-owned Tool command Adapters", () => {
     const createHandoff = vi.fn()
     const journal = testFixture<JournalStore>({ createHandoff })
     const result = await executeTool(
-      makeJournalToolAdapter(
+      createJournalToolAdapter(
         journal,
         { excludeFromContext: vi.fn().mockResolvedValue(false) },
         { uiBaseUrl: "https://bob.example.invalid" }
@@ -205,7 +207,7 @@ describe("domain-owned Tool command Adapters", () => {
     })
     const retrieval = testFixture<RetrievalPipelineAdapter>({ retrieve })
     const result = await executeTool(
-      makeMemoryToolAdapter(memory, retrieval),
+      createMemoryToolAdapter(memory, retrieval),
       commandContext("memory_search", { query: "gym" })
     )
 
@@ -222,7 +224,7 @@ describe("domain-owned Tool command Adapters", () => {
     })
 
     const result = await executeTool(
-      makeMemoryToolAdapter(memory, retrieval),
+      createMemoryToolAdapter(memory, retrieval),
       commandContext("memory_search", { query: "gym" })
     )
 
@@ -262,7 +264,7 @@ describe("domain-owned Tool command Adapters", () => {
     })
 
     const result = await executeTool(
-      makeMemoryToolAdapter(memory, retrieval),
+      createMemoryToolAdapter(memory, retrieval),
       commandContext("memory_search", { query: "desk" })
     )
 
@@ -300,11 +302,11 @@ describe("domain-owned Tool command Adapters", () => {
     })
 
     const settingsResult = await executeTool(
-      makeSettingsToolAdapter(settings),
+      createSettingsToolAdapter(settings),
       commandContext("settings_get", {})
     )
     const connectionResult = await executeTool(
-      makeConnectionsToolAdapter(connections),
+      createConnectionsToolAdapter(connections),
       commandContext("connection_list", {})
     )
 

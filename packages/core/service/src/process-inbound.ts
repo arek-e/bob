@@ -15,7 +15,7 @@ import { ConversationStore, type ClaimedInbound } from "@bob/conversations-types
 import { ToolExecutor } from "@bob/conversations-types/tool-executor"
 import { ConversationTurnStore } from "@bob/conversations-types/turn-store"
 import { DeliveryStore } from "@bob/delivery-types/store"
-import { makeQueueBindingJobPublisher } from "@bob/job-queue-runtime/queue-binding"
+import { createQueueBindingJobPublisher } from "@bob/job-queue-runtime/queue-binding"
 import {
   featureForTools,
   recordDecision,
@@ -655,7 +655,7 @@ export function processConversationTurnEffect(
             throw new Error("Outbound Job Queue is required")
           }
         }
-      : makeQueueBindingJobPublisher(bindings.OUTBOUND_QUEUE))
+      : createQueueBindingJobPublisher(bindings.OUTBOUND_QUEUE))
   let interactionStop: Effect.Effect<void> = Effect.void
   const process = withBobSpan(
     {

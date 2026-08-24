@@ -7,7 +7,7 @@ import { evidenceDate } from "@bob/memory-service/evidence"
 import { and, eq, isNull } from "drizzle-orm"
 import { Effect } from "effect"
 
-export function makeJournalEvidenceSource(
+export function createJournalEvidenceSource(
   database: CoreDatabase,
   protection: DataProtection
 ): EvidenceSourceAdapter {

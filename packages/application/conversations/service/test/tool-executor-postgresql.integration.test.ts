@@ -4,14 +4,14 @@ import type { OwnerDataKeyStoreAdapter } from "@bob/policy-types/owner-data-key"
 import type { ToolCommandAdapter } from "@bob/tools-types/adapter"
 
 import { PostgresqlDatabase, postgresqlDatabaseLayer } from "@bob/db-service/postgresql"
-import { makeToolAdapterRegistry } from "@bob/tools-service/registry"
-import { makeCapabilityCatalogue } from "@bob/tools-types/catalogue"
+import { createToolAdapterRegistry } from "@bob/tools-service/registry"
+import { createCapabilityCatalogue } from "@bob/tools-types/catalogue"
 import { sql } from "drizzle-orm"
 import { Deferred, Effect, Fiber, ManagedRuntime } from "effect"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
 
-import { makeToolExecutor } from "../src/tool-executor.ts"
+import { createToolExecutor } from "../src/tool-executor.ts"
 
 const databaseUrl = process.env.TEST_DATABASE_URL
 const integration = databaseUrl === undefined ? describe.skip : describe
@@ -143,11 +143,11 @@ integration("PostgreSQL durable Tool execution", () => {
               return { ok: true, code: "read", message: "Done." }
             })
         }
-        const catalogue = makeCapabilityCatalogue("postgres-test", [capability])
-        const executor = makeToolExecutor(
+        const catalogue = createCapabilityCatalogue("postgres-test", [capability])
+        const executor = createToolExecutor(
           database.applicationStorage,
           protection,
-          makeToolAdapterRegistry(catalogue, [adapter]),
+          createToolAdapterRegistry(catalogue, [adapter]),
           { now: () => now, ownerDataKeys }
         )
         const fiber = yield* Effect.forkChild(

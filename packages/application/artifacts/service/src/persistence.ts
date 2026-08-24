@@ -34,7 +34,7 @@ export interface ArtifactPersistence {
   prepareRunRevision(input: ArtifactRunRevisionInput): Promise<ArtifactRunRevisionPlan>
 }
 
-export function makeArtifactPersistence(
+export function createArtifactPersistence(
   database: CoreDatabase,
   protection: DataProtection,
   ownerDataKeys: OwnerDataKeyStoreAdapter,

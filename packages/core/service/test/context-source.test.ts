@@ -1,8 +1,8 @@
 import type { ContextSourceModule } from "@bob/context-types/source"
 
-import { makeContextSourceRegistry } from "@bob/context-service/source"
-import { makeContextStore } from "@bob/context-service/store"
-import { makeRetrievalContextSource } from "@bob/retrieval-service/context-source"
+import { createContextSourceRegistry } from "@bob/context-service/source"
+import { createContextStore } from "@bob/context-service/store"
+import { createRetrievalContextSource } from "@bob/retrieval-service/context-source"
 import { describe, expect, it, vi } from "vitest"
 
 const request = {
@@ -36,29 +36,29 @@ function source(id: string, sourceId = id): ContextSourceModule {
 
 describe("Context source Modules", () => {
   it("preserves reviewed profile order and freezes the registry", () => {
-    const registry = makeContextSourceRegistry("core", [source("first"), source("second")])
+    const registry = createContextSourceRegistry("core", [source("first"), source("second")])
     expect(registry.modules.map(({ id }) => id)).toEqual(["first", "second"])
     expect(Object.isFrozen(registry)).toBe(true)
     expect(Object.isFrozen(registry.modules)).toBe(true)
   })
 
   it("rejects duplicate and unknown source references", () => {
-    expect(() => makeContextSourceRegistry("core", [source("same"), source("same")])).toThrow(
+    expect(() => createContextSourceRegistry("core", [source("same"), source("same")])).toThrow(
       "Duplicate Context source"
     )
     expect(() =>
-      makeContextSourceRegistry("core", [{ ...source("later"), deduplicateAgainst: ["missing"] }])
+      createContextSourceRegistry("core", [{ ...source("later"), deduplicateAgainst: ["missing"] }])
     ).toThrow("unknown source")
   })
 
   it("assembles approved candidates in order and lets earlier sources win", async () => {
     const load = vi.fn(source("first", "shared").load)
-    const registry = makeContextSourceRegistry("core", [
+    const registry = createContextSourceRegistry("core", [
       { ...source("first", "shared"), load },
       { ...source("second", "shared"), deduplicateAgainst: ["first"] },
       source("third")
     ])
-    const context = makeContextStore(registry, { load: async () => [] })
+    const context = createContextStore(registry, { load: async () => [] })
     await expect(context.build(request)).resolves.toMatchObject([
       { text: "first" },
       { text: "third" }
@@ -67,20 +67,20 @@ describe("Context source Modules", () => {
   })
 
   it("fails the complete build when one source fails", async () => {
-    const registry = makeContextSourceRegistry("core", [
+    const registry = createContextSourceRegistry("core", [
       { id: "failed", load: async () => Promise.reject(new Error("source failed")) }
     ])
-    const context = makeContextStore(registry, { load: async () => [] })
+    const context = createContextStore(registry, { load: async () => [] })
     await expect(context.build(request)).rejects.toThrow("source failed")
   })
 
   it("applies whole-item and total budgets without slicing source data", async () => {
-    const registry = makeContextSourceRegistry("core", [
+    const registry = createContextSourceRegistry("core", [
       source("oversized"),
       source("1234"),
       source("ab")
     ])
-    const context = makeContextStore(
+    const context = createContextStore(
       registry,
       { load: async () => [] },
       {
@@ -92,13 +92,13 @@ describe("Context source Modules", () => {
   })
 
   it("composes a core-only source profile without optional Modules", async () => {
-    const registry = makeContextSourceRegistry("core", [source("facts"), source("records")])
-    const context = makeContextStore(registry, { load: async () => [] })
+    const registry = createContextSourceRegistry("core", [source("facts"), source("records")])
+    const context = createContextStore(registry, { load: async () => [] })
     await expect(context.build(request)).resolves.toHaveLength(2)
   })
 
   it("keeps one unresolved retrieval conflict atomic in Context", async () => {
-    const retrieval = makeRetrievalContextSource({
+    const retrieval = createRetrievalContextSource({
       retrieve: async () => ({
         status: "supported",
         candidateCount: 2,

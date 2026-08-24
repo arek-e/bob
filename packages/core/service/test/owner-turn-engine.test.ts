@@ -5,7 +5,7 @@ import { conversationTurnStoreLayer } from "@bob/conversations-service/turn-stor
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
-import { makeOwnerTurnEngine } from "../src/owner-turn-engine.ts"
+import { createOwnerTurnEngine } from "../src/owner-turn-engine.ts"
 import { testFixture } from "./test-fixture.ts"
 
 const eventId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
@@ -23,7 +23,7 @@ describe("OwnerTurnEngine", () => {
       appended: false
     }))
     const turns = testFixture<ConversationTurnStoreAdapter>({ offer })
-    const engine = makeOwnerTurnEngine({
+    const engine = createOwnerTurnEngine({
       schedule,
       process: vi.fn(),
       steer: vi.fn()
@@ -48,7 +48,7 @@ describe("OwnerTurnEngine", () => {
       claimReady,
       nextWakeAt: vi.fn(async () => undefined)
     })
-    const engine = makeOwnerTurnEngine({
+    const engine = createOwnerTurnEngine({
       schedule,
       process,
       steer: vi.fn()

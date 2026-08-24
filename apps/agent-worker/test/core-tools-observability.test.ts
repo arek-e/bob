@@ -1,5 +1,5 @@
 import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
-import { withBobSpan, parseTraceparent, makeCaptureTelemetry } from "@bob/observability"
+import { withBobSpan, parseTraceparent, createCaptureTelemetry } from "@bob/observability"
 import { Effect } from "effect"
 import { describe, expect, it, vi } from "vitest"
 
@@ -137,7 +137,7 @@ describe("agent tool telemetry", () => {
   })
 
   it("propagates the active trace and emits no tool arguments", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent-worker",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"

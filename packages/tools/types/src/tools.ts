@@ -1,7 +1,7 @@
 import { IsoDateTime, JsonObject, NonEmptyText, ShortText, Uuid } from "@bob/shared-types/shared"
 import { Schema } from "effect"
 
-import { CapabilityCatalogueGeneration, makeCapabilityCatalogue } from "./catalogue.ts"
+import { CapabilityCatalogueGeneration, createCapabilityCatalogue } from "./catalogue.ts"
 import { ToolName } from "./definitions.ts"
 
 export const MAX_TOOL_RESULT_BYTES = 32 * 1024
@@ -99,7 +99,7 @@ export type ToolResult = typeof ToolResult.Type
 export type ToolEvidence = typeof ToolEvidence.Type
 
 export { ToolName }
-export { CapabilityCatalogueGeneration, makeCapabilityCatalogue }
+export { CapabilityCatalogueGeneration, createCapabilityCatalogue }
 export type { CapabilityCatalogue } from "./catalogue.ts"
 export type {
   CapabilityFeature,

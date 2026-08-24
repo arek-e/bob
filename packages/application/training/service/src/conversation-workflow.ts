@@ -4,7 +4,7 @@ import type { TrainingModule } from "./module.ts"
 
 import { trainingSafetyResponse, trainingSafetySignal } from "./rules.ts"
 
-export function makeTrainingConversationWorkflow(
+export function createTrainingConversationWorkflow(
   training: TrainingModule
 ): ConversationWorkflowModule {
   return {

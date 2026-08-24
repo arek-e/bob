@@ -22,6 +22,9 @@ Oxfmt owns formatting, import order, Tailwind class order, and `package.json` fi
 
 Oxlint owns correctness rules and import safety. Do not add disable comments to hide a finding.
 
+Bob-owned dependency-injection factories use the `createX` naming pattern. Preserve names defined by external
+libraries, such as `ManagedRuntime.make` and `Schema.makeFilter`.
+
 Tailwind class sorting uses `apps/ui/src/styles/app.css`. It also handles `cn`, `clsx`, and `cva`.
 
 Lefthook formats and lints staged files before each commit. CI remains the authoritative check.

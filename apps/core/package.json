@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --format=cjs --platform=node --target=node22 --outfile=dist/index.cjs && mkdir -p dist/migrations && cp -R ../../packages/db/service/migrations/. dist/migrations",
+    "build": "esbuild src/index.ts --bundle --format=cjs --platform=node --target=node22 --outfile=dist/index.cjs && esbuild ../../tools/cli.tsx --bundle --format=esm --platform=node --target=node22 --banner:js='import { createRequire } from \"node:module\"; const require = createRequire(import.meta.url);' --outfile=dist/maintenance.mjs && esbuild src/maintenance-entrypoint.ts --bundle --format=esm --platform=node --target=node22 --outfile=dist/maintenance-entrypoint.mjs && mkdir -p dist/migrations && cp -R ../../packages/db/service/migrations/. dist/migrations",
     "start": "node dist/index.cjs",
     "typecheck": "tsc -p tsconfig.json"
   },
@@ -30,11 +30,17 @@
     "@bob/settings-types": "workspace:*",
     "@bob/tools-types": "workspace:*",
     "@effect/sql-pg": "4.0.0-beta.107",
+    "@varlock/hashicorp-vault-plugin": "2.1.0",
     "bullmq": "6.1.2",
     "drizzle-orm": "1.0.0-rc.5-ab785fc",
-    "effect": "4.0.0-beta.107"
+    "effect": "4.0.0-beta.107",
+    "varlock": "1.16.1"
   },
   "devDependencies": {
-    "esbuild": "0.25.9"
+    "@bob/conversations-service": "workspace:*",
+    "@bob/operations-service": "workspace:*",
+    "esbuild": "0.25.9",
+    "ink": "7.1.1",
+    "react": "19.2.8"
   }
 }

@@ -22,6 +22,8 @@ export interface GeneralCoreBindings {
   INGRESS_CALLER_SECRET: string
   EGRESS_CALLER_SECRET: string
   PRODUCTION_DATA_INSPECTOR_SECRET: string
+  BOB_HEADLESS_API_KEY: string
+  BOB_HEADLESS_OWNER_ID?: string
   CHANNEL_EGRESS_URL: string
   BETTER_AUTH_SECRET: string
   SETUP_TOKEN: string

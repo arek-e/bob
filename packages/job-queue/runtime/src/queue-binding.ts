@@ -21,7 +21,7 @@ export interface QueueConsumerOptions {
   readonly unexpectedErrorDelayMs: number
 }
 
-export function makeQueueBindingJobPublisher<Job, Result>(
+export function createQueueBindingJobPublisher<Job, Result>(
   queue: QueueBinding<Job, Result>
 ): JobPublisher<Job> {
   return {

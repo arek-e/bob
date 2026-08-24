@@ -301,7 +301,7 @@ export interface CoreJobQueueNames {
   readonly deliveryResultDeadLetter: string
 }
 
-export function makeCoreJobConsumerRoutes(
+export function createCoreJobConsumerRoutes(
   composition: CoreComposition,
   queues: CoreJobQueueNames
 ): readonly JobConsumerRoute[] {

@@ -1,7 +1,7 @@
 import type { CoreBindings } from "@bob/core-types/bindings"
 
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import type { CoreComposition } from "../src/composition.ts"
 
@@ -9,6 +9,61 @@ import { testFixture } from "../../../packages/core/service/test/test-fixture.ts
 import { handleHttp } from "../src/entrypoints/http.ts"
 
 describe("Core HTTP failures", () => {
+  it("allows the normal owner API with the configured machine credential", async () => {
+    const apiKey = "h".repeat(64)
+    const ownerId = "018e6f65-4d55-7a1b-8df4-4ee15ea1db90"
+    const listMessages = vi.fn(async () => [
+      {
+        id: "018e6f65-4d55-7a1b-8df4-4ee15ea1db91",
+        channelId: "channel",
+        direction: "inbound" as const,
+        text: "hello",
+        occurredAt: "2026-08-23T10:00:00.000Z",
+        createdAt: "2026-08-23T10:00:00.000Z"
+      }
+    ])
+    const bindings = testFixture<CoreBindings>({
+      BOB_HEADLESS_API_KEY: apiKey,
+      BOB_HEADLESS_OWNER_ID: ownerId
+    })
+    const composition = testFixture<CoreComposition>({
+      services: { conversations: { listMessages } }
+    })
+    const unauthorized = await handleHttp(
+      new Request("https://core.test/api/production-data/messages?limit=1", {
+        headers: { authorization: "Bearer wrong" }
+      }),
+      bindings,
+      () => composition
+    )
+    const response = await handleHttp(
+      new Request("https://core.test/api/production-data/messages?limit=1", {
+        headers: { authorization: `Bearer ${apiKey}` }
+      }),
+      bindings,
+      () => composition
+    )
+
+    expect(unauthorized.status).toBe(401)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ messages: [{ text: "hello" }] })
+    expect(listMessages).toHaveBeenCalledWith(ownerId, expect.objectContaining({ limit: 1 }))
+  })
+
+  it("does not expose message content when the headless credential has no owner scope", async () => {
+    const apiKey = "h".repeat(64)
+    const response = await handleHttp(
+      new Request("https://core.test/api/production-data/messages", {
+        headers: { authorization: `Bearer ${apiKey}` }
+      }),
+      testFixture<CoreBindings>({ BOB_HEADLESS_API_KEY: apiKey }),
+      () => testFixture<CoreComposition>({ services: {} })
+    )
+
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({ code: "owner_scope_required" })
+  })
+
   it("protects production inspection with its dedicated operator token", async () => {
     const operatorSecret = "o".repeat(64)
     const bindings = testFixture<CoreBindings>({

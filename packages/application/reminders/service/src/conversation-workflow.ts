@@ -18,7 +18,7 @@ const commandAliases = new Map<string, "done" | "seen">([
   ["uppfattat", "seen"]
 ])
 
-export function makeReminderConversationWorkflow(
+export function createReminderConversationWorkflow(
   conversations: ConversationStoreAdapter,
   reminders: ReminderStore
 ): ConversationWorkflowModule {

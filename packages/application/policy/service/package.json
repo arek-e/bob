@@ -8,6 +8,7 @@
     "./data-protection": "./src/data-protection.ts",
     "./degraded-recall": "./src/degraded-recall.ts",
     "./effect-outcome": "./src/effect-outcome.ts",
+    "./headless": "./src/headless.ts",
     "./owner-data-key": "./src/owner-data-key.ts",
     "./rules": "./src/rules.ts",
     "./auth/service": "./src/auth/service.ts"

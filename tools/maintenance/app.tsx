@@ -1,19 +1,25 @@
 import { Box, Text, useApp } from "ink"
 import React, { useEffect, useState } from "react"
 
+import type { MaintenanceExecutionContext } from "./context.js"
+import type { MaintenanceRuntime } from "./runtime.js"
+
 import { runMaintenanceCli, type MaintenanceCommand, type MaintenanceExecution } from "./cli.js"
 
 export function MaintenanceApp({
   argv,
   commands,
   env,
-  fetchImplementation,
+  createRuntime,
   onComplete
 }: {
   readonly argv: readonly string[]
   readonly commands: readonly MaintenanceCommand[]
   readonly env: NodeJS.ProcessEnv
-  readonly fetchImplementation: typeof fetch
+  readonly createRuntime: (
+    env: NodeJS.ProcessEnv,
+    executionContext: MaintenanceExecutionContext
+  ) => Promise<MaintenanceRuntime>
   readonly onComplete: (exitCode: 0 | 1) => void
 }) {
   const [execution, setExecution] = useState<MaintenanceExecution>()
@@ -22,7 +28,7 @@ export function MaintenanceApp({
   useEffect(() => {
     let active = true
 
-    void runMaintenanceCli({ argv, commands, env, fetchImplementation }).then((result) => {
+    void runMaintenanceCli({ argv, commands, env, createRuntime }).then((result) => {
       if (!active) return
       setExecution(result)
       onComplete(result.exitCode)
@@ -31,7 +37,7 @@ export function MaintenanceApp({
     return () => {
       active = false
     }
-  }, [argv, commands, env, fetchImplementation, onComplete])
+  }, [argv, commands, env, createRuntime, onComplete])
 
   useEffect(() => {
     if (execution === undefined) return

@@ -6,7 +6,7 @@ import {
   externalParentFromTraceparent,
   formatTraceparent,
   parseTraceparent,
-  makeCaptureTelemetry
+  createCaptureTelemetry
 } from "@bob/observability"
 import { Effect } from "effect"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -34,7 +34,7 @@ afterEach(() => {
 
 describe("core workflow telemetry", () => {
   it("keeps one safe trace through inbound processing and outbox publish", async () => {
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-core-runtime",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"

@@ -23,7 +23,7 @@ export {
   type PriorToolReceiptSource
 } from "@bob/context-types/store"
 
-export function makeContextStore(
+export function createContextStore(
   registry: ContextSourceRegistry,
   receipts: PriorToolReceiptSource,
   options: {

@@ -116,7 +116,7 @@ function capabilityGenerationView(module: CapabilityModule): typeof Schema.Json.
   })
 }
 
-export function makeCapabilityCatalogue(
+export function createCapabilityCatalogue(
   profileId: DeploymentProfileId,
   modules: readonly CapabilityModule[]
 ): CapabilityCatalogue {

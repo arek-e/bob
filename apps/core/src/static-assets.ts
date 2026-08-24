@@ -31,7 +31,7 @@ interface RuntimeFetcher {
   fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>
 }
 
-export function makeFilesystemAssetFetcher(directory: string): RuntimeFetcher {
+export function createFilesystemAssetFetcher(directory: string): RuntimeFetcher {
   const root = resolve(directory)
   return {
     async fetch(input, init) {

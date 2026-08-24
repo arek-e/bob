@@ -2,18 +2,18 @@ import type { CoreAdapters } from "@bob/core-types/adapters"
 import type { CoreBindings } from "@bob/core-types/bindings"
 
 import {
-  makeAgentRunContinuationDispatcher,
-  makeAgentRunDispatcher
+  createAgentRunContinuationDispatcher,
+  createAgentRunDispatcher
 } from "@bob/agent-runs-service/dispatcher"
 import { AgentRuns } from "@bob/agent-runs-types/agent-runs"
 import { AgentRunContinuationJob } from "@bob/agent-runs-types/worker-gateway"
 import { InboundAcceptance } from "@bob/conversations-types/channel"
 import { ConversationStore } from "@bob/conversations-types/store"
-import { makeOwnerTurnEngine, processConversationTurnEffect } from "@bob/core-service"
+import { createOwnerTurnEngine, processConversationTurnEffect } from "@bob/core-service"
 import { OwnerWakeJob } from "@bob/core-types/jobs"
 import { PostgresqlDatabase, postgresqlDatabaseLayer } from "@bob/db-service/postgresql"
 import { agentRuns } from "@bob/db-service/schema/conversations"
-import { makeBullMqJobPublisher } from "@bob/job-queue-runtime/bullmq"
+import { createBullMqJobPublisher } from "@bob/job-queue-runtime/bullmq"
 import { startBullMqWorkerHost } from "@bob/job-queue-runtime/bullmq-host"
 import { decodeJobProcessor, retryJob } from "@bob/job-queue-types"
 import { filesystemObjectStorageLayer } from "@bob/object-store-runtime/filesystem"
@@ -35,16 +35,16 @@ import { resolve } from "node:path"
 import { composeCore } from "./composition.ts"
 import { readCoreRuntimeConfiguration } from "./configuration.ts"
 import { handleHttp } from "./entrypoints/http.ts"
-import { makeCoreJobConsumerRoutes } from "./entrypoints/queue.ts"
+import { createCoreJobConsumerRoutes } from "./entrypoints/queue.ts"
 import { handleScheduled } from "./entrypoints/scheduled.ts"
 import { webRequest, writeWebResponse } from "./node-http.ts"
 import {
-  makeOwnerWakeJobProcessor,
-  makePostgresqlOwnerWakeOutbox,
-  makeQueuedOwnerRunCoordinator,
+  createOwnerWakeJobProcessor,
+  createPostgresqlOwnerWakeOutbox,
+  createQueuedOwnerRunCoordinator,
   repairOwnerWakeOutbox
 } from "./runtime/run-coordinator.ts"
-import { makeFilesystemAssetFetcher } from "./static-assets.ts"
+import { createFilesystemAssetFetcher } from "./static-assets.ts"
 
 const staticQueueNames = {
   inbound: "bob-inbound",
@@ -102,28 +102,28 @@ async function main(): Promise<void> {
   const agentRunQueue = new Queue(queueNames.agentRun, queueOptions)
   const agentRunContinuationQueue = new Queue(queueNames.agentRunContinuation, queueOptions)
   const jobQueue = Object.freeze({
-    inbound: makeBullMqJobPublisher(inboundQueue, "inbound"),
-    outbound: makeBullMqJobPublisher(outboundQueue, "outbound"),
-    ownerWake: makeBullMqJobPublisher(ownerWakeQueue, "owner-wake")
+    inbound: createBullMqJobPublisher(inboundQueue, "inbound"),
+    outbound: createBullMqJobPublisher(outboundQueue, "outbound"),
+    ownerWake: createBullMqJobPublisher(ownerWakeQueue, "owner-wake")
   })
   const applicationStorage = database.applicationStorage
-  const ownerWakeOutbox = makePostgresqlOwnerWakeOutbox(applicationStorage)
-  const agentRunDispatcher = makeAgentRunDispatcher(applicationStorage, {
+  const ownerWakeOutbox = createPostgresqlOwnerWakeOutbox(applicationStorage)
+  const agentRunDispatcher = createAgentRunDispatcher(applicationStorage, {
     forExecutionPool(executionPoolId) {
       if (executionPoolId !== config.AGENT_EXECUTION_POOL_ID) {
         throw new Error(`Unsupported Agent execution pool: ${executionPoolId}`)
       }
-      return makeBullMqJobPublisher(agentRunQueue, "agent-run")
+      return createBullMqJobPublisher(agentRunQueue, "agent-run")
     }
   })
-  const agentRunContinuationDispatcher = makeAgentRunContinuationDispatcher(
+  const agentRunContinuationDispatcher = createAgentRunContinuationDispatcher(
     applicationStorage,
-    makeBullMqJobPublisher(agentRunContinuationQueue, "agent-run-continuation")
+    createBullMqJobPublisher(agentRunContinuationQueue, "agent-run-continuation")
   )
   const bindings: CoreBindings = {
     AUTH_DATABASE: database.authDatabase,
     DB: applicationStorage,
-    ASSETS: makeFilesystemAssetFetcher(config.ASSETS_DIRECTORY),
+    ASSETS: createFilesystemAssetFetcher(config.ASSETS_DIRECTORY),
     INBOUND_DEAD_LETTER_QUEUE_NAME: queueNames.inboundDeadLetter,
     DELIVERY_RESULT_QUEUE_NAME: queueNames.deliveryResult,
     DELIVERY_RESULT_DEAD_LETTER_QUEUE_NAME: queueNames.deliveryResultDeadLetter,
@@ -135,6 +135,7 @@ async function main(): Promise<void> {
     INGRESS_CALLER_SECRET: config.INGRESS_CALLER_SECRET,
     EGRESS_CALLER_SECRET: config.EGRESS_CALLER_SECRET,
     PRODUCTION_DATA_INSPECTOR_SECRET: config.PRODUCTION_DATA_INSPECTOR_SECRET,
+    BOB_HEADLESS_API_KEY: config.BOB_HEADLESS_API_KEY,
     CHANNEL_EGRESS_URL: config.CHANNEL_EGRESS_URL,
     BETTER_AUTH_SECRET: config.BETTER_AUTH_SECRET,
     SETUP_TOKEN: config.SETUP_TOKEN,
@@ -155,9 +156,11 @@ async function main(): Promise<void> {
   if (config.OWNER_ID !== undefined) bindings.OWNER_ID = config.OWNER_ID
   if (config.OWNER_ACCESS_EMAIL !== undefined)
     bindings.OWNER_ACCESS_EMAIL = config.OWNER_ACCESS_EMAIL
+  if (config.BOB_HEADLESS_OWNER_ID !== undefined)
+    bindings.BOB_HEADLESS_OWNER_ID = config.BOB_HEADLESS_OWNER_ID
   let composition: ReturnType<typeof composeCore>
-  let ownerTurnEngine: ReturnType<typeof makeOwnerTurnEngine>
-  const runCoordinator = makeQueuedOwnerRunCoordinator({
+  let ownerTurnEngine: ReturnType<typeof createOwnerTurnEngine>
+  const runCoordinator = createQueuedOwnerRunCoordinator({
     wakeJobs: jobQueue.ownerWake,
     wakeOutbox: ownerWakeOutbox,
     async accept(request) {
@@ -187,7 +190,7 @@ async function main(): Promise<void> {
       deploymentEnvironment: "prod"
     })
   )
-  ownerTurnEngine = makeOwnerTurnEngine({
+  ownerTurnEngine = createOwnerTurnEngine({
     schedule: (at, ownerId) => runCoordinator.wake({ ownerId, wakeAt: at.toISOString() }),
     process: (snapshot) =>
       composition.runtime.runPromise(
@@ -233,12 +236,12 @@ async function main(): Promise<void> {
     }
   })
   const routes = [
-    ...makeCoreJobConsumerRoutes(composition, queueNames),
+    ...createCoreJobConsumerRoutes(composition, queueNames),
     {
       queueName: queueNames.ownerWake,
       processor: decodeJobProcessor(
         { decode: (input) => Schema.decodeUnknownSync(OwnerWakeJob)(input) },
-        makeOwnerWakeJobProcessor({
+        createOwnerWakeJobProcessor({
           wake: (job) => {
             const span: Parameters<typeof withBobSpan>[0] = {
               name: "bob.coordinator.run",

@@ -9,11 +9,11 @@ export interface ObjectStorageTestRuntime {
 
 export function objectStorageConformance(
   name: string,
-  makeRuntime: () => Promise<ObjectStorageTestRuntime>
+  createRuntime: () => Promise<ObjectStorageTestRuntime>
 ): void {
   describe(`${name} Object Storage conformance`, () => {
     it("stores, replaces, reads, and idempotently deletes private bytes", async () => {
-      const runtime = await makeRuntime()
+      const runtime = await createRuntime()
       try {
         await expect(
           runtime.run(ObjectStorage.use((storage) => storage.get("owners/one/missing")))
@@ -42,7 +42,7 @@ export function objectStorageConformance(
     })
 
     it("returns a typed failure for an unsafe key", async () => {
-      const runtime = await makeRuntime()
+      const runtime = await createRuntime()
       try {
         await expect(
           runtime.run(ObjectStorage.use((storage) => storage.get("../escape")))

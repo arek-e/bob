@@ -31,7 +31,7 @@ export interface OwnerTurnEngine {
 const fromPromise = <Value>(operation: () => Promise<Value>) =>
   Effect.tryPromise({ try: operation, catch: (cause) => cause })
 
-export function makeOwnerTurnEngine(dependencies: OwnerTurnEngineDependencies): OwnerTurnEngine {
+export function createOwnerTurnEngine(dependencies: OwnerTurnEngineDependencies): OwnerTurnEngine {
   return {
     accept: Effect.fnUntraced(function* (job, correlationId, traceparent) {
       const turns = yield* ConversationTurnStore

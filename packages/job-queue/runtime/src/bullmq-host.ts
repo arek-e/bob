@@ -3,7 +3,7 @@ import type { ConnectionOptions, Job, WorkerOptions } from "bullmq"
 
 import { DelayedError, Worker } from "bullmq"
 
-import { makeBullMqJobProcessor } from "./bullmq.ts"
+import { createBullMqJobProcessor } from "./bullmq.ts"
 
 export interface BullMqWorkerLike {
   readonly waitUntilReady: () => Promise<void>
@@ -73,8 +73,8 @@ export function startBullMqWorkerHost(
   validateRoutes(routes)
   const factory = options.workerFactory ?? defaultWorkerFactory
   const workers = routes.map((route) => {
-    const process = makeBullMqJobProcessor(route.processor, {
-      makeDelayedError: () => new DelayedError(),
+    const process = createBullMqJobProcessor(route.processor, {
+      createDelayedError: () => new DelayedError(),
       unexpectedErrorDelayMs: route.unexpectedErrorDelayMs ?? 30_000,
       onUnexpectedError: (error) => options.onUnexpectedError?.(route.queueName, error)
     })

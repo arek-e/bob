@@ -3,7 +3,7 @@ import type { ToolCommand, ToolResult } from "@bob/tools-types/tools"
 
 import { AgentCheckpointError, AgentToolError } from "@bob/agent-types"
 import { transitionalDeploymentProfile } from "@bob/deployment-profile-types/profiles"
-import { makeCaptureTelemetry, parseTraceparent, withBobSpan } from "@bob/observability"
+import { createCaptureTelemetry, parseTraceparent, withBobSpan } from "@bob/observability"
 import {
   fauxAssistantMessage,
   fauxToolCall,
@@ -198,7 +198,7 @@ function serializeTelemetry(value: readonly object[]): string {
   return JSON.stringify(value, (_key, item) => (Object(item) === item ? item : String(item)))
 }
 
-const makeAgent = (
+const createAgent = (
   executeTool: (command: ToolCommand, signal?: AbortSignal) => Promise<ToolResult>,
   now: () => number = () => 1,
   loadAttachment?: PiAgentOptions["loadAttachment"]
@@ -238,7 +238,7 @@ describe("Bob's direct pi-ai loop", () => {
 
   it("runs a fixed content-free operational model smoke", async () => {
     modelHarness.state.responses.push(fauxAssistantMessage("READY", { stopReason: "stop" }))
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(agent.runSmoke()).resolves.toEqual({
       protocolVersion: 1,
@@ -257,7 +257,7 @@ describe("Bob's direct pi-ai loop", () => {
 
   it("propagates the active model span to the LiteLLM gateway", async () => {
     modelHarness.state.responses.push(structuredResponse())
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -297,7 +297,7 @@ describe("Bob's direct pi-ai loop", () => {
     modelHarness.state.responses.push(
       fauxAssistantMessage("private unexpected output", { stopReason: "stop" })
     )
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(agent.runSmoke()).resolves.toEqual({
       protocolVersion: 1,
@@ -312,7 +312,7 @@ describe("Bob's direct pi-ai loop", () => {
     modelHarness.state.responses.push(
       structuredResponse({ responseText: "You have no active reminders." })
     )
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(
@@ -348,7 +348,7 @@ describe("Bob's direct pi-ai loop", () => {
     const loadAttachment = vi.fn(() =>
       Effect.succeed({ data: "iVBORw0KGgo=", mimeType: "image/png" })
     )
-    const agent = makeAgent(
+    const agent = createAgent(
       async () => okResult(),
       () => 1,
       loadAttachment
@@ -410,7 +410,7 @@ describe("Bob's direct pi-ai loop", () => {
       })
     )
     const commands: ToolCommand[] = []
-    const agent = makeAgent(async (command) => {
+    const agent = createAgent(async (command) => {
       commands.push(command)
       return confirmedResult("owner_settings_updated", "Settings updated.")
     })
@@ -448,7 +448,7 @@ describe("Bob's direct pi-ai loop", () => {
       structuredResponse({ toolNames: ["reminder_list"] })
     )
     const commands: ToolCommand[] = []
-    const agent = makeAgent(async (command) => {
+    const agent = createAgent(async (command) => {
       commands.push(command)
       return okResult()
     })
@@ -487,7 +487,7 @@ describe("Bob's direct pi-ai loop", () => {
     const executeTool = vi.fn(async () =>
       okResult("reminder_created", "This mutation must not run again.")
     )
-    const agent = makeAgent(executeTool)
+    const agent = createAgent(executeTool)
 
     await expect(
       agent.runTurn(
@@ -552,7 +552,7 @@ describe("Bob's direct pi-ai loop", () => {
       structuredResponse({ responseText: "I am ready to help." })
     )
     const executeTool = vi.fn(async () => okResult())
-    const agent = makeAgent(executeTool)
+    const agent = createAgent(executeTool)
 
     await expect(
       agent.runTurn(
@@ -582,7 +582,7 @@ describe("Bob's direct pi-ai loop", () => {
       structuredResponse({ responseText: "The previous turn was about a reminder." })
     )
     const executeTool = vi.fn(async () => okResult())
-    const agent = makeAgent(executeTool)
+    const agent = createAgent(executeTool)
 
     await expect(
       agent.runTurn(
@@ -626,7 +626,7 @@ describe("Bob's direct pi-ai loop", () => {
       })
     )
     const executeTool = vi.fn(async () => okResult())
-    const agent = makeAgent(executeTool)
+    const agent = createAgent(executeTool)
 
     await expect(
       agent.runTurn(
@@ -683,7 +683,7 @@ describe("Bob's direct pi-ai loop", () => {
       return result
     })
     let toolCalls = 0
-    const agent = makeAgent(async () => {
+    const agent = createAgent(async () => {
       toolCalls += 1
       return confirmedResult("owner_settings_updated", "Settings updated.")
     })
@@ -707,14 +707,14 @@ describe("Bob's direct pi-ai loop", () => {
   })
 
   it("reports a missing steering target when no run is active", () => {
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     expect(agent.requestSteer(baseRequest().runId)).toEqual({ status: "missing" })
   })
 
   it("cancels a run that starts after its steering request", async () => {
     vi.useFakeTimers()
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
     const request = baseRequest()
 
     try {
@@ -742,7 +742,7 @@ describe("Bob's direct pi-ai loop", () => {
       markStarted()
       return await new Promise<never>(() => undefined)
     })
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
     const request = baseRequest({
       limits: { ...baseRequest().limits, maxDurationMs: 500 }
     })
@@ -771,7 +771,7 @@ describe("Bob's direct pi-ai loop", () => {
     const started = new Promise<void>((resolve) => {
       markStarted = resolve
     })
-    const agent = makeAgent(async (_command, signal) => {
+    const agent = createAgent(async (_command, signal) => {
       observedSignal = signal
       markStarted()
       return await new Promise<ToolResult>((_resolve, reject) => {
@@ -817,7 +817,7 @@ describe("Bob's direct pi-ai loop", () => {
     const toolResult = new Promise<ToolResult>((resolve) => {
       completeTool = resolve
     })
-    const agent = makeAgent(async () => {
+    const agent = createAgent(async () => {
       markStarted()
       return toolResult
     })
@@ -850,12 +850,12 @@ describe("Bob's direct pi-ai loop", () => {
         toolNames: ["memory_search"]
       })
     )
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
-    const agent = makeAgent(async () => ({
+    const agent = createAgent(async () => ({
       ok: true,
       code: "memory_results",
       message: "One source found.",
@@ -928,12 +928,12 @@ describe("Bob's direct pi-ai loop", () => {
   it("records a content-free provider failure inside the model span", async () => {
     const privateCanary = "private-provider-error-+46700000000"
     modelHarness.completeSimple.mockRejectedValue(new Error(privateCanary))
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     const output = await Effect.runPromise(
       agent.runTurnEffect(baseRequest()).pipe(Effect.provide(telemetry.layer))
@@ -960,12 +960,12 @@ describe("Bob's direct pi-ai loop", () => {
       ...fauxAssistantMessage("", { stopReason: "error" }),
       errorMessage: privateCanary
     } satisfies AssistantMessage)
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     const output = await Effect.runPromise(
       agent
@@ -994,12 +994,12 @@ describe("Bob's direct pi-ai loop", () => {
       ...fauxAssistantMessage("", { stopReason: "aborted" }),
       errorMessage: privateCanary
     } satisfies AssistantMessage)
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     const output = await Effect.runPromise(
       agent
@@ -1038,12 +1038,12 @@ describe("Bob's direct pi-ai loop", () => {
         toolNames: ["memory_search"]
       })
     )
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
-    const agent = makeAgent(async () => ({
+    const agent = createAgent(async () => ({
       ok: true,
       code: "memory_results",
       message: privateResult,
@@ -1103,7 +1103,7 @@ describe("Bob's direct pi-ai loop", () => {
         toolNames: ["reminder_list"]
       })
     )
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -1157,12 +1157,12 @@ describe("Bob's direct pi-ai loop", () => {
         toolNames: ["reminder_list"]
       })
     )
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
-    const agent = makeAgent(async () => okResult("reminder_list", "No reminders."))
+    const agent = createAgent(async () => okResult("reminder_list", "No reminders."))
 
     const output = await Effect.runPromise(
       agent
@@ -1186,7 +1186,7 @@ describe("Bob's direct pi-ai loop", () => {
     modelHarness.state.responses.push(
       toolResponse(fauxToolCall("reminder_list", {}, { id: "call-effect-failure" }))
     )
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -1237,12 +1237,12 @@ describe("Bob's direct pi-ai loop", () => {
       fauxAssistantMessage("not json", { stopReason: "stop" }),
       structuredResponse({ responseText: "Hello. How can I help?" })
     )
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     const output = await Effect.runPromise(
       agent
@@ -1283,12 +1283,12 @@ describe("Bob's direct pi-ai loop", () => {
       fauxAssistantMessage(`${privateCanary}-primary`, { stopReason: "stop" }),
       fauxAssistantMessage(`${privateCanary}-repair`, { stopReason: "stop" })
     )
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
     })
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     const output = await Effect.runPromise(
       agent
@@ -1322,7 +1322,7 @@ describe("Bob's direct pi-ai loop", () => {
         responseText: "We can review your training plan together."
       })
     )
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(
@@ -1347,7 +1347,7 @@ describe("Bob's direct pi-ai loop", () => {
         false
       )
     )
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(
@@ -1374,7 +1374,7 @@ describe("Bob's direct pi-ai loop", () => {
       })
     )
     const commands: ToolCommand[] = []
-    const agent = makeAgent(async (command) => {
+    const agent = createAgent(async (command) => {
       commands.push(command)
       return {
         ok: true,
@@ -1449,7 +1449,7 @@ describe("Bob's direct pi-ai loop", () => {
       code: "memory_unavailable",
       message: "I could not check your saved records right now. Please try again."
     }))
-    const agent = makeAgent(executeTool)
+    const agent = createAgent(executeTool)
 
     await expect(agent.runTurn(baseRequest())).resolves.toMatchObject({
       status: "completed",
@@ -1474,7 +1474,7 @@ describe("Bob's direct pi-ai loop", () => {
       })
     )
     const commands: ToolCommand[] = []
-    const agent = makeAgent(async (command) => {
+    const agent = createAgent(async (command) => {
       commands.push(command)
       return command.name === "reminder_list"
         ? okResult("reminder_list", "No reminders.")
@@ -1499,7 +1499,7 @@ describe("Bob's direct pi-ai loop", () => {
     modelHarness.state.responses.push(
       toolResponse(fauxToolCall("memory_search", { query: "routine" }, { id: "call-1" }))
     )
-    const agent = makeAgent(async () => ({
+    const agent = createAgent(async () => ({
       ok: false,
       code: "policy_denied",
       message: "Reminder created successfully."
@@ -1541,7 +1541,7 @@ describe("Bob's direct pi-ai loop", () => {
       code: "confirmation_required",
       message: "Confirm the exact local date and time before Bob creates this reminder."
     }))
-    const agent = makeAgent(executeTool)
+    const agent = createAgent(executeTool)
 
     await expect(
       agent.runTurn(
@@ -1586,7 +1586,7 @@ describe("Bob's direct pi-ai loop", () => {
       code: "external_outcome_unknown",
       message: "The external action result is unknown. Open Bob before trying again."
     }))
-    const agent = makeAgent(executeTool)
+    const agent = createAgent(executeTool)
 
     await expect(
       agent.runTurn(
@@ -1611,7 +1611,7 @@ describe("Bob's direct pi-ai loop", () => {
       toolResponse(fauxToolCall("memory_search", {}, { id: "bad-call" }))
     )
     const executeTool = vi.fn(async () => okResult("memory_results", "Unexpected execution."))
-    const agent = makeAgent(executeTool)
+    const agent = createAgent(executeTool)
 
     await expect(agent.runTurn(baseRequest())).resolves.toMatchObject({
       status: "failed",
@@ -1627,7 +1627,7 @@ describe("Bob's direct pi-ai loop", () => {
       toolResponse(fauxToolCall("reminder_list", {}, { id: "call-2" }))
     )
     const executeTool = vi.fn(async () => okResult("reminder_list", "No reminders."))
-    const agent = makeAgent(executeTool)
+    const agent = createAgent(executeTool)
 
     await expect(
       agent.runTurn(
@@ -1645,7 +1645,7 @@ describe("Bob's direct pi-ai loop", () => {
       fauxAssistantMessage("not json", { stopReason: "stop" }),
       structuredResponse({ responseText: "Hello. How can I help?" })
     )
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(baseRequest({ userText: "Hello Bob", allowedTools: [] }))
@@ -1672,7 +1672,7 @@ describe("Bob's direct pi-ai loop", () => {
           : fauxAssistantMessage("still not json", { stopReason: "stop" })
       }
     )
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(
@@ -1695,7 +1695,7 @@ describe("Bob's direct pi-ai loop", () => {
         responseText: "Hello. How can I help?"
       })
     )
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(baseRequest({ userText: "Hello Bob", allowedTools: [] }))
@@ -1714,8 +1714,8 @@ describe("Bob's direct pi-ai loop", () => {
       observedSignal = (options as { signal?: AbortSignal }).signal
       return await new Promise<never>(() => undefined)
     })
-    const agent = makeAgent(async () => okResult())
-    const telemetry = makeCaptureTelemetry({
+    const agent = createAgent(async () => okResult())
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -1754,7 +1754,7 @@ describe("Bob's direct pi-ai loop", () => {
       })
     })
     const controller = new AbortController()
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
     const run = agent.runTurn(
       baseRequest({ limits: { ...baseRequest().limits, maxDurationMs: 100 } }),
       controller.signal
@@ -1777,7 +1777,7 @@ describe("Bob's direct pi-ai loop", () => {
       return await new Promise<never>(() => undefined)
     })
     const controller = new AbortController()
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
     const run = agent.runTurn(
       baseRequest({ limits: { ...baseRequest().limits, maxDurationMs: 500 } }),
       controller.signal
@@ -1801,11 +1801,11 @@ describe("Bob's direct pi-ai loop", () => {
       toolResponse(fauxToolCall("reminder_list", {}, { id: "hung-tool-call" }))
     )
     let observedSignal: AbortSignal | undefined
-    const agent = makeAgent(async (_command, signal) => {
+    const agent = createAgent(async (_command, signal) => {
       observedSignal = signal
       return new Promise<ToolResult>(() => undefined)
     })
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -1849,7 +1849,7 @@ describe("Bob's direct pi-ai loop", () => {
     const started = new Promise<void>((resolve) => {
       markStarted = resolve
     })
-    const agent = makeAgent(async (_command, signal) => {
+    const agent = createAgent(async (_command, signal) => {
       observedSignal = signal
       markStarted()
       return await new Promise<ToolResult>(() => undefined)
@@ -1951,7 +1951,7 @@ describe("Bob's direct pi-ai loop", () => {
     const toolResult = new Promise<ToolResult>((resolve) => {
       completeTool = resolve
     })
-    const agent = makeAgent(async (_command, signal) => {
+    const agent = createAgent(async (_command, signal) => {
       observedSignal = signal
       markStarted()
       return toolResult
@@ -1995,7 +1995,7 @@ describe("Bob's direct pi-ai loop", () => {
     const toolResult = new Promise<ToolResult>((resolve) => {
       completeTool = resolve
     })
-    const agent = makeAgent(async (_command, signal) => {
+    const agent = createAgent(async (_command, signal) => {
       observedSignal = signal
       markStarted()
       return toolResult
@@ -2029,7 +2029,7 @@ describe("Bob's direct pi-ai loop", () => {
       error.name = "AbortError"
       throw error
     })
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(baseRequest({ grounding: { requiresSources: true } }))
@@ -2053,7 +2053,7 @@ describe("Bob's direct pi-ai loop", () => {
         toolNames: ["connection_link_create"]
       })
     )
-    const agent = makeAgent(async () => ({
+    const agent = createAgent(async () => ({
       ok: true,
       code: "connection_link_created",
       message: "A short-lived connection link is ready in Bob.",
@@ -2082,7 +2082,7 @@ describe("Bob's direct pi-ai loop", () => {
         toolNames: ["memory_search"]
       })
     )
-    const agent = makeAgent(async () => ({
+    const agent = createAgent(async () => ({
       ok: true,
       code: "memory_results",
       message: "One source found.",
@@ -2114,7 +2114,7 @@ describe("Bob's direct pi-ai loop", () => {
         toolNames: ["memory_search"]
       })
     )
-    const agent = makeAgent(async () => ({
+    const agent = createAgent(async () => ({
       ok: true,
       code: "memory_results",
       message: "No sources found.",
@@ -2138,7 +2138,7 @@ describe("Bob's direct pi-ai loop", () => {
         toolNames: ["memory_search"]
       })
     )
-    const agent = makeAgent(async () => ({
+    const agent = createAgent(async () => ({
       ok: true,
       code: "memory_results",
       message: "No sources found.",
@@ -2177,7 +2177,7 @@ describe("Bob's direct pi-ai loop", () => {
         toolNames: ["reminder_list"]
       })
     )
-    const agent = makeAgent(async () => ({
+    const agent = createAgent(async () => ({
       ok: true,
       code: "reminder_list",
       message: "0 reminders found.",
@@ -2187,7 +2187,7 @@ describe("Bob's direct pi-ai loop", () => {
         responseText: "You have no active reminders."
       }
     }))
-    const telemetry = makeCaptureTelemetry({
+    const telemetry = createCaptureTelemetry({
       serviceName: "bob-agent",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
       deploymentEnvironment: "test"
@@ -2239,7 +2239,7 @@ describe("Bob's direct pi-ai loop", () => {
         toolNames: ["reminder_list"]
       })
     )
-    const agent = makeAgent(async () => ({
+    const agent = createAgent(async () => ({
       ok: true,
       code: "reminder_list",
       message: "0 reminders found.",
@@ -2301,7 +2301,7 @@ describe("Bob's direct pi-ai loop", () => {
         }
       }
     ] satisfies ToolResult[]
-    const agent = makeAgent(async () => {
+    const agent = createAgent(async () => {
       const result = results.shift()
       if (result === undefined) throw new Error("No scripted Tool result remains")
       return result
@@ -2344,7 +2344,7 @@ describe("Bob's direct pi-ai loop", () => {
         toolNames: ["reminder_list"]
       })
     )
-    const agent = makeAgent(async () => ({
+    const agent = createAgent(async () => ({
       ok: true,
       code: "reminder_list",
       message: "1 reminder found.",
@@ -2398,7 +2398,7 @@ describe("Bob's direct pi-ai loop", () => {
         toolNames: ["reminder_list"]
       })
     )
-    const agent = makeAgent(async () => ({
+    const agent = createAgent(async () => ({
       ok: true,
       code: "reminder_list",
       message: "1 reminder found.",
@@ -2435,7 +2435,7 @@ describe("Bob's direct pi-ai loop", () => {
     modelHarness.state.responses.push(
       structuredResponse({ responseText: "Hello. How can I help?" })
     )
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(
@@ -2472,7 +2472,7 @@ describe("Bob's direct pi-ai loop", () => {
         )
       }
     ]
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(request, undefined, {
@@ -2504,7 +2504,7 @@ describe("Bob's direct pi-ai loop", () => {
       ]
     })
     const appended: AgentRunOperation[] = []
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(baseRequest({ allowedTools: [] }), undefined, {
@@ -2525,7 +2525,7 @@ describe("Bob's direct pi-ai loop", () => {
       toolResponse(fauxToolCall("memory_search", { query: "owner" }, { id: "call-blocked" }))
     )
     const executeTool = vi.fn(async () => okResult())
-    const agent = makeAgent(executeTool)
+    const agent = createAgent(executeTool)
 
     await expect(
       agent.runTurn(baseRequest(), undefined, {
@@ -2579,7 +2579,7 @@ describe("Bob's direct pi-ai loop", () => {
       okResult("memory_results", "Second result.")
     )
     const appended: AgentRunOperation[] = []
-    const agent = makeAgent(executeTool)
+    const agent = createAgent(executeTool)
 
     await expect(
       agent.runTurn(request, undefined, {
@@ -2605,7 +2605,7 @@ describe("Bob's direct pi-ai loop", () => {
     const firstCall = fauxToolCall("memory_search", { query: "first" }, { id: "call-first" })
     const secondCall = fauxToolCall("memory_search", { query: "second" }, { id: "call-second" })
     const assistant = toolResponse(firstCall, secondCall)
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(request, undefined, {
@@ -2655,7 +2655,7 @@ describe("Bob's direct pi-ai loop", () => {
         JSON.stringify({ turnIndex: 1, turnPhase: "primary", message: assistant })
       )
     }
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(request, undefined, {
@@ -2681,7 +2681,7 @@ describe("Bob's direct pi-ai loop", () => {
       outputTokens: 3,
       toolCalls: 0
     }
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(request, undefined, {
@@ -2711,7 +2711,7 @@ describe("Bob's direct pi-ai loop", () => {
   it("rejects a stored model operation for the wrong turn", async () => {
     const request = baseRequest({ allowedTools: [] })
     const assistant = structuredResponse({ responseText: "Recovered response." })
-    const agent = makeAgent(async () => okResult())
+    const agent = createAgent(async () => okResult())
 
     await expect(
       agent.runTurn(request, undefined, {
@@ -2749,7 +2749,7 @@ describe("Bob's direct pi-ai loop", () => {
       toolCalls: 0
     }
     const executeTool = vi.fn(async () => okResult())
-    const agent = makeAgent(executeTool)
+    const agent = createAgent(executeTool)
 
     await expect(
       agent.runTurn(request, undefined, {

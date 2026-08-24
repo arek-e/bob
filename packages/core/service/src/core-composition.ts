@@ -5,43 +5,43 @@ import type { CoreDeploymentProfile } from "@bob/deployment-profile-types/runtim
 import {
   agentRunGatewayLayer,
   agentRunsLayer,
-  makeAgentRunGateway,
-  makeAgentRuns
+  createAgentRunGateway,
+  createAgentRuns
 } from "@bob/agent-runs-service"
-import { artifactStoreLayer, makeArtifactStore } from "@bob/artifacts-service/store"
-import { makePrivateTextReader } from "@bob/context-service/private-text"
+import { artifactStoreLayer, createArtifactStore } from "@bob/artifacts-service/store"
+import { createPrivateTextReader } from "@bob/context-service/private-text"
 import { contextStoreLayer } from "@bob/context-service/store"
 import { messageAttachmentStoreLayer } from "@bob/conversations-service/attachment-store"
-import { makeConversationEvidenceSource } from "@bob/conversations-service/evidence-source"
-import { agentRunStoreLayer, makeAgentRunStore } from "@bob/conversations-service/run-store"
-import { conversationStoreLayer, makeConversationStore } from "@bob/conversations-service/store"
+import { createConversationEvidenceSource } from "@bob/conversations-service/evidence-source"
+import { agentRunStoreLayer, createAgentRunStore } from "@bob/conversations-service/run-store"
+import { conversationStoreLayer, createConversationStore } from "@bob/conversations-service/store"
 import { conversationTiming } from "@bob/conversations-service/timing"
-import { makeToolExecutor, toolExecutorLayer } from "@bob/conversations-service/tool-executor"
+import { createToolExecutor, toolExecutorLayer } from "@bob/conversations-service/tool-executor"
 import {
   conversationTurnStoreLayer,
-  makeConversationTurnStore
+  createConversationTurnStore
 } from "@bob/conversations-service/turn-store"
-import { deliveryStoreLayer, makeDeliveryStore } from "@bob/delivery-service/store"
-import { makeAgentExperienceRegistry } from "@bob/memory-service/agent-experience"
-import { makeEvidenceSourceRegistry } from "@bob/memory-service/evidence"
-import { makeFactEvidenceSource } from "@bob/memory-service/evidence-source"
-import { makeMemoryStore, memoryStoreLayer } from "@bob/memory-service/store"
-import { makeMemoryToolAdapter } from "@bob/memory-service/tool-adapter"
-import { alertStoreLayer, makeAlertStore } from "@bob/operations-service/alerts/store"
+import { deliveryStoreLayer, createDeliveryStore } from "@bob/delivery-service/store"
+import { createAgentExperienceRegistry } from "@bob/memory-service/agent-experience"
+import { createEvidenceSourceRegistry } from "@bob/memory-service/evidence"
+import { createFactEvidenceSource } from "@bob/memory-service/evidence-source"
+import { createMemoryStore, memoryStoreLayer } from "@bob/memory-service/store"
+import { createMemoryToolAdapter } from "@bob/memory-service/tool-adapter"
+import { alertStoreLayer, createAlertStore } from "@bob/operations-service/alerts/store"
 import {
-  makeProductionDataInspector,
+  createProductionDataInspector,
   productionDataInspectorLayer
 } from "@bob/operations-service/production-data/inspector"
 import { createDataProtection } from "@bob/policy-service/data-protection"
-import { makeOwnerDataKeyStore, ownerDataKeyStoreLayer } from "@bob/policy-service/owner-data-key"
-import { makeRetrievalPipeline, retrievalPipelineLayer } from "@bob/retrieval-service/pipeline"
-import { makeOwnerSettingsStore, ownerSettingsStoreLayer } from "@bob/settings-service/store"
-import { makeSettingsToolAdapter } from "@bob/settings-service/tool-adapter"
-import { makeReviewedSkillRegistry } from "@bob/skills-service/registry"
-import { makeToolAdapterRegistry } from "@bob/tools-service/registry"
+import { createOwnerDataKeyStore, ownerDataKeyStoreLayer } from "@bob/policy-service/owner-data-key"
+import { createRetrievalPipeline, retrievalPipelineLayer } from "@bob/retrieval-service/pipeline"
+import { createOwnerSettingsStore, ownerSettingsStoreLayer } from "@bob/settings-service/store"
+import { createSettingsToolAdapter } from "@bob/settings-service/tool-adapter"
+import { createReviewedSkillRegistry } from "@bob/skills-service/registry"
+import { createToolAdapterRegistry } from "@bob/tools-service/registry"
 import { Layer, Schema } from "effect"
 
-import { makeApplicationContextStore } from "./context-composition.ts"
+import { createApplicationContextStore } from "./context-composition.ts"
 
 const Configuration = Schema.Struct({
   OWNER_ID: Schema.optionalKey(Schema.String.check(Schema.isUUID())),
@@ -52,6 +52,8 @@ const Configuration = Schema.Struct({
   INGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   EGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   PRODUCTION_DATA_INSPECTOR_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  BOB_HEADLESS_API_KEY: Schema.String.check(Schema.isMinLength(32)),
+  BOB_HEADLESS_OWNER_ID: Schema.optionalKey(Schema.String.check(Schema.isUUID())),
   CHANNEL_EGRESS_URL: Schema.String,
   BETTER_AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
   SETUP_TOKEN: Schema.String.check(Schema.isMinLength(32)),
@@ -93,21 +95,21 @@ export function composeGeneralCore(
   )
   if (keyring[activeKekVersion] === undefined) throw new Error("Active KEK is missing")
   const protection = createDataProtection(keyring, activeKekVersion, config.DATA_LOOKUP_KEY)
-  const ownerDataKeys = makeOwnerDataKeyStore(applicationStorage, protection, {
+  const ownerDataKeys = createOwnerDataKeyStore(applicationStorage, protection, {
     defaultTimeZone: config.OWNER_TIME_ZONE
   })
-  const settings = makeOwnerSettingsStore(applicationStorage, protection, {
+  const settings = createOwnerSettingsStore(applicationStorage, protection, {
     defaultTimeZone: config.OWNER_TIME_ZONE,
     ownerDataKeys,
     channelProviderId
   })
-  const conversations = makeConversationStore(applicationStorage, protection, {
+  const conversations = createConversationStore(applicationStorage, protection, {
     ownerId: config.OWNER_ID,
     ownerTimeZone: config.OWNER_TIME_ZONE,
     ownerDataKeys,
     channelProviderId
   })
-  const turns = makeConversationTurnStore(applicationStorage, protection, {
+  const turns = createConversationTurnStore(applicationStorage, protection, {
     ownerId: config.OWNER_ID,
     ownerDataKeys
   })
@@ -121,28 +123,28 @@ export function composeGeneralCore(
     settings,
     ownerTimeZone: config.OWNER_TIME_ZONE
   })
-  const alerts = makeAlertStore(applicationStorage, {})
-  const productionDataInspector = makeProductionDataInspector(applicationStorage)
-  const artifacts = makeArtifactStore(applicationStorage, protection, {
+  const alerts = createAlertStore(applicationStorage, {})
+  const productionDataInspector = createProductionDataInspector(applicationStorage)
+  const artifacts = createArtifactStore(applicationStorage, protection, {
     legacyReaders: prepared.legacyArtifactReaders,
     ownerDataKeys
   })
-  const delivery = makeDeliveryStore(applicationStorage, protection, {
+  const delivery = createDeliveryStore(applicationStorage, protection, {
     channelProviderId,
     targetAdapters: prepared.deliveryTargets,
     ownerDataKeys
   })
-  const privateText = makePrivateTextReader(applicationStorage, protection, ownerDataKeys)
-  const evidenceSources = makeEvidenceSourceRegistry(runtimeProfile.catalogue.profileId, [
-    makeConversationEvidenceSource(applicationStorage, privateText, protection),
-    makeFactEvidenceSource(applicationStorage, privateText, protection),
+  const privateText = createPrivateTextReader(applicationStorage, protection, ownerDataKeys)
+  const evidenceSources = createEvidenceSourceRegistry(runtimeProfile.catalogue.profileId, [
+    createConversationEvidenceSource(applicationStorage, privateText, protection),
+    createFactEvidenceSource(applicationStorage, privateText, protection),
     ...prepared.evidenceSources
   ])
-  const memory = makeMemoryStore(applicationStorage, protection, evidenceSources, {
+  const memory = createMemoryStore(applicationStorage, protection, evidenceSources, {
     ownerDataKeys
   })
-  const retrieval = makeRetrievalPipeline(applicationStorage)
-  const context = makeApplicationContextStore(
+  const retrieval = createRetrievalPipeline(applicationStorage)
+  const context = createApplicationContextStore(
     applicationStorage,
     protection,
     runtimeProfile.catalogue,
@@ -152,20 +154,20 @@ export function composeGeneralCore(
       ownerDataKeys
     }
   )
-  const runs = makeAgentRunStore(applicationStorage, protection, { ownerDataKeys })
-  const agentRuns = makeAgentRuns(applicationStorage, protection, { ownerDataKeys })
-  const agentRunGateway = makeAgentRunGateway(applicationStorage, protection, { ownerDataKeys })
-  const toolAdapters = makeToolAdapterRegistry(runtimeProfile.catalogue, [
-    makeMemoryToolAdapter(memory, retrieval),
-    makeSettingsToolAdapter(settings),
+  const runs = createAgentRunStore(applicationStorage, protection, { ownerDataKeys })
+  const agentRuns = createAgentRuns(applicationStorage, protection, { ownerDataKeys })
+  const agentRunGateway = createAgentRunGateway(applicationStorage, protection, { ownerDataKeys })
+  const toolAdapters = createToolAdapterRegistry(runtimeProfile.catalogue, [
+    createMemoryToolAdapter(memory, retrieval),
+    createSettingsToolAdapter(settings),
     ...prepared.toolAdapters
   ])
-  const tools = makeToolExecutor(applicationStorage, protection, toolAdapters, {
+  const tools = createToolExecutor(applicationStorage, protection, toolAdapters, {
     toolLeaseMs: conversationTiming.mutationSettleLeaseMs,
     ownerDataKeys
   })
-  const agentExperience = makeAgentExperienceRegistry(runtimeProfile.catalogue.profileId, [])
-  const reviewedSkills = makeReviewedSkillRegistry(runtimeProfile.catalogue.profileId, [])
+  const agentExperience = createAgentExperienceRegistry(runtimeProfile.catalogue.profileId, [])
+  const reviewedSkills = createReviewedSkillRegistry(runtimeProfile.catalogue.profileId, [])
   const ownerDataKeysLayer = ownerDataKeyStoreLayer(ownerDataKeys)
   const attachmentsLayer = messageAttachmentStoreLayer(applicationStorage, protection).pipe(
     Layer.provide(Layer.merge(ownerDataKeysLayer, adapters.objectStorage))

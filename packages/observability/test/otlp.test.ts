@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import type { SafeSpanRecord } from "../src/effect.ts"
 import type { OtlpProcessorDiagnostic } from "../src/otlp.ts"
 
-import { makeOtlpHttpSpanProcessor } from "../src/otlp.ts"
+import { createOtlpHttpSpanProcessor } from "../src/otlp.ts"
 
 function span(index: number, sampled = true): SafeSpanRecord {
   return {
@@ -28,7 +28,7 @@ function span(index: number, sampled = true): SafeSpanRecord {
 describe("bounded OTLP span processing", () => {
   it("reports one closed diagnostic for a rejected HTTP batch", async () => {
     const diagnostics: OtlpProcessorDiagnostic[] = []
-    const processor = makeOtlpHttpSpanProcessor({
+    const processor = createOtlpHttpSpanProcessor({
       endpoint: "https://otel.example.test",
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -48,7 +48,7 @@ describe("bounded OTLP span processing", () => {
   it("cancels a rejected collector response body without reading it", async () => {
     const cancel = vi.fn()
     const diagnostics: OtlpProcessorDiagnostic[] = []
-    const processor = makeOtlpHttpSpanProcessor({
+    const processor = createOtlpHttpSpanProcessor({
       endpoint: "https://otel.example.test",
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -73,7 +73,7 @@ describe("bounded OTLP span processing", () => {
 
   it("reports the number of spans dropped by queue overflow", async () => {
     const diagnostics: OtlpProcessorDiagnostic[] = []
-    const processor = makeOtlpHttpSpanProcessor({
+    const processor = createOtlpHttpSpanProcessor({
       endpoint: "https://otel.example.test",
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -96,7 +96,7 @@ describe("bounded OTLP span processing", () => {
   it("reports spans dropped by an invalid collector endpoint", async () => {
     const diagnostics: OtlpProcessorDiagnostic[] = []
     const request = vi.fn()
-    const processor = makeOtlpHttpSpanProcessor({
+    const processor = createOtlpHttpSpanProcessor({
       endpoint: "not-a-url",
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -117,7 +117,7 @@ describe("bounded OTLP span processing", () => {
     const diagnostics: OtlpProcessorDiagnostic[] = []
     const request = vi.fn()
     const privateCanary = "private-service-+46700000000"
-    const processor = makeOtlpHttpSpanProcessor({
+    const processor = createOtlpHttpSpanProcessor({
       endpoint: "https://otel.example.test",
       serviceName: privateCanary,
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -149,7 +149,7 @@ describe("bounded OTLP span processing", () => {
   ])("drops spans with an invalid $label", async ({ serviceVersion, deploymentEnvironment }) => {
     const diagnostics: OtlpProcessorDiagnostic[] = []
     const request = vi.fn()
-    const processor = makeOtlpHttpSpanProcessor({
+    const processor = createOtlpHttpSpanProcessor({
       endpoint: "https://otel.example.test",
       serviceName: "bob-core",
       serviceVersion,
@@ -168,7 +168,7 @@ describe("bounded OTLP span processing", () => {
   it("reports a bounded collector timeout without raw error data", async () => {
     const diagnostics: OtlpProcessorDiagnostic[] = []
     const privateError = "private-collector-timeout-response"
-    const processor = makeOtlpHttpSpanProcessor({
+    const processor = createOtlpHttpSpanProcessor({
       endpoint: "https://otel.example.test",
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -196,7 +196,7 @@ describe("bounded OTLP span processing", () => {
   it("reports a network failure without raw error data", async () => {
     const diagnostics: OtlpProcessorDiagnostic[] = []
     const privateError = "private-network-response"
-    const processor = makeOtlpHttpSpanProcessor({
+    const processor = createOtlpHttpSpanProcessor({
       endpoint: "https://otel.example.test",
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -219,7 +219,7 @@ describe("bounded OTLP span processing", () => {
     const privateError = "private-default-diagnostic-response"
     const write = vi.spyOn(console, "log").mockImplementation(() => undefined)
     try {
-      const processor = makeOtlpHttpSpanProcessor({
+      const processor = createOtlpHttpSpanProcessor({
         endpoint: "https://otel.example.test",
         serviceName: "bob-core",
         serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -243,7 +243,7 @@ describe("bounded OTLP span processing", () => {
   })
 
   it("contains diagnostic callback failures", async () => {
-    const processor = makeOtlpHttpSpanProcessor({
+    const processor = createOtlpHttpSpanProcessor({
       endpoint: "not-a-url",
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -261,7 +261,7 @@ describe("bounded OTLP span processing", () => {
   it("stops without exporting when shutdown flush is disabled", async () => {
     // SAFETY: This controlled test fixture matches the asserted contract used by this test.
     const request = vi.fn(async () => new Response(null, { status: 200 })) as typeof fetch
-    const processor = makeOtlpHttpSpanProcessor({
+    const processor = createOtlpHttpSpanProcessor({
       endpoint: "https://otel.example.test",
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -280,7 +280,7 @@ describe("bounded OTLP span processing", () => {
 
   it("reports an export failure during shutdown and remains fail-open", async () => {
     const diagnostics: OtlpProcessorDiagnostic[] = []
-    const processor = makeOtlpHttpSpanProcessor({
+    const processor = createOtlpHttpSpanProcessor({
       endpoint: "https://otel.example.test",
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",
@@ -309,7 +309,7 @@ describe("bounded OTLP span processing", () => {
       batches.push(body.resourceSpans[0]?.scopeSpans[0]?.spans.map((item) => item.spanId) ?? [])
       return new Response(null, { status: 200 })
     }) as typeof fetch
-    const processor = makeOtlpHttpSpanProcessor({
+    const processor = createOtlpHttpSpanProcessor({
       endpoint: "https://otel.example.test",
       serviceName: "bob-core",
       serviceVersion: "0123456789abcdef0123456789abcdef01234567",

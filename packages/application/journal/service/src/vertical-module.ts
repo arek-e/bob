@@ -1,14 +1,14 @@
 import type { PreparedVerticalModule, VerticalModule } from "@bob/deployment-profile-types/runtime"
 
-import { makeRuntimeModules } from "@bob/core-types/runtime-module"
+import { createRuntimeModules } from "@bob/core-types/runtime-module"
 import { journalCapability } from "@bob/journal-types/capability"
 import { Schema } from "effect"
 
-import { makeJournalConversationWorkflow } from "./conversation-workflow.ts"
-import { makeJournalEvidenceSource } from "./evidence-source.ts"
-import { makeJournalOwnerRoutes } from "./owner-routes.ts"
-import { makeJournalStore } from "./store.ts"
-import { makeJournalToolAdapter } from "./tool-adapter.ts"
+import { createJournalConversationWorkflow } from "./conversation-workflow.ts"
+import { createJournalEvidenceSource } from "./evidence-source.ts"
+import { createJournalOwnerRoutes } from "./owner-routes.ts"
+import { createJournalStore } from "./store.ts"
+import { createJournalToolAdapter } from "./tool-adapter.ts"
 
 const Configuration = Schema.Struct({
   UI_BASE_URL: Schema.URLFromString
@@ -20,21 +20,21 @@ export const journalVerticalModule: VerticalModule = {
   prepare(context): PreparedVerticalModule {
     const config = Schema.decodeUnknownSync(Configuration)(context.bindings)
     const uiBaseUrl = config.UI_BASE_URL.toString().replace(/\/$/u, "")
-    const journal = makeJournalStore(context.database, context.protection, {
+    const journal = createJournalStore(context.database, context.protection, {
       ownerDataKeys: context.ownerDataKeys
     })
 
     return {
       id: journalCapability.id,
       capability: journalCapability,
-      evidenceSources: [makeJournalEvidenceSource(context.database, context.protection)],
+      evidenceSources: [createJournalEvidenceSource(context.database, context.protection)],
       legacyArtifactReaders: [],
       deliveryTargets: [],
-      runtimeModules: makeRuntimeModules({
-        conversations: [makeJournalConversationWorkflow(journal, context.turns, uiBaseUrl)],
-        ownerRoutes: [makeJournalOwnerRoutes(journal)]
+      runtimeModules: createRuntimeModules({
+        conversations: [createJournalConversationWorkflow(journal, context.turns, uiBaseUrl)],
+        ownerRoutes: [createJournalOwnerRoutes(journal)]
       }),
-      toolAdapters: [makeJournalToolAdapter(journal, context.turns, { uiBaseUrl })]
+      toolAdapters: [createJournalToolAdapter(journal, context.turns, { uiBaseUrl })]
     }
   }
 }

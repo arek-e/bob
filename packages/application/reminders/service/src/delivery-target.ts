@@ -7,7 +7,7 @@ import { reminderOccurrences } from "@bob/db-service/schema/reminders"
 import { and, eq, inArray, isNull } from "drizzle-orm"
 import { Effect } from "effect"
 
-export function makeReminderDeliveryTarget(
+export function createReminderDeliveryTarget(
   database: CoreDatabase,
   randomUuid: () => string = () => crypto.randomUUID()
 ): DeliveryTargetAdapter {

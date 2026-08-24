@@ -3,7 +3,7 @@ import type { OutboundJob } from "@bob/core-types/jobs"
 import {
   flushTelemetry,
   invocationTelemetryLayer,
-  makeInvocationSpanProcessor,
+  createInvocationSpanProcessor,
   noopSpanProcessor,
   type Telemetry
 } from "@bob/observability"
@@ -42,7 +42,7 @@ function telemetryLayer(bindings: TelemetryBindings, serviceName: string) {
   const processor =
     bindings.OTEL_EXPORTER_OTLP_ENDPOINT === undefined || bindings.BOB_RELEASE_SHA === undefined
       ? noopSpanProcessor
-      : makeInvocationSpanProcessor({
+      : createInvocationSpanProcessor({
           endpoint: bindings.OTEL_EXPORTER_OTLP_ENDPOINT,
           serviceName,
           serviceVersion: bindings.BOB_RELEASE_SHA,

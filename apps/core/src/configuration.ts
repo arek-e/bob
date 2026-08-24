@@ -20,6 +20,8 @@ const Environment = Schema.Struct({
   INGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   EGRESS_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   PRODUCTION_DATA_INSPECTOR_SECRET: Schema.String.check(Schema.isMinLength(32)),
+  BOB_HEADLESS_API_KEY: Schema.String.check(Schema.isMinLength(32)),
+  BOB_HEADLESS_OWNER_ID: Schema.optionalKey(Schema.String.check(Schema.isUUID())),
   AGENT_CALLER_SECRET: Schema.String.check(Schema.isMinLength(32)),
   BETTER_AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
   SETUP_TOKEN: Schema.String.check(Schema.isMinLength(32)),
@@ -44,6 +46,7 @@ export function readCoreRuntimeConfiguration(environment: NodeJS.ProcessEnv) {
     AGENT_EXECUTION_POOL_ID: environment.AGENT_EXECUTION_POOL_ID ?? "core-v1",
     BOB_PROVIDER: environment.BOB_PROVIDER ?? "openai-codex",
     ASSETS_DIRECTORY: environment.ASSETS_DIRECTORY ?? "/app/ui",
+    BOB_HEADLESS_OWNER_ID: environment.BOB_HEADLESS_OWNER_ID?.trim() || undefined,
     SCHEDULER_INTERVAL_MS: environment.SCHEDULER_INTERVAL_MS ?? "60000"
   })
   return {

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import { MemoryStore, memoryStoreLayer } from "../src/store.ts"
 
-function makeStore(): MemoryStoreAdapter {
+function createStore(): MemoryStoreAdapter {
   return {
     async propose(input, idempotencyKey) {
       const candidateId = crypto.randomUUID()
@@ -25,7 +25,7 @@ function makeStore(): MemoryStoreAdapter {
 
 describe("memoryStoreLayer", () => {
   it("keeps the Adapter receiver for methods that call another Adapter method", async () => {
-    const store = makeStore()
+    const store = createStore()
     await Effect.runPromise(
       Effect.gen(function* () {
         const memory = yield* MemoryStore

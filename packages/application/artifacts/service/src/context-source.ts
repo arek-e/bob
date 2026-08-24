@@ -4,7 +4,7 @@ import { approvedContextItem } from "@bob/context-service/source"
 
 import type { ArtifactStoreAdapter } from "./store.ts"
 
-export function makeArtifactContextSource(artifacts: ArtifactStoreAdapter): ContextSourceModule {
+export function createArtifactContextSource(artifacts: ArtifactStoreAdapter): ContextSourceModule {
   return {
     id: "artifact",
     async load(input) {

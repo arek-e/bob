@@ -12,7 +12,7 @@ import {
   completedEffectAfterConflict,
   type EffectIdentity
 } from "@bob/policy-service/effect-outcome"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { OwnerSettingsStore, OwnerSettingsStoreError } from "@bob/settings-types/store"
 import { liftPromiseOperation } from "@bob/shared-types/effect-adapter"
 import { and, eq } from "drizzle-orm"
@@ -56,7 +56,7 @@ function canonicalLocale(value: string): string {
   }
 }
 
-export function makeOwnerSettingsStore(
+export function createOwnerSettingsStore(
   database: CoreDatabase,
   protection: DataProtection,
   options: OwnerSettingsStoreOptions
@@ -68,7 +68,7 @@ export function makeOwnerSettingsStore(
   const defaultHourCycle = options.defaultHourCycle ?? "auto"
   const ownerDataKeys =
     options.ownerDataKeys ??
-    makeOwnerDataKeyStore(database, protection, {
+    createOwnerDataKeyStore(database, protection, {
       defaultTimeZone,
       defaultLocale,
       defaultHourCycle,

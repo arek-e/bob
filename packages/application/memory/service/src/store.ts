@@ -20,7 +20,7 @@ import {
   completedEffectAfterConflict,
   type EffectIdentity
 } from "@bob/policy-service/effect-outcome"
-import { makeOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
+import { createOwnerDataKeyStore } from "@bob/policy-service/owner-data-key"
 import { retrievalProjection } from "@bob/retrieval-service/projection"
 import { liftPromiseOperation } from "@bob/shared-types/effect-adapter"
 import { and, desc, eq, sql } from "drizzle-orm"
@@ -92,7 +92,7 @@ function legacyCandidateSourceLabel(createdAt: string): string {
   return `Saved source linked on ${date}`
 }
 
-export function makeMemoryStore(
+export function createMemoryStore(
   database: CoreDatabase,
   protection: DataProtection,
   evidenceSources: EvidenceSourceRegistry,
@@ -108,7 +108,7 @@ export function makeMemoryStore(
   const reviewClaimLeaseMs = options.reviewClaimLeaseMs ?? 60_000
   const ownerDataKeys =
     options.ownerDataKeys ??
-    makeOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
+    createOwnerDataKeyStore(database, protection, { defaultTimeZone: "UTC", now })
 
   async function claimReview(
     candidate: typeof memoryCandidates.$inferSelect,

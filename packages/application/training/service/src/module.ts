@@ -11,7 +11,7 @@ export interface TrainingModule extends TrainingStore {
 
 export const TrainingModule = Context.Service<TrainingModule>("bob/TrainingModule")
 
-export function makeTrainingModule(
+export function createTrainingModule(
   training: TrainingStore,
   proposals: TrainingProposalStore
 ): TrainingModule {

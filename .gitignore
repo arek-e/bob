@@ -15,3 +15,5 @@ tmp/
 .env-flat/
 .varlock/*
 !.varlock/config.json
+
+tools/environment.generated.ts

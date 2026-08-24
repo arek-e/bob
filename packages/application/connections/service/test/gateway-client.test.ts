@@ -1,4 +1,4 @@
-import { makeConnectionsGatewayClient } from "@bob/connections-service/gateway"
+import { createConnectionsGatewayClient } from "@bob/connections-service/gateway"
 import { describe, expect, it, vi } from "vitest"
 
 describe("Connections Gateway client", () => {
@@ -9,7 +9,7 @@ describe("Connections Gateway client", () => {
         expiresAt: "2026-08-15T12:10:00.000Z"
       })
     )
-    const client = makeConnectionsGatewayClient({
+    const client = createConnectionsGatewayClient({
       url: "https://connections.example",
       callerSecret: "instance-secret",
       fetch: request
@@ -47,7 +47,7 @@ describe("Connections Gateway client", () => {
         ]
       })
     )
-    const client = makeConnectionsGatewayClient({
+    const client = createConnectionsGatewayClient({
       url: "https://connections.example",
       callerSecret: "instance-secret",
       fetch: request
@@ -65,7 +65,7 @@ describe("Connections Gateway client", () => {
 
   it("requires HTTPS outside localhost", () => {
     expect(() =>
-      makeConnectionsGatewayClient({
+      createConnectionsGatewayClient({
         url: "http://connections.example",
         callerSecret: "instance-secret"
       })
