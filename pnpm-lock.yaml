@@ -65,6 +65,9 @@ importers:
       oxlint:
         specifier: 1.78.0
         version: 1.78.0
+      portless:
+        specifier: 0.13.0
+        version: 0.13.0
       react:
         specifier: 19.2.8
         version: 19.2.8
@@ -4317,6 +4320,12 @@ packages:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
 
+  portless@0.13.0:
+    resolution: {integrity: sha512-PxMZ5BHH+ZZi9rTq4T8m003aZxh56qI0aBdNsxLn7jrTtvNJYBWYD3lc5PuQrom/aVh6z8iLb+tKUI6b7QNYQw==}
+    engines: {node: '>=20'}
+    os: [darwin, linux, win32]
+    hasBin: true
+
   postcss@8.5.26:
     resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
     engines: {node: ^10 || ^12 || >=14}
@@ -7473,6 +7482,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.5: {}
+
+  portless@0.13.0: {}
 
   postcss@8.5.26:
     dependencies:

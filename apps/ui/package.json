@@ -6,6 +6,7 @@
   "scripts": {
     "build": "varlock run --inject vars --skip-cache -- vite build && node scripts/build.mjs",
     "dev": "vite dev",
+    "dev:portless": "portless run",
     "env:check": "varlock load --agent --path . --skip-cache",
     "preview": "node scripts/preview.mjs",
     "typecheck": "tsc -p tsconfig.json"
@@ -27,5 +28,6 @@
     "tailwindcss": "4.3.3",
     "vite": "7.3.6",
     "vite-plugin-solid": "2.11.14"
-  }
+  },
+  "portless": "bob"
 }

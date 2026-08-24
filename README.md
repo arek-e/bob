@@ -38,6 +38,10 @@ credential ownership, product onboarding, and verification.
 Start the stack with Docker Compose. Then open `http://127.0.0.1:8788/setup`. Enter the value of
 `SETUP_TOKEN` to create the owner login.
 
+For the UI only, `pnpm dev:portless` starts Vite behind the shared Portless proxy at
+`http://bob.localhost:1355`. The Compose and local runtime ports remain unchanged. Use
+`pnpm portless:list` to inspect routes and `pnpm portless:prune` after a crashed process.
+
 ## Local checks
 
 Use Node 22.19 or newer and pnpm 10.19.0.
