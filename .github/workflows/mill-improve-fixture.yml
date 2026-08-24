@@ -1,4 +1,4 @@
-name: Mill Improve fixture / baseline
+name: Mill Improve fixture / recovery
 
 on:
   push:
@@ -10,10 +10,16 @@ permissions:
 
 jobs:
   service-readiness:
-    name: service-readiness (baseline)
+    name: service-readiness
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+
       - name: Run fixed-sleep baseline
+        if: ${{ github.run_attempt == 1 }}
         run: bash .github/mill-improve/run-readiness.sh baseline
+
+      - name: Run readiness-gated candidate
+        if: ${{ github.run_attempt > 1 }}
+        run: bash .github/mill-improve/run-readiness.sh candidate
