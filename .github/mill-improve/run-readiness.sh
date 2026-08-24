@@ -25,4 +25,8 @@ fi
 
 container_id="$(docker compose -f "$compose_file" ps -q readiness-fixture)"
 test -n "$container_id"
-test "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" = healthy
+health_status="$(docker inspect --format '{{.State.Health.Status}}' "$container_id")"
+if [[ "$health_status" != healthy ]]; then
+  printf '%s\n' 'service readiness failed: database not ready' >&2
+  exit 1
+fi
