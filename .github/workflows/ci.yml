@@ -34,6 +34,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
+      - name: Mill Improve recovery fixture
+        if: ${{ github.run_attempt == 1 && matrix.name == 'unit-tests' }}
+        run: |
+          echo "service readiness failed: database not ready"
+          exit 1
+      - name: Mill Improve transformation fixture
+        if: ${{ matrix.name == 'unit-tests' && false }}
+        run: |
+          docker compose up -d
+          sleep 15
 
   verify:
     if: always()
