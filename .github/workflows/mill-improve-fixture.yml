@@ -1,0 +1,47 @@
+name: Mill Improve fixture
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Run the fixed-sleep baseline or the health-aware candidate
+        required: true
+        type: choice
+        options:
+          - baseline
+          - candidate
+        default: candidate
+
+permissions:
+  contents: read
+
+jobs:
+  service-readiness:
+    name: service-readiness (${{ inputs.mode }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate fixture compose file
+        run: docker compose -f .github/mill-improve/compose.yaml config --quiet
+
+      - name: Start services with baseline command
+        if: ${{ inputs.mode == 'baseline' }}
+        run: |
+          docker compose -f .github/mill-improve/compose.yaml up -d
+          sleep 2
+
+      - name: Start services with candidate command
+        if: ${{ inputs.mode == 'candidate' }}
+        run: docker compose -f .github/mill-improve/compose.yaml up -d --wait --wait-timeout 30
+
+      - name: Assert service readiness
+        run: |
+          container_id="$(docker compose -f .github/mill-improve/compose.yaml ps -q readiness-fixture)"
+          test -n "$container_id"
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" = healthy
+
+      - name: Tear down fixture
+        if: ${{ always() }}
+        run: docker compose -f .github/mill-improve/compose.yaml down
