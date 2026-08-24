@@ -1,7 +1,7 @@
 # Research note: Learning Personalized Agents from Human Feedback
 
 Date: 2026-08-22  
-Status: Research note; not an architecture decision
+Status: Research note; not current product guidance
 
 Primary source: [Liang et al., “Learning Personalized Agents from Human Feedback,” arXiv:2602.16173v1](https://arxiv.org/html/2602.16173v1). The paper was published on 2026-02-18. The paper links to the [public PAHF implementation](https://github.com/facebookresearch/PAHF). The implementation is useful for call sequencing, but it can differ from the paper.
 
@@ -83,7 +83,7 @@ This absence matters for Bob. An owner can wait while a model call, external act
 4. Action completed, failed, or has an unknown result.
 5. Preference feedback received and either recorded or held as a candidate.
 
-These states fit Bob's durable Agent Run and Delivery boundaries. They should not be inferred from a model reply. See [Bob's context](../../CONTEXT.md) and [ADR 0003](../adr/0003-shared-runtime-clusters-and-agent-runs.md).
+These states fit Bob's durable Agent Run and Delivery boundaries. They should not be inferred from a model reply. See [Bob's context](../../CONTEXT.md) and the [Agent Run implementation](../../packages/application/agent-runs).
 
 ## Context and memory
 
@@ -145,7 +145,7 @@ PAHF assumes a synchronous study loop. Bob's channel and shared-cluster design n
 4. Record success, failure, or unknown external result before final delivery.
 5. Report a preference update only when the owner gave explicit feedback and the memory write completed. Otherwise state that the feedback is pending review or remains a candidate.
 
-The receipt and final answer are different events. A receipt must not imply that an external action completed. See [Bob's delivery and authority rules](../../CONTEXT.md) and [ADR 0003's submission, execution, and finalization phases](../adr/0003-shared-runtime-clusters-and-agent-runs.md).
+The receipt and final answer are different events. A receipt must not imply that an external action completed. See [Bob's delivery and authority rules](../../CONTEXT.md) and the [Agent Run implementation](../../packages/application/agent-runs).
 
 ### Define Bob-specific timing and evaluation
 

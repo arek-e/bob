@@ -170,10 +170,10 @@ Bob's maintenance runtime is already close to the desired design:
 - [read-latest-messages.ts](../../tools/maintenance/read-latest-messages.ts) and [read-all-messages.ts](../../tools/maintenance/read-all-messages.ts) call `ConversationStore.listMessages` directly;
 - [tools/cli.tsx](../../tools/cli.tsx) statically registers TypeScript commands and uses Ink for presentation.
 
-The local maintenance decisions record the same boundary. [ADR 0005](../adr/0005-maintenance-runtime-composition.md)
-rejects a dependency on Core HTTP routes and requires direct Application Module Interfaces. [ADR 0006](../adr/0006-cluster-scoped-maintenance-jobs.md)
-places the process in a short-lived job or pod in the target Runtime Cluster and keeps command execution inside the
-Core project image.
+The current maintenance implementation follows the same boundary. [tools/maintenance/runtime.ts](../../tools/maintenance/runtime.ts)
+composes the Database and Application Module Interfaces directly. [tools/maintenance/remote.ts](../../tools/maintenance/remote.ts)
+places agent requests in a short-lived job or pod in the target Runtime Cluster and keeps command execution inside
+the Core project image.
 
 ### Direct Interface calls versus HTTP
 
@@ -311,8 +311,7 @@ The implementation removes the duplicate resource routes and keeps the bounded m
 - [Maintenance message commands](../../tools/maintenance/read-latest-messages.ts) and [read-all-messages.ts](../../tools/maintenance/read-all-messages.ts)
 - [Ink command registry](../../tools/cli.tsx)
 - [Maintenance environment schema](../../tools/.env.schema)
-- [ADR 0005: Direct maintenance runtime composition](../adr/0005-maintenance-runtime-composition.md)
-- [ADR 0006: Cluster-scoped maintenance jobs](../adr/0006-cluster-scoped-maintenance-jobs.md)
+- [Cluster-scoped maintenance requests](../../tools/maintenance/remote.ts)
 - [Runtime deployment contract](../../deployment/README.md)
 
 ### Standards and first-party documentation
