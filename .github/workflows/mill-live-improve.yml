@@ -22,7 +22,8 @@ jobs:
         run: |
           docker compose up -d
           sleep 1
-          if [ "$GITHUB_RUN_ATTEMPT" = "1" ]; then
+          database_health=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q database)")
+          if [ "$GITHUB_RUN_ATTEMPT" = "1" ] && [ "$database_health" != "healthy" ]; then
             echo "service readiness failed: database not ready"
             exit 1
           fi
