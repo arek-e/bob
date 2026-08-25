@@ -23,7 +23,7 @@ jobs:
           scope: '@teampitch'
       - run: pnpm install --lockfile-only --ignore-scripts
         env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.TEAMPITCH_PACKAGES_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
           name: refreshed-lockfile
