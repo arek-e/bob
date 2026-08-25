@@ -1,0 +1,18 @@
+{
+  "role_type": "jwt",
+  "policies": ["bob-runtime-ci-packages"],
+  "bound_audiences": ["https://github.com/"],
+  "user_claim": "repository",
+  "bound_claims_type": "string",
+  "bound_claims": {
+    "repository_owner": "arek-e",
+    "repository": "arek-e/bob",
+    "workflow": "CI",
+    "workflow_ref": "arek-e/bob/.github/workflows/ci.yml@refs/heads/main",
+    "event_name": "push",
+    "ref": "refs/heads/main"
+  },
+  "token_type": "service",
+  "token_ttl": "5m",
+  "token_max_ttl": "5m"
+}

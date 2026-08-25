@@ -39,8 +39,8 @@ importers:
         specifier: 1.167.27
         version: 1.167.27
       '@teampitch/dev-tools':
-        specifier: 0.1.2
-        version: 0.1.2
+        specifier: 0.2.0
+        version: 0.2.0
       '@types/node':
         specifier: 22.18.0
         version: 22.18.0
@@ -3215,8 +3215,8 @@ packages:
     resolution: {integrity: sha512-uhOeFyxLcU41HzvrxsGpiWdcMbScY1EDgbZ5K7DVRMYInbLYWAC0EA/kx9wXAoSM8q82bUG2hRl8+EAjE6XAbA==}
     engines: {node: '>=20.19'}
 
-  '@teampitch/dev-tools@0.1.2':
-    resolution: {integrity: sha512-Rygbof5pkPFWIK1S1ium7QWawIz0bmc5KTtjcQCXaXVzGTIdAYxAPC1TIowJ8Sk+UHGaso1it/w+w8UOWem7NQ==, tarball: https://npm.pkg.github.com/download/@teampitch/dev-tools/0.1.2/ec672b7c6a935b975a59bf1a2d7cc77dd8e406f7}
+  '@teampitch/dev-tools@0.2.0':
+    resolution: {integrity: sha512-oaQnbqvWHde5cheSGip9MfbNDdgbXrL+dMHicXOVN93V8mINd2IREQyrQnI2SnC9eZeStrnoXSuPsCBTYv0Y1w==, tarball: https://npm.pkg.github.com/download/@teampitch/dev-tools/0.2.0/219db505caa3d4093c7c13256f27a6ca3f6cf41e}
     engines: {node: '>=20.19.0'}
     hasBin: true
 
@@ -6479,7 +6479,7 @@ snapshots:
 
   '@tanstack/virtual-file-routes@1.162.0': {}
 
-  '@teampitch/dev-tools@0.1.2':
+  '@teampitch/dev-tools@0.2.0':
     dependencies:
       portless: 0.13.0
 
