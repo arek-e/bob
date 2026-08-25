@@ -30,7 +30,7 @@ export default defineProject({
     }
   },
   compose: {
-    files: ["compose.yaml", "compose.dev.yaml"],
+    files: ["compose.yaml", "compose.dev.yaml", "compose.smoke.yaml"],
     services: ["core"],
     stop: true
   },
@@ -41,6 +41,33 @@ export default defineProject({
       routes: [
         { service: "ui", name: "bob-runtime-i{instance}" },
         { service: "core", name: "bob-runtime-i{instance}-core", healthPath: "/health" }
+      ]
+    },
+    smoke: {
+      ports: ["smoke-core", "smoke-agent", "smoke-channel"],
+      composeFiles: ["compose.yaml", "compose.dev.yaml", "compose.smoke.yaml"],
+      composeServices: ["core", "agent", "channel"],
+      develop: {
+        program: "docker",
+        args: ["compose", "logs", "--follow", "core", "agent", "channel"],
+        env: { COMPOSE_FILE: "compose.yaml:compose.dev.yaml:compose.smoke.yaml" }
+      },
+      routes: [
+        {
+          service: "smoke-core",
+          name: "bob-runtime-i{instance}-smoke-core",
+          healthPath: "/health"
+        },
+        {
+          service: "smoke-agent",
+          name: "bob-runtime-i{instance}-smoke-agent",
+          healthPath: "/health"
+        },
+        {
+          service: "smoke-channel",
+          name: "bob-runtime-i{instance}-smoke-channel",
+          healthPath: "/health"
+        }
       ]
     }
   }

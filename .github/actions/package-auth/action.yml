@@ -1,0 +1,39 @@
+name: Resolve package credential
+description: Read the private package credential from OpenBao on trusted main pushes
+
+outputs:
+  node_auth_token:
+    description: Package credential for the npm registry
+    value: ${{ steps.openbao.outputs.NODE_AUTH_TOKEN }}
+
+runs:
+  using: composite
+  steps:
+    - name: Read package credential from OpenBao
+      id: openbao
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      continue-on-error: true
+      uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc2 # v4.0.0
+      with:
+        url: https://vault.lamb-bicolor.ts.net
+        path: jwt
+        method: jwt
+        role: bob-runtime-ci-packages
+        jwtGithubAudience: https://github.com/
+        exportEnv: false
+        secrets: |
+          ops/data/apps/prod/bob/registry/ghcr TEAMPITCH_PACKAGES_TOKEN | NODE_AUTH_TOKEN
+
+    - name: Report package credential source
+      shell: bash
+      env:
+        OPENBAO_OUTCOME: ${{ steps.openbao.outcome }}
+      run: |
+        case "$OPENBAO_OUTCOME" in
+          success) echo "Package credential source: OpenBao OIDC" ;;
+          skipped) echo "Package credential source: synchronized GitHub Actions secret (pull request)" ;;
+          *)
+            echo "Package credential source: synchronized GitHub Actions secret"
+            echo "OpenBao direct access was not available to this runner."
+            ;;
+        esac
