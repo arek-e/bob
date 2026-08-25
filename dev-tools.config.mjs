@@ -53,9 +53,21 @@ export default defineProject({
         env: { COMPOSE_FILE: "compose.yaml:compose.dev.yaml:compose.smoke.yaml" }
       },
       routes: [
-        { service: "smoke-core", name: "bob-runtime-i{instance}-smoke-core", healthPath: "/health" },
-        { service: "smoke-agent", name: "bob-runtime-i{instance}-smoke-agent", healthPath: "/health" },
-        { service: "smoke-channel", name: "bob-runtime-i{instance}-smoke-channel", healthPath: "/health" }
+        {
+          service: "smoke-core",
+          name: "bob-runtime-i{instance}-smoke-core",
+          healthPath: "/health"
+        },
+        {
+          service: "smoke-agent",
+          name: "bob-runtime-i{instance}-smoke-agent",
+          healthPath: "/health"
+        },
+        {
+          service: "smoke-channel",
+          name: "bob-runtime-i{instance}-smoke-channel",
+          healthPath: "/health"
+        }
       ]
     }
   }
