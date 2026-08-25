@@ -1,0 +1,29 @@
+name: Mill Live Improve
+
+on:
+  push:
+    branches:
+      - mill/live-improve-20260825
+
+permissions:
+  contents: read
+
+jobs:
+  service-readiness:
+    name: service-readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      COMPOSE_FILE: compose.mill-improve.yaml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the database
+        run: |
+          docker compose up -d
+          sleep 1
+          if [ "$GITHUB_RUN_ATTEMPT" = "1" ]; then
+            echo "service readiness failed: database not ready"
+            exit 1
+          fi
+          docker compose ps --all
