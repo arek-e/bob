@@ -1,0 +1,30 @@
+name: Refresh shared package lockfile
+
+on:
+  push:
+    branches: [feat/shared-agent-bootstrap-20260825]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com
+          scope: '@teampitch'
+      - run: pnpm install --lockfile-only --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: refreshed-lockfile
+          path: pnpm-lock.yaml
