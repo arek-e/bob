@@ -42,6 +42,10 @@ Start the stack with Docker Compose. Then open `http://127.0.0.1:8788/setup`. En
 
 Use Node 22.19 or newer and pnpm 10.19.0.
 
+GitHub Actions installs the private `@teampitch/dev-tools` package. Set the
+`TEAMPITCH_PACKAGES_TOKEN` Actions secret to a classic token with
+`read:packages` access before running CI.
+
 ```sh
 corepack enable
 corepack prepare pnpm@10.19.0 --activate

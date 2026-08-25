@@ -12,8 +12,9 @@ const apiBase =
 
 export default defineConfig({
   server: {
-    host: "127.0.0.1",
-    port: 3000
+    host: process.env.HOST ?? "127.0.0.1",
+    port: Number(process.env.BOB_UI_DEV_PORT ?? process.env.PORT ?? "3000"),
+    strictPort: true
   },
   resolve: {
     alias: {

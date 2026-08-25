@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  packages: read
 
 jobs:
   checks:
@@ -31,7 +32,10 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+          registry-url: https://npm.pkg.github.com
       - run: pnpm install --frozen-lockfile
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.TEAMPITCH_PACKAGES_TOKEN }}
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
 

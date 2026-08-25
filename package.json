@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "build": "pnpm -r --if-present build",
+    "dev": "wt dev",
+    "dev:config": "wt config",
+    "dev:status": "wt status",
+    "dev:stop": "wt stop",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "env:check": "pnpm -r --if-present env:check && pnpm run env:check:maint",
     "env:check:maint": "varlock load --agent --path tools --skip-cache",
@@ -36,6 +40,7 @@
     "@effect/vitest": "4.0.0-beta.107",
     "@oxlint/plugins": "1.78.0",
     "@tanstack/router-generator": "1.167.27",
+    "@teampitch/dev-tools": "0.1.2",
     "@types/node": "22.18.0",
     "@types/react": "19.2.18",
     "@varlock/hashicorp-vault-plugin": "2.1.0",
