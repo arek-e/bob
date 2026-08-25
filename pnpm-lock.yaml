@@ -38,6 +38,9 @@ importers:
       '@tanstack/router-generator':
         specifier: 1.167.27
         version: 1.167.27
+      '@teampitch/dev-tools':
+        specifier: 0.1.2
+        version: 0.1.2
       '@types/node':
         specifier: 22.18.0
         version: 22.18.0
@@ -3212,6 +3215,11 @@ packages:
     resolution: {integrity: sha512-uhOeFyxLcU41HzvrxsGpiWdcMbScY1EDgbZ5K7DVRMYInbLYWAC0EA/kx9wXAoSM8q82bUG2hRl8+EAjE6XAbA==}
     engines: {node: '>=20.19'}
 
+  '@teampitch/dev-tools@0.1.2':
+    resolution: {integrity: sha512-Rygbof5pkPFWIK1S1ium7QWawIz0bmc5KTtjcQCXaXVzGTIdAYxAPC1TIowJ8Sk+UHGaso1it/w+w8UOWem7NQ==, tarball: https://npm.pkg.github.com/download/@teampitch/dev-tools/0.1.2/ec672b7c6a935b975a59bf1a2d7cc77dd8e406f7}
+    engines: {node: '>=20.19.0'}
+    hasBin: true
+
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
 
@@ -4316,6 +4324,12 @@ packages:
   picomatch@4.0.5:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
+
+  portless@0.13.0:
+    resolution: {integrity: sha512-PxMZ5BHH+ZZi9rTq4T8m003aZxh56qI0aBdNsxLn7jrTtvNJYBWYD3lc5PuQrom/aVh6z8iLb+tKUI6b7QNYQw==}
+    engines: {node: '>=20'}
+    os: [darwin, linux, win32]
+    hasBin: true
 
   postcss@8.5.26:
     resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
@@ -6465,6 +6479,10 @@ snapshots:
 
   '@tanstack/virtual-file-routes@1.162.0': {}
 
+  '@teampitch/dev-tools@0.1.2':
+    dependencies:
+      portless: 0.13.0
+
   '@types/babel__core@7.20.5':
     dependencies:
       '@babel/parser': 7.29.8
@@ -7473,6 +7491,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.5: {}
+
+  portless@0.13.0: {}
 
   postcss@8.5.26:
     dependencies:
