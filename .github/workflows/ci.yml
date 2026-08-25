@@ -41,7 +41,7 @@ jobs:
         uses: ./.github/actions/package-auth
       - run: pnpm install --frozen-lockfile
         env:
-          NODE_AUTH_TOKEN: ${{ steps.package_auth.outputs.node_auth_token || (github.event_name == 'pull_request' && github.token) || secrets.TEAMPITCH_PACKAGES_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ steps.package_auth.outputs.node_auth_token || secrets.TEAMPITCH_PACKAGES_TOKEN || (github.event_name == 'pull_request' && github.token) }}
       - name: Run ${{ matrix.name }}
         run: ${{ matrix.command }}
 
