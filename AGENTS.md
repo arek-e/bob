@@ -55,10 +55,13 @@ Update the relevant tests when behavior changes. Report failed checks and their 
 
 This repository uses `@teampitch/dev-tools` for local development and agent workflow.
 
-- Read [the shared development skill](.agents/skills/teampitch-development/SKILL.md) before local development, worktree, or port work.
+- Read [the shared development skill](.agents/skills/teampitch-development/SKILL.md) before local
+  development, worktree, or port work.
 - Use the repository package manager and its `wt` command for local runtime lifecycle work.
-- Read [the shared anti-slop skill](.agents/skills/teampitch-anti-slop/SKILL.md) before changing TypeScript or JavaScript patterns covered by the repository lint gate.
-- Read [the shared deployment skill](.agents/skills/teampitch-deployment/SKILL.md) before changing deployment, infrastructure, OpenBao, ArgoCD, Cloudflare, or release behavior.
+- Read [the shared anti-slop skill](.agents/skills/teampitch-anti-slop/SKILL.md) before changing
+  TypeScript or JavaScript patterns covered by the repository lint gate.
+- Read [the shared deployment skill](.agents/skills/teampitch-deployment/SKILL.md) before changing
+  deployment, infrastructure, OpenBao, ArgoCD, Cloudflare, or release behavior.
 - Bootstrap profile: `deployment`.
 
 Keep repository-specific rules outside this generated section. Re-run `dev-tools bootstrap` after upgrading the shared package.
