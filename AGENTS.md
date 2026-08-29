@@ -64,5 +64,6 @@ This repository uses `@teampitch/dev-tools` for local development and agent work
   deployment, infrastructure, OpenBao, ArgoCD, Cloudflare, or release behavior.
 - Bootstrap profile: `deployment`.
 
-Keep repository-specific rules outside this generated section. Re-run `dev-tools bootstrap` after upgrading the shared package.
+Keep repository-specific rules outside this generated section. Re-run `dev-tools bootstrap` after
+upgrading the shared package.
 <!-- teampitch:dev-tools bootstrap:end -->
