@@ -51,6 +51,7 @@ Update the relevant tests when behavior changes. Report failed checks and their 
 - Update `CONTEXT.md` and the relevant README or feature documentation when architecture changes.
 
 <!-- teampitch:dev-tools bootstrap:start -->
+
 ## Shared Teampitch workflow
 
 This repository uses `@teampitch/dev-tools` for local development and agent workflow.
